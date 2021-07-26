@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "servers": [
+    {
+      "min_num_clients": 1,
+      "max_num_clients": 100,
+      "wait_after_min_clients": 10,
+      "heart_beat_timeout": 600,
+      "start_round": 0,
+      "num_rounds": 3
+    }
+  ],
+  "aggregator": {
+    "name": "AccumulateWeightedAggregator",
+    "args": {}
+  },
+  "outbound_filters": [],
+  "inbound_filters": [],
+  "model_persistor": {
+    "path": "model_persistor.TF2ModelPersistor",
+    "args": {
+      "save_path": "./weight.pickle"
+    }
+  },
+  "shareable_generator": {
+    "name": "FullModelShareableGenerator"
+  }
+}
