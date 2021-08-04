@@ -7,16 +7,22 @@
       "wait_after_min_clients": 10,
       "heart_beat_timeout": 600,
       "start_round": 0,
-      "num_rounds": 200
+      "num_rounds": 3
     }
   ],
   "aggregator": {
     "name": "AccumulateWeightedAggregator",
-    "args": {}
+    "args": {
+      "aggregation_weights":
+        {
+          "site-1": 1,
+          "site-2": 1
+        }
+    }
   },
   "outbound_filters": [],
   "inbound_filters": [],
-  "model_persistor": {
+  "persistor": {
     "name": "PTFileModelPersistor",
     "args": {
       "model": {

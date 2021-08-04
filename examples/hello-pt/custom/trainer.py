@@ -2,19 +2,19 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from net import Net
-from nvflare.apis import EventType, FLContext, Trainer
-from nvflare.apis.fl_constant import ShareableKey, ShareableValue
+from nvflare.apis import Trainer
+from nvflare.apis.fl_constant import FLConstants, ShareableKey, ShareableValue
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from torchvision import datasets, transforms
 
 
 class SimpleTrainer(Trainer):
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.setup()
-
-    def setup(self):
+    def __init__(self):
+        super().__init__()
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = Net()
+        self.model.to(self.device)
         self.optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9)
         self.criterion = nn.CrossEntropyLoss()
         self.transform = transforms.Compose(
@@ -35,16 +35,13 @@ class SimpleTrainer(Trainer):
 
         :return:
         """
-        # set the model to train mode
         self.model.train()
         for epoch in range(2):
-            for i, data in enumerate(self.train_loader, 0):
-                # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data
-
+            # set the model to train mode
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
-
                 # forward + backward + optimize
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, labels)
@@ -79,6 +76,7 @@ class SimpleTrainer(Trainer):
 
         # build the shareable
         shareable = Shareable()
+        shareable[ShareableKey.META] = {FLConstants.NUM_STEPS_CURRENT_ROUND: 1}
         shareable[ShareableKey.TYPE] = ShareableValue.TYPE_WEIGHTS
         shareable[ShareableKey.DATA_TYPE] = ShareableValue.DATA_TYPE_UNENCRYPTED
         shareable[ShareableKey.MODEL_WEIGHTS] = {

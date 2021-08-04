@@ -11,18 +11,19 @@
     }
   ],
   "aggregator": {
-    "name": "AccumulateWeightedAggregator",
+    "path": "model_aggregator.AccumulateAggregator",
     "args": {}
   },
   "outbound_filters": [],
   "inbound_filters": [],
-  "model_persistor": {
+  "persistor": {
     "path": "model_persistor.TF2ModelPersistor",
     "args": {
-      "save_path": "./weight.pickle"
+      "save_name": "tf2weights.pickle"
     }
   },
   "shareable_generator": {
     "name": "FullModelShareableGenerator"
   }
 }
+

@@ -1,9 +1,9 @@
 import tensorflow as tf
 
 
-class LeNet(tf.keras.Model):
+class Net(tf.keras.Model):
     def __init__(self):
-        super(LeNet, self).__init__()
+        super().__init__()
         self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
         self.dense1 = tf.keras.layers.Dense(128, activation="relu")
         self.dropout = tf.keras.layers.Dropout(0.2)

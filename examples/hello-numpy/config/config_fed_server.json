@@ -13,14 +13,19 @@
   "aggregator": {
     "name": "AccumulateWeightedAggregator",
     "args": {
+      "aggregation_weights":
+        {
+          "site-1": 1,
+          "site-2": 1
+        }
     }
   },
   "outbound_filters": [],
   "inbound_filters": [],
-  "model_persistor": {
-    "path": "model_persistor.PickleModelPersistor",
+  "persistor": {
+    "path": "model_persistor.NumpyModelPersistor",
     "args": {
-      "save_path": "./weight.pickle"
+      "save_name": "weight.pickle"
     }
   },
   "shareable_generator": {

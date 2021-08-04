@@ -1,5 +1,6 @@
 import numpy as np
 
+from nvflare.apis.fl_constant import FLConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, ShareableKey, ShareableValue
 from nvflare.apis.trainer import Trainer
@@ -31,17 +32,18 @@ class SimpleTrainer(Trainer):
         new_fib = {"sequence": np.array([terms[1], terms[0] + terms[1]])}
 
         # add -1 and +1 bias for site-1 and site-2 respectively
-        client_name = fl_ctx.get_prop("client_name")
+        client_name = fl_ctx.get_prop(FLConstants.CLIENT_NAME)
         if client_name == "site-1":
             new_fib["sequence"] -= 1
         elif client_name == "site-2":
             new_fib["sequence"] += 1
 
-        print(f"{client_name} Shareable from server: ", fib)
-        print(f"{client_name} New Shareable to server: ", new_fib, "\n")
+        self.logger.info(f"{client_name} Shareable from server: {fib}")
+        self.logger.info(f"{client_name} New Shareable to server: {new_fib} \n")
 
-        # send updated weights back to server through shareable
+        # send updated weights back to server through new shareable
         shareable = Shareable()
+        shareable[ShareableKey.META] = {FLConstants.NUM_STEPS_CURRENT_ROUND: 1}
         shareable[ShareableKey.TYPE] = ShareableValue.TYPE_WEIGHTS
         shareable[ShareableKey.DATA_TYPE] = ShareableValue.DATA_TYPE_UNENCRYPTED
         shareable[ShareableKey.MODEL_WEIGHTS] = new_fib

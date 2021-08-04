@@ -2,7 +2,14 @@
   "format_version": 1,
   "platform": "TF2",
   "client": {
-    "outbound_filters": [],
+    "outbound_filters": [
+      {
+        "path": "filter.ExcludeVars",
+        "args": {
+          "exclude_vars": ["flatten"]
+        }
+      }
+    ],
     "inbound_filters": []
   },
   "client_trainer": {
