@@ -1,0 +1,579 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>NVFlare Application &mdash; NVFlare 1.1 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Provisioning tool" href="provisioning_tool.html" />
+    <link rel="prev" title="Overview" href="overview.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVFlare
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                1.1
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">NVFlare Application</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fl-server-configuration">FL server configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fl-client-configuration">FL client configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#custom-code">Custom Code</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#resources">Resources</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="provisioning_tool.html">Provisioning tool</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authorization.html">Authorization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin_commands.html">Administrator commands</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVFlare</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../user_guide.html">User Guide</a> &raquo;</li>
+        
+      <li>NVFlare Application</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-application">
+<h1>NVFlare Application<a class="headerlink" href="#nvflare-application" title="Permalink to this headline">¶</a></h1>
+<p>To upload and run your FL application with NVFlare, you need to put required files into an application folder.
+The structure of the folder needs to be:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">app_folder</span><span class="o">/</span>
+    <span class="n">config</span><span class="o">/</span>
+        <span class="n">config_fed_client</span><span class="o">.</span><span class="n">json</span>
+        <span class="n">config_fed_server</span><span class="o">.</span><span class="n">json</span>
+    <span class="n">custom</span><span class="o">/</span>
+        <span class="p">[</span><span class="nb">any</span> <span class="n">of</span> <span class="n">your</span> <span class="n">custom</span> <span class="n">code</span><span class="p">]</span><span class="o">.</span><span class="n">py</span>
+        <span class="p">[</span><span class="n">another</span> <span class="n">custom</span> <span class="n">code</span><span class="p">]</span><span class="o">.</span><span class="n">py</span>
+        <span class="o">...</span>
+    <span class="n">resources</span><span class="o">/</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">config</span>
+</pre></div>
+</div>
+<p>We will explain each item in the following sections.</p>
+<div class="section" id="fl-server-configuration">
+<h2>FL server configuration<a class="headerlink" href="#fl-server-configuration" title="Permalink to this headline">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code> is the FL server configuration file.</p>
+<p>Example:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+  <span class="nt">&quot;servers&quot;</span><span class="p">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="nt">&quot;min_num_clients&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+      <span class="nt">&quot;max_num_clients&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
+      <span class="nt">&quot;wait_after_min_clients&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+      <span class="nt">&quot;heart_beat_timeout&quot;</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span>
+      <span class="nt">&quot;start_round&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+      <span class="nt">&quot;num_rounds&quot;</span><span class="p">:</span> <span class="mi">3</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="nt">&quot;aggregator&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;AccumulateWeightedAggregator&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&quot;aggregation_weights&quot;</span><span class="p">:</span>
+      <span class="p">{</span>
+        <span class="nt">&quot;site-1&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="nt">&quot;site-2&quot;</span><span class="p">:</span> <span class="mi">1</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">},</span>
+  <span class="nt">&quot;outbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+  <span class="nt">&quot;inbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+  <span class="nt">&quot;persistor&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;PTFileModelPersistor&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&quot;model&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;net.Net&quot;</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">},</span>
+  <span class="nt">&quot;shareable_generator&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;FullModelShareableGenerator&quot;</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>format_version</p></td>
+<td><p>The NVFlare version for this config</p></td>
+</tr>
+<tr class="row-odd"><td><p>servers</p></td>
+<td><p>Specify server-specific attributes</p></td>
+</tr>
+<tr class="row-even"><td><p>aggregator</p></td>
+<td><p>What aggregator to use for this application</p></td>
+</tr>
+<tr class="row-odd"><td><p>outbound_filters</p></td>
+<td><p>What filters to apply at outbound, check <a class="reference internal" href="../programming_guide.html#filters"><span class="std std-ref">Filters</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p>inbound_filters</p></td>
+<td><p>What filters to apply at inbound, check <a class="reference internal" href="../programming_guide.html#filters"><span class="std std-ref">Filters</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>persistor</p></td>
+<td><p>What <code class="docutils literal notranslate"><span class="pre">LearnablePersistor</span></code> to use</p></td>
+</tr>
+<tr class="row-even"><td><p>shareable_generator</p></td>
+<td><p>What <code class="docutils literal notranslate"><span class="pre">ShareableGenerator</span></code> to use</p></td>
+</tr>
+</tbody>
+</table>
+<p>The server-specific attributes:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>min_num_clients</p></td>
+<td><p>Minimum number of clients’ updates required for aggregation to start</p></td>
+</tr>
+<tr class="row-odd"><td><p>max_num_clients</p></td>
+<td><p>Maximum number of clients’ updates allowed for aggregation</p></td>
+</tr>
+<tr class="row-even"><td><p>wait_after_min_clients</p></td>
+<td><p>How many seconds to wait before aggregation and after receive minimum clients’ updates</p></td>
+</tr>
+<tr class="row-odd"><td><p>heart_beat_timeout</p></td>
+<td><p>How many seconds before the heart beat times out</p></td>
+</tr>
+<tr class="row-even"><td><p>start_round</p></td>
+<td><p>Starting round, usually 0</p></td>
+</tr>
+<tr class="row-odd"><td><p>num_rounds</p></td>
+<td><p>Total number of rounds to run</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="fl-client-configuration">
+<h2>FL client configuration<a class="headerlink" href="#fl-client-configuration" title="Permalink to this headline">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code> is the FL client configuration file.</p>
+<p>Example:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+  <span class="nt">&quot;platform&quot;</span><span class="p">:</span> <span class="s2">&quot;PT&quot;</span><span class="p">,</span>
+  <span class="nt">&quot;client&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;outbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+    <span class="nt">&quot;inbound_filters&quot;</span><span class="p">:</span> <span class="p">[]</span>
+  <span class="p">},</span>
+  <span class="nt">&quot;client_trainer&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;trainer.SimpleTrainer&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+  <span class="p">},</span>
+  <span class="nt">&quot;handlers&quot;</span><span class="p">:</span> <span class="p">[]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>format_version</p></td>
+<td><p>The NVFlare version for this config</p></td>
+</tr>
+<tr class="row-odd"><td><p>platform</p></td>
+<td><p>What platform to run on, for example: numpy, PT, TF2</p></td>
+</tr>
+<tr class="row-even"><td><p>client</p></td>
+<td><p>Specify client-specific attributes</p></td>
+</tr>
+<tr class="row-odd"><td><p>client_trainer</p></td>
+<td><p>What <code class="docutils literal notranslate"><span class="pre">Trainer</span></code> to use, refer to <a class="reference internal" href="../programming_guide.html#trainer"><span class="std std-ref">Trainer</span></a> for write a custom one</p></td>
+</tr>
+<tr class="row-even"><td><p>handlers</p></td>
+<td><p>A list of handlers to register</p></td>
+</tr>
+</tbody>
+</table>
+<p>The client-specific attributes:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>outbound_filters</p></td>
+<td><p>What filters to apply at outbound, check <a class="reference internal" href="../programming_guide.html#filters"><span class="std std-ref">Filters</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>inbound_filters</p></td>
+<td><p>What filters to apply at inbound, check <a class="reference internal" href="../programming_guide.html#filters"><span class="std std-ref">Filters</span></a></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="custom-code">
+<h2>Custom Code<a class="headerlink" href="#custom-code" title="Permalink to this headline">¶</a></h2>
+<p>You can write your own components following <a class="reference internal" href="../programming_guide.html#programming-guide"><span class="std std-ref">Programming Guide</span></a></p>
+<p>To use it in your application, you need to put those codes inside the “custom” folder of the application folder.</p>
+<p>And in your server or client config, you need to use path to refer to that component.</p>
+<p>For example, if I have a <code class="docutils literal notranslate"><span class="pre">SimpleTrainer</span></code> class stored in a file <code class="docutils literal notranslate"><span class="pre">my_trainer.py</span></code> inside the custom folder.
+Then in the client config I can do the following:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="p">{</span>
+    <span class="nt">&quot;client_trainer&quot;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;my_trainer.SimpleTrainer&quot;</span><span class="p">,</span>
+      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+    <span class="p">},</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Please follow <a class="reference internal" href="../quickstart.html#quickstart"><span class="std std-ref">Quickstart</span></a> to learn more.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You can leave “custom” folder empty if you are only using built-in components provided by NVFlare.</p>
+</div>
+</div>
+<div class="section" id="resources">
+<h2>Resources<a class="headerlink" href="#resources" title="Permalink to this headline">¶</a></h2>
+<p>A <code class="docutils literal notranslate"><span class="pre">log.config</span></code> is needed inside the resources folder.
+This file is for the Python logger to use.
+If you don’t want to customize the log behavior, you can use the same <code class="docutils literal notranslate"><span class="pre">log.config</span></code> from one of
+the example application folder.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">loggers</span><span class="p">]</span>
+<span class="n">keys</span><span class="o">=</span><span class="n">root</span><span class="p">,</span><span class="n">modelLogger</span>
+
+<span class="p">[</span><span class="n">handlers</span><span class="p">]</span>
+<span class="n">keys</span><span class="o">=</span><span class="n">consoleHandler</span>
+
+<span class="p">[</span><span class="n">formatters</span><span class="p">]</span>
+<span class="n">keys</span><span class="o">=</span><span class="n">fullFormatter</span>
+
+<span class="p">[</span><span class="n">logger_root</span><span class="p">]</span>
+<span class="n">level</span><span class="o">=</span><span class="n">INFO</span>
+<span class="n">handlers</span><span class="o">=</span><span class="n">consoleHandler</span>
+
+<span class="p">[</span><span class="n">logger_modelLogger</span><span class="p">]</span>
+<span class="n">level</span><span class="o">=</span><span class="n">DEBUG</span>
+<span class="n">handlers</span><span class="o">=</span><span class="n">consoleHandler</span>
+<span class="n">qualname</span><span class="o">=</span><span class="n">modelLogger</span>
+<span class="n">propagate</span><span class="o">=</span><span class="mi">0</span>
+
+<span class="p">[</span><span class="n">handler_consoleHandler</span><span class="p">]</span>
+<span class="n">class</span><span class="o">=</span><span class="n">StreamHandler</span>
+<span class="n">level</span><span class="o">=</span><span class="n">DEBUG</span>
+<span class="n">formatter</span><span class="o">=</span><span class="n">fullFormatter</span>
+<span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,)</span>
+
+<span class="p">[</span><span class="n">formatter_fullFormatter</span><span class="p">]</span>
+<span class="nb">format</span><span class="o">=%</span><span class="p">(</span><span class="n">asctime</span><span class="p">)</span><span class="n">s</span> <span class="o">-</span> <span class="o">%</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="n">s</span> <span class="o">-</span> <span class="o">%</span><span class="p">(</span><span class="n">levelname</span><span class="p">)</span><span class="n">s</span> <span class="o">-</span> <span class="o">%</span><span class="p">(</span><span class="n">message</span><span class="p">)</span><span class="n">s</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="provisioning_tool.html" class="btn btn-neutral float-right" title="Provisioning tool" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="overview.html" class="btn btn-neutral float-left" title="Overview" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

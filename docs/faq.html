@@ -1,0 +1,541 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>FAQ &mdash; NVFlare 1.1 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="nvflare" href="apidocs/modules.html" />
+    <link rel="prev" title="Programming Guide" href="programming_guide.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="index.html" class="icon icon-home"> NVFlare
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                1.1
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">FAQ</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#client-related-questions">Client related questions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#server-related-questions">Server related questions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#overall-training-flow-related-questions">Overall training flow related questions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cross-site-validation">Cross Site Validation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NVFlare</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+        
+      <li>FAQ</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="faq">
+<span id="id1"></span><h1>FAQ<a class="headerlink" href="#faq" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="client-related-questions">
+<h2>Client related questions<a class="headerlink" href="#client-related-questions" title="Permalink to this headline">¶</a></h2>
+<ol class="arabic">
+<li><p>What happens if an FL client joins during the FL training?</p>
+<blockquote>
+<div><p>An FL client can join the FL training any time. As long as the participating FL clients are still within the maximum
+number of clients, the client can join. The newly joined client will get the current round of global model for training
+and will contribute to the current global model.</p>
+</div></blockquote>
+</li>
+<li><p>Do federated learning clients need to open any ports for the FL server to reach the FL client?</p>
+<blockquote>
+<div><p>No, federated learning training does not require for FL clients to open their network for inbound traffic. The server
+never sends uninvited requests to clients but only responds to client requests.</p>
+</div></blockquote>
+</li>
+</ol>
+<ol class="arabic" id="multi-gpu-training">
+<li><p>Can a client train with multiple GPUs?</p>
+<blockquote>
+<div><p>Yes, the administrator command <code class="docutils literal notranslate"><span class="pre">start_mgpu</span> <span class="pre">client</span> <span class="pre">&lt;gpu</span> <span class="pre">number&gt;</span> <span class="pre">&lt;client</span> <span class="pre">name&gt;</span></code> can be used to start training
+on FL clients with different numbers of GPUs when starting training. But you will need to install <code class="docutils literal notranslate"><span class="pre">torch</span></code> for
+PyTorch based Trainer, and <code class="docutils literal notranslate"><span class="pre">mpi4py</span></code> for all other trainers. It is possible for different clients to be
+training with different numbers of GPUs.</p>
+</div></blockquote>
+</li>
+<li><p>How do FL clients get identified?</p>
+<blockquote>
+<div><p>The federated learning clients are identified by a dynamically generated FL token issued by the server during runtime.
+When an FL client first joins an FL training, it first needs to send a login request to the FL server. During the login
+process, the FL server and client need to exchange SSL certificates for bi-directional authentication. Once the
+authentication is successful, the FL server sends an FL token to the client. The FL client will use this FL token to
+identify itself for all following requests for the global model and all model updating operations.</p>
+</div></blockquote>
+</li>
+<li><p>Can I run multiple FL clients from the same machine?</p>
+<blockquote>
+<div><p>Yes. The FL clients are identified by FL token, not machine IP. Each FL client will have its own FL token as well as
+instance name, which is the client name that must be used for issuing specific commands to that client.</p>
+</div></blockquote>
+</li>
+<li><p>Can I use the same client package to run multiple instances for the same client?</p>
+<blockquote>
+<div><p>Yes, you can start multiple instances of FL clients from the same client packages. Each FL client will be identified
+by its unique instance names, for example: “flclient1”, “flclient1_1”, “flclient1_2”, etc. The instance name must be
+used for issuing specific commands to that client from the admin tool.</p>
+</div></blockquote>
+</li>
+<li><p>What happens if a federated learning client crashes?</p>
+<blockquote>
+<div><p>Federated learning clients will send a heartbeat call to the FL server once every minute. If an FL client crashes and
+the FL server does not get a heartbeat from that client for 10 minutes (can be set with “heart_beat_timeout” in the
+server’s config json), the FL server will remove that client from the training client list.</p>
+</div></blockquote>
+</li>
+<li><p>Can FL clients join or quit in the middle of federated learning training?</p>
+<blockquote>
+<div><p>Yes, an FL client can join or quit in the middle of the FL training at any time. The client will pick up the global
+model at the current round of the server to participate in the FL training. When quitting, the FL server will
+automatically remove the FL client after it quits and no heartbeat is received for the duration of the
+“heart_beat_timeout” configured on the server. If using an admin tool, it is recommended to use the “abort” and
+“shutdown” commands to gracefully stop the clients.</p>
+</div></blockquote>
+</li>
+<li><p>What if the number of participating FL clients is below the minimum number of clients required?</p>
+<blockquote>
+<div><p>When an FL client passes authentication, it can request the current round of the global model and starts the FL training right away.
+There is no need to wait for other clients. Once the client finishes its own training, it will send the update to the server
+for aggregation. However, if the server does not receive enough updates from other clients, the FL server will not start
+the next round of FL training. The finished FL client will be waiting for the next round’s model.</p>
+</div></blockquote>
+</li>
+<li><p>What happens if more than the minimum numbers of FL clients submit an updated model?</p>
+<blockquote>
+<div><p>The FL server begins model aggregation after accepting updates from the minimum number of FL clients required and
+waiting for “wait_after_min_clients” configured on the server. The updates that are received after this will be
+discarded. All the clients will get the next round of the global model to start the next round FL training.</p>
+</div></blockquote>
+</li>
+<li><p>How does a client decide to quit federated learning training?</p>
+<blockquote>
+<div><p>The FL client always asks the server for the current round of training. If the server is not ready, the FL client will wait.
+The client will only stop if the server becomes unreachable. The FL client can also be killed with the admin tool
+issuing a “shutdown” command or by ctrl-C on the client itself, although this is not recommended because the server
+will wait for the duration of “heart_beat_timeout” before knowing that the client has stopped.</p>
+</div></blockquote>
+</li>
+</ol>
+</div>
+<div class="section" id="server-related-questions">
+<h2>Server related questions<a class="headerlink" href="#server-related-questions" title="Permalink to this headline">¶</a></h2>
+<ol class="arabic">
+<li><p>What happens if the FL server crashes?</p>
+<blockquote>
+<div><p>There are two scenarios for the FL server crashing during the FL training. If the server crashes when the FL client is trying to
+connect to the server for model exchange, the FL client will continue to attempt connecting to the server for up to 30 seconds.
+If the server is still down after that, FL client will shut itself down. If the server crashes during the FL client model training,
+as long as the server restarts before the FL client attempts model updating, it will have no impact to the FL clients.</p>
+<p>When restarting the FL server, you can find the previous training round number from the previous log. Then you can choose to
+train from scratch or continuously using previous training model.</p>
+</div></blockquote>
+</li>
+<li><p>Does the federated learning server need a GPU?</p>
+<blockquote>
+<div><p>No, there is no need to have GPU on the server side for the FL server to deploy. However, certain handlers may require
+GPUs. To disable GPUs on the server, include the following in the shell script that runs the server:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">export</span> <span class="n">CUDA_VISIBLE_DEVICES</span><span class="o">=</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+<li><p>What port do I need to open from the firewall on the FL server network?</p>
+<blockquote>
+<div><p>Depending on the configuration of <a class="reference internal" href="user_guide/provisioning_tool.html#project-yml"><span class="std std-ref">project.yaml</span></a> which controls which port the gRPC is deployed to,
+the FL server network needs to open that port for outside clients to reach the FL server.</p>
+</div></blockquote>
+</li>
+<li><p>What if the federated learning server is behind a load balancer?</p>
+<blockquote>
+<div><p>Currently, federated learning does not support load balancing between multiple FL servers.</p>
+</div></blockquote>
+</li>
+</ol>
+</div>
+<div class="section" id="overall-training-flow-related-questions">
+<h2>Overall training flow related questions<a class="headerlink" href="#overall-training-flow-related-questions" title="Permalink to this headline">¶</a></h2>
+<ol class="arabic">
+<li><p>How does the federated learning server decide when to stop FL?</p>
+<blockquote>
+<div><p>The FL server always runs from the “start_round” to “num_rounds”. The FL server will stop the training when the
+current round meets “num_rounds”.</p>
+</div></blockquote>
+</li>
+<li><p>Can I run the FL server on AWS while running the FL client within my institution?</p>
+<blockquote>
+<div><p>Yes, use the AWS instance name as the server cn in project.yml file. (e.g.: ec2-3-99-123-456.compute-1.amazonaws.com)</p>
+</div></blockquote>
+</li>
+<li><p>How can I deploy different applications for different clients?</p>
+<blockquote>
+<div><p>You can edit the application folder for each individual client on your desktop, then upload and deploy to each individual client
+with the admin tool. Each client can run with its own application configuration.</p>
+</div></blockquote>
+</li>
+<li><p>Can I use the same “run_number” as previously used?</p>
+<blockquote>
+<div><p>Yes, you can re-use the same “run_number” as previously used. The “run_number” serves as an FL training workspace. The
+FL training logs, such as tensorboard, training stats, etc, are stored within the same “run_number” workspace.</p>
+</div></blockquote>
+</li>
+<li><p>What should I do if the admin notices one client’s training is behaving erroneously or unexpectedly?</p>
+<blockquote>
+<div><p>The admin can issue a command to abort the FL client training: <code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">client</span> <span class="pre">client_name</span></code>. If the command is issued
+without the client_name, then the command will be sent to all the clients. Because of the nature of model training, it
+may take a little time for the FL client to completely stop. Use the “check_status client client_name” command to see
+if the client status is “stopped”.</p>
+</div></blockquote>
+</li>
+<li><p>Why do the admin commands to the clients have a long delay before getting a response?</p>
+<blockquote>
+<div><p>The admin commands to the clients pass through the server. If for some reason the command is delayed by the network, or
+if the client command takes a long time to process, the admin console will experience a delay for the response. The
+default timeout is 10 seconds. You can use the “set_timeout” command to adjust the command timeout. If this timeout
+value is set too low, the admin command may not reach the client to execute the command.</p>
+</div></blockquote>
+</li>
+<li><p>Once the FL training has started, can I use the same server / client set up to train different models?</p>
+<blockquote>
+<div><p>Yes, you can upload different applications to the server and clients to train different models. Make sure to use the
+“run_number” to keep your trained models in different run spaces without confusing the models. The FL system only
+completes when the admin issues the “shutdown” command or ctrl-C is used to end the process.</p>
+</div></blockquote>
+</li>
+<li><p>Why if my custom components not updating between runs?</p>
+<blockquote>
+<div><p>If you want to change the code you have already loaded in a custom component, it is recommended that you add a
+version number or change the class name slightly. Python does not load new code definitions with the same class name
+and by default Python does not allow the loaded modules to be removed. With a version or altered name, Python will
+be able to treat the code as new and load it from the sys.path.</p>
+</div></blockquote>
+</li>
+<li><p>Why do commands sometimes fail?</p>
+<blockquote>
+<div><p>Sometimes if you are trying to check status of the client and the server is already busy transferring the model and
+does not have extra bandwidth for the command, the command may time out. In that case, please wait and try again.</p>
+</div></blockquote>
+</li>
+</ol>
+</div>
+<div class="section" id="cross-site-validation">
+<h2>Cross Site Validation<a class="headerlink" href="#cross-site-validation" title="Permalink to this headline">¶</a></h2>
+<ol class="arabic">
+<li><p>I don’t want to share my local model. Can I opt out of cross site validation?</p>
+<blockquote>
+<div><p>Cross site validation is opt-out be default. To opt in, you must set “cross_site_validate” to true in config_fed_client.json.</p>
+</div></blockquote>
+</li>
+<li><p>Cross site validation has finished. How can I see the results?</p>
+<blockquote>
+<div><p>Use the admin commands “validate all” or “validate &lt;client_1&gt; &lt;client2&gt;” to retrieve the results.</p>
+</div></blockquote>
+</li>
+<li><p>Cross site validation ran but my results are empty. Why?</p>
+<blockquote>
+<div><p>If some client is not participating in cross_site_validation OR an error occurs during validation, you will see empty results
+for that section. Please use the logs to retrieve the error.</p>
+</div></blockquote>
+</li>
+<li><p>My client is stuck in endless loop of asking for models, then waiting and repeat. What do I do?</p>
+<blockquote>
+<div><p>In some cases, cross site validation may get stuck. This is because the server sometimes doesn’t know when (or if ever) a model
+will become available. In these cases, please use the “abort &lt;client&gt;” to stop cross site validation manually.</p>
+</div></blockquote>
+</li>
+<li><p>I called “abort client” during training and it started cross site validation. Why?</p>
+<blockquote>
+<div><p>This is the intended behavior. If a client is aborted, it will transition to cross site validation phase (if participating). To
+completely abort, call “abort client” command again.</p>
+</div></blockquote>
+</li>
+</ol>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="apidocs/modules.html" class="btn btn-neutral float-right" title="nvflare" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="programming_guide.html" class="btn btn-neutral float-left" title="Programming Guide" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

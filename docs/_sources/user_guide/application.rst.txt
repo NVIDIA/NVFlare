@@ -1,0 +1,122 @@
+###################
+NVFlare Application
+###################
+
+To upload and run your FL application with NVFlare, you need to put required files into an application folder.
+The structure of the folder needs to be::
+
+    app_folder/
+        config/
+            config_fed_client.json
+            config_fed_server.json
+        custom/
+            [any of your custom code].py
+            [another custom code].py
+            ...
+        resources/
+            log.config
+
+We will explain each item in the following sections.
+
+***********************
+FL server configuration
+***********************
+
+``config_fed_server.json`` is the FL server configuration file.
+
+Example:
+
+.. literalinclude:: ../resources/config_fed_server.json
+    :language: json
+
+.. csv-table::
+    :header: Key, Notes
+
+    format_version, The NVFlare version for this config
+    servers, Specify server-specific attributes
+    aggregator, What aggregator to use for this application
+    outbound_filters, "What filters to apply at outbound, check :ref:`programming_guide:Filters`"
+    inbound_filters, "What filters to apply at inbound, check :ref:`programming_guide:Filters`"
+    persistor, What ``LearnablePersistor`` to use
+    shareable_generator, What ``ShareableGenerator`` to use
+
+The server-specific attributes:
+
+.. csv-table::
+    :header: Key, Notes
+
+    min_num_clients, Minimum number of clients' updates required for aggregation to start
+    max_num_clients, Maximum number of clients' updates allowed for aggregation
+    wait_after_min_clients, How many seconds to wait before aggregation and after receive minimum clients' updates
+    heart_beat_timeout, How many seconds before the heart beat times out
+    start_round, "Starting round, usually 0"
+    num_rounds, Total number of rounds to run
+
+***********************
+FL client configuration
+***********************
+
+``config_fed_client.json`` is the FL client configuration file.
+
+Example:
+
+.. literalinclude:: ../resources/config_fed_client.json
+    :language: json
+
+.. csv-table::
+    :header: Key, Notes
+
+    format_version, The NVFlare version for this config
+    platform, "What platform to run on, for example: numpy, PT, TF2"
+    client, Specify client-specific attributes
+    client_trainer, "What ``Trainer`` to use, refer to :ref:`programming_guide:Trainer` for write a custom one"
+    handlers, A list of handlers to register
+
+The client-specific attributes:
+
+.. csv-table::
+    :header: Key, Notes
+
+    outbound_filters, "What filters to apply at outbound, check :ref:`programming_guide:Filters`"
+    inbound_filters, "What filters to apply at inbound, check :ref:`programming_guide:Filters`"
+
+***********
+Custom Code
+***********
+
+You can write your own components following :ref:`programming_guide:Programming Guide`
+
+To use it in your application, you need to put those codes inside the "custom" folder of the application folder.
+
+And in your server or client config, you need to use path to refer to that component.
+
+For example, if I have a ``SimpleTrainer`` class stored in a file ``my_trainer.py`` inside the custom folder.
+Then in the client config I can do the following:
+
+.. code-block:: json
+
+    {
+      {
+        "client_trainer": {
+          "path": "my_trainer.SimpleTrainer",
+          "args": {}
+        },
+      }
+    }
+
+Please follow :ref:`quickstart:Quickstart` to learn more.
+
+.. note::
+
+    You can leave "custom" folder empty if you are only using built-in components provided by NVFlare.
+
+*********
+Resources
+*********
+
+A ``log.config`` is needed inside the resources folder.
+This file is for the Python logger to use.
+If you don't want to customize the log behavior, you can use the same ``log.config`` from one of
+the example application folder.
+
+.. literalinclude:: ../resources/log.config

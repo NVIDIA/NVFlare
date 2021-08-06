@@ -1,0 +1,21 @@
+nvflare.components.shareablegenerators package
+==============================================
+
+Submodules
+----------
+
+nvflare.components.shareablegenerators.full\_model\_shareable\_generator module
+-------------------------------------------------------------------------------
+
+.. automodule:: nvflare.components.shareablegenerators.full_model_shareable_generator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: nvflare.components.shareablegenerators
+   :members:
+   :undoc-members:
+   :show-inheritance:

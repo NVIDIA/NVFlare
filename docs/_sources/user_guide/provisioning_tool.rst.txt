@@ -1,0 +1,100 @@
+#################
+Provisioning tool
+#################
+
+This page contains details about the FL provisioning tool for creating packages for the server, client, and administrators.
+
+*****************
+Project yaml file
+*****************
+
+This is the key file that describes the information which provisioning tool will be using to generate startup kits for server, clients and admins.
+If there is no ``project.yml`` in your current working directory, simply run ``provision`` without any option.  It
+will ask you if you would like to have one sample copy of this file created.
+
+.. code-block:: shell
+
+  (nvflare-venv) ~/workspace$ provision
+  No project.yml found in current folder.  Is it OK to generate one at /home/nvflare/workspace/project.yml for you? (y/N) y
+  /home/nvflare/workspace/project.yml was created.  Please edit it to fit your FL configuration.
+
+
+..  Edit the project.yml configuration file to meet your project requirements:
+
+    - "api_version" must be 1 for current release of provisioning tool
+    - "he_config" describes the Homomorphic Encryption configuration
+    - "config_folder" is the folder name that contains configuration information
+    - "disable_authz" is a boolean to instruct FL server whether to enforce role-based rights on admin users. true means all admin users are in role super.
+    - "name" is used to identify this project.
+    - "server" section describes the FL server.
+        - "org" is for the name of the owner of this server.
+        - "cn" is the "Fully Qualified Domain Name" and it is very important that this is correct. If this information is not completely correct, the security handshake between the server and clients will fail. Please note that this cannot just be an IP address.
+        - "fed_learn_port" is the port number for communication between the FL server and FL clients
+        - "admin_port" is the port number for communication between the FL server and FL administration client
+        - "admin_storage" is directory name, related to the WORKSPACE, to store files by admin process on server
+        - "min_num_clients" is the minimum number of clients for federated learning to begin
+        - "max_num_clients" is the maximum number of clients allowed in this instance of federated learning
+        - "config_validator" is the class that validates if the uploaded app has correct syntax
+    - The "fl_clients" section describes the FL clients, with one "org", "client_name", and "email" for each client. Please note that each "client_name" must be unique. It will show in the admin console.
+    - The "admin_clients" section describes the FL admin clients. The "email" for each must be unique.
+    - The "authz_policy" section describes the policy imposed on organizations and roles.  Roles of each organization have specific rights.  Sites of each
+    organization have specific rules.  Rights grant roles to do certain operations.  Rules allow certain operations performed in sites.
+
+.. attention:: Please make sure that the FL server port number is accessible by all participating sides.
+
+
+.. _project_yml:
+
+Default project.yml file
+========================
+
+The following is an example of the default project.yml file.
+
+.. literalinclude:: ../../nvflare/lighter/project.yml
+  :language: yaml
+
+*****************************
+Provision commandline options
+*****************************
+
+Running ``provision -h`` shows all available options.
+
+.. code-block:: shell
+
+  (nvflare_venv) ~/workspace/repos/flare$ provision -h
+  usage: provision [-h] [-p PROJECT_FILE] [-o OUTPUT_DIR] [-n] [-u]
+
+  optional arguments:
+    -h, --help            show this help message and exit
+    -p PROJECT_FILE, --project_file PROJECT_FILE
+                          file to describe FL project
+    -o OUTPUT_DIR, --output_dir OUTPUT_DIR
+                          directory to store all packages
+    -n, --no_zip_password
+                          Disable password protection in final zip files
+    -u, --ui_tool         Run provisioning UI tool to generate project.yml file
+
+*************************
+Provisioning tool UI page
+*************************
+
+The ``-u`` option will open provisioning tool UI page in your browser.  Once finishing configuring, click generate and download to save your
+copy of project.yml.  Then you can run ``provision -p project.yml`` to generate the final startup kits.
+
+.. image:: ../resources/provisioning_ui.png
+    :height: 560px
+
+*************
+Provision API
+*************
+
+Provision command is built on top of Provision API.
+The following python code demonstrates how to use the API to build your own provisioning process.
+
+.. note::
+
+   Provision command does not use all of Provision API.  You can find some API appearing only in the demo python codes.
+   
+
+.. literalinclude:: ../../nvflare/lighter/api_demo.py
+  :language: python

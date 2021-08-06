@@ -1,0 +1,25 @@
+#######
+NVFlare
+#######
+
+
+Nvidia Federated Learning Application Runtime Environment (NVFlare) is a extensible federated learning framework.
+You can bring existing machine learning tasks into a federated setting easily.
+Moreover, NVFlare is built on a componentized architecture, which allows the researchers to experiment with
+different ideas of FL quickly.
+
+Federated learning allows for multiple clients each with their own data to collaborate on training together without
+having to share their actual data. This allows for different parties located any place in the world to use their local
+secure protected data to perform learning tasks while the FL server set up in the secure cloud can coordinate and
+exchange results to achieve better learning results.
+
+.. toctree::
+   :maxdepth: 1
+
+   installation
+   quickstart
+   user_guide
+   programming_guide
+   faq
+   API <apidocs/modules>
+   appendix

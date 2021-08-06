@@ -1,0 +1,482 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>Administrator commands &mdash; NVFlare 1.1 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Programming Guide" href="../programming_guide.html" />
+    <link rel="prev" title="Authorization" href="authorization.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVFlare
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                1.1
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="application.html">NVFlare Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="provisioning_tool.html">Provisioning tool</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authorization.html">Authorization</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Administrator commands</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVFlare</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../user_guide.html">User Guide</a> &raquo;</li>
+        
+      <li>Administrator commands</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="administrator-commands">
+<h1>Administrator commands<a class="headerlink" href="#administrator-commands" title="Permalink to this headline">¶</a></h1>
+<p>Typing “help” or “?” will display a list of the commands and a brief description for each. Typing “? ” before a command
+like “? check_status” or “?ls” will provide additional details for the usage of a command. Provided below is a list of
+commands shown as examples of how they may be run with a description.</p>
+<table class="colwidths-given docutils align-default">
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 18%" />
+<col style="width: 55%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Command</p></th>
+<th class="head"><p>Example</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>bye</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">bye</span></code></p></td>
+<td><p>Exit from the client</p></td>
+</tr>
+<tr class="row-odd"><td><p>help</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">help</span></code></p></td>
+<td><p>Get command help information</p></td>
+</tr>
+<tr class="row-even"><td><p>lpwd</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">lpwd</span></code></p></td>
+<td><p>Print local workspace root directory of the admin client</p></td>
+</tr>
+<tr class="row-odd"><td><p>info</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">info</span></code></p></td>
+<td><p>Show folder setup info (upload and download sources and destinations)</p></td>
+</tr>
+<tr class="row-even"><td><p>check_status</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code></p></td>
+<td><p>The FL run number, FL server status, and the registered clients with their names and tokens are displayed. If training is running, the round information is also displayed.</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">client</span></code></p></td>
+<td><p>The name, token, and status of each connected client are displayed.</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">client</span> <span class="pre">clientname</span></code></p></td>
+<td><p>The name, token, and status of the specified client with <em>clientname</em> are displayed.</p></td>
+</tr>
+<tr class="row-odd"><td><p>upload_app</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">upload_app</span> <span class="pre">applicationname</span></code></p></td>
+<td><p>Uploads the application folder to the FL server. Note that <em>applicationname</em> is the folder path relative to the “transfer” directory which is at the same level as the “startup” directory containing the script running the admin client.</p></td>
+</tr>
+<tr class="row-even"><td><p>set_run_number</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">set_run_number</span> <span class="pre">1</span></code></p></td>
+<td><p>Creates a folder “run_1” on the server at the same level as the “startup” directory to contain all of the applications for deployment.</p></td>
+</tr>
+<tr class="row-odd"><td><p>deploy_app</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">deploy_app</span> <span class="pre">applicatonname</span> <span class="pre">server</span></code></p></td>
+<td><p>Deploys the application specified by <em>applicationname</em> to the server. Note that <em>applicationname</em> is expected to be an application which has been uploaded to the server already and resides in the <em>transfer</em> directory on the server (which is at the same level as the <em>startup</em> directory by default). <em>applicationname</em> can be a relative path if the application is contained in any parent directories, for example apps/segmentation_ct_spleen.</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">deploy_app</span> <span class="pre">applicationname</span> <span class="pre">client</span></code></p></td>
+<td><p>Deploys the application specified by <em>applicationname</em> to each client. This can also be done per client by specifying a specific client name for this command. Please note that the deployed applications are also in their own workspace named after the run number set by set_run_number above.</p></td>
+</tr>
+<tr class="row-odd"><td><p>start_app</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">start_app</span> <span class="pre">server</span></code></p></td>
+<td><p>Starts the server training.</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">start_app</span> <span class="pre">client</span></code></p></td>
+<td><p>Starts all of the clients. Individual clients can be started by specifying the client instance name after the start client command.</p></td>
+</tr>
+<tr class="row-odd"><td><p>start_mgpu</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">start_mgpu</span> <span class="pre">client</span> <span class="pre">2</span> <span class="pre">clientname</span></code></p></td>
+<td><p>Starts training with multiple GPUs. The number of GPUs to be used must be specified in the command.</p></td>
+</tr>
+<tr class="row-even"><td><p>abort</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">client</span></code></p></td>
+<td><p>Aborts all of the clients. Individual clients can be aborted by specifying <em>clientname</em>. Please note that this may not be instant but may take time for the command to take effect.</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">server</span></code></p></td>
+<td><p>Aborts the server training</p></td>
+</tr>
+<tr class="row-even"><td><p>shutdown</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">shutdown</span> <span class="pre">client</span></code></p></td>
+<td><p>Shuts down all of the clients. Individual clients can be shutdown by specifying <em>clientname</em>. Please note that this may not be instant but may take time for the command to take effect.</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">shutdown</span> <span class="pre">server</span></code></p></td>
+<td><p>Shuts down the server. Clients must be shut down first before the server is shut down.</p></td>
+</tr>
+<tr class="row-even"><td><p>cat</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">server</span> <span class="pre">startup/fed_server.json</span> <span class="pre">-ns</span></code></p></td>
+<td><p>Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">clientname</span> <span class="pre">startup/docker.sh</span> <span class="pre">-bT</span></code></p></td>
+<td><p>Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)</p></td>
+</tr>
+<tr class="row-even"><td><p>env</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">env</span> <span class="pre">server</span></code></p></td>
+<td><p>Show environment variables</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">env</span> <span class="pre">clientname</span></code></p></td>
+<td><p>Show environment variables</p></td>
+</tr>
+<tr class="row-even"><td><p>grep</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">grep</span> <span class="pre">server</span> <span class="pre">&quot;info&quot;</span> <span class="pre">-i</span> <span class="pre">log.txt</span></code></p></td>
+<td><p>Search for a pattern in a file (-n: print line number; -i: ignore case)</p></td>
+</tr>
+<tr class="row-odd"><td><p>head</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">head</span> <span class="pre">clientname</span> <span class="pre">log.txt</span></code></p></td>
+<td><p>Print the first 10 lines of a file</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">head</span> <span class="pre">server</span> <span class="pre">log.txt</span> <span class="pre">-n</span> <span class="pre">15</span></code></p></td>
+<td><p>Print the first 15 lines of a file (-n: print the first N lines instead of the first 10)</p></td>
+</tr>
+<tr class="row-odd"><td><p>tail</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tail</span> <span class="pre">clientname</span> <span class="pre">log.txt</span></code></p></td>
+<td><p>Print the last 10 lines of a file</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tail</span> <span class="pre">server</span> <span class="pre">log.txt</span> <span class="pre">-n</span> <span class="pre">15</span></code></p></td>
+<td><p>Print the last 15 lines of a file (-n: output the last N lines instead of the last 10)</p></td>
+</tr>
+<tr class="row-odd"><td><p>ls</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">server</span> <span class="pre">-alt</span></code></p></td>
+<td><p>List files in workspace root directory (-a: all; -l: use a long listing format; -t: sort by modification time)</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">clientname</span> <span class="pre">-SR</span></code></p></td>
+<td><p>List files in workspace root directory (-S: sort by file size; -R: list subdirectories recursively)</p></td>
+</tr>
+<tr class="row-odd"><td><p>pwd</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pwd</span> <span class="pre">server</span></code></p></td>
+<td><p>Print the name of workspace root directory</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pwd</span> <span class="pre">clientname</span></code></p></td>
+<td><p>Print the name of workspace root directory</p></td>
+</tr>
+<tr class="row-odd"><td><p>validate</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">validate</span> <span class="pre">src_client</span> <span class="pre">dsc_client</span></code></p></td>
+<td><p>Gets the performance metrics for cross-site validation of a model</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">validate</span> <span class="pre">all</span></code></p></td>
+<td><p>Gets the performance metrics for cross-site validation of all models</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For multi-GPU training please refer to <a class="reference internal" href="../faq.html#multi-gpu-training"><span class="std std-ref">multi-gpu training</span></a>.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Outputs of any command can be redirected into a file by using the greater-than symbol “&gt;”, however there must be no
+whitespace before the filename. For example, you may run <code class="docutils literal notranslate"><span class="pre">sys_info</span> <span class="pre">server</span> <span class="pre">&gt;serverinfo.txt</span></code>. To only save the
+file output without printing it, use two greater-than symbols “&gt;&gt;” instead: <code class="docutils literal notranslate"><span class="pre">sys_info</span> <span class="pre">server</span> <span class="pre">&gt;&gt;serverinfo.txt</span></code>.</p>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="../programming_guide.html" class="btn btn-neutral float-right" title="Programming Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="authorization.html" class="btn btn-neutral float-left" title="Authorization" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>
