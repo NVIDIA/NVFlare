@@ -87,7 +87,7 @@ running the package will need write access there.
 
    It is important that this "startup" folder is not renamed because the code relies upon this for operation. Please
    note that a "transfer" directory and deployed applications will be created at the level of this "startup" folder. See the
-   section on `Standard folder and file structures for NVFlare`_ below for more details.
+   section on `Internal folder and file structures for NVFlare`_ below for more details.
 
 ************************************************************************************
 Start: Instructions for each participant to start running FL with their startup kits
@@ -187,7 +187,7 @@ the participant. As such, please safeguard its private key, client.key.
 
    You will need write access in the directory containing the "startup" folder because the "transfer" directory for
    uploading files as well as directories created for federated learning runs will live here. For details, see
-   `Standard folder and file structures for NVFlare`_.
+   `Internal folder and file structures for NVFlare`_.
 
 *******************************************************
 Operate: Running federated learning as an administrator
@@ -241,12 +241,17 @@ The FL run number is critical to starting and managing FL training projects beca
 
     You must not start a new run before the previous run is finished completely.
 
+.. attention::
+
+    We suggest restarting the server if you are running different applications so that the previously imported codes
+    will not affect the new application.
+
 After setting a run number, a folder for that run is created on the server under the root of the server's workspace at
-the same level as the startup directory (see the section on `Standard folder and file structures for NVFlare`_
+the same level as the startup directory (see the section on `Internal folder and file structures for NVFlare`_
 below for more details). Initially, this folder will be empty when created for a new run.
 
-In order to start training for a federated learning project, an application with the proper configurations needs to be uploaded
-and deployed to the server and all the participating clients.
+In order to start training for a federated learning project, an application with the proper configurations needs to
+be uploaded and deployed to the server and all the participating clients.
 
 Upload application from admin client to FL server
 -------------------------------------------------
@@ -279,8 +284,8 @@ Deploy application from transfer directory of FL server to active run on server 
 
 The two commands above deployed the specified application that had already been uploaded to the server's transfer directory into
 directories corresponding to the run number. In this case, since the run number was set to 123, the segmentation_ct_spleen
-application was copied into the run_123 directory on the FL server and FL clients (see the section on `Standard folder and file structures for NVFlare`_
-below for a more visual representation).
+application was copied into the run_123 directory on the FL server and FL clients
+(see the section on `Internal folder and file structures for NVFlare`_ below for a more visual representation).
 
 .. note::
 
@@ -353,7 +358,7 @@ then after all clients are shut down, you can shut down the server. If a client 
 the site may have to kill it.
 
 ***********************************************
-Standard folder and file structures for NVFlare
+Internal folder and file structures for NVFlare
 ***********************************************
 
 Server side folder and file structure
@@ -385,13 +390,12 @@ Server side folder and file structure
             mmar_client1/
                 config/
                 models/
-                evals/
                 resources/
             mmar_client2/
                 config/
                 models/
-                evals/
                 resources/
+            ...
             cross_validation/
         run_2/
             ......
@@ -418,14 +422,14 @@ Client side folder and file structure
         run_1/
             mmar_client1/
                 config/
+                cross_validation/
                 models/
-                evals/
                 resources/
         run_2/
             mmar_client1/
                 config/
+                cross_validation/
                 models/
-                evals/
                 resources/
         run_3/
             ......
@@ -443,15 +447,13 @@ Administrator side folder and file structure
             rootCA.pem
             signature.pkl
         transfer/
-            MMAR_for_uploading/
+            application_for_uploading/
                 config/
                 models/
-                evals/
                 resources/
-            MMAR2_for_uploading/
+            application2_for_uploading/
                 config/
                 models/
-                evals/
                 resources/
 
 ************
@@ -459,8 +461,11 @@ Known issues
 ************
 
 #. If server dies and then is restarted, intentionally or unintentionally, all clients will have to be restarted.
-#. Running out of memory can happen at any time, especially if the server and clients are running on same machine. This
-   can cause the server the die unexpectedly.
-#. Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models folder
-   inside, a mysterious error may occur when running the deploy command because the application folder is too large to be uploaded
-   and that causes timeout.
+#. Running out of memory can happen at any time, especially if the server and clients are running on same machine.
+   This can cause the server to die unexpectedly.
+#. Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models
+   folder inside, a mysterious error may occur when running the deploy_app command because the application folder is too
+   large to be uploaded and that causes timeout.
+#. Please don't start a new training run or start a new app before the previous application is fully stopped. If
+   cross-site validation is enabled, please wait until it ends. Or users can do ``abort client`` and
+   ``abort server`` before they ``start_app`` for the new run.

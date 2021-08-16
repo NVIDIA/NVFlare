@@ -199,7 +199,7 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#standard-folder-and-file-structures-for-nvflare">Standard folder and file structures for NVFlare</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#server-side-folder-and-file-structure">Server side folder and file structure</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#client-side-folder-and-file-structure">Client side folder and file structure</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#administrator-side-folder-and-file-structure">Administrator side folder and file structure</a></li>
@@ -369,7 +369,7 @@ running the package will need write access there.</p>
 <p class="admonition-title">Note</p>
 <p>It is important that this “startup” folder is not renamed because the code relies upon this for operation. Please
 note that a “transfer” directory and deployed applications will be created at the level of this “startup” folder. See the
-section on <a class="reference internal" href="#standard-folder-and-file-structures-for-nvflare">Standard folder and file structures for NVFlare</a> below for more details.</p>
+section on <a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a> below for more details.</p>
 </div>
 </div>
 </div>
@@ -457,7 +457,7 @@ the participant. As such, please safeguard its private key, client.key.</p>
 <p class="admonition-title">Attention</p>
 <p>You will need write access in the directory containing the “startup” folder because the “transfer” directory for
 uploading files as well as directories created for federated learning runs will live here. For details, see
-<a class="reference internal" href="#standard-folder-and-file-structures-for-nvflare">Standard folder and file structures for NVFlare</a>.</p>
+<a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a>.</p>
 </div>
 </div>
 </div>
@@ -503,11 +503,16 @@ and that the FL server and FL client statuses are all “training not started”
 <p class="admonition-title">Attention</p>
 <p>You must not start a new run before the previous run is finished completely.</p>
 </div>
+<div class="admonition attention">
+<p class="admonition-title">Attention</p>
+<p>We suggest restarting the server if you are running different applications so that the previously imported codes
+will not affect the new application.</p>
+</div>
 <p>After setting a run number, a folder for that run is created on the server under the root of the server’s workspace at
-the same level as the startup directory (see the section on <a class="reference internal" href="#standard-folder-and-file-structures-for-nvflare">Standard folder and file structures for NVFlare</a>
+the same level as the startup directory (see the section on <a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a>
 below for more details). Initially, this folder will be empty when created for a new run.</p>
-<p>In order to start training for a federated learning project, an application with the proper configurations needs to be uploaded
-and deployed to the server and all the participating clients.</p>
+<p>In order to start training for a federated learning project, an application with the proper configurations needs to
+be uploaded and deployed to the server and all the participating clients.</p>
 </div>
 <div class="section" id="upload-application-from-admin-client-to-fl-server">
 <h4>Upload application from admin client to FL server<a class="headerlink" href="#upload-application-from-admin-client-to-fl-server" title="Permalink to this headline">¶</a></h4>
@@ -536,8 +541,8 @@ a run number must be set:</p>
 </div>
 <p>The two commands above deployed the specified application that had already been uploaded to the server’s transfer directory into
 directories corresponding to the run number. In this case, since the run number was set to 123, the segmentation_ct_spleen
-application was copied into the run_123 directory on the FL server and FL clients (see the section on <a class="reference internal" href="#standard-folder-and-file-structures-for-nvflare">Standard folder and file structures for NVFlare</a>
-below for a more visual representation).</p>
+application was copied into the run_123 directory on the FL server and FL clients
+(see the section on <a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a> below for a more visual representation).</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The first command deployed the application to the FL server, and the second command deployed the application to all active
@@ -604,8 +609,8 @@ the site may have to kill it.</p>
 </div>
 </div>
 </div>
-<div class="section" id="standard-folder-and-file-structures-for-nvflare">
-<h2>Standard folder and file structures for NVFlare<a class="headerlink" href="#standard-folder-and-file-structures-for-nvflare" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="internal-folder-and-file-structures-for-nvflare">
+<h2>Internal folder and file structures for NVFlare<a class="headerlink" href="#internal-folder-and-file-structures-for-nvflare" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="server-side-folder-and-file-structure">
 <h3>Server side folder and file structure<a class="headerlink" href="#server-side-folder-and-file-structure" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">some_path_on_fl_server</span><span class="o">/</span><span class="n">fl_server_workspace_root</span><span class="o">/</span>
@@ -633,13 +638,12 @@ the site may have to kill it.</p>
         <span class="n">mmar_client1</span><span class="o">/</span>
             <span class="n">config</span><span class="o">/</span>
             <span class="n">models</span><span class="o">/</span>
-            <span class="n">evals</span><span class="o">/</span>
             <span class="n">resources</span><span class="o">/</span>
         <span class="n">mmar_client2</span><span class="o">/</span>
             <span class="n">config</span><span class="o">/</span>
             <span class="n">models</span><span class="o">/</span>
-            <span class="n">evals</span><span class="o">/</span>
             <span class="n">resources</span><span class="o">/</span>
+        <span class="o">...</span>
         <span class="n">cross_validation</span><span class="o">/</span>
     <span class="n">run_2</span><span class="o">/</span>
         <span class="o">......</span>
@@ -666,14 +670,14 @@ the site may have to kill it.</p>
     <span class="n">run_1</span><span class="o">/</span>
         <span class="n">mmar_client1</span><span class="o">/</span>
             <span class="n">config</span><span class="o">/</span>
+            <span class="n">cross_validation</span><span class="o">/</span>
             <span class="n">models</span><span class="o">/</span>
-            <span class="n">evals</span><span class="o">/</span>
             <span class="n">resources</span><span class="o">/</span>
     <span class="n">run_2</span><span class="o">/</span>
         <span class="n">mmar_client1</span><span class="o">/</span>
             <span class="n">config</span><span class="o">/</span>
+            <span class="n">cross_validation</span><span class="o">/</span>
             <span class="n">models</span><span class="o">/</span>
-            <span class="n">evals</span><span class="o">/</span>
             <span class="n">resources</span><span class="o">/</span>
     <span class="n">run_3</span><span class="o">/</span>
         <span class="o">......</span>
@@ -691,15 +695,13 @@ the site may have to kill it.</p>
         <span class="n">rootCA</span><span class="o">.</span><span class="n">pem</span>
         <span class="n">signature</span><span class="o">.</span><span class="n">pkl</span>
     <span class="n">transfer</span><span class="o">/</span>
-        <span class="n">MMAR_for_uploading</span><span class="o">/</span>
+        <span class="n">application_for_uploading</span><span class="o">/</span>
             <span class="n">config</span><span class="o">/</span>
             <span class="n">models</span><span class="o">/</span>
-            <span class="n">evals</span><span class="o">/</span>
             <span class="n">resources</span><span class="o">/</span>
-        <span class="n">MMAR2_for_uploading</span><span class="o">/</span>
+        <span class="n">application2_for_uploading</span><span class="o">/</span>
             <span class="n">config</span><span class="o">/</span>
             <span class="n">models</span><span class="o">/</span>
-            <span class="n">evals</span><span class="o">/</span>
             <span class="n">resources</span><span class="o">/</span>
 </pre></div>
 </div>
@@ -709,11 +711,14 @@ the site may have to kill it.</p>
 <h2>Known issues<a class="headerlink" href="#known-issues" title="Permalink to this headline">¶</a></h2>
 <ol class="arabic simple">
 <li><p>If server dies and then is restarted, intentionally or unintentionally, all clients will have to be restarted.</p></li>
-<li><p>Running out of memory can happen at any time, especially if the server and clients are running on same machine. This
-can cause the server the die unexpectedly.</p></li>
-<li><p>Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models folder
-inside, a mysterious error may occur when running the deploy command because the application folder is too large to be uploaded
-and that causes timeout.</p></li>
+<li><p>Running out of memory can happen at any time, especially if the server and clients are running on same machine.
+This can cause the server to die unexpectedly.</p></li>
+<li><p>Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models
+folder inside, a mysterious error may occur when running the deploy_app command because the application folder is too
+large to be uploaded and that causes timeout.</p></li>
+<li><p>Please don’t start a new training run or start a new app before the previous application is fully stopped. If
+cross-site validation is enabled, please wait until it ends. Or users can do <code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">client</span></code> and
+<code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">server</span></code> before they <code class="docutils literal notranslate"><span class="pre">start_app</span></code> for the new run.</p></li>
 </ol>
 </div>
 </div>

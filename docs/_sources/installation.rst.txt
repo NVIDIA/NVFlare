@@ -62,19 +62,16 @@ Install Stable Release
 ----------------------
 
     
-Stable releases are available on `PyPI <https://pypi.org/>`_::
+Stable releases are available on `PyPI NVFlare <https://pypi.org/project/nvflare>`_::
 
-    $ pip install nvflare
+  $ python3 -m pip install nvflare
 
-.. warning::
-
-    The above step (stable release) is not working.
     
 
-Install Test Release
---------------------
+Install Nightly Release
+-----------------------
 
-From time to time, NVFlare is released to `Test PyPI <https://test.pypi.org/project/nvflare/>`_.
+NVFlare also has nightly build at `NVFlare night build <https://pypi.org/project/nvflare-nightly/>`_.
 You can install the package with the following command::
 
-  $ python3 -m pip install -i https://test.pypi.org/simple nvflare
+  $ python3 -m pip install nvflare-nightly
