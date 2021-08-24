@@ -4,7 +4,7 @@ Installation
 Python Version
 --------------
 
-NVFlare requires `Python 3.8 <https://docs.python.org/3.8/>`_ or above.
+NVFlare requires `Python 3.8.10 <https://www.python.org/downloads/release/python-3810/>`_.
 
 
 Install NVFlare in virtual environments
