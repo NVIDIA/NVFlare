@@ -1,8 +1,25 @@
-# NVFlare
+**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
-This repo currently contains example codes only.  It intends for users to get a tast of NVFlare by running
-three simple exercises, based on three different computation frameworks, namely PyTorch, Numpy and Tensorflow 2.
 
-The project document page is available [here](https://nvidia.github.io/NVFlare/).
+[NVIDIA FLARE](https://nvidia.github.io/NVFlare) enables researchers to collaborate and build AI models without sharing private data. 
 
-NVFlare can be installed via Python pip install.  The PyPi page of NVFlare is available [here](https://pypi.org/project/nvflare/).
+NVIDIA FLARE is a standalone python library designed to enable federated learning amongst different parties using their local secure protected data for client-side training, at the same time it includes capabilities to coordinate and exchange progressing of results across all sites to achieve better global model while preserving data privacy. The participating clients can be in any part of the world. 
+
+NVIDIA FLARE builds on a flexible and modular architecture and is abstracted through APIs allowing developers & researchers to customize their implementation of functional learning components in a Federated Learning paradigm. 
+
+Learn more - [NVIDIA FLARE](https://nvidia.github.io/NVFlare).
+
+
+## Installation
+
+To install [the current release](https://pypi.org/project/nvflare), you can simply run:
+
+```bash
+pip install nvflare
+```
+
+## Third party license
+
+See 3rdParty folder for their license files.
+
+

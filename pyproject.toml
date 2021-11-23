@@ -1,0 +1,32 @@
+[tool.isort]
+known_first_party = "nvflare"
+profile = "black"
+multi_line_output = 3
+line_length = 120
+skip = [".git", ".eggs", "venv", ".venv", "versioneer.py", "_version.py", "conf.py", "nvflare/__init__.py"]
+skip_glob = [ "nvflare/private/**", "*.pyi", "**/*_pb2*" ]
+
+[tool.black]
+line-length = 120
+target-version = ['py38']
+include = '\.pyi?$'
+exclude = '''
+(
+  /(
+    # exclude a few common directories in the root of the project
+      \.eggs
+    | \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | \.pytype
+    | _build
+    | buck-out
+    | build
+    | dist
+    | nvflare/private
+  )/
+  | .pb2.
+)
+'''

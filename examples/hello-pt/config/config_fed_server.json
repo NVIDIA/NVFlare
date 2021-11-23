@@ -1,36 +1,69 @@
 {
-  "format_version": 1,
-  "servers": [
-    {
-      "min_num_clients": 1,
-      "max_num_clients": 100,
-      "wait_after_min_clients": 10,
-      "heart_beat_timeout": 600,
-      "start_round": 0,
-      "num_rounds": 3
-    }
-  ],
-  "aggregator": {
-    "name": "AccumulateWeightedAggregator",
-    "args": {
-      "aggregation_weights":
-        {
-          "site-1": 1,
-          "site-2": 1
-        }
-    }
+  "format_version": 2,
+
+  "server": {
+    "heart_beat_timeout": 600
   },
-  "outbound_filters": [],
-  "inbound_filters": [],
-  "persistor": {
-    "name": "PTFileModelPersistor",
-    "args": {
-      "model": {
-        "path": "net.Net"
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "name": "PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "net.SimpleNetwork"
+        }
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "args": {
+        "expected_data_kind": "WEIGHTS"
+      }
+    },
+    {
+      "id": "model_locator",
+      "path": "pt_model_locator.PTModelLocator",
+      "args": {
+
+      }
+    },
+    {
+      "id": "json_generator",
+      "path": "validation_json_generator.ValidationJsonGenerator",
+      "args": {
       }
     }
-  },
-  "shareable_generator": {
-    "name": "FullModelShareableGenerator"
-  }
+  ],
+  "workflows": [
+      {
+        "id": "scatter_and_gather",
+        "name": "ScatterAndGather",
+        "args": {
+            "min_clients" : 2,
+            "num_rounds" : 2,
+            "start_round": 0,
+            "wait_time_after_min_received": 10,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
+        }
+      },
+      {
+        "id": "cross_site_validate",
+        "name": "CrossSiteModelEval",
+        "args": {
+          "model_locator_id": "model_locator"
+        }
+      }
+  ]
 }
