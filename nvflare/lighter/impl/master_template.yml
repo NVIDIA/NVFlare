@@ -1,0 +1,466 @@
+readme_am: |
+  *********************************
+  Admin Client package
+  *********************************
+  The package includes at least the following files:
+  readme.txt
+  rootCA.pem
+  client.crt
+  client.key
+  fl_admin.sh
+  
+  Please install the nvflare package by 'python3 -m pip nvflare.'  This will install a set of Python codes
+  in your environment.  After installation, you can run the fl_admin.sh file to start communicating to the admin server.
+
+  The rootCA.pem file is pointed by "ca_cert" in fl_admin.sh.  If you plan to move/copy it to a different place,
+  you will need to modify fl_admin.sh.  The same applies to the other two files, client.crt and client.key.
+
+  The email in your submission to participate this Federated Learning project is embedded in the CN field of client
+  certificate, which uniquely identifies the participant.  As such, please safeguard its private key, client.key.
+
+readme_fc: |
+  *********************************
+  Federated Learning Client package
+  *********************************
+  The package includes at least the following files:
+  readme.txt
+  rootCA.pem
+  client.crt
+  client.key
+  fed_client.json
+  start.sh
+  sub_start.sh
+  stop_fl.sh
+
+  Run start.sh to start the client.
+
+  The rootCA.pem file is pointed by "ssl_root_cert" in fed_client.json.  If you plan to move/copy it to a different place,
+  you will need to modify fed_client.json.  The same applies to the other two files, client.crt and client.key.
+
+  The client name in your submission to participate this Federated Learning project is embedded in the CN field of client
+  certificate, which uniquely identifies the participant.  As such, please safeguard its private key, client.key.
+
+readme_fs: |
+  *********************************
+  Federated Learning Server package
+  *********************************
+  The package includes at least the following files:
+  readme.txt
+  rootCA.pem
+  server.crt
+  server.key
+  authorization.json
+  fed_server.json
+  start.sh
+  sub_start.sh
+  stop_fl.sh
+  signature.pkl
+
+  Run start.sh to start the server.
+
+  The rootCA.pem file is pointed by "ssl_root_cert" in fed_server.json.  If you plan to move/copy it to a different place,
+  you will need to modify fed_server.json.  The same applies to the other two files, server.crt and server.key.
+
+  Please always safeguard the server.key.
+
+fed_client: |
+  {
+    "format_version": 1,
+    "enable_byoc": false,
+    "servers": [
+        {
+            "name": "spleen_segmentation",
+            "service": {
+                "target": "localhost:8002",
+                "options": [
+                    ["grpc.max_send_message_length",    2147483647],
+                    ["grpc.max_receive_message_length", 2147483647]
+                ]
+            }
+        }
+    ],
+    "client": {
+        "retry_timeout": 30,
+        "ssl_private_key": "client.key",
+        "ssl_cert": "client.crt",
+        "ssl_root_cert": "rootCA.pem",
+        "compression": "Gzip"
+    }
+  }
+
+fed_server: |
+  {
+    "format_version": 1,
+    "enable_byoc": false,
+    "servers": [
+        {
+            "name": "spleen_segmentation",
+            "service": {
+                "target": "localhost:8002",
+                "options": [
+                    ["grpc.max_send_message_length",    2147483647],
+                    ["grpc.max_receive_message_length", 2147483647]
+                ]
+            },
+            "admin_host": "localhost",
+            "admin_port": 5005,
+            "admin_storage": "transfer",
+            "ssl_private_key": "server.key",
+            "ssl_cert": "server.crt",
+            "ssl_root_cert": "rootCA.pem",
+            "max_num_clients": 100,
+            "heart_beat_timeout": 600,
+            "num_server_workers": 4,
+            "compression": "Gzip"
+        }
+    ] 
+  }
+
+authz_def: |
+  {
+    "rules": {
+      "allow_byoc": {
+        "desc": "allow BYOC in APP",
+        "type": "bool",
+        "default": false
+      },
+      "allow_custom_datalist": {
+        "desc": "allow custom datalist",
+        "default": true
+      }
+    },
+    "rights": {
+      "upload_app": {
+        "desc": "upload app",
+        "default": true
+      },
+      "deploy_self": {
+        "desc": "deploy app to own site",
+        "default": false,
+        "precond": "selfOrg"
+      },
+      "deploy_all": {
+        "desc": "deploy app to all sites",
+        "default": false
+      },
+      "train_self": {
+        "desc": "do training operations on own site",
+        "default": false,
+        "precond": "selfOrg"
+      },
+      "train_all": {
+        "desc": "do training ops on all sites",
+        "default": false
+      },
+      "view_self": {
+        "desc": "view log files of own org",
+        "default": true,
+        "precond": "selfOrg"
+      },
+      "view_all": {
+        "desc": "view log files of all sites",
+        "default": false
+      },
+      "operate_all": {
+        "desc": "start/stop all sites",
+        "default": false
+      },
+      "operate_self": {
+        "desc": "start/stop own site",
+        "default": false,
+        "precond": "selfOrg"
+      }
+    }
+  }
+
+fl_admin_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  mkdir -p $DIR/../transfer
+  python3 -m nvflare.fuel.hci.tools.admin --host {~~cn~~} --port {~~admin_port~~} --prompt "> " --with_file_transfer --upload_dir=$DIR/../transfer --download_dir=$DIR/../transfer --with_shell --with_login --with_ssl --cred_type cert --ca_cert=$DIR/rootCA.pem --client_cert=$DIR/client.crt --client_key=$DIR/client.key
+
+log_config: |
+  [loggers]
+  keys=root,modelLogger
+
+  [handlers]
+  keys=consoleHandler
+
+  [formatters]
+  keys=fullFormatter
+
+  [logger_root]
+  level=INFO
+  handlers=consoleHandler
+
+  [logger_modelLogger]
+  level=DEBUG
+  handlers=consoleHandler
+  qualname=modelLogger
+  propagate=0
+
+  [handler_consoleHandler]
+  class=StreamHandler
+  level=DEBUG
+  formatter=fullFormatter
+  args=(sys.stdout,)
+
+  [formatter_fullFormatter]
+  format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+
+start_cln_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  $DIR/sub_start.sh &
+
+start_svr_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  $DIR/sub_start.sh &
+
+stop_fl_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  echo "Shutdown request created.  Wait for local FL process to shutdown."
+  touch $DIR/../shutdown.fl
+  sleep 5
+  if [[ ! -f "$DIR/../pid.fl" ]]; then
+    echo "No pid.fl.  No need to kill process."
+    exit
+  fi
+  pid=`cat $DIR/../pid.fl`
+  kill -0 ${pid} 2> /dev/null 1>&2
+  if [[ $? -ne 0 ]]; then
+    echo "Process already terminated"
+    exit
+  fi
+  kill -9 $pid
+  pid=`cat $DIR/../tee.fl`
+  kill -9 $pid
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+  echo "Shutdown process finished."
+
+sub_start_cln_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  echo "WORKSPACE set to $DIR/.."
+  mkdir -p $DIR/../transfer
+  export PYTHONPATH=/local/custom:$PYTHONPATH
+  echo "PYTHONPATH is $PYTHONPATH"
+
+  SECONDS=0
+  lst=-400
+  restart_count=0
+  start_fl() {
+    if [[ $(( $SECONDS - $lst )) -lt 300 ]]; then
+      ((restart_count++))
+    else
+      restart_count=0
+    fi
+    if [[ $(($SECONDS - $lst )) -lt 300 && $restart_count -ge 5 ]]; then
+      echo "System is in trouble and unable to start the task!!!!!"
+      rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
+      exit
+    fi
+    lst=$SECONDS
+  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true multi_gpu=false uid={~~client_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | (tee -a $DIR/../log.txt & echo $! >&4 ) 4>$DIR/../tee.fl )
+    pid=`cat $DIR/../pid.fl`
+    echo "new pid ${pid}"
+  }
+
+  stop_fl() {
+    if [[ ! -f "$DIR/../pid.fl" ]]; then
+      echo "No pid.fl.  No need to kill process."
+      return
+    fi
+    pid=`cat $DIR/../pid.fl`
+    sleep 5
+    kill -0 ${pid} 2> /dev/null 1>&2
+    if [[ $? -ne 0 ]]; then
+      echo "Process already terminated"
+      return
+    fi
+    kill -9 $pid
+    pid=`cat $DIR/../tee.fl`
+    kill -9 $pid
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+  }
+    
+  if [[ -f "$DIR/../daemon_pid.fl" ]]; then
+    dpid=`cat $DIR/../daemon_pid.fl`
+    kill -0 ${dpid} 2> /dev/null 1>&2
+    if [[ $? -eq 0 ]]; then
+      echo "There seems to be one instance, pid=$dpid, running."
+      echo "If you are sure it's not the case, please kill process $dpid and then remove daemon_pid.fl in $DIR/.."
+      exit
+    fi
+    rm -f $DIR/../daemon_pid.fl
+  fi
+
+  echo $BASHPID > $DIR/../daemon_pid.fl
+
+  while true
+  do
+    sleep 5
+    if [[ ! -f "$DIR/../pid.fl" ]]; then
+      echo "start fl because of no pid.fl"
+      start_fl
+      continue
+    fi
+    pid=`cat $DIR/../pid.fl`
+    kill -0 ${pid} 2> /dev/null 1>&2
+    if [[ $? -ne 0 ]]; then
+      if [[ -f "$DIR/../shutdown.fl" ]]; then
+        echo "Gracefully shutdown."
+        break
+      fi
+      echo "start fl because process of ${pid} does not exist"
+      start_fl
+      continue
+    fi
+    if [[ -f "$DIR/../shutdown.fl" ]]; then
+      echo "About to shutdown."
+      stop_fl
+      break
+    fi
+    if [[ -f "$DIR/../restart.fl" ]]; then
+      echo "About to restart."
+      stop_fl
+    fi
+  done
+
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+
+sub_start_svr_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  export CUDA_VISIBLE_DEVICES=
+  echo "WORKSPACE set to $DIR/.."
+  mkdir -p $DIR/../transfer 
+
+  SECONDS=0
+  lst=-400
+  restart_count=0
+  start_fl() {
+    if [[ $(( $SECONDS - $lst )) -lt 300 ]]; then
+      ((restart_count++))
+    else
+      restart_count=0
+    fi
+    if [[ $(($SECONDS - $lst )) -lt 300 && $restart_count -ge 5 ]]; then
+      echo "System is in trouble and unable to start the task!!!!!"
+      rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
+      exit
+    fi
+    lst=$SECONDS
+  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | (tee -a $DIR/../log.txt & echo $! >&4 ) 4>$DIR/../tee.fl )
+    pid=`cat $DIR/../pid.fl`
+    echo "new pid ${pid}"
+  }
+
+  stop_fl() {
+    if [[ ! -f "$DIR/../pid.fl" ]]; then
+      echo "No pid.fl.  No need to kill process."
+      return
+    fi
+    pid=`cat $DIR/../pid.fl`
+    sleep 5
+    kill -0 ${pid} 2> /dev/null 1>&2
+    if [[ $? -ne 0 ]]; then
+      echo "Process already terminated"
+      return
+    fi
+    kill -9 $pid
+    pid=`cat $DIR/../tee.fl`
+    kill -9 $pid
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+  }
+    
+  if [[ -f "$DIR/../daemon_pid.fl" ]]; then
+    dpid=`cat $DIR/../daemon_pid.fl`
+    kill -0 ${dpid} 2> /dev/null 1>&2
+    if [[ $? -eq 0 ]]; then
+      echo "There seems to be one instance, pid=$dpid, running."
+      echo "If you are sure it's not the case, please kill process $dpid and then remove daemon_pid.fl in $DIR/.."
+      exit
+    fi
+    rm -f $DIR/../daemon_pid.fl
+  fi
+
+  echo $BASHPID > $DIR/../daemon_pid.fl
+
+  while true
+  do
+    sleep 5
+    if [[ ! -f "$DIR/../pid.fl" ]]; then
+      echo "start fl because of no pid.fl"
+      start_fl
+      continue
+    fi
+    pid=`cat $DIR/../pid.fl`
+    kill -0 ${pid} 2> /dev/null 1>&2
+    if [[ $? -ne 0 ]]; then
+      if [[ -f "$DIR/../shutdown.fl" ]]; then
+        echo "Gracefully shutdown."
+        break
+      fi
+      echo "start fl because process of ${pid} does not exist"
+      start_fl
+      continue
+    fi
+    if [[ -f "$DIR/../shutdown.fl" ]]; then
+      echo "About to shutdown."
+      stop_fl
+      break
+    fi
+    if [[ -f "$DIR/../restart.fl" ]]; then
+      echo "About to restart."
+      stop_fl
+    fi
+  done
+
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+
+docker_cln_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  # docker run script for FL client
+  # local data directory
+  MY_DATA_DIR=/home/flclient/data
+  # for all gpus use line below 
+  GPU2USE=all 
+  # for 2 gpus use line below
+  #GPU2USE=2 
+  # for specific gpus as gpu#0 and gpu#2 use line below
+  #GPU2USE='"device=0,2"'
+  # to use host network, use line below
+  NETARG="--net=host"
+  # FL clients do not need to open ports, so the following line is not needed.
+  #NETARG="-p 443:443 -p 8003:8003"
+  DOCKER_IMAGE={~~docker_image~~}
+  echo "Starting docker with $DOCKER_IMAGE"
+  docker run --rm -it --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+
+docker_svr_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  # docker run script for FL server
+  # to use host network, use line below
+  NETARG="--net=host"
+  # or to expose specific ports, use line below
+  #NETARG="-p {~~admin_port~~}:{~~admin_port~~} -p {~~fed_learn_port~~}:{~~fed_learn_port~~}"
+  DOCKER_IMAGE={~~docker_image~~}
+  echo "Starting docker with $DOCKER_IMAGE"
+  docker run --rm -it --name=flserver -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+
+docker_adm_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  # docker run script for FL admin
+  # to use host network, use line below
+  #NETARG="--net=host"
+  # Admin clients do not need to open ports, so the following line is not needed.
+  #NETARG="-p 8003:8003"
+  DOCKER_IMAGE={~~docker_image~~}
+  echo "Starting docker with $DOCKER_IMAGE"
+  docker run --rm -it --name=fladmin -v $DIR/..:/workspace/ -w /workspace/ $DOCKER_IMAGE /bin/bash

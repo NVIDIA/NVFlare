@@ -1,0 +1,64 @@
+api_version: 2
+name: example_project
+description: NVFlare sample project yaml file
+
+participants:
+  # change example.com to the FQDN of the server
+  - name: example.com
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
+    # enable_byoc loads python codes in app.  Default is false.
+    enable_byoc: true
+  - name: site1
+    type: client
+    org: nvidia
+    enable_byoc: true
+  - name: site2
+    type: client
+    org: nvidia
+    enable_byoc: false
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    roles:
+      - super
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file: master_template.yml
+  - path: nvflare.lighter.impl.template.TemplateBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      # config_folder can be set to inform NVFlare where to get configuration
+      config_folder: config
+      # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
+      # docker_image:
+  - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
+    args:
+      orgs:
+        nvidia:
+          - relaxed
+      roles:
+        super: super user of system
+      groups: 
+        relaxed: 
+          desc: org group with relaxed policies
+          rules: 
+            allow_byoc: true
+            allow_custom_datalist: true
+      disabled: false
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.he.HEBuilder
+    args:
+      poly_modulus_degree: 8192 
+      coeff_mod_bit_sizes: [60, 40, 40]
+      scale_bits: 40
+      scheme: CKKS
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
+  - path: nvflare.lighter.impl.workspace.DistributionBuilder
+    args:
+      zip_password: false

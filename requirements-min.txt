@@ -1,0 +1,7 @@
+PyYAML
+psutil
+numpy
+grpcio
+google-api-python-client
+cryptography
+tenseal==0.3.0

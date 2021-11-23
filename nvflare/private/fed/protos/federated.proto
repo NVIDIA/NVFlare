@@ -1,0 +1,149 @@
+// services and messages for client and model training server communication
+
+syntax = "proto3";
+
+package fedlearn;
+
+// import "tensorflow/core/framework/tensor.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+// The global federated model interfaces
+service FederatedTraining {
+    // client registration, so that it will contribute to the training
+    rpc Register (ClientLogin) returns (FederatedSummary) {}
+    // client quiting the federated training
+    rpc Quit (ClientState) returns (FederatedSummary) {}
+    // server to client model sharing
+    rpc GetTask (ClientState) returns (CurrentTask) {}
+    // client to server contribution submission
+    rpc SubmitUpdate (Contribution) returns (FederatedSummary) {}
+    // client to server heartbeat keep live
+    rpc Heartbeat (Token) returns (FederatedSummary) {}
+    // client to server aux channel communication
+    rpc AuxCommunicate (AuxMessage) returns (AuxReply) {}
+}
+
+// The current federated model's meta data
+message MetaData {
+    message Project {
+        // the server's task name, e.g. BraTS segmentation
+        string name = 1;
+        string version = 2;
+    }
+    // unique task identifier for the server
+    Project project = 1;
+    // the current global step of the federated model
+    int64 current_round = 2;
+    // the total global step of the federated model
+    int64 num_rounds = 3;
+    // current run_number
+    int64 run_number = 4;
+    // time stamp when the model is shared
+    google.protobuf.Timestamp created = 5;
+}
+
+// A model consists of multiple tensors
+message ModelData {
+    map<string, NDArray> params = 1;
+}
+
+// NDArray data for protobuf
+message NDArray {
+  bytes ndarray = 1;
+}
+
+//////////////////////////////////////////////////
+// Server specific message (created by the server)
+/////////////////////////////////////////////////
+
+// The server's response of the current model parameters
+message CurrentTask {
+    // Model meta data for versioning of the current model
+    MetaData meta = 1;
+    // The server's serialised deep learning model parameters
+    ModelData data = 2;
+    // Represents a structured value.
+    google.protobuf.Struct meta_data = 3;
+    // Execute task name
+    string task_name = 4;
+}
+
+// The server's summary of the model (for client's debugging purpose)
+message FederatedSummary {
+    MetaData meta = 1;
+    // Additional details from server to clients
+    string comment = 2;
+    // The client token
+    string token = 3;
+}
+
+
+//////////////////////////////////////////////////
+// Client specific message (created by the client)
+/////////////////////////////////////////////////
+
+// The client login information
+message ClientLogin {
+    // The client identification
+    string client_name = 1;
+    // The client login token
+    string token = 2;
+    // The client running IP
+    string client_ip = 3;
+    // The client's model meta
+    MetaData meta = 4;
+}
+
+// The client's request to join the federated round
+message ClientState {
+    // The client's model meta
+    MetaData meta = 1;
+    // The client's identifier
+    string client_name = 2;
+    // The client's token
+    string token = 3;
+    // Represents a structured value.
+    google.protobuf.Struct meta_data = 4;
+    // The context data.
+    map<string, NDArray> context = 5;
+}
+
+// The client's contribution to the current federated model
+message Contribution {
+    // The client's identity information
+    ClientState client = 1;
+    // number of location iterations used to compute this contribution
+    int64 n_iter = 2;
+    // type of the contribution, could be w or delta w
+    string type = 3;
+    // The contribution data (grads. or model params.) to be aggregated
+    ModelData data = 4;
+    // Represents a structured value.
+    google.protobuf.Struct meta_data = 5;
+    // Execute task name
+    string task_name = 6;
+}
+
+// The client's heartbeat to keep the client live
+message Token {
+    // The client's token
+    string token = 1;
+    // The client identification
+    string client_name = 2;
+}
+
+// The client's Aux communication message
+message AuxMessage {
+    // The client's identity information
+    ClientState client = 1;
+    // The Aux data.
+    map<string, NDArray> data = 2;
+}
+
+// The client's Aux communication message
+message AuxReply {
+    // The Aux reply data.
+    ModelData data = 1;
+}
+

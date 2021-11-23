@@ -1,22 +1,34 @@
 {
-  "format_version": 1,
-  "platform": "TF2",
-  "client": {
-    "outbound_filters": [
-      {
-        "path": "filter.ExcludeVars",
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "path": "trainer.SimpleTrainer",
         "args": {
-          "exclude_vars": ["flatten"]
+          "epochs_per_round": 2
         }
       }
-    ],
-    "inbound_filters": []
-  },
-  "client_trainer": {
-    "path": "trainer.SimpleTrainer",
-    "args": {
-      "epochs_per_round": 2
     }
-  },
-  "handlers": []
+  ],
+  "task_result_filters": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "filters": [
+        {
+          "path": "filter.ExcludeVars",
+          "args": {
+            "exclude_vars": [
+              "flatten"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "task_data_filters": []
 }

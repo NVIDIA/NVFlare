@@ -1,0 +1,6 @@
+-r requirements-doc.txt
+isort==5.8.0
+flake8==3.9.2
+black==21.5b1
+pytest-xdist
+

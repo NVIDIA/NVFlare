@@ -1,13 +1,30 @@
 {
-  "format_version": 1,
-  "platform": "PT",
-  "client": {
-    "outbound_filters": [],
-    "inbound_filters": []
-  },
-  "client_trainer": {
-    "path": "trainer.SimpleTrainer",
-    "args": {}
-  },
-  "handlers": []
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": ["train", "submit_model"],
+      "executor": {
+        "path": "cifar10trainer.Cifar10Trainer",
+        "args": {
+          "lr": 0.01,
+          "epochs": 1
+        }
+      }
+    },
+    {
+      "tasks": ["validate"],
+      "executor": {
+        "path": "cifar10validator.Cifar10Validator",
+        "args": {
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+  "components": [
+  ]
 }
