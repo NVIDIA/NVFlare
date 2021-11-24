@@ -1,3 +1,5 @@
+.. _programming_guide:
+
 #####################################################
 Programming Guide - Developing Apps with NVIDIA FLARE
 #####################################################
@@ -10,7 +12,7 @@ framework.
 Different components can be built on top of the APIs(:mod:`nvflare.apis`) in NVIDIA FLARE core, and you can now
 implement your own custom workflows. The concepts of aggregator, learnable, persistors, and shareable_generator which
 were fixed in the workflow have been decoupled from the core of NVIDIA FLARE and moved to :mod:`nvflare.app_common`.
-This is also the package containing the reference implementation of the :ref:`Scatter and Gather Workflow`, and all of
+This is also the package containing the reference implementation of the :ref:`scatter_and_gather_workflow`, and all of
 this can be used in your own workflow.
 
 If you want to use your components in an FL application, you will need to change the config in the application folder.

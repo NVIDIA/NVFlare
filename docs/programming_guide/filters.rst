@@ -1,5 +1,7 @@
-NVIDIA FLARE Filters
-====================
+.. _filters:
+
+Filters
+=======
 Filters in NVIDIA FLARE are a type of FLComponent that has a ``process`` method to transform the ``Shareable`` object between
 the communicating parties. A ``Filter`` can be used to provide additional processing to shareable data before sending or
 after receiving from the peer.
@@ -16,6 +18,8 @@ highlighted in the image below:
 
 .. image:: ../resources/Filters.png
     :height: 350px
+
+.. _filters_for_privacy:
 
 Filters can convert data formats and a lot more. You can apply any type of massaging to the data for the
 purpose of security. In fact, privacy and homomorphic encryption techniques are all implemented as filters:

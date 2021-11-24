@@ -18,15 +18,15 @@ computations across two clients with the included Scatter and Gather workflow, w
 aggregates the results that come back. Due to the simplified weights, you will be able to clearly see and understand
 the results of the FL aggregation and the model persistor process.
 
-The design of this exercise consists of one **server** and two **clients**, starting with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
+The design of this exercise consists of one **server** and two **clients** starting with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
 The following steps compose one cycle of weight updates, called a **round**:
 
  #. Clients are responsible for adding a delta to the weights to calculate new weights for the model.
  #. These updates are then sent to the server which will aggregate them to produce a model with new weights.
  #. Finally, the server sends this updated version of the model back to each client, so the clients can continue to calculate the next model weights in future rounds.
 
-For this exercise, we will be working with the ``hello-numpy-fed-avg`` application in the examples folder.
-Every custom FL application must contain three folders:
+For this exercise, we will be working with the ``hello-numpy-sag`` application in the examples folder.
+Custom FL applications can contain the folders:
 
  #. **custom**: contains the custom components (``np_trainer.py``, ``np_model_persistor.py``)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
@@ -36,7 +36,7 @@ Let's get started. First clone the repo, if you haven't already:
 
 .. code-block:: shell
 
-  $ git clone https://github.com/nvidia/nvflare.git
+  $ git clone https://github.com/NVIDIA/NVFlare.git
 
 Remember to activate your NVIDIA FLARE Python virtual environment from the installation guide. Ensure numpy is installed.
 
@@ -55,11 +55,11 @@ Now we will implement the ``execute`` function to enable the clients to perform
 a simple addition of a diff to represent one calculation of training a round.
 
 See :ref:`hello_numpy_np_trainer` or find the full code of ``np_trainer.py`` at
-``examples/hello-numpy-fed-avg/custom/np_trainer.py`` to follow along.
+``examples/hello-numpy-sag/custom/np_trainer.py`` to follow along.
 
 The server sends either the initial weights or any stored weights to each of the clients
 through the ``Shareable`` object passed into ``execute()``. Each client adds the
-diff to the model data after retrieving it from the DXO (see :ref:`programming_guide/data_exchange_object`)
+diff to the model data after retrieving it from the DXO (see :ref:`data_exchange_object`)
 obtained from the Shareable, and creates a new ``Shareable`` to include the new weights also contained
 within a DXO.
 
@@ -77,7 +77,7 @@ NVIDIA FLARE Server & Application
 Model Persistor
 ^^^^^^^^^^^^^^^^^
 
-.. literalinclude:: ../../examples/hello-numpy-fed-avg/custom/np_model_persistor.py
+.. literalinclude:: ../../examples/hello-numpy-sag/custom/np_model_persistor.py
    :language: python
    :linenos:
    :caption: np_model_persistor.py
@@ -97,7 +97,7 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
 For now, the default configurations are sufficient.
 
 
-.. literalinclude:: ../../examples/hello-numpy-fed-avg/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-numpy-sag/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
@@ -106,7 +106,7 @@ For now, the default configurations are sufficient.
 Note that the component with id ``persistor`` points to the custom ``NPModelPersistor`` with full Python module path.
 
 
-.. literalinclude:: ../../examples/hello-numpy-fed-avg/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-numpy-sag/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -122,20 +122,14 @@ Now you must set up a local environment and generate packages to simulate the se
 
 Setting Up the Application Environment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-This command generates a poc folder with server, one client and one admin:
+This command generates a poc folder with server, two clients, and one admin:
 
 .. code-block:: shell
 
-    $ poc
+    $ poc -n 2
 
-Here we duplicate the client folder into two folders to create two clients, site-1 and site-2:
-
-.. code-block:: shell
-
-    $ cp -r poc/client poc/site-1
-    $ cp -r poc/client poc/site-2
-
-Finally, we copy necessary files (the exercise codes) to a working folder:
+Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
+folder for the admin):
 
 .. code-block:: shell
 
@@ -155,13 +149,13 @@ Open a new terminal and start the first client:
 
 .. code-block:: shell
 
-    $ ./poc/site-1/startup/start.sh site-1 localhost
+    $ ./poc/site-1/startup/start.sh
 
 Open another terminal and start the second client:
 
 .. code-block:: shell
 
-    $ ./poc/site-2/startup/start.sh site-2 localhost
+    $ ./poc/site-2/startup/start.sh
 
 In one last terminal, start the admin:
 
@@ -173,15 +167,15 @@ In one last terminal, start the admin:
 This will launch a command prompt, where you can input commands to control and monitor many aspects of
 the FL process. Log in by entering ``admin`` for both the username and password.
 
-Running the FL
-^^^^^^^^^^^^^^
+Running the FL System
+^^^^^^^^^^^^^^^^^^^^^
 
 Enter the commands below in order.  Pay close attention to what happens in each of four terminals.  You
-can see the admin controls server and clients with each command.
+can see how the admin controls the server and clients with each command.
 
 .. code-block:: shell
 
-    > upload_app hello-numpy-fed-avg
+    > upload_app hello-numpy-sag
 
 Uploads the application from the admin client to the server's staging area.
 
@@ -194,28 +188,24 @@ the isolation of different runs so the information in one particular run does no
 
 .. code-block:: shell
 
-    > deploy_app hello-numpy-fed-avg all
+    > deploy_app hello-numpy-sag all
 
-This will make the hello-numpy-fed-avg application the active one in the run_number workspace.  After the above two commands, the
-server and all the clients know the hello-numpy-fed-avg application will reside in the ``run_1`` workspace.
+This will make the hello-numpy-sag application the active one in the run_number workspace.  After the above two commands, the
+server and all the clients know the hello-numpy-sag application will reside in the ``run_1`` workspace.
 
 
 .. code-block:: shell
 
     > start_app all
 
-This ``start_app`` command instructs the NVIDIA FLARE server and clients to start training with the hello-numpy-fed-avg
+This ``start_app`` command instructs the NVIDIA FLARE server and clients to start training with the hello-numpy-sag
 application in the ``run_1`` workspace.
 
 From time to time, you can issue ``check_status server`` in the admin client to check the entire training progress.
 
-You should now see how the training does in the very first terminal (the one that started the server):
+You should now see how the training does in the very first terminal (the one that started the server).
 
-
-Understanding the Output
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-After starting the server and clients, you should begin to see 
+After starting the server and clients, you should begin to see
 some outputs in each terminal tracking the progress of the FL run. If everything went as
 planned, you should see that through 10 rounds, the FL system has aggregated new models on the server
 with the results produced by the clients.
@@ -229,10 +219,10 @@ the following commands in the fl_admin to shutdown the system (while inputting `
     > shutdown server
     > bye
 
-In order to stop all processes, run ``./stop_fl.sh``. 
-
-If you want to reset the saved server weights to start from ``[0,1]`` again, delete ``weights.pickle`` in the ``server/run_1/mmar_server/models/`` directory.
+In order to stop all processes, run ``./stop_fl.sh``.
 
 Congratulations!
 You've successfully built and run your first numpy federated learning system. 
 You now have a decent grasp of the main FL concepts, and are ready to start exploring how NVIDIA FLARE can be applied to many other tasks.
+
+The full `source code <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag>`_ for this exercise can be found in ``examples/hello-numpy-sag``.

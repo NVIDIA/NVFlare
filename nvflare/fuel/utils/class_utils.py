@@ -15,6 +15,7 @@
 import importlib
 import inspect
 import pkgutil
+from typing import List
 
 
 def get_class(class_path):
@@ -75,7 +76,7 @@ def get_config_classname(config_dict: dict):
 
 
 class ModuleScanner:
-    def __init__(self, base_pkgs: [str], module_names: [str], exclude_libs=True):
+    def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
         self.base_pkgs = base_pkgs
         self.module_names = module_names
         self.exclude_libs = exclude_libs

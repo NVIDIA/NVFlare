@@ -16,6 +16,7 @@ import os
 import shutil
 import tempfile
 import traceback
+from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
@@ -107,7 +108,7 @@ class FileTransferModule(CommandModule):
             ],
         )
 
-    def upload_file(self, conn: Connection, args: [str], str_to_file_func):
+    def upload_file(self, conn: Connection, args: List[str], str_to_file_func):
         if len(args) < 3:
             conn.append_error("syntax error: missing files")
             return
@@ -127,13 +128,13 @@ class FileTransferModule(CommandModule):
             num_bytes = str_to_file_func(b64str=data, file_name=full_path)
             table.add_row([name, str(num_bytes)])
 
-    def upload_text_file(self, conn: Connection, args: [str]):
+    def upload_text_file(self, conn: Connection, args: List[str]):
         self.upload_file(conn, args, b64str_to_text_file)
 
-    def upload_binary_file(self, conn: Connection, args: [str]):
+    def upload_binary_file(self, conn: Connection, args: List[str]):
         self.upload_file(conn, args, b64str_to_binary_file)
 
-    def download_file(self, conn: Connection, args: [str], file_to_str_func):
+    def download_file(self, conn: Connection, args: List[str], file_to_str_func):
         if len(args) < 2:
             conn.append_error("syntax error: missing file names")
             return
@@ -153,13 +154,13 @@ class FileTransferModule(CommandModule):
             encoded_str = file_to_str_func(full_path)
             table.add_row([file_name, encoded_str])
 
-    def download_text_file(self, conn: Connection, args: [str]):
+    def download_text_file(self, conn: Connection, args: List[str]):
         self.download_file(conn, args, text_file_to_b64str)
 
-    def download_binary_file(self, conn: Connection, args: [str]):
+    def download_binary_file(self, conn: Connection, args: List[str]):
         self.download_file(conn, args, binary_file_to_b64str)
 
-    def _authorize_upload_folder(self, conn: Connection, args: [str]):
+    def _authorize_upload_folder(self, conn: Connection, args: List[str]):
         if len(args) != 3:
             conn.append_error("syntax error: require data")
             return False, None
@@ -200,7 +201,7 @@ class FileTransferModule(CommandModule):
         finally:
             shutil.rmtree(tmp_dir)
 
-    def upload_folder(self, conn: Connection, args: [str]):
+    def upload_folder(self, conn: Connection, args: List[str]):
         folder_name = args[1]
         zip_b64str = args[2]
         folder_path = os.path.join(self.upload_dir, folder_name)
@@ -211,7 +212,7 @@ class FileTransferModule(CommandModule):
         conn.set_prop("upload_folder_path", folder_path)
         conn.append_string("Created folder {}".format(folder_path))
 
-    def download_folder(self, conn: Connection, args: [str]):
+    def download_folder(self, conn: Connection, args: List[str]):
         if len(args) != 2:
             conn.append_error("syntax error: require folder name")
             return
@@ -234,6 +235,6 @@ class FileTransferModule(CommandModule):
             traceback.print_exc()
             conn.append_error("exception occurred")
 
-    def info(self, conn: Connection, args: [str]):
+    def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))
         conn.append_string("Server Download Source: {}".format(self.download_dir))

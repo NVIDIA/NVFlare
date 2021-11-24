@@ -1,5 +1,7 @@
-NVIDIA FLARE Executors
-======================
+.. _executor:
+
+Executors
+=========
 
 .. image:: ../resources/Executor.png
     :height: 300px
@@ -47,6 +49,8 @@ for Executors in config_fed_client.json:
     }
 
 The above configuration is an example from hello_numpy. Each task can only be assigned to one Executor.
+
+.. _multi_process_executor:
 
 Multi-Process Executor
 ----------------------

@@ -1,3 +1,5 @@
+.. _controllers:
+
 Controllers and Controller API
 ==============================
 
@@ -35,8 +37,8 @@ in different ways:
    - Arrange a task to be done by multiple clients in turns
 
 See the included :class:`Controller<nvflare.apis.impl.controller.Controller>` implementation and full reference
-implementations of the following controller workflows: :ref:`controllers/scatter_and_gather_workflow`, :ref:`controllers/cross_site_model_evaluation`, and
-:ref:`controllers/cyclic_workflow`.
+implementations of the following controller workflows: :ref:`scatter_and_gather_workflow`, :ref:`cross_site_model_evaluation`, and
+:ref:`cyclic_workflow`.
 
 .. include:: controllers/scatter_and_gather_workflow.rst
 
@@ -45,6 +47,8 @@ implementations of the following controller workflows: :ref:`controllers/scatter
 .. include:: controllers/cyclic_workflow.rst
 
 You can study the source code and use it as a starting point to write your own controller workflows.
+
+.. _tasks:
 
 Task Lifecycle
 --------------

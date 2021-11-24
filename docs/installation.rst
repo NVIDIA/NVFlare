@@ -1,3 +1,5 @@
+.. _installation:
+
 Installation
 =============
 
@@ -63,15 +65,6 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
   $ python3 -m pip install nvflare
 
 
-Install Nightly Release
------------------------
-
-NVIDIA FLARE also has a nightly build at `NVFlare nightly build <https://pypi.org/project/nvflare-nightly/>`_.
-You can install the package with the following command::
-
-  $ python3 -m pip install nvflare-nightly
-
-
 Clone Repository and Examples
 -----------------------------
 
@@ -80,4 +73,4 @@ repo and get the source code:
 
 .. code-block:: shell
 
-  $ git clone https://github.com/nvidia/nvflare.git
+  $ git clone https://github.com/NVIDIA/NVFlare.git

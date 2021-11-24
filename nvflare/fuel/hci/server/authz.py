@@ -14,6 +14,7 @@
 
 import json
 import os
+from typing import List
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
@@ -95,7 +96,7 @@ class AuthzFilter(CommandFilter):
         assert isinstance(authorizer, Authorizer), "authorizer must be Authorizer but got {}".format(type(authorizer))
         self.authorizer = authorizer
 
-    def pre_command(self, conn: Connection, args: [str]):
+    def pre_command(self, conn: Connection, args: List[str]):
         cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY, None)
         if not cmd_entry:
             return True
@@ -215,7 +216,7 @@ class AuthzCommandModule(CommandModule):
             ],
         )
 
-    def _authorize_cmd(self, conn: Connection, args: [str]):
+    def _authorize_cmd(self, conn: Connection, args: List[str]):
         # Use this method to pre-process the command,
         # mainly to get authorizer and policy and store them in conn
         # so the command handler can get them from the conn.
@@ -232,18 +233,18 @@ class AuthzCommandModule(CommandModule):
         # return a None authz_ctx because the command does not need to be authorized!
         return True, None
 
-    def show_info(self, conn: Connection, args: [str]):
+    def show_info(self, conn: Connection, args: List[str]):
         authorizer = conn.get_prop("authorizer")
         conn.append_string("Last Loaded: {}".format(time_to_string(authorizer.last_load_time)))
 
-    def show_users(self, conn: Connection, args: [str]):
+    def show_users(self, conn: Connection, args: List[str]):
         policy = conn.get_prop("policy")
         users = policy.get_users()
         table = conn.append_table(["user", "org", "roles"])
         for user_name, user_def in users.items():
             table.add_row([user_name, user_def["org"], ",".join(user_def["roles"])])
 
-    def show_sites(self, conn: Connection, args: [str]):
+    def show_sites(self, conn: Connection, args: List[str]):
         policy = conn.get_prop("policy")
         if not policy:
             conn.append_error("no authorization policy")
@@ -254,7 +255,7 @@ class AuthzCommandModule(CommandModule):
         for site_name, org in sites.items():
             table.add_row([site_name, org])
 
-    def show_rights(self, conn: Connection, args: [str]):
+    def show_rights(self, conn: Connection, args: List[str]):
         policy = conn.get_prop("policy")
         if not policy:
             conn.append_error("no authorization policy")
@@ -267,7 +268,7 @@ class AuthzCommandModule(CommandModule):
             default = right_def.get("default", "")
             table.add_row([name, desc, "{}".format(default)])
 
-    def show_rules(self, conn: Connection, args: [str]):
+    def show_rules(self, conn: Connection, args: List[str]):
         policy = conn.get_prop("policy")
         if not policy:
             conn.append_error("no authorization policy")
@@ -280,12 +281,12 @@ class AuthzCommandModule(CommandModule):
             default = rule_def.get("default", "")
             table.add_row([name, desc, "{}".format(default)])
 
-    def show_config(self, conn: Connection, args: [str]):
+    def show_config(self, conn: Connection, args: List[str]):
         policy = conn.get_prop("policy")
         config = policy.get_config()
         conn.append_string(json.dumps(config, indent=1))
 
-    def eval_right(self, conn: Connection, args: [str]):
+    def eval_right(self, conn: Connection, args: List[str]):
         if len(args) < 3:
             conn.append_error("Usage: {} user_name right_name [site_name...]".format(args[0]))
             return
@@ -316,7 +317,7 @@ class AuthzCommandModule(CommandModule):
                 result = str(result)
             table.add_row([s, result])
 
-    def eval_rule(self, conn: Connection, args: [str]):
+    def eval_rule(self, conn: Connection, args: List[str]):
         if len(args) != 3:
             conn.append_error("Usage: {} site_name rule_name".format(args[0]))
             return

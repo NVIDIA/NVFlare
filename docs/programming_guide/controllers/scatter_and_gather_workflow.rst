@@ -1,3 +1,5 @@
+.. _scatter_and_gather_workflow:
+
 Scatter and Gather Workflow
 ============================
 The Federated scatter and gather workflow is an included reference implementation of the default workflow of previous versions
@@ -5,7 +7,7 @@ of NVIDIA FLARE with a Server aggregating results from Clients that have produce
 
 At the core, the control_flow of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
 
-.. image:: ../../resources/fed_avg_round.png
+.. image:: resources/fed_sag_round.png
     :height: 400px
 
 Trainer
@@ -18,7 +20,7 @@ The ``train()`` method needs to get the required information from the global ``S
 use that in its training process, then returning the local training result as a ``Shareable``.
 
 You will need to configure your own ``Trainer`` in config_fed_client.json.
-Example FL configurations can be found in :ref:`user_guide/application:NVIDIA FLARE Application`.
+Example FL configurations can be found in :ref:`application`.
 
 Learnable
 ---------
@@ -37,6 +39,6 @@ For example, a simple aggregator would be just average all the ``Shareable`` of 
 
 Below is the signature for an aggregator.
 
-.. literalinclude:: ../../../nvflare/apis/aggregator.py
+.. literalinclude:: ../../../nvflare/app_common/abstract/aggregator.py
     :language: python
     :lines: 22-

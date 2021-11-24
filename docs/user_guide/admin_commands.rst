@@ -1,3 +1,5 @@
+.. _admin_commands:
+
 ##################################
 Admin Client, Commands, FLAdminAPI
 ##################################
@@ -52,10 +54,6 @@ commands shown as examples of how they may be run with a description.
     validate,``validate src_client dsc_client``, Gets the performance metrics for cross-site validation of a model
     ,``validate all``, Gets the performance metrics for cross-site validation of all models
 
-
-.. note::
-
-    For multi-GPU training please refer to :ref:`multi-gpu training <multi gpu training>`.
 
 .. tip::
 
