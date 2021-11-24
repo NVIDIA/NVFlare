@@ -1,14 +1,16 @@
-# Copyright 2020 MONAI Consortium
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 
 from typing import Dict
 
@@ -35,9 +37,10 @@ class MONAITrainer(Executor):
 
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         aggregation_epochs: int = 1,
-        train_task_name = AppConstants.TASK_TRAIN,
+        train_task_name=AppConstants.TASK_TRAIN,
     ):
         super().__init__()
         """
@@ -77,7 +80,6 @@ class MONAITrainer(Executor):
         # it will be completely terminated after the current iteration is finished.
         self.train_engine = conf.train_engine
         self.eval_engine = conf.eval_engine
-        
 
     def assign_current_model(self, model_weights: Dict[str, np.ndarray]):
         """
@@ -97,15 +99,9 @@ class MONAITrainer(Executor):
             if var_name in model_keys:
                 weights = model_weights[var_name]
                 try:
-                    local_var_dict[var_name] = torch.as_tensor(
-                        np.reshape(weights, local_var_dict[var_name].shape)
-                    )
+                    local_var_dict[var_name] = torch.as_tensor(np.reshape(weights, local_var_dict[var_name].shape))
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
 
         net.load_state_dict(local_var_dict)
 
@@ -123,11 +119,7 @@ class MONAITrainer(Executor):
             try:
                 local_model_dict[var_name] = local_state_dict[var_name].cpu().numpy()
             except Exception as e:
-                raise ValueError(
-                    "Convert weight from {} failed with error: {}".format(
-                        var_name, str(e)
-                    )
-                )
+                raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
 
         return local_model_dict
 
@@ -139,9 +131,7 @@ class MONAITrainer(Executor):
         """
         # update meta, NUM_STEPS_CURRENT_ROUND is needed for aggregation.
         if self.achieved_meta is None:
-            meta = {
-                MetaKey.NUM_STEPS_CURRENT_ROUND: self.current_iters
-            }
+            meta = {MetaKey.NUM_STEPS_CURRENT_ROUND: self.current_iters}
         else:
             meta = self.achieved_meta
             meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = self.current_iters
@@ -187,9 +177,7 @@ class MONAITrainer(Executor):
         shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
         return shareable
 
-    def execute(
-        self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
-    ) -> Shareable:
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
         This function is an extended function from the super class.
         As a supervised learning based trainer, the execute function will run
@@ -228,9 +216,7 @@ class MONAITrainer(Executor):
             self.achieved_meta = dxo.meta
 
             # set engine state max epochs.
-            self.train_engine.state.max_epochs = (
-                self.train_engine.state.epoch + self.aggregation_epochs
-            )
+            self.train_engine.state.max_epochs = self.train_engine.state.epoch + self.aggregation_epochs
             # get current iteration when a round starts
             iter_of_start_time = self.train_engine.state.iteration
 

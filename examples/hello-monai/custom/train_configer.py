@@ -1,8 +1,11 @@
-# Copyright 2020 MONAI Consortium
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -109,9 +112,7 @@ class TrainConfiger:
         url = "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task09_Spleen.tar"
         name = os.path.join(self.app_root, self.dataset_folder_name)
         tarfile_name = f"{name}.tar"
-        download_and_extract(
-            url=url, filepath=tarfile_name, output_dir=self.app_root
-        )
+        download_and_extract(url=url, filepath=tarfile_name, output_dir=self.app_root)
 
     def configure(self):
         self.set_device()
@@ -218,9 +219,7 @@ class TrainConfiger:
             ]
         )
 
-        val_ds = CacheDataset(
-            data=val_datalist, transform=val_transforms, cache_rate=0.0, num_workers=4
-        )
+        val_ds = CacheDataset(data=val_datalist, transform=val_transforms, cache_rate=0.0, num_workers=4)
         val_data_loader = DataLoader(
             val_ds,
             batch_size=1,
@@ -252,9 +251,7 @@ class TrainConfiger:
                 save_dict={"model": network},
                 save_key_metric=True,
             ),
-            TensorBoardStatsHandler(
-                log_dir=self.ckpt_dir, output_transform=lambda x: None
-            ),
+            TensorBoardStatsHandler(log_dir=self.ckpt_dir, output_transform=lambda x: None),
         ]
         self.eval_engine = SupervisedEvaluator(
             device=self.device,
@@ -273,17 +270,11 @@ class TrainConfiger:
 
         optimizer = torch.optim.Adam(network.parameters(), self.learning_rate)
         loss_function = DiceLoss(to_onehot_y=True, softmax=True)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=5000, gamma=0.1
-        )
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5000, gamma=0.1)
         train_handlers = [
             LrScheduleHandler(lr_scheduler=lr_scheduler, print_lr=True),
-            ValidationHandler(
-                validator=self.eval_engine, interval=self.val_interval, epoch_level=True
-            ),
-            StatsHandler(
-                tag_name="train_loss", output_transform=from_engine("loss", first=True)
-            ),
+            ValidationHandler(validator=self.eval_engine, interval=self.val_interval, epoch_level=True),
+            StatsHandler(tag_name="train_loss", output_transform=from_engine("loss", first=True)),
             TensorBoardStatsHandler(
                 log_dir=self.ckpt_dir,
                 tag_name="train_loss",
