@@ -1,8 +1,6 @@
 {
   "format_version": 2,
 
-  "handlers": [
-  ],
   "executors": [
     {
       "tasks": ["train", "submit_model"],

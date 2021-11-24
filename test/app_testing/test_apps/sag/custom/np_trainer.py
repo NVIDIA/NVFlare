@@ -1,3 +1,17 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 import time
 
@@ -29,8 +43,8 @@ class NPTrainer(Executor):
         # for long time.
         super().__init__()
 
-        if not isinstance(delta, int):
-            raise TypeError("")
+        if not (isinstance(delta, float) or isinstance(delta, int)):
+            raise TypeError("delta must be an instance of float or int.")
 
         self._delta = delta
         self._model_name = model_name
@@ -41,11 +55,9 @@ class NPTrainer(Executor):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         # if event_type == EventType.START_RUN:
-        #     # Create all major components here.
-        #     pass
+        #     Create all major components here. This is a simple app that doesn't need any components.
         # elif event_type == EventType.END_RUN:
         #     # Clean up resources (closing files, joining threads, removing dirs etc)
-        #     pass
         pass
 
     def execute(
@@ -55,7 +67,8 @@ class NPTrainer(Executor):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Shareable:
-        # Any kind of tasks waiting should check abort_signal regularly
+        # Any long tasks should check abort_signal regularly. Otherwise abort client
+        # will not work.
         count, interval = 0, 0.5
         while count < self._sleep_time:
             if abort_signal.triggered:
@@ -64,25 +77,26 @@ class NPTrainer(Executor):
             count += interval
 
         if task_name == self._train_task_name:
-
+            # First we extract DXO from the shareable.
             try:
                 incoming_dxo = from_shareable(shareable)
             except BaseException as e:
-                self.system_panic(f"Unable to convert shareable to model definition. Exception {e}", fl_ctx)
+                self.system_panic(f"Unable to convert shareable to model definition. Exception {e.__str__()}", fl_ctx)
                 return self._get_exception_shareable()
 
+            # Information about workflow is retrieved from the shareable header.
             current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
             total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
 
-            # Get data from numpy shareable
+            # Ensure that data is of type weights. Extract model data.
             if incoming_dxo.data_kind != DataKind.WEIGHTS:
                 self.system_panic("Model dex should be of kind DataKind.WEIGHTS.", fl_ctx)
                 return self._get_exception_shareable()
+            np_data = incoming_dxo.data
 
-            weights = incoming_dxo.data
-
+            # Display properties.
             self.log_info(fl_ctx, f"Incoming data kind: {incoming_dxo.data_kind}")
-            self.log_info(fl_ctx, f"Model: \n{weights}")
+            self.log_info(fl_ctx, f"Model: \n{np_data}")
             self.log_info(fl_ctx, f"Current Round: {current_round}")
             self.log_info(fl_ctx, f"Total Rounds: {total_rounds}")
             self.log_info(fl_ctx, f"Task name: {task_name}")
@@ -93,9 +107,9 @@ class NPTrainer(Executor):
                 return self._get_exception_shareable()
 
             # Doing some dummy training.
-            if weights:
-                if NPConstants.NUMPY_KEY in weights:
-                    weights[NPConstants.NUMPY_KEY] += self._delta
+            if np_data:
+                if NPConstants.NUMPY_KEY in np_data:
+                    np_data[NPConstants.NUMPY_KEY] += self._delta
                 else:
                     self.log_error(fl_ctx, "numpy_key not found in model.")
                     shareable.set_return_code(ReturnCode.EXECUTION_RESULT_ERROR)
@@ -105,45 +119,28 @@ class NPTrainer(Executor):
                 shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
                 return shareable
 
+            # We check abort_signal regularly to make sure
             if abort_signal.triggered:
                 return self._get_exception_shareable()
 
-            # Save local model
+            # Save local numpy model
             try:
-                self._save_local_model(fl_ctx, weights)
+                self._save_local_model(fl_ctx, np_data)
             except Exception as e:
                 self.log_error(fl_ctx, f"Exception in saving local model: {e}.")
 
             self.log_info(
                 fl_ctx,
-                f"Model after training: {weights}",
+                f"Model after training: {np_data}",
             )
 
+            # Checking abort signal again.
             if abort_signal.triggered:
                 return self._get_exception_shareable()
 
-            outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=weights, meta={})
+            # Prepare a DXO for our updated model. Create shareable and return
+            outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={})
             return outgoing_dxo.to_shareable()
-        elif task_name == self._submit_model_task_name:
-            # Send the local model back to customer
-            weights = None
-            try:
-                weights = self._load_local_model(fl_ctx)
-            except Exception as e:
-                self.log_error(fl_ctx, f"Unable to load model: {e}")
-
-            if abort_signal.triggered:
-                return self._get_exception_shareable()
-
-            model_shareable = Shareable()
-            if weights:
-                incoming_dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights)
-                model_shareable = incoming_dxo.to_shareable()
-            else:
-                # Set return code.
-                model_shareable.set_return_code(ReturnCode.EXECUTION_RESULT_ERROR)
-
-            return model_shareable
         else:
             # If unknown task name, set RC accordingly.
             shareable = Shareable()
@@ -157,11 +154,10 @@ class NPTrainer(Executor):
         model_path = os.path.join(run_dir, self._model_dir)
 
         model_load_path = os.path.join(model_path, self._model_name)
-        np_data = None
         try:
             np_data = np.load(model_load_path)
         except Exception as e:
-            self.log_error(f"Unable to load local model: {np_data}")
+            self.log_error(fl_ctx, f"Unable to load local model: {e.__str__()}")
             return None
 
         model = ModelLearnable()

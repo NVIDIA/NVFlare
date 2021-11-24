@@ -1,3 +1,17 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import json
 import os.path
 
@@ -6,11 +20,12 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 
 
 class ValidationJsonGenerator(FLComponent):
 
-    def __init__(self, results_dir="cross_val_results", json_file_name="cross_val.json"):
+    def __init__(self, results_dir=AppConstants.CROSS_VAL_DIR, json_file_name="cross_val.json"):
         super(ValidationJsonGenerator, self).__init__()
 
         self.results_dir = results_dir
@@ -20,7 +35,7 @@ class ValidationJsonGenerator(FLComponent):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.val_results.clear()
-        elif event_type == AppConstants.VALIDATION_RESULT_RECEIVED:
+        elif event_type == AppEventType.VALIDATION_RESULT_RECEIVED:
             model_owner = fl_ctx.get_prop(AppConstants.MODEL_OWNER, None)
             data_client = fl_ctx.get_prop(AppConstants.DATA_CLIENT, None)
             val_results = fl_ctx.get_prop(AppConstants.VALIDATION_RESULT, None)
