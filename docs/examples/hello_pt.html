@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>Quickstart (PyTorch) &mdash; NVFlare 1.1 documentation</title>
+  <title>Quickstart (PyTorch) &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -86,7 +86,7 @@
            
 
           
-            <a href="../index.html" class="icon icon-home"> NVFlare
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -96,7 +96,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -167,22 +167,21 @@
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Quickstart (PyTorch)</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#before-you-start">Before You Start</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#introduction">Introduction</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nvflare-client">NVFlare Client</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nvidia-flare-client">NVIDIA FLARE Client</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#neural-network">Neural Network</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#dataset-setup">Dataset &amp; Setup</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#local-train">Local Train</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#integrate-nvflare-with-local-train">Integrate NVFlare with Local Train</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#shareable">Shareable</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#integrate-nvidia-flare-with-local-train">Integrate NVIDIA FLARE with Local Train</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#flcontext">FLContext</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#nvflare-server-application">NVFlare Server &amp; Application</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nvidia-flare-server-application">NVIDIA FLARE Server &amp; Application</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#application-configuration">Application Configuration</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#train-the-model-federated">Train the Model, Federated!</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#setting-up-the-application-environment">Setting Up the Application Environment</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#running-the-fl">Running the FL</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#running-the-fl-system">Running the FL System</a></li>
 </ul>
 </li>
 </ul>
@@ -191,8 +190,8 @@
 <li class="toctree-l2"><a class="reference internal" href="hello_tf2.html">Quickstart (TensorFlow 2)</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
@@ -211,7 +210,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../index.html">NVFlare</a>
+          <a href="../index.html">NVIDIA FLARE</a>
         
       </nav>
 
@@ -252,6 +251,8 @@
       <li class="wy-breadcrumbs-aside">
         
           
+            <a href="../_sources/examples/hello_pt.rst.txt" rel="nofollow"> View page source</a>
+          
         
       </li>
     
@@ -267,15 +268,16 @@
 <h1>Quickstart (PyTorch)<a class="headerlink" href="#quickstart-pytorch" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="before-you-start">
 <h2>Before You Start<a class="headerlink" href="#before-you-start" title="Permalink to this headline">¶</a></h2>
-<p>Feel free to refer to the official <a class="reference internal" href="../programming_guide.html"><span class="doc">documentation</span></a> at any point to learn more about the specifics of <a class="reference external" href="https://pypi.org/project/nvflare/">NVFlare</a>.</p>
-<p>Make sure you have an environment with NVFlare installed.  You can follow the
+<p>Feel free to refer to the official <a class="reference internal" href="../programming_guide.html"><span class="doc">documentation</span></a> at any point to learn more about the specifics of <a class="reference external" href="https://pypi.org/project/nvflare/">NVIDIA FLARE</a>.</p>
+<p>Make sure you have an environment with NVIDIA FLARE installed.  You can follow the
 <a class="reference internal" href="../installation.html"><span class="doc">installation</span></a> guide on the general concept of Python virtual environment (the recommended environment) and how to
-install NVFlare.</p>
+install NVIDIA FLARE.</p>
 </div>
 <div class="section" id="introduction">
 <h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
-<p>Through this exercise, you will integrate NVFlare with the popular
-deep learning framework <a class="reference external" href="https://pytorch.org/">PyTorch</a> and learn how to use NVFlare to train a convolutional network with the CIFAR10 dataset.</p>
+<p>Through this exercise, you will integrate NVIDIA FLARE with the popular
+deep learning framework <a class="reference external" href="https://pytorch.org/">PyTorch</a> and learn how to use NVIDIA FLARE to train a convolutional
+network with the CIFAR10 dataset using the included Scatter and Gather workflow.</p>
 <p>The design of this exercise consists of one <strong>server</strong> and two <strong>clients</strong> all having the same PyTorch model.
 The following steps compose one cycle of weight updates, called a <strong>round</strong>:</p>
 <blockquote>
@@ -289,7 +291,7 @@ The following steps compose one cycle of weight updates, called a <strong>round<
 Every custom FL application must contain three folders:</p>
 <blockquote>
 <div><ol class="arabic simple">
-<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">net.py</span></code>, <code class="docutils literal notranslate"><span class="pre">trainer.py</span></code>)</p></li>
+<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">net.py</span></code>, <code class="docutils literal notranslate"><span class="pre">cifar10trainer.py</span></code>)</p></li>
 <li><p><strong>config</strong>: contains client and server configurations (<code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>, <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>)</p></li>
 <li><p><strong>resources</strong>: contains the logger config (<code class="docutils literal notranslate"><span class="pre">log.config</span></code>)</p></li>
 </ol>
@@ -298,7 +300,7 @@ Every custom FL application must contain three folders:</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/nvidia/nvflare.git
 </pre></div>
 </div>
-<p>Now remember to activate your NVFlare Python virtual environment from the installation guide.</p>
+<p>Now remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.</p>
 <p>Since you will use PyTorch and torchvision for this exercise, let’s go ahead and install both libraries:</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>nvflare-env<span class="o">)</span> $ python3 -m pip install torch torchvision
 </pre></div>
@@ -313,8 +315,8 @@ Every custom FL application must contain three folders:</p>
 </div>
 <p>If you would like to go ahead and run the exercise now, you can skip directly to <a class="reference internal" href="#hands-on"><span class="std std-ref">Train the Model, Federated!</span></a>.</p>
 </div>
-<div class="section" id="nvflare-client">
-<h2>NVFlare Client<a class="headerlink" href="#nvflare-client" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="nvidia-flare-client">
+<h2>NVIDIA FLARE Client<a class="headerlink" href="#nvidia-flare-client" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="neural-network">
 <h3>Neural Network<a class="headerlink" href="#neural-network" title="Permalink to this headline">¶</a></h3>
 <p>With all the required dependencies installed, you are ready to run a Federated Learning
@@ -322,305 +324,330 @@ with two clients and one server. The training procedure and network
 architecture are modified from
 <a class="reference external" href="https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html">Training a Classifier</a>.</p>
 <p>Let’s see what an extremely simplified CIFAR10 training looks like:</p>
-<div class="literal-block-wrapper docutils container" id="id2">
-<div class="code-block-caption"><span class="caption-text">net.py</span><a class="headerlink" href="#id2" title="Permalink to this code">¶</a></div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">print_function</span>
-
-<span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
-<span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">F</span>
-
-
-<span class="k">class</span> <span class="nc">Net</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">conv1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pool</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MaxPool2d</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">conv2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span> <span class="o">*</span> <span class="mi">5</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">120</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">120</span><span class="p">,</span> <span class="mi">84</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">84</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pool</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">conv1</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pool</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">conv2</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="c1"># flatten all dimensions except batch</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">x</span>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">net.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">15</span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="linenos">16</span><span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
+<span class="linenos">17</span><span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">F</span>
+<span class="linenos">18</span>
+<span class="linenos">19</span>
+<span class="linenos">20</span><span class="k">class</span> <span class="nc">SimpleNetwork</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="linenos">21</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="linenos">22</span>        <span class="nb">super</span><span class="p">(</span><span class="n">SimpleNetwork</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="linenos">23</span>
+<span class="linenos">24</span>        <span class="bp">self</span><span class="o">.</span><span class="n">conv1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+<span class="linenos">25</span>        <span class="bp">self</span><span class="o">.</span><span class="n">pool</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MaxPool2d</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="linenos">26</span>        <span class="bp">self</span><span class="o">.</span><span class="n">conv2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+<span class="linenos">27</span>        <span class="bp">self</span><span class="o">.</span><span class="n">fc1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span> <span class="o">*</span> <span class="mi">5</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">120</span><span class="p">)</span>
+<span class="linenos">28</span>        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">120</span><span class="p">,</span> <span class="mi">84</span><span class="p">)</span>
+<span class="linenos">29</span>        <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">84</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<span class="linenos">30</span>
+<span class="linenos">31</span>    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+<span class="linenos">32</span>        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pool</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">conv1</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+<span class="linenos">33</span>        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pool</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">conv2</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+<span class="linenos">34</span>        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="c1"># flatten all dimensions except batch</span>
+<span class="linenos">35</span>        <span class="n">x</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+<span class="linenos">36</span>        <span class="n">x</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+<span class="linenos">37</span>        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="linenos">38</span>        <span class="k">return</span> <span class="n">x</span>
 </pre></div>
 </div>
 </div>
-<p>This <code class="docutils literal notranslate"><span class="pre">Net</span></code> class is your convolutional neural network to train with the CIFAR10 dataset.
-This is not related to NVFlare, so we implement it in a file called <code class="docutils literal notranslate"><span class="pre">net.py</span></code>.</p>
+<p>This <code class="docutils literal notranslate"><span class="pre">SimpleNetwork</span></code> class is your convolutional neural network to train with the CIFAR10 dataset.
+This is not related to NVIDIA FLARE, so we implement it in a file called <code class="docutils literal notranslate"><span class="pre">net.py</span></code>.</p>
 </div>
 <div class="section" id="dataset-setup">
 <h3>Dataset &amp; Setup<a class="headerlink" href="#dataset-setup" title="Permalink to this headline">¶</a></h3>
-<p>Now all we have left is to implement the one required custom class related to NVFlare, <code class="docutils literal notranslate"><span class="pre">Trainer</span></code>, in a file called <code class="docutils literal notranslate"><span class="pre">trainer.py</span></code>.</p>
-<p>In a real FL, each client would have their own dataset used for their local training.
+<p>Now implement the custom class <code class="docutils literal notranslate"><span class="pre">Cifar10Trainer</span></code> as an NVIDIA FLARE Executor in a file
+called <code class="docutils literal notranslate"><span class="pre">cifar10trainer.py</span></code>.</p>
+<p>In a real FL experiment, each client would have their own dataset used for their local training.
 For simplicity’s sake, you can download the same CIFAR10 dataset from the Internet via torchvision’s datasets module.
-Additionally, you need to setup the optimizer, loss function and transform to process the data.
-You can think of all of this code as part of your local train, as every deep learning training has a similar setup.</p>
-<p>Since you will encapsulate every training-related step in the <code class="docutils literal notranslate"><span class="pre">Trainer</span></code> class, let’s put this preparation stage into the <code class="docutils literal notranslate"><span class="pre">__init__</span></code> method:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
-<span class="kn">import</span> <span class="nn">torch.optim</span> <span class="k">as</span> <span class="nn">optim</span>
-<span class="kn">from</span> <span class="nn">net</span> <span class="kn">import</span> <span class="n">Net</span>
-<span class="kn">from</span> <span class="nn">nvflare.apis</span> <span class="kn">import</span> <span class="n">Trainer</span>
-<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLConstants</span><span class="p">,</span> <span class="n">ShareableKey</span><span class="p">,</span> <span class="n">ShareableValue</span>
-<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
-<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span>
-<span class="kn">from</span> <span class="nn">torchvision</span> <span class="kn">import</span> <span class="n">datasets</span><span class="p">,</span> <span class="n">transforms</span>
-
-
-<span class="k">class</span> <span class="nc">SimpleTrainer</span><span class="p">(</span><span class="n">Trainer</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda:0&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">Net</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">SGD</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">criterion</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">CrossEntropyLoss</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">transform</span> <span class="o">=</span> <span class="n">transforms</span><span class="o">.</span><span class="n">Compose</span><span class="p">(</span>
-            <span class="p">[</span>
-                <span class="n">transforms</span><span class="o">.</span><span class="n">ToTensor</span><span class="p">(),</span>
-                <span class="n">transforms</span><span class="o">.</span><span class="n">Normalize</span><span class="p">((</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)),</span>
-            <span class="p">]</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">trainset</span> <span class="o">=</span> <span class="n">datasets</span><span class="o">.</span><span class="n">CIFAR10</span><span class="p">(</span>
-            <span class="n">root</span><span class="o">=</span><span class="s2">&quot;./data&quot;</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transform</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">trainset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">2</span>
+Additionally, you need to set up the optimizer, loss function and transform to process the data.
+You can think of all of this code as part of your local training loop, as every deep learning training has a similar setup.</p>
+<p>Since you will encapsulate every training-related step in the <code class="docutils literal notranslate"><span class="pre">Cifar10Trainer</span></code> class, let’s put this preparation stage into the <code class="docutils literal notranslate"><span class="pre">__init__</span></code> method:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">35</span><span class="k">class</span> <span class="nc">Cifar10Trainer</span><span class="p">(</span><span class="n">Executor</span><span class="p">):</span>
+<span class="linenos">36</span>
+<span class="linenos">37</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">train_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_TRAIN</span><span class="p">,</span>
+<span class="linenos">38</span>                 <span class="n">submit_model_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_SUBMIT_MODEL</span><span class="p">,</span> <span class="n">exclude_vars</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="linenos">39</span>        <span class="nb">super</span><span class="p">(</span><span class="n">Cifar10Trainer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="linenos">40</span>
+<span class="linenos">41</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_train_task_name</span> <span class="o">=</span> <span class="n">train_task_name</span>
+<span class="linenos">42</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span> <span class="o">=</span> <span class="n">submit_model_task_name</span>
+<span class="linenos">43</span>
+<span class="linenos">44</span>        <span class="c1"># Training setup</span>
+<span class="linenos">45</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">SimpleNetwork</span><span class="p">()</span>
+<span class="linenos">46</span>        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda:0&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="linenos">47</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+<span class="linenos">48</span>        <span class="bp">self</span><span class="o">.</span><span class="n">loss</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">CrossEntropyLoss</span><span class="p">()</span>
+<span class="linenos">49</span>        <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">SGD</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
+<span class="linenos">50</span>        <span class="bp">self</span><span class="o">.</span><span class="n">lr</span> <span class="o">=</span> <span class="n">lr</span>
+<span class="linenos">51</span>        <span class="bp">self</span><span class="o">.</span><span class="n">transforms</span> <span class="o">=</span> <span class="n">transforms</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span>
+<span class="linenos">52</span>            <span class="n">transforms</span><span class="o">.</span><span class="n">ToTensor</span><span class="p">(),</span>
+<span class="linenos">53</span>            <span class="n">transforms</span><span class="o">.</span><span class="n">Normalize</span><span class="p">((</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)),</span>
+<span class="linenos">54</span>        <span class="p">])</span>
+<span class="linenos">55</span>        <span class="bp">self</span><span class="o">.</span><span class="n">epochs</span> <span class="o">=</span> <span class="n">epochs</span>
+<span class="linenos">56</span>        <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="o">=</span> <span class="n">exclude_vars</span>
+<span class="linenos">57</span>
+<span class="linenos">58</span>        <span class="c1"># Cifar10 dataset for training.</span>
+<span class="linenos">59</span>        <span class="bp">self</span><span class="o">.</span><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">torchvision</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">CIFAR10</span><span class="p">(</span><span class="n">root</span><span class="o">=</span><span class="s1">&#39;~/data&#39;</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transforms</span><span class="p">,</span>
+<span class="linenos">60</span>                                                          <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">61</span>        <span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span>
+<span class="linenos">62</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span>
+<span class="linenos">63</span>        <span class="p">)</span>
+<span class="linenos">64</span>        <span class="bp">self</span><span class="o">.</span><span class="n">n_iterations</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span><span class="p">)</span>
+<span class="linenos">65</span>
+<span class="linenos">66</span>        <span class="c1"># # Setup the persistence manager to save PT model.</span>
+<span class="linenos">67</span>        <span class="bp">self</span><span class="o">.</span><span class="n">default_train_conf</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;train&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">}}</span>
+<span class="linenos">68</span>        <span class="bp">self</span><span class="o">.</span><span class="n">persistence_manager</span> <span class="o">=</span> <span class="n">PTModelPersistenceFormatManager</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+<span class="linenos">69</span>                                                                   <span class="n">default_train_conf</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">default_train_conf</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="local-train">
 <h3>Local Train<a class="headerlink" href="#local-train" title="Permalink to this headline">¶</a></h3>
-<p>Now that you have your network and dataset setup, in the <code class="docutils literal notranslate"><span class="pre">Trainer</span></code> class let’s also implement a local training loop in a method called <code class="docutils literal notranslate"><span class="pre">local_train</span></code>:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span> <span class="nf">local_train</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;A regular training procedure.</span>
+<p>Now that you have your network and dataset setup, in the <code class="docutils literal notranslate"><span class="pre">Cifar10Trainer</span></code> class let’s also implement a local training loop in a method called <code class="docutils literal notranslate"><span class="pre">local_train</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span> <span class="nf">local_train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+        <span class="c1"># Set the model weights</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state_dict</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
 
-<span class="sd">        :return:</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Basic training</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
-            <span class="c1"># set the model to train mode</span>
-            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span><span class="p">):</span>
-                <span class="n">inputs</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">inputs</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="n">labels</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-                <span class="c1"># zero the parameter gradients</span>
+        <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs</span><span class="p">):</span>
+            <span class="n">running_loss</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span><span class="p">):</span>
+                <span class="n">images</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">batch</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="n">batch</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
-                <span class="c1"># forward + backward + optimize</span>
-                <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
-                <span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">criterion</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
-                <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+
+                <span class="n">predictions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>
+                <span class="n">cost</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">loss</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
+                <span class="n">cost</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+                <span class="n">running_loss</span> <span class="o">+=</span> <span class="p">(</span><span class="n">cost</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">/</span><span class="n">images</span><span class="o">.</span><span class="n">size</span><span class="p">()[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">3000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Epoch: </span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs</span><span class="si">}</span><span class="s2">, Iteration: </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">, &quot;</span>
+                                          <span class="sa">f</span><span class="s2">&quot;Loss: </span><span class="si">{</span><span class="n">running_loss</span><span class="o">/</span><span class="mi">3000</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="n">running_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
 </pre></div>
 </div>
-<p>This exercise does not include the validation portion and any print for simplicity.
-The number of epochs is hardcoded to 2, but this can be easily set from a parameter.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Everything up to this point is completely independent of NVFlare. It is just purely a PyTorch
-deep learning exercise.  You will now build the NVFlare application based on this PyTorch code.</p>
+<p>Everything up to this point is completely independent of NVIDIA FLARE. It is just purely a PyTorch
+deep learning exercise.  You will now build the NVIDIA FLARE application based on this PyTorch code.</p>
 </div>
 </div>
-<div class="section" id="integrate-nvflare-with-local-train">
-<h3>Integrate NVFlare with Local Train<a class="headerlink" href="#integrate-nvflare-with-local-train" title="Permalink to this headline">¶</a></h3>
-<p>NVFlare makes it very easy to integrate your local train code into the NVFlare API.</p>
-<p>The simplest way to do this is to subclass the <code class="docutils literal notranslate"><span class="pre">Trainer</span></code> class and
-implement one method <code class="docutils literal notranslate"><span class="pre">train</span></code>, which is called every time the client receives
-an updated model from the server. We can then call our local train inside the <code class="docutils literal notranslate"><span class="pre">train</span></code> method.</p>
+<div class="section" id="integrate-nvidia-flare-with-local-train">
+<h3>Integrate NVIDIA FLARE with Local Train<a class="headerlink" href="#integrate-nvidia-flare-with-local-train" title="Permalink to this headline">¶</a></h3>
+<p>NVIDIA FLARE makes it easy to integrate your local train code into the NVIDIA FLARE API.</p>
+<p>The simplest way to do this is to subclass the <code class="docutils literal notranslate"><span class="pre">Executor</span></code> class and
+implement one method <code class="docutils literal notranslate"><span class="pre">execute</span></code>, which is called every time the client receives
+an updated model from the server with the task “train” (the server will broadcast the “train” task in the Scatter and
+Gather workflow we will configure below). We can then call our local train inside the <code class="docutils literal notranslate"><span class="pre">execute</span></code> method.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">train</span></code> method inside the <code class="docutils literal notranslate"><span class="pre">Trainer</span></code> class is where all of the client side computation occurs.
-In these exercises, we update the weights by training on a local dataset, however, it is important to remember that NVFlare is not restricted to just deep learning.
+<p>The <code class="docutils literal notranslate"><span class="pre">execute</span></code> method inside the <code class="docutils literal notranslate"><span class="pre">Executor</span></code> class is where all of the client side computation occurs.
+In these exercises, we update the weights by training on a local dataset, however, it is important to remember that NVIDIA FLARE is not restricted to just deep learning.
 The type of data passed between the server and the clients, and the computations that the clients perform can be anything, as long as all of the FL Components agree on the same format.</p>
 </div>
 <p>Take a look at the following code:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span> <span class="nf">train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        This function is an extended function from the super class.</span>
-<span class="sd">        As a supervised learning based trainer, the train function will run</span>
-<span class="sd">        evaluate and train engines based on model weights from `shareable`.</span>
-<span class="sd">        After finishing training, a new `Shareable` object will be submitted</span>
-<span class="sd">        to server for aggregation.</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">task_name</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_train_task_name</span><span class="p">:</span>
+                <span class="c1"># Get model weights</span>
+                <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            shareable: the `Shareable` object acheived from server.</span>
-<span class="sd">            fl_ctx: the `FLContext` object achieved from server.</span>
-<span class="sd">            abort_signal: if triggered, the training will be aborted.</span>
+                <span class="c1"># Check if dxo is valid.</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dxo</span><span class="p">,</span> <span class="n">DXO</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;dxo excepted type DXO. Got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">dxo</span><span class="p">)</span><span class="si">}</span><span class="s2"> instead.&quot;</span><span class="p">)</span>
+                    <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">shareable</span>
 
-<span class="sd">        Returns:</span>
-<span class="sd">            a new `Shareable` object to be submitted to server for aggregation.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># retrieve model weights download from server&#39;s shareable</span>
-        <span class="n">model_weights</span> <span class="o">=</span> <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">MODEL_WEIGHTS</span><span class="p">]</span>
+                <span class="c1"># Ensure data kind is weights.</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data_kind</span> <span class="o">==</span> <span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;data_kind expected WEIGHTS but got </span><span class="si">{</span><span class="n">dxo</span><span class="o">.</span><span class="n">data_kind</span><span class="si">}</span><span class="s2"> instead.&quot;</span><span class="p">)</span>
+                    <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">shareable</span>
 
-        <span class="c1"># update local model weights with received weights</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span>
-            <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">model_weights</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-        <span class="p">)</span>
+                <span class="c1"># Convert weights to tensor. Run training</span>
+                <span class="n">torch_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">local_train</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">torch_weights</span><span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">local_train</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">save_local_model</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
 
-        <span class="c1"># build the shareable</span>
-        <span class="n">shareable</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
-        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">META</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">FLConstants</span><span class="o">.</span><span class="n">NUM_STEPS_CURRENT_ROUND</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
-        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="n">ShareableValue</span><span class="o">.</span><span class="n">TYPE_WEIGHTS</span>
-        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">DATA_TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="n">ShareableValue</span><span class="o">.</span><span class="n">DATA_TYPE_UNENCRYPTED</span>
-        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">MODEL_WEIGHTS</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="p">}</span>
+                <span class="c1"># Get the new state dict and send as weights</span>
+                <span class="n">new_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+                <span class="n">new_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">new_weights</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Local epochs finished.  Returning shareable&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">shareable</span>
+                <span class="n">outgoing_dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">new_weights</span><span class="p">,</span>
+                                   <span class="n">meta</span><span class="o">=</span><span class="p">{</span><span class="n">MetaKey</span><span class="o">.</span><span class="n">NUM_STEPS_CURRENT_ROUND</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_iterations</span><span class="p">})</span>
+                <span class="k">return</span> <span class="n">outgoing_dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">task_name</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span><span class="p">:</span>
+                <span class="c1"># Load local model</span>
+                <span class="n">ml</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_local_model</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+                <span class="c1"># Get the model parameters and create dxo from it</span>
+                <span class="n">dxo</span> <span class="o">=</span> <span class="n">model_learnable_to_dxo</span><span class="p">(</span><span class="n">ml</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">shareable</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
+                <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">shareable</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Exception in simple trainer.&quot;</span><span class="p">)</span>
+            <span class="n">shareable</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
+            <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">shareable</span>
 </pre></div>
 </div>
-<p>The concept of <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> is described briefly at <a class="reference internal" href="#shareable"><span class="std std-ref">Shareable</span></a> section.  Essentially, every NVFlare client receives the model weights
-from the server in <code class="docutils literal notranslate"><span class="pre">shareable</span></code> passed into the train method, and returns a new <code class="docutils literal notranslate"><span class="pre">shareable</span></code> back to the server.</p>
-<p>Thus, the first thing is to retrieve the model weights delivered by server via <code class="docutils literal notranslate"><span class="pre">shareable</span></code>:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># retrieve model weights download from server&#39;s shareable</span>
-<span class="n">model_weights</span> <span class="o">=</span> <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">MODEL_WEIGHTS</span><span class="p">]</span>
-</pre></div>
-</div>
-<p>Now we can update the local model with those received weights:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">v</span> <span class="ow">in</span> <span class="n">model_weights</span><span class="o">.</span><span class="n">items</span><span class="p">()})</span>
-</pre></div>
-</div>
-<p>We then perform a local train so the client’s model is trained with its own dataset:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="bp">self</span><span class="o">.</span><span class="n">local_train</span><span class="p">()</span>
-</pre></div>
-</div>
+<p>The concept of <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> is described in <a class="reference internal" href="../programming_guide/shareable.html#shareable"><span class="std std-ref">shareable</span></a>. Essentially, every
+NVIDIA FLARE client receives the model weights from the server in <code class="docutils literal notranslate"><span class="pre">shareable</span></code> passed into the <code class="docutils literal notranslate"><span class="pre">execute</span></code> method, and
+returns a new <code class="docutils literal notranslate"><span class="pre">shareable</span></code> back to the server. The data is managed by using DXO (see <a class="reference internal" href="../programming_guide/data_exchange_object.html#data-exchange-object"><span class="std std-ref">Data Exchange Object (DXO)</span></a>
+for details).</p>
+<p>Thus, the first thing is to retrieve the model weights delivered by server via <code class="docutils literal notranslate"><span class="pre">shareable</span></code>, and this can be seen in
+the first part of the code block above before <code class="docutils literal notranslate"><span class="pre">local_train</span></code> is called.</p>
+<p>We then perform a local train so the client’s model is trained with its own dataset.</p>
 <p>After finishing the local train, the train method builds a new <code class="docutils literal notranslate"><span class="pre">shareable</span></code> with newly-trained weights and metadata and returns it
-back to the NVFlare server for aggregation:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># build the shareable</span>
-<span class="n">shareable</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
-<span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">META</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">FLConstants</span><span class="o">.</span><span class="n">NUM_STEPS_CURRENT_ROUND</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
-<span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="n">ShareableValue</span><span class="o">.</span><span class="n">TYPE_WEIGHTS</span>
-<span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">DATA_TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="n">ShareableValue</span><span class="o">.</span><span class="n">DATA_TYPE_UNENCRYPTED</span>
-<span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">MODEL_WEIGHTS</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-<span class="p">}</span>
-<span class="k">return</span> <span class="n">shareable</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="shareable">
-<span id="id1"></span><h3>Shareable<a class="headerlink" href="#shareable" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><ul>
-<li><p>The <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> is a dictionary object used to share data and metadata between server and clients.</p></li>
-<li><p>The keys used in the exercise are:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">ShareableKey.META</span></code>: used to store metadata.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ShareableKey.MODEL_WEIGHTS</span></code>: used to receive and store weights. (The format is a dictionary with values of type numpy arrays by default. However, this format can be changed to anything as long as you ensure the client trainer and the aggregator agree on the structure.)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ShareableKey.TYPE</span></code>: value is TYPE_WEIGHTS in this exercise.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">Shareablekey.DATA_TYPE</span></code>: value is DATA_TYPE_UNENCRYPTED in this exercise.</p></li>
-</ul>
-</div></blockquote>
-</li>
-<li><p>There are many other predefined keys and values for the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> which can
-be found in the <code class="docutils literal notranslate"><span class="pre">ShareableKey</span></code> and <code class="docutils literal notranslate"><span class="pre">ShareableValue</span></code> classes respectively.</p></li>
-</ul>
-</div></blockquote>
-<p>You can find more details in the <a class="reference internal" href="../programming_guide.html#shareable"><span class="std std-ref">documentation</span></a>.</p>
+back to the NVIDIA FLARE server for aggregation.</p>
+<p>There is additional logic to handle the “submit_model” task, but that is for the CrossSiteModelEval workflow, so we will
+be addressing that in a later example.</p>
 </div>
 <div class="section" id="flcontext">
 <h3>FLContext<a class="headerlink" href="#flcontext" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><ul>
-<li><p>The <code class="docutils literal notranslate"><span class="pre">FLContext</span></code> is used to set and retrieve FL related information among the FL components via <code class="docutils literal notranslate"><span class="pre">set_prop()</span></code> and <code class="docutils literal notranslate"><span class="pre">get_prop()</span></code>.</p></li>
-<li><p>For example:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>fl_ctx.get_prop(FLConstants.CLIENT_NAME) retrieves the client name</p></li>
-<li><p>fl_ctx.get_prop(FLConstants.CURRENT_ROUND) retrives the current round of FL</p></li>
-</ul>
-</div></blockquote>
-</li>
-<li><p>The other defined keys can be found in the FLConstants class.</p></li>
-</ul>
-</div></blockquote>
-<p>You can find more details in the <a class="reference internal" href="../programming_guide.html#flcontext"><span class="std std-ref">documentation</span></a>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">FLContext</span></code> is used to set and retrieve FL related information among the FL components via <code class="docutils literal notranslate"><span class="pre">set_prop()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">get_prop()</span></code> as well as get services provided by the underlying infrastructure. You can find more details in the
+<a class="reference internal" href="../programming_guide/fl_context.html#fl-context"><span class="std std-ref">documentation</span></a>.</p>
 </div>
 </div>
-<div class="section" id="nvflare-server-application">
-<h2>NVFlare Server &amp; Application<a class="headerlink" href="#nvflare-server-application" title="Permalink to this headline">¶</a></h2>
-<p>In this exercise, you can use the default settings, which leverage NVFlare built-in components for NVFlare server.  These
+<div class="section" id="nvidia-flare-server-application">
+<h2>NVIDIA FLARE Server &amp; Application<a class="headerlink" href="#nvidia-flare-server-application" title="Permalink to this headline">¶</a></h2>
+<p>In this exercise, you can use the default settings, which leverage NVIDIA FLARE built-in components for NVIDIA FLARE server.  These
 built-in components are commonly used in most deep learning scenarios.  However, you are encouraged to build your own components
-to fully customize NVFlare to meet your environment, which we will demonstrate in the following exercises.</p>
+to fully customize NVIDIA FLARE to meet your environment, which we will demonstrate in the following exercises.</p>
 <div class="section" id="application-configuration">
 <h3>Application Configuration<a class="headerlink" href="#application-configuration" title="Permalink to this headline">¶</a></h3>
 <p>Inside the config folder there are two files, <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code> and <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>.</p>
-<div class="literal-block-wrapper docutils container" id="id3">
-<div class="code-block-caption"><span class="caption-text">config_fed_client.json</span><a class="headerlink" href="#id3" title="Permalink to this code">¶</a></div>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">config_fed_client.json</span><a class="headerlink" href="#id2" title="Permalink to this code">¶</a></div>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
-<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos"> 3</span>  <span class="nt">&quot;platform&quot;</span><span class="p">:</span> <span class="s2">&quot;PT&quot;</span><span class="p">,</span>
-<span class="linenos"> 4</span>  <span class="nt">&quot;client&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos"> 5</span>    <span class="nt">&quot;outbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
-<span class="linenos"> 6</span>    <span class="nt">&quot;inbound_filters&quot;</span><span class="p">:</span> <span class="p">[]</span>
-<span class="linenos"> 7</span>  <span class="p">},</span>
-<span class="linenos"> 8</span>  <span class="nt">&quot;client_trainer&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos"> 9</span>    <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;trainer.SimpleTrainer&quot;</span><span class="p">,</span>
-<span class="linenos">10</span>    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
-<span class="linenos">11</span>  <span class="p">},</span>
-<span class="linenos">12</span>  <span class="nt">&quot;handlers&quot;</span><span class="p">:</span> <span class="p">[]</span>
-<span class="linenos">13</span><span class="p">}</span>
-</pre></div>
-</div>
-</div>
-<p>Take a look at line 9.  This is the <code class="docutils literal notranslate"><span class="pre">SimpleTrainer</span></code> you just implemented.  The NVFlare client loads this
-application configuration and picks your implementation.  You can easily change it to another class so
-your NVFlare client has different training logic.</p>
-<div class="literal-block-wrapper docutils container" id="id4">
-<div class="code-block-caption"><span class="caption-text">config_fed_server.json</span><a class="headerlink" href="#id4" title="Permalink to this code">¶</a></div>
-<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
-<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos"> 3</span>  <span class="nt">&quot;servers&quot;</span><span class="p">:</span> <span class="p">[</span>
-<span class="linenos"> 4</span>    <span class="p">{</span>
-<span class="linenos"> 5</span>      <span class="nt">&quot;min_num_clients&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos"> 6</span>      <span class="nt">&quot;max_num_clients&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
-<span class="linenos"> 7</span>      <span class="nt">&quot;wait_after_min_clients&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
-<span class="linenos"> 8</span>      <span class="nt">&quot;heart_beat_timeout&quot;</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span>
-<span class="linenos"> 9</span>      <span class="nt">&quot;start_round&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-<span class="linenos">10</span>      <span class="nt">&quot;num_rounds&quot;</span><span class="p">:</span> <span class="mi">3</span>
-<span class="linenos">11</span>    <span class="p">}</span>
-<span class="linenos">12</span>  <span class="p">],</span>
-<span class="linenos">13</span>  <span class="nt">&quot;aggregator&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">14</span>    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;AccumulateWeightedAggregator&quot;</span><span class="p">,</span>
-<span class="linenos">15</span>    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">16</span>      <span class="nt">&quot;aggregation_weights&quot;</span><span class="p">:</span>
-<span class="linenos">17</span>        <span class="p">{</span>
-<span class="linenos">18</span>          <span class="nt">&quot;site-1&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos">19</span>          <span class="nt">&quot;site-2&quot;</span><span class="p">:</span> <span class="mi">1</span>
+<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos"> 3</span>
+<span class="linenos"> 4</span>  <span class="nt">&quot;executors&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos"> 5</span>    <span class="p">{</span>
+<span class="linenos"> 6</span>      <span class="nt">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="s2">&quot;submit_model&quot;</span><span class="p">],</span>
+<span class="linenos"> 7</span>      <span class="nt">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos"> 8</span>        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;cifar10trainer.Cifar10Trainer&quot;</span><span class="p">,</span>
+<span class="linenos"> 9</span>        <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">10</span>          <span class="nt">&quot;lr&quot;</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">,</span>
+<span class="linenos">11</span>          <span class="nt">&quot;epochs&quot;</span><span class="p">:</span> <span class="mi">1</span>
+<span class="linenos">12</span>        <span class="p">}</span>
+<span class="linenos">13</span>      <span class="p">}</span>
+<span class="linenos">14</span>    <span class="p">},</span>
+<span class="linenos">15</span>    <span class="p">{</span>
+<span class="linenos">16</span>      <span class="nt">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;validate&quot;</span><span class="p">],</span>
+<span class="linenos">17</span>      <span class="nt">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">18</span>        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;cifar10validator.Cifar10Validator&quot;</span><span class="p">,</span>
+<span class="linenos">19</span>        <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
 <span class="linenos">20</span>        <span class="p">}</span>
-<span class="linenos">21</span>    <span class="p">}</span>
-<span class="linenos">22</span>  <span class="p">},</span>
-<span class="linenos">23</span>  <span class="nt">&quot;outbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
-<span class="linenos">24</span>  <span class="nt">&quot;inbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
-<span class="linenos">25</span>  <span class="nt">&quot;persistor&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">26</span>    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;PTFileModelPersistor&quot;</span><span class="p">,</span>
-<span class="linenos">27</span>    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">28</span>      <span class="nt">&quot;model&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">29</span>        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;net.Net&quot;</span>
-<span class="linenos">30</span>      <span class="p">}</span>
-<span class="linenos">31</span>    <span class="p">}</span>
-<span class="linenos">32</span>  <span class="p">},</span>
-<span class="linenos">33</span>  <span class="nt">&quot;shareable_generator&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">34</span>    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;FullModelShareableGenerator&quot;</span>
-<span class="linenos">35</span>  <span class="p">}</span>
-<span class="linenos">36</span><span class="p">}</span>
+<span class="linenos">21</span>      <span class="p">}</span>
+<span class="linenos">22</span>    <span class="p">}</span>
+<span class="linenos">23</span>  <span class="p">],</span>
+<span class="linenos">24</span>  <span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">25</span>  <span class="p">],</span>
+<span class="linenos">26</span>  <span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">27</span>  <span class="p">],</span>
+<span class="linenos">28</span>  <span class="nt">&quot;components&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">29</span>  <span class="p">]</span>
+<span class="linenos">30</span><span class="p">}</span>
 </pre></div>
 </div>
 </div>
-<p>The server application configuration, like said before, leverages NVFlare built-in components. Remember, you
+<p>Take a look at line 8.  This is the <code class="docutils literal notranslate"><span class="pre">Cifar10Trainer</span></code> you just implemented.  The NVIDIA FLARE client loads this
+application configuration and picks your implementation.  You can easily change it to another class so
+your NVIDIA FLARE client has different training logic.</p>
+<p>The tasks “train” and “submit_model” have been configured to work with the <code class="docutils literal notranslate"><span class="pre">Cifar10Trainer</span></code> Executor. The “validate”
+task for <code class="docutils literal notranslate"><span class="pre">Cifar10Validator</span></code> and the “submit_model” task are used for the CrossSiteModelEval workflow, so we will
+be addressing that in a later example.</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-text">config_fed_server.json</span><a class="headerlink" href="#id3" title="Permalink to this code">¶</a></div>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
+<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos"> 3</span>
+<span class="linenos"> 4</span>  <span class="nt">&quot;server&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos"> 5</span>    <span class="nt">&quot;heart_beat_timeout&quot;</span><span class="p">:</span> <span class="mi">600</span>
+<span class="linenos"> 6</span>  <span class="p">},</span>
+<span class="linenos"> 7</span>  <span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos"> 8</span>  <span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos"> 9</span>  <span class="nt">&quot;components&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">10</span>    <span class="p">{</span>
+<span class="linenos">11</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;persistor&quot;</span><span class="p">,</span>
+<span class="linenos">12</span>      <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;PTFileModelPersistor&quot;</span><span class="p">,</span>
+<span class="linenos">13</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">14</span>        <span class="nt">&quot;model&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">15</span>          <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;net.SimpleNetwork&quot;</span>
+<span class="linenos">16</span>        <span class="p">}</span>
+<span class="linenos">17</span>      <span class="p">}</span>
+<span class="linenos">18</span>    <span class="p">},</span>
+<span class="linenos">19</span>    <span class="p">{</span>
+<span class="linenos">20</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span>
+<span class="linenos">21</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator&quot;</span><span class="p">,</span>
+<span class="linenos">22</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">23</span>    <span class="p">},</span>
+<span class="linenos">24</span>    <span class="p">{</span>
+<span class="linenos">25</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;aggregator&quot;</span><span class="p">,</span>
+<span class="linenos">26</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator&quot;</span><span class="p">,</span>
+<span class="linenos">27</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">28</span>        <span class="nt">&quot;expected_data_kind&quot;</span><span class="p">:</span> <span class="s2">&quot;WEIGHTS&quot;</span>
+<span class="linenos">29</span>      <span class="p">}</span>
+<span class="linenos">30</span>    <span class="p">},</span>
+<span class="linenos">31</span>    <span class="p">{</span>
+<span class="linenos">32</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;model_locator&quot;</span><span class="p">,</span>
+<span class="linenos">33</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;pt_model_locator.PTModelLocator&quot;</span><span class="p">,</span>
+<span class="linenos">34</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">35</span>
+<span class="linenos">36</span>      <span class="p">}</span>
+<span class="linenos">37</span>    <span class="p">},</span>
+<span class="linenos">38</span>    <span class="p">{</span>
+<span class="linenos">39</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;json_generator&quot;</span><span class="p">,</span>
+<span class="linenos">40</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;validation_json_generator.ValidationJsonGenerator&quot;</span><span class="p">,</span>
+<span class="linenos">41</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">42</span>      <span class="p">}</span>
+<span class="linenos">43</span>    <span class="p">}</span>
+<span class="linenos">44</span>  <span class="p">],</span>
+<span class="linenos">45</span>  <span class="nt">&quot;workflows&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">46</span>      <span class="p">{</span>
+<span class="linenos">47</span>        <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;scatter_and_gather&quot;</span><span class="p">,</span>
+<span class="linenos">48</span>        <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;ScatterAndGather&quot;</span><span class="p">,</span>
+<span class="linenos">49</span>        <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">50</span>            <span class="nt">&quot;min_clients&quot;</span> <span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos">51</span>            <span class="nt">&quot;num_rounds&quot;</span> <span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos">52</span>            <span class="nt">&quot;start_round&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+<span class="linenos">53</span>            <span class="nt">&quot;wait_time_after_min_received&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+<span class="linenos">54</span>            <span class="nt">&quot;aggregator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;aggregator&quot;</span><span class="p">,</span>
+<span class="linenos">55</span>            <span class="nt">&quot;persistor_id&quot;</span><span class="p">:</span> <span class="s2">&quot;persistor&quot;</span><span class="p">,</span>
+<span class="linenos">56</span>            <span class="nt">&quot;shareable_generator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span>
+<span class="linenos">57</span>            <span class="nt">&quot;train_task_name&quot;</span><span class="p">:</span> <span class="s2">&quot;train&quot;</span><span class="p">,</span>
+<span class="linenos">58</span>            <span class="nt">&quot;train_timeout&quot;</span><span class="p">:</span> <span class="mi">0</span>
+<span class="linenos">59</span>        <span class="p">}</span>
+<span class="linenos">60</span>      <span class="p">},</span>
+<span class="linenos">61</span>      <span class="p">{</span>
+<span class="linenos">62</span>        <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;cross_site_validate&quot;</span><span class="p">,</span>
+<span class="linenos">63</span>        <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;CrossSiteModelEval&quot;</span><span class="p">,</span>
+<span class="linenos">64</span>        <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">65</span>          <span class="nt">&quot;model_locator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;model_locator&quot;</span>
+<span class="linenos">66</span>        <span class="p">}</span>
+<span class="linenos">67</span>      <span class="p">}</span>
+<span class="linenos">68</span>  <span class="p">]</span>
+<span class="linenos">69</span><span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<p>The server application configuration, like said before, leverages NVIDIA FLARE built-in components. Remember, you
 are encouraged to change them to your own classes whenever you have different application logic.</p>
-<p>Note that on line 26, <code class="docutils literal notranslate"><span class="pre">persistor</span></code> points to <code class="docutils literal notranslate"><span class="pre">PTFileModelPersistor</span></code>.
-NVFlare provides a built-in PyTorch implementation for a model persistor, however for other frameworks/libraries, you will have to implement your own.</p>
+<p>Note that on line 12, <code class="docutils literal notranslate"><span class="pre">persistor</span></code> points to <code class="docutils literal notranslate"><span class="pre">PTFileModelPersistor</span></code>.
+NVIDIA FLARE provides a built-in PyTorch implementation for a model persistor, however for other frameworks/libraries, you will have to implement your own.</p>
+<p>The Scatter and Gather workflow is implemented by <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"><code class="xref py py-class docutils literal notranslate"><span class="pre">ScatterAndGather</span></code></a>
+and is configured to make use of the components with id “aggregator”, “persistor”, and “shareable_generator”. The workflow
+code is all open source now, so feel free to study and use it as inspiration to write your own workflows to support your needs.</p>
 </div>
 </div>
 <div class="section" id="train-the-model-federated">
@@ -637,7 +664,7 @@ NVFlare provides a built-in PyTorch implementation for a model persistor, howeve
 $ cp -r poc/client poc/site-2
 </pre></div>
 </div>
-<p>Finally, we copy necessary files (the exercise codes) to a working folder:</p>
+<p>Finally, we copy necessary files (the exercise code) to a working folder:</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ mkdir -p poc/admin/transfer
 $ cp -rf examples/* poc/admin/transfer
 </pre></div>
@@ -664,20 +691,19 @@ Open a new terminal and start the first client:</p>
 <p>This will launch a command prompt, where you can input commands to control and monitor many aspects of
 the FL process. Log in by entering <code class="docutils literal notranslate"><span class="pre">admin</span></code> for both the username and password.</p>
 </div>
-<div class="section" id="running-the-fl">
-<h3>Running the FL<a class="headerlink" href="#running-the-fl" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="running-the-fl-system">
+<h3>Running the FL System<a class="headerlink" href="#running-the-fl-system" title="Permalink to this headline">¶</a></h3>
 <p>Enter the commands below in order.  Pay close attention to what happens in each of four terminals.  You
-can see the admin controls server and clients with each command.</p>
+can see how the admin controls the server and clients with each command.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; upload_app hello-pt
 </pre></div>
 </div>
-<p>Uploads an application in the server’s registry.  This creates the application entry, populates the configuration and links the name
-<code class="docutils literal notranslate"><span class="pre">hello-pt</span></code> with such application configuration.  Later, you can control this application via this name.</p>
+<p>Uploads the application from the admin client to the server’s staging area.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; set_run_number <span class="m">1</span>
 </pre></div>
 </div>
-<p>Creates a workspace with the run_number on the server and all clients.  The purpose of this workspace is to isolate different runs so
-the information in one particular run does not interfere with other runs.</p>
+<p>Creates a run directory in the workspace for the run_number on the server and all clients. The run directory allows for
+the isolation of different runs so the information in one particular run does not interfere with other runs.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; deploy_app hello-pt all
 </pre></div>
 </div>
@@ -686,43 +712,11 @@ the server and all the clients know the hello-pt application will reside in the 
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; start_app all
 </pre></div>
 </div>
-<p>This <code class="docutils literal notranslate"><span class="pre">start_app</span></code> command instructs the NVFlare server and clients to start training with the hello-pt application in that <code class="docutils literal notranslate"><span class="pre">run_1</span></code> workspace.</p>
+<p>This <code class="docutils literal notranslate"><span class="pre">start_app</span></code> command instructs the NVIDIA FLARE server and clients to start training with the hello-pt application in that <code class="docutils literal notranslate"><span class="pre">run_1</span></code> workspace.</p>
 <p>From time to time, you can issue <code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code> in the admin client to check the entire training progress.</p>
-<p>You should now see how the training does in the very first terminal (the one that started the server):</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="m">2021</span>-06-25 <span class="m">08</span>:30:28,755 - FederatedServer - INFO - starting secure server at localhost:8002
-deployed FL server trainer.
-<span class="m">2021</span>-06-25 <span class="m">08</span>:30:28,763 - FedAdminServer - INFO - Starting Admin Server localhost on Port <span class="m">8003</span>
-<span class="m">2021</span>-06-25 <span class="m">08</span>:30:28,763 - root - INFO - Server started
-<span class="m">2021</span>-06-25 <span class="m">08</span>:30:41,862 - ClientManager - INFO - Client: New client site-1@127.0.0.1 joined. Sent token: 51b4bbc2-385f-4193-9891-31392cace676.  Total clients: <span class="m">1</span>
-Create initial model message...
-created initial model_data...
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:27,362 - FederatedServer - INFO - Server training has been started.
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:38,389 - FederatedServer - INFO - GetModel requested from: 51b4bbc2-385f-4193-9891-31392cace676
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:38,402 - FederatedServer - INFO - Return model to : 51b4bbc2-385f-4193-9891-31392cace676 <span class="k">for</span> round: <span class="m">0</span>
-</pre></div>
-</div>
-<p>On your client terminal:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>PYTHONPATH is /local/custom:
-start fl because of no pid.fl
-new pid <span class="m">10719</span>
-<span class="m">2021</span>-06-25 <span class="m">08</span>:30:41,863 - FederatedClient - INFO - Successfully registered client:site-1 <span class="k">for</span> example_project. Got token:51b4bbc2-385f-4193-9891-31392cace676
-created /tmp/fl/site-1/comm/training/x
-created /tmp/fl/site-1/comm/training/y
-created /tmp/fl/site-1/comm/training/t
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:37,523 - ClientAdminInterface - INFO - Starting client training. rank: <span class="m">0</span>
-training child process ID: <span class="m">10938</span>
-starting the client .....
-token is: 51b4bbc2-385f-4193-9891-31392cace676 run_number is: <span class="m">1</span> uid: site-1 listen_port: <span class="m">58949</span>
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:38,199 - SimpleTrainer - INFO - epochs_per_round: <span class="m">1</span>, validation_interval: <span class="m">2000</span>
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:38,332 - FederatedClient - INFO - Starting to fetch global model.
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:38,540 - ProcessExecutor - INFO - waiting <span class="k">for</span> process to finish
-Created the listener on port: <span class="m">58949</span>
-<span class="m">2021</span>-06-25 <span class="m">08</span>:31:38,690 - Communicator - INFO - Received example_project model at round <span class="m">0</span> <span class="o">(</span><span class="m">4800501</span> Bytes<span class="o">)</span>. GetModel time: <span class="m">0</span>.35499143600463867 seconds
-Get global model <span class="k">for</span> round: <span class="m">0</span>
-pull_models completed. Status:True rank:0
-</pre></div>
-</div>
-<p>Once the fl run is complete and the server has successfully aggregrated the clients’ results after all the rounds, run the following commands in the fl_admin to shutdown the system (while inputting <code class="docutils literal notranslate"><span class="pre">admin</span></code> when prompted with password):</p>
+<p>You should now see how the training does in the very first terminal (the one that started the server).</p>
+<p>Once the fl run is complete and the server has successfully aggregated the clients’ results after all the rounds,
+run the following commands in the fl_admin to shutdown the system (while inputting <code class="docutils literal notranslate"><span class="pre">admin</span></code> when prompted with user name):</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; shutdown client
 &gt; shutdown server
 &gt; bye
@@ -732,7 +726,7 @@ pull_models completed. Status:True rank:0
 <p>All artifacts from the FL run can be found in the server run folder you created with <code class="docutils literal notranslate"><span class="pre">set_run_number</span></code>.  In this exercise, the folder is <code class="docutils literal notranslate"><span class="pre">run_1</span></code>.</p>
 <p>Congratulations!
 You’ve successfully built and run your first federated learning system.
-The full <a class="reference external" href="https://gitlab-master.nvidia.com/dlmed/hello_nvflare/-/blob/main/examples/hello-pt/">source code</a> for this exercise can be found in <code class="docutils literal notranslate"><span class="pre">examples/hello-pt</span></code>.</p>
+The full <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt/">source code</a> for this exercise can be found in <code class="docutils literal notranslate"><span class="pre">examples/hello-pt</span></code>.</p>
 </div>
 </div>
 </div>

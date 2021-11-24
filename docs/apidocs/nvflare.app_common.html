@@ -1,0 +1,1105 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.app_common package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.app_common.abstract package" href="nvflare.app_common.abstract.html" />
+    <link rel="prev" title="nvflare.apis.utils package" href="nvflare.apis.utils.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">nvflare.app_common package</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.app_common.app_constant">nvflare.app_common.app_constant module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.app_common.app_event_type">nvflare.app_common.app_event_type module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.app_common">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+      <li>nvflare.app_common package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.app_common.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-app-common-package">
+<h1>nvflare.app_common package<a class="headerlink" href="#nvflare-app-common-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="subpackages">
+<h2>Subpackages<a class="headerlink" href="#subpackages" title="Permalink to this headline">¶</a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.abstract.html">nvflare.app_common.abstract package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.aggregator">nvflare.app_common.abstract.aggregator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.formatter">nvflare.app_common.abstract.formatter module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.learnable">nvflare.app_common.abstract.learnable module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.learnable_persistor">nvflare.app_common.abstract.learnable_persistor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.model">nvflare.app_common.abstract.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.model_locator">nvflare.app_common.abstract.model_locator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.model_persistor">nvflare.app_common.abstract.model_persistor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.model_processor">nvflare.app_common.abstract.model_processor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract.shareable_generator">nvflare.app_common.abstract.shareable_generator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.abstract.html#module-nvflare.app_common.abstract">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.aggregators.html">nvflare.app_common.aggregators package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.aggregators.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.aggregators.html#module-nvflare.app_common.aggregators.accumulate_model_aggregator">nvflare.app_common.aggregators.accumulate_model_aggregator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.aggregators.html#module-nvflare.app_common.aggregators.intime_accumulate_model_aggregator">nvflare.app_common.aggregators.intime_accumulate_model_aggregator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.aggregators.html#module-nvflare.app_common.aggregators">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.executors.html">nvflare.app_common.executors package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.executors.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.executors.html#module-nvflare.app_common.executors.multi_process_executor">nvflare.app_common.executors.multi_process_executor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.executors.html#module-nvflare.app_common.executors">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.filters.html">nvflare.app_common.filters package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.filters.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.filters.html#module-nvflare.app_common.filters.convert_weights">nvflare.app_common.filters.convert_weights module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.filters.html#module-nvflare.app_common.filters.exclude_vars">nvflare.app_common.filters.exclude_vars module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.filters.html#module-nvflare.app_common.filters.percentile_privacy">nvflare.app_common.filters.percentile_privacy module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.filters.html#module-nvflare.app_common.filters.svt_privacy">nvflare.app_common.filters.svt_privacy module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.filters.html#module-nvflare.app_common.filters">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.handlers.html">nvflare.app_common.handlers package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.handlers.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.handlers.html#module-nvflare.app_common.handlers.event_recorder">nvflare.app_common.handlers.event_recorder module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.handlers.html#module-nvflare.app_common.handlers.intime_model_selection_handler">nvflare.app_common.handlers.intime_model_selection_handler module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.handlers.html#module-nvflare.app_common.handlers">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html">nvflare.app_common.homomorphic_encryption package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption.he_constant">nvflare.app_common.homomorphic_encryption.he_constant module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption.he_intime_accumulate_model_aggregator">nvflare.app_common.homomorphic_encryption.he_intime_accumulate_model_aggregator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption.he_model_decryptor">nvflare.app_common.homomorphic_encryption.he_model_decryptor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption.he_model_encryptor">nvflare.app_common.homomorphic_encryption.he_model_encryptor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption.he_model_shareable_generator">nvflare.app_common.homomorphic_encryption.he_model_shareable_generator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption.he_pt_model_reader_writer">nvflare.app_common.homomorphic_encryption.he_pt_model_reader_writer module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption.homomorphic_encrypt">nvflare.app_common.homomorphic_encryption.homomorphic_encrypt module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.homomorphic_encryption.html#module-nvflare.app_common.homomorphic_encryption">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.pt.html">nvflare.app_common.pt package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#module-nvflare.app_common.pt.pt_fed_utils">nvflare.app_common.pt.pt_fed_utils module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#module-nvflare.app_common.pt.pt_fedopt">nvflare.app_common.pt.pt_fedopt module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#module-nvflare.app_common.pt.pt_fedproxloss">nvflare.app_common.pt.pt_fedproxloss module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#module-nvflare.app_common.pt.pt_file_model_persistor">nvflare.app_common.pt.pt_file_model_persistor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#module-nvflare.app_common.pt.pt_model_reader_writer">nvflare.app_common.pt.pt_model_reader_writer module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#module-nvflare.app_common.pt.pt_multi_process_executor">nvflare.app_common.pt.pt_multi_process_executor module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#nvflare-app-common-pt-tb-receiver-module">nvflare.app_common.pt.tb_receiver module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.pt.html#module-nvflare.app_common.pt">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.shareablegenerators.html">nvflare.app_common.shareablegenerators package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.shareablegenerators.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.shareablegenerators.html#module-nvflare.app_common.shareablegenerators.full_model_shareable_generator">nvflare.app_common.shareablegenerators.full_model_shareable_generator module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.shareablegenerators.html#module-nvflare.app_common.shareablegenerators">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.widgets.html">nvflare.app_common.widgets package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.widgets.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.widgets.html#module-nvflare.app_common.widgets.convert_to_fed_event">nvflare.app_common.widgets.convert_to_fed_event module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.widgets.html#module-nvflare.app_common.widgets.streaming">nvflare.app_common.widgets.streaming module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.widgets.html#module-nvflare.app_common.widgets">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.app_common.workflows.html">nvflare.app_common.workflows package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.workflows.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.workflows.html#module-nvflare.app_common.workflows.cross_site_model_eval">nvflare.app_common.workflows.cross_site_model_eval module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.workflows.html#module-nvflare.app_common.workflows.cyclic_ctl">nvflare.app_common.workflows.cyclic_ctl module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.workflows.html#module-nvflare.app_common.workflows.global_model_eval">nvflare.app_common.workflows.global_model_eval module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.workflows.html#module-nvflare.app_common.workflows.scatter_and_gather">nvflare.app_common.workflows.scatter_and_gather module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.app_common.workflows.html#module-nvflare.app_common.workflows">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.app_common.app_constant">
+<span id="nvflare-app-common-app-constant-module"></span><h2>nvflare.app_common.app_constant module<a class="headerlink" href="#module-nvflare.app_common.app_constant" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AppConstants</span></span><a class="reference internal" href="../_modules/nvflare/app_common/app_constant.html#AppConstants"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.AGGREGATION_ACCEPTED">
+<span class="sig-name descname"><span class="pre">AGGREGATION_ACCEPTED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_aggregation_accepted'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.AGGREGATION_ACCEPTED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.AGGREGATION_RESULT">
+<span class="sig-name descname"><span class="pre">AGGREGATION_RESULT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_aggregation_result'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.AGGREGATION_RESULT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.AGGREGATION_TRIGGERED">
+<span class="sig-name descname"><span class="pre">AGGREGATION_TRIGGERED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_aggregation_triggered'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.AGGREGATION_TRIGGERED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CKPT_PRELOAD_PATH">
+<span class="sig-name descname"><span class="pre">CKPT_PRELOAD_PATH</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'ckpt_preload_path'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CKPT_PRELOAD_PATH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CONFIG_PATH">
+<span class="sig-name descname"><span class="pre">CONFIG_PATH</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'config_path'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CONFIG_PATH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CONTRIBUTION_CLIENT">
+<span class="sig-name descname"><span class="pre">CONTRIBUTION_CLIENT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'contribution_client'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CONTRIBUTION_CLIENT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CONTRIBUTION_ROUND">
+<span class="sig-name descname"><span class="pre">CONTRIBUTION_ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'contribution_round'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CONTRIBUTION_ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CROSS_VAL_CLIENT_MODEL">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_CLIENT_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_cross_val_client_model_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CROSS_VAL_CLIENT_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CROSS_VAL_DIR">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_DIR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'cross_site_val'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CROSS_VAL_DIR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CROSS_VAL_MODEL_DIR_NAME">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_MODEL_DIR_NAME</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model_shareables'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CROSS_VAL_MODEL_DIR_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CROSS_VAL_MODEL_PATH">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_MODEL_PATH</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_cross_val_model_path_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CROSS_VAL_MODEL_PATH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CROSS_VAL_RESULTS_DIR_NAME">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_RESULTS_DIR_NAME</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'result_shareables'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CROSS_VAL_RESULTS_DIR_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CROSS_VAL_RESULTS_PATH">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_RESULTS_PATH</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_cross_val_results_path_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CROSS_VAL_RESULTS_PATH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CROSS_VAL_SERVER_MODEL">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_SERVER_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_cross_val_server_model_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CROSS_VAL_SERVER_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CURRENT_LEARNING_RATE">
+<span class="sig-name descname"><span class="pre">CURRENT_LEARNING_RATE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'current_learning_rate'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CURRENT_LEARNING_RATE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.CURRENT_ROUND">
+<span class="sig-name descname"><span class="pre">CURRENT_ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'current_round'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.CURRENT_ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DATA_CLIENT">
+<span class="sig-name descname"><span class="pre">DATA_CLIENT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_data_client_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DATA_CLIENT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DEFAULT_AGGREGATOR_ID">
+<span class="sig-name descname"><span class="pre">DEFAULT_AGGREGATOR_ID</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'aggregator'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DEFAULT_AGGREGATOR_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DEFAULT_FORMATTER_ID">
+<span class="sig-name descname"><span class="pre">DEFAULT_FORMATTER_ID</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'formatter'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DEFAULT_FORMATTER_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DEFAULT_MODEL_DIR">
+<span class="sig-name descname"><span class="pre">DEFAULT_MODEL_DIR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'models'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DEFAULT_MODEL_DIR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DEFAULT_MODEL_LOCATOR_ID">
+<span class="sig-name descname"><span class="pre">DEFAULT_MODEL_LOCATOR_ID</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model_locator'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DEFAULT_MODEL_LOCATOR_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DEFAULT_PERSISTOR_ID">
+<span class="sig-name descname"><span class="pre">DEFAULT_PERSISTOR_ID</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'persistor'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DEFAULT_PERSISTOR_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID">
+<span class="sig-name descname"><span class="pre">DEFAULT_SHAREABLE_GENERATOR_ID</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'shareable_generator'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DEVICE">
+<span class="sig-name descname"><span class="pre">DEVICE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'device'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DEVICE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.DXO">
+<span class="sig-name descname"><span class="pre">DXO</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'DXO'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.DXO" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.FAILURE">
+<span class="sig-name descname"><span class="pre">FAILURE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'failure'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.FAILURE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.GLOBAL_MODEL">
+<span class="sig-name descname"><span class="pre">GLOBAL_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'global_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.GLOBAL_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.INITIAL_LEARNING_RATE">
+<span class="sig-name descname"><span class="pre">INITIAL_LEARNING_RATE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'initial_learning_rate'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.INITIAL_LEARNING_RATE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.IS_BEST">
+<span class="sig-name descname"><span class="pre">IS_BEST</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'is_best'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.IS_BEST" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.IS_FIRST_ROUND">
+<span class="sig-name descname"><span class="pre">IS_FIRST_ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'is_first_round'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.IS_FIRST_ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.LOCAL_EPOCHS">
+<span class="sig-name descname"><span class="pre">LOCAL_EPOCHS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'local_epochs'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.LOCAL_EPOCHS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.LOG_DIR">
+<span class="sig-name descname"><span class="pre">LOG_DIR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model_log_dir'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.LOG_DIR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.META_COOKIE">
+<span class="sig-name descname"><span class="pre">META_COOKIE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'cookie'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.META_COOKIE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.META_DATA">
+<span class="sig-name descname"><span class="pre">META_DATA</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'meta_data'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.META_DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_LOAD_PATH">
+<span class="sig-name descname"><span class="pre">MODEL_LOAD_PATH</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_model_load_path'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_LOAD_PATH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_NAME">
+<span class="sig-name descname"><span class="pre">MODEL_NAME</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model_name'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_NETWORK">
+<span class="sig-name descname"><span class="pre">MODEL_NETWORK</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model_network'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_NETWORK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_OWNER">
+<span class="sig-name descname"><span class="pre">MODEL_OWNER</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_model_owner_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_OWNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_SAVE_PATH">
+<span class="sig-name descname"><span class="pre">MODEL_SAVE_PATH</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_model_save_path'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_SAVE_PATH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_TO_VALIDATE">
+<span class="sig-name descname"><span class="pre">MODEL_TO_VALIDATE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_model_to_validate_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_TO_VALIDATE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_URL">
+<span class="sig-name descname"><span class="pre">MODEL_URL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model_url'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_URL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MODEL_WEIGHTS">
+<span class="sig-name descname"><span class="pre">MODEL_WEIGHTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_model_weights_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MODEL_WEIGHTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MULTI_GPU">
+<span class="sig-name descname"><span class="pre">MULTI_GPU</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'multi_gpu'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MULTI_GPU" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.MY_RANK">
+<span class="sig-name descname"><span class="pre">MY_RANK</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'my_rank'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.MY_RANK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.NUMBER_OF_GPUS">
+<span class="sig-name descname"><span class="pre">NUMBER_OF_GPUS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'number_of_gpus'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.NUMBER_OF_GPUS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.NUM_EPOCHS_CURRENT_ROUND">
+<span class="sig-name descname"><span class="pre">NUM_EPOCHS_CURRENT_ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'num_epochs_current_round'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.NUM_EPOCHS_CURRENT_ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.NUM_ROUNDS">
+<span class="sig-name descname"><span class="pre">NUM_ROUNDS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'num_rounds'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.NUM_ROUNDS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.NUM_TOTAL_EPOCHS">
+<span class="sig-name descname"><span class="pre">NUM_TOTAL_EPOCHS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'num_total_epochs'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.NUM_TOTAL_EPOCHS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.NUM_TOTAL_STEPS">
+<span class="sig-name descname"><span class="pre">NUM_TOTAL_STEPS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'num_total_steps'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.NUM_TOTAL_STEPS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.PARTICIPATING_CLIENTS">
+<span class="sig-name descname"><span class="pre">PARTICIPATING_CLIENTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_particpating_clients_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.PARTICIPATING_CLIENTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.PHASE">
+<span class="sig-name descname"><span class="pre">PHASE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_phase_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.PHASE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.PHASE_FINISHED">
+<span class="sig-name descname"><span class="pre">PHASE_FINISHED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_finished_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.PHASE_FINISHED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.PHASE_INIT">
+<span class="sig-name descname"><span class="pre">PHASE_INIT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_init_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.PHASE_INIT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.PHASE_MODEL_VALIDATION">
+<span class="sig-name descname"><span class="pre">PHASE_MODEL_VALIDATION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model_validation'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.PHASE_MODEL_VALIDATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.PHASE_TRAIN">
+<span class="sig-name descname"><span class="pre">PHASE_TRAIN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.PHASE_TRAIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.RECEIVED_MODEL">
+<span class="sig-name descname"><span class="pre">RECEIVED_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_receive_model_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.RECEIVED_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.RECEIVED_MODEL_OWNER">
+<span class="sig-name descname"><span class="pre">RECEIVED_MODEL_OWNER</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_receive_model_owner_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.RECEIVED_MODEL_OWNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.ROUND">
+<span class="sig-name descname"><span class="pre">ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_round_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.START_ROUND">
+<span class="sig-name descname"><span class="pre">START_ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'start_round'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.START_ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.STATUS_DONE">
+<span class="sig-name descname"><span class="pre">STATUS_DONE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_done_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.STATUS_DONE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.STATUS_IDLE">
+<span class="sig-name descname"><span class="pre">STATUS_IDLE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_idle_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.STATUS_IDLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.STATUS_TRAINING">
+<span class="sig-name descname"><span class="pre">STATUS_TRAINING</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_training_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.STATUS_TRAINING" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.STATUS_WAIT">
+<span class="sig-name descname"><span class="pre">STATUS_WAIT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_wait_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.STATUS_WAIT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.SUBMIT_MODEL_FAILURE_REASON">
+<span class="sig-name descname"><span class="pre">SUBMIT_MODEL_FAILURE_REASON</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_submit_model_failure_reason'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.SUBMIT_MODEL_FAILURE_REASON" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.TASK_END_RUN">
+<span class="sig-name descname"><span class="pre">TASK_END_RUN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_end_run_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.TASK_END_RUN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.TASK_SUBMIT_MODEL">
+<span class="sig-name descname"><span class="pre">TASK_SUBMIT_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'submit_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.TASK_SUBMIT_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.TASK_TRAIN">
+<span class="sig-name descname"><span class="pre">TASK_TRAIN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.TASK_TRAIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.TASK_VALIDATION">
+<span class="sig-name descname"><span class="pre">TASK_VALIDATION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'validate'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.TASK_VALIDATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.TRAINING_RESULT">
+<span class="sig-name descname"><span class="pre">TRAINING_RESULT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_training_result_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.TRAINING_RESULT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.TRAIN_CONTEXT">
+<span class="sig-name descname"><span class="pre">TRAIN_CONTEXT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train_context'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.TRAIN_CONTEXT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.TRAIN_SHAREABLE">
+<span class="sig-name descname"><span class="pre">TRAIN_SHAREABLE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_train_shareable_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.TRAIN_SHAREABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.VALIDATION_RESULT">
+<span class="sig-name descname"><span class="pre">VALIDATION_RESULT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_validation_result_'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.VALIDATION_RESULT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.AppConstants.WAIT_AFTER_MIN_CLIENTS">
+<span class="sig-name descname"><span class="pre">WAIT_AFTER_MIN_CLIENTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'wait_after_min_clients'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.AppConstants.WAIT_AFTER_MIN_CLIENTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.DefaultCheckpointFileName">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">DefaultCheckpointFileName</span></span><a class="reference internal" href="../_modules/nvflare/app_common/app_constant.html#DefaultCheckpointFileName"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.app_constant.DefaultCheckpointFileName" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.DefaultCheckpointFileName.BEST_GLOBAL_MODEL">
+<span class="sig-name descname"><span class="pre">BEST_GLOBAL_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'best_FL_global_model.pt'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.DefaultCheckpointFileName.BEST_GLOBAL_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.DefaultCheckpointFileName.GLOBAL_MODEL">
+<span class="sig-name descname"><span class="pre">GLOBAL_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'FL_global_model.pt'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.DefaultCheckpointFileName.GLOBAL_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.EnvironmentKey">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">EnvironmentKey</span></span><a class="reference internal" href="../_modules/nvflare/app_common/app_constant.html#EnvironmentKey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.app_constant.EnvironmentKey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.EnvironmentKey.CHECKPOINT_DIR">
+<span class="sig-name descname"><span class="pre">CHECKPOINT_DIR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'APP_CKPT_DIR'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.EnvironmentKey.CHECKPOINT_DIR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.EnvironmentKey.CHECKPOINT_FILE_NAME">
+<span class="sig-name descname"><span class="pre">CHECKPOINT_FILE_NAME</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'APP_CKPT'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.EnvironmentKey.CHECKPOINT_FILE_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.ExecutorTasks">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ExecutorTasks</span></span><a class="reference internal" href="../_modules/nvflare/app_common/app_constant.html#ExecutorTasks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.app_constant.ExecutorTasks" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.ExecutorTasks.CROSS_VALIDATION">
+<span class="sig-name descname"><span class="pre">CROSS_VALIDATION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'__cross_validation'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.ExecutorTasks.CROSS_VALIDATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.ExecutorTasks.REPORT_STATUS">
+<span class="sig-name descname"><span class="pre">REPORT_STATUS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'report_status'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.ExecutorTasks.REPORT_STATUS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.ExecutorTasks.SUBMIT_BEST">
+<span class="sig-name descname"><span class="pre">SUBMIT_BEST</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'__submit_best'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.ExecutorTasks.SUBMIT_BEST" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.ExecutorTasks.TRAIN">
+<span class="sig-name descname"><span class="pre">TRAIN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.ExecutorTasks.TRAIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_constant.ExecutorTasks.VALIDATE">
+<span class="sig-name descname"><span class="pre">VALIDATE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'validate'</span></em><a class="headerlink" href="#nvflare.app_common.app_constant.ExecutorTasks.VALIDATE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.app_event_type">
+<span id="nvflare-app-common-app-event-type-module"></span><h2>nvflare.app_common.app_event_type module<a class="headerlink" href="#module-nvflare.app_common.app_event_type" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AppEventType</span></span><a class="reference internal" href="../_modules/nvflare/app_common/app_event_type.html#AppEventType"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Defines application events.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_AGGREGATION">
+<span class="sig-name descname"><span class="pre">AFTER_AGGREGATION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_aggregation'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_AGGREGATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_CONTRIBUTION_ACCEPT">
+<span class="sig-name descname"><span class="pre">AFTER_CONTRIBUTION_ACCEPT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_contribution_accept'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_CONTRIBUTION_ACCEPT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_GET_VALIDATION_MODELS">
+<span class="sig-name descname"><span class="pre">AFTER_GET_VALIDATION_MODELS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_get_validation_models'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_GET_VALIDATION_MODELS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_INITIALIZE">
+<span class="sig-name descname"><span class="pre">AFTER_INITIALIZE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_initialize'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_INITIALIZE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_LEARNABLE_PERSIST">
+<span class="sig-name descname"><span class="pre">AFTER_LEARNABLE_PERSIST</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_save_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_LEARNABLE_PERSIST" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_SEND_BEST_MODEL">
+<span class="sig-name descname"><span class="pre">AFTER_SEND_BEST_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_send_best_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_SEND_BEST_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_SHAREABLE_TO_LEARNABLE">
+<span class="sig-name descname"><span class="pre">AFTER_SHAREABLE_TO_LEARNABLE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_model_update'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_SHAREABLE_TO_LEARNABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_SUBMIT_VALIDATION_RESULTS">
+<span class="sig-name descname"><span class="pre">AFTER_SUBMIT_VALIDATION_RESULTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_submit_validation_results'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_SUBMIT_VALIDATION_RESULTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_TRAIN">
+<span class="sig-name descname"><span class="pre">AFTER_TRAIN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_train'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_TRAIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.AFTER_VALIDATE_MODEL">
+<span class="sig-name descname"><span class="pre">AFTER_VALIDATE_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_after_validate_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.AFTER_VALIDATE_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_AGGREGATION">
+<span class="sig-name descname"><span class="pre">BEFORE_AGGREGATION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_aggregation'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_AGGREGATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_CONTRIBUTION_ACCEPT">
+<span class="sig-name descname"><span class="pre">BEFORE_CONTRIBUTION_ACCEPT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_contribution_accept'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_CONTRIBUTION_ACCEPT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_GET_VALIDATION_MODELS">
+<span class="sig-name descname"><span class="pre">BEFORE_GET_VALIDATION_MODELS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_get_validation_models'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_GET_VALIDATION_MODELS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_INITIALIZE">
+<span class="sig-name descname"><span class="pre">BEFORE_INITIALIZE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_initialize'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_INITIALIZE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_LEARNABLE_PERSIST">
+<span class="sig-name descname"><span class="pre">BEFORE_LEARNABLE_PERSIST</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_save_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_LEARNABLE_PERSIST" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_SEND_BEST_MODEL">
+<span class="sig-name descname"><span class="pre">BEFORE_SEND_BEST_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_send_best_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_SEND_BEST_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE">
+<span class="sig-name descname"><span class="pre">BEFORE_SHAREABLE_TO_LEARNABLE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_model_update'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_SUBMIT_VALIDATION_RESULTS">
+<span class="sig-name descname"><span class="pre">BEFORE_SUBMIT_VALIDATION_RESULTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_submit_validation_results'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_SUBMIT_VALIDATION_RESULTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_TRAIN">
+<span class="sig-name descname"><span class="pre">BEFORE_TRAIN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_train'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_TRAIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_TRAIN_TASK">
+<span class="sig-name descname"><span class="pre">BEFORE_TRAIN_TASK</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_train_task'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_TRAIN_TASK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.BEFORE_VALIDATE_MODEL">
+<span class="sig-name descname"><span class="pre">BEFORE_VALIDATE_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_before_validate_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.BEFORE_VALIDATE_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.CROSS_VAL_INIT">
+<span class="sig-name descname"><span class="pre">CROSS_VAL_INIT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_cross_val_init'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.CROSS_VAL_INIT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.END_AGGREGATION">
+<span class="sig-name descname"><span class="pre">END_AGGREGATION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_end_aggregation'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.END_AGGREGATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.END_ROUND">
+<span class="sig-name descname"><span class="pre">END_ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_end_round'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.END_ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.GLOBAL_BEST_MODEL_AVAILABLE">
+<span class="sig-name descname"><span class="pre">GLOBAL_BEST_MODEL_AVAILABLE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_global_best_model_available'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.GLOBAL_BEST_MODEL_AVAILABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.GLOBAL_WEIGHTS_UPDATED">
+<span class="sig-name descname"><span class="pre">GLOBAL_WEIGHTS_UPDATED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_global_weights_updated'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.GLOBAL_WEIGHTS_UPDATED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.INITIAL_MODEL_LOADED">
+<span class="sig-name descname"><span class="pre">INITIAL_MODEL_LOADED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_initial_model_loaded'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.INITIAL_MODEL_LOADED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.LOCAL_BEST_MODEL_AVAILABLE">
+<span class="sig-name descname"><span class="pre">LOCAL_BEST_MODEL_AVAILABLE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_local_best_model_available'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.LOCAL_BEST_MODEL_AVAILABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.RECEIVE_BEST_MODEL">
+<span class="sig-name descname"><span class="pre">RECEIVE_BEST_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_receive_best_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.RECEIVE_BEST_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.RECEIVE_CONTRIBUTION">
+<span class="sig-name descname"><span class="pre">RECEIVE_CONTRIBUTION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_receive_contribution'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.RECEIVE_CONTRIBUTION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.RECEIVE_VALIDATION_MODEL">
+<span class="sig-name descname"><span class="pre">RECEIVE_VALIDATION_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_receive_validation_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.RECEIVE_VALIDATION_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.RECEIVE_VALIDATION_RESULTS">
+<span class="sig-name descname"><span class="pre">RECEIVE_VALIDATION_RESULTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_receive_validation_results'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.RECEIVE_VALIDATION_RESULTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.ROUND_DONE">
+<span class="sig-name descname"><span class="pre">ROUND_DONE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_round_done'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.ROUND_DONE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.ROUND_STARTED">
+<span class="sig-name descname"><span class="pre">ROUND_STARTED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_round_started'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.ROUND_STARTED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.SEND_MODEL_FOR_VALIDATION">
+<span class="sig-name descname"><span class="pre">SEND_MODEL_FOR_VALIDATION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_send_model_for_validation'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.SEND_MODEL_FOR_VALIDATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.SEND_VALIDATION_RESULTS">
+<span class="sig-name descname"><span class="pre">SEND_VALIDATION_RESULTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_send_validation_results'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.SEND_VALIDATION_RESULTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.SERVER_RECEIVE_BEST_MODEL">
+<span class="sig-name descname"><span class="pre">SERVER_RECEIVE_BEST_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_server_receive_best_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.SERVER_RECEIVE_BEST_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.START_ROUND">
+<span class="sig-name descname"><span class="pre">START_ROUND</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_start_round'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.START_ROUND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.SUBMIT_LOCAL_BEST_MODEL">
+<span class="sig-name descname"><span class="pre">SUBMIT_LOCAL_BEST_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_submit_local_best_model'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.SUBMIT_LOCAL_BEST_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.TRAINING_FINISHED">
+<span class="sig-name descname"><span class="pre">TRAINING_FINISHED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_training_finished'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.TRAINING_FINISHED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.TRAINING_STARTED">
+<span class="sig-name descname"><span class="pre">TRAINING_STARTED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_training_started'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.TRAINING_STARTED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.TRAIN_DONE">
+<span class="sig-name descname"><span class="pre">TRAIN_DONE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_train_done'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.TRAIN_DONE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.app_event_type.AppEventType.VALIDATION_RESULT_RECEIVED">
+<span class="sig-name descname"><span class="pre">VALIDATION_RESULT_RECEIVED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_validation_result_received'</span></em><a class="headerlink" href="#nvflare.app_common.app_event_type.AppEventType.VALIDATION_RESULT_RECEIVED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.app_common" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.app_common.abstract.html" class="btn btn-neutral float-right" title="nvflare.app_common.abstract package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.apis.utils.html" class="btn btn-neutral float-left" title="nvflare.apis.utils package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -1,0 +1,424 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>Executors &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="NVIDIA FLARE Event Mechanism" href="event_system.html" />
+    <link rel="prev" title="Filters" href="filters.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_component.html">FLComponent</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html">Controllers and Controller API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#scatter-and-gather-workflow">Scatter and Gather Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#cross-site-model-evaluation-federated-evaluation">Cross Site Model Evaluation / Federated Evaluation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#cyclic-workflow">Cyclic Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="filters.html">Filters</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Executors</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#multi-process-executor">Multi-Process Executor</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="shareable.html">Shareable</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="best_practices.html">NVIDIA FLARE Programming Best Practices</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a> &raquo;</li>
+        
+      <li>Executors</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/programming_guide/executor.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="executors">
+<span id="executor"></span><h1>Executors<a class="headerlink" href="#executors" title="Permalink to this headline">¶</a></h1>
+<img alt="../_images/Executor.png" src="../_images/Executor.png" style="height: 300px;" />
+<p>An <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.executor.Executor" title="nvflare.apis.executor.Executor"><code class="xref py py-class docutils literal notranslate"><span class="pre">Executor</span></code></a> in NVIDIA FLARE is a type of FLComponent for FL clients that has an
+<code class="docutils literal notranslate"><span class="pre">execute</span></code> method that produces a Shareable from an input Shareable. The <code class="docutils literal notranslate"><span class="pre">execute</span></code> method also takes a str for
+task_name, FLContext, and abort_signal.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Executor</span><span class="p">(</span><span class="n">FLComponent</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="k">pass</span>
+</pre></div>
+</div>
+<p>Examples for Executors are <code class="xref py py-class docutils literal notranslate"><span class="pre">Trainer</span></code> and <code class="xref py py-class docutils literal notranslate"><span class="pre">Validator</span></code>.
+The source code for some example implementations can be found in the example apps. On clients, tasks can be configured
+for Executors in config_fed_client.json:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+  <span class="nt">&quot;handlers&quot;</span><span class="p">:</span> <span class="p">[],</span>
+  <span class="nt">&quot;executors&quot;</span><span class="p">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="nt">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="s2">&quot;train&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;submit_model&quot;</span>
+      <span class="p">],</span>
+      <span class="nt">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;np_trainer.NPTrainer&quot;</span><span class="p">,</span>
+        <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+      <span class="p">}</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+      <span class="nt">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="s2">&quot;validate&quot;</span>
+      <span class="p">],</span>
+      <span class="nt">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;np_validator.NPValidator&quot;</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+  <span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+  <span class="nt">&quot;components&quot;</span><span class="p">:</span> <span class="p">[]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The above configuration is an example from hello_numpy. Each task can only be assigned to one Executor.</p>
+<div class="section" id="multi-process-executor">
+<h2>Multi-Process Executor<a class="headerlink" href="#multi-process-executor" title="Permalink to this headline">¶</a></h2>
+<p><a class="reference internal" href="../apidocs/nvflare.app_common.executors.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor" title="nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor"><code class="xref py py-class docutils literal notranslate"><span class="pre">MultiProcessExecutor</span></code></a> is designed to
+easily allow the FL executor to support multi-processes execution. The behavior of the Executor remains the same
+including the firing and handling of FL events. MultiProcessExecutor allows researchers to focus on the training and
+execution logic instead of worrying about how to make use of multiple processes or deal with multi-GPU training.</p>
+<p>During the execution, any event fired from other components will be relayed from the MultiProcessExecutor to all the
+sub-worker processes. Any component which listens to the event in the sub-worker processes can handle the event
+accordingly. Also, any event fired by the FL component in the sub-worker processes will be relayed by the
+MultiProcessExecutor to all other components to handle.</p>
+<img alt="../_images/multi_process_executor.png" src="../_images/multi_process_executor.png" style="height: 400px;" />
+<p>MultiProcessExecutor keeps the same FL Executor API signature. When turning the FL executor into
+MultiProcessExecutor, configure the task executor to use MultiProcessExecutor (currently PTMultiProcessExecutor is the
+only implemented MultiProcessExecutor), and configure the existing executor as the “executor_id”, and the number of
+processes to use.</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="nt">&quot;executors&quot;</span><span class="p">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="nt">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="s2">&quot;train&quot;</span>
+      <span class="p">],</span>
+      <span class="nt">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor&quot;</span><span class="p">,</span>
+        <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&quot;executor_id&quot;</span><span class="p">:</span> <span class="s2">&quot;trainer&quot;</span><span class="p">,</span>
+          <span class="nt">&quot;num_of_processes&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+          <span class="nt">&quot;components&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+              <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;trainer&quot;</span><span class="p">,</span>
+              <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;medl.apps.fed_learn.trainers.client_trainer.ClientTrainer&quot;</span><span class="p">,</span>
+              <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="nt">&quot;local_epochs&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
+                <span class="nt">&quot;steps_aggregation&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="nt">&quot;model_reader_writer&quot;</span><span class="p">:</span> <span class="p">{</span>
+                  <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;PTModelReaderWriter&quot;</span>
+                <span class="p">}</span>
+              <span class="p">}</span>
+            <span class="p">}</span>
+          <span class="p">]</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="event_system.html" class="btn btn-neutral float-right" title="NVIDIA FLARE Event Mechanism" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="filters.html" class="btn btn-neutral float-left" title="Filters" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

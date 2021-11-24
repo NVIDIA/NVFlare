@@ -1,0 +1,737 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.app_common.abstract package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.app_common.aggregators package" href="nvflare.app_common.aggregators.html" />
+    <link rel="prev" title="nvflare.app_common package" href="nvflare.app_common.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.app_common.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common.app_constant">nvflare.app_common.app_constant module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common.app_event_type">nvflare.app_common.app_event_type module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+          <li><a href="nvflare.app_common.html">nvflare.app_common package</a> &raquo;</li>
+        
+      <li>nvflare.app_common.abstract package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.app_common.abstract.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-app-common-abstract-package">
+<h1>nvflare.app_common.abstract package<a class="headerlink" href="#nvflare-app-common-abstract-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.aggregator">
+<span id="nvflare-app-common-abstract-aggregator-module"></span><h2>nvflare.app_common.abstract.aggregator module<a class="headerlink" href="#module-nvflare.app_common.abstract.aggregator" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.aggregator.Aggregator">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Aggregator</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/aggregator.html#Aggregator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.aggregator.Aggregator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.fl_component.FLComponent</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">abc.ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.aggregator.Aggregator.accept">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">accept</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/aggregator.html#Aggregator.accept"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.aggregator.Aggregator.accept" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>accept the shareable submitted by the client.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>shareable</strong> – submitted Shareable object</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>first boolean to indicate if the contribution has been accepted.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.aggregator.Aggregator.aggregate">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">aggregate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/aggregator.html#Aggregator.aggregate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.aggregator.Aggregator.aggregate" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>perform the aggregation for all the received Shareable from the clients.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> – FLContext</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>shareable</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.formatter">
+<span id="nvflare-app-common-abstract-formatter-module"></span><h2>nvflare.app_common.abstract.formatter module<a class="headerlink" href="#module-nvflare.app_common.abstract.formatter" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.formatter.Formatter">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Formatter</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/formatter.html#Formatter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.formatter.Formatter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.fl_component.FLComponent</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.formatter.Formatter.format">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">format</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/formatter.html#Formatter.format"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.formatter.Formatter.format" title="Permalink to this definition">¶</a></dt>
+<dd><p>Format the data into human readable string for</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FL Context object.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Human readable string.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.learnable">
+<span id="nvflare-app-common-abstract-learnable-module"></span><h2>nvflare.app_common.abstract.learnable module<a class="headerlink" href="#module-nvflare.app_common.abstract.learnable" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.learnable.Learnable">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Learnable</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learnable.html#Learnable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learnable.Learnable" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.learnable.Learnable.from_bytes">
+<em class="property"><span class="pre">classmethod</span> </em><span class="sig-name descname"><span class="pre">from_bytes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learnable.html#Learnable.from_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learnable.Learnable.from_bytes" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>method to convert the object bytes into Learnable object.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> – a bytes object</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>an object loaded by pickle from data</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.learnable.Learnable.to_bytes">
+<span class="sig-name descname"><span class="pre">to_bytes</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bytes</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learnable.html#Learnable.to_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learnable.Learnable.to_bytes" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>method to serialize the Learnable object into bytes.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>object serialized in bytes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.learnable_persistor">
+<span id="nvflare-app-common-abstract-learnable-persistor-module"></span><h2>nvflare.app_common.abstract.learnable_persistor module<a class="headerlink" href="#module-nvflare.app_common.abstract.learnable_persistor" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.learnable_persistor.LearnablePersistor">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">LearnablePersistor</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learnable_persistor.html#LearnablePersistor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learnable_persistor.LearnablePersistor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.fl_component.FLComponent</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">abc.ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.learnable_persistor.LearnablePersistor.load">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learnable_persistor.html#LearnablePersistor.load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learnable_persistor.LearnablePersistor.load" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>load the Learnable object.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> – FLContext</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Learnable object loaded</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.learnable_persistor.LearnablePersistor.save">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">learnable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learnable_persistor.html#LearnablePersistor.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learnable_persistor.LearnablePersistor.save" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>persist the Learnable object</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>learnable</strong> – the Learnable object to be saved</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.model">
+<span id="nvflare-app-common-abstract-model-module"></span><h2>nvflare.app_common.abstract.model module<a class="headerlink" href="#module-nvflare.app_common.abstract.model" title="Permalink to this headline">¶</a></h2>
+<p>The Learnable in the deep learning domain is usually called Model by researchers.
+This import simply lets you call the Learnable ‘Model’.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model.ModelLearnableKey">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ModelLearnableKey</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model.html#ModelLearnableKey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model.ModelLearnableKey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Model Learnable is a dict that contains two items: weights and meta info</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model.ModelLearnableKey.META">
+<span class="sig-name descname"><span class="pre">META</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'meta'</span></em><a class="headerlink" href="#nvflare.app_common.abstract.model.ModelLearnableKey.META" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model.ModelLearnableKey.WEIGHTS">
+<span class="sig-name descname"><span class="pre">WEIGHTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'weights'</span></em><a class="headerlink" href="#nvflare.app_common.abstract.model.ModelLearnableKey.WEIGHTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model.make_model_learnable">
+<span class="sig-name descname"><span class="pre">make_model_learnable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">weights</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">meta_props</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model.html#make_model_learnable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model.make_model_learnable" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model.model_learnable_to_dxo">
+<span class="sig-name descname"><span class="pre">model_learnable_to_dxo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ml</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model.html#model_learnable_to_dxo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model.model_learnable_to_dxo" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model.validate_model_learnable">
+<span class="sig-name descname"><span class="pre">validate_model_learnable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_learnable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model.html#validate_model_learnable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model.validate_model_learnable" title="Permalink to this definition">¶</a></dt>
+<dd><p>Check whether the specified model is a valid Model Shareable</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>model</strong> – model to be validated</p>
+</dd>
+</dl>
+<p>Returns: error text</p>
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.model_locator">
+<span id="nvflare-app-common-abstract-model-locator-module"></span><h2>nvflare.app_common.abstract.model_locator module<a class="headerlink" href="#module-nvflare.app_common.abstract.model_locator" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_locator.ModelLocator">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ModelLocator</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_locator.html#ModelLocator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_locator.ModelLocator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.fl_component.FLComponent</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_locator.ModelLocator.get_model_names">
+<span class="sig-name descname"><span class="pre">get_model_names</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_locator.html#ModelLocator.get_model_names"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_locator.ModelLocator.get_model_names" title="Permalink to this definition">¶</a></dt>
+<dd><p>List the name of the models</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FL Context object</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>List of names for models</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>List[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_locator.ModelLocator.locate_model">
+<span class="sig-name descname"><span class="pre">locate_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_locator.html#ModelLocator.locate_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_locator.ModelLocator.locate_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>Locate a single model by it’s name</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model_name</strong> (<em>str</em>) – Name of the model.</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FL Context object.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a DXO object</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>DXO</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.model_persistor">
+<span id="nvflare-app-common-abstract-model-persistor-module"></span><h2>nvflare.app_common.abstract.model_persistor module<a class="headerlink" href="#module-nvflare.app_common.abstract.model_persistor" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_persistor.ModelPersistor">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ModelPersistor</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_persistor.html#ModelPersistor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_persistor.ModelPersistor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.app_common.abstract.learnable_persistor.LearnablePersistor" title="nvflare.app_common.abstract.learnable_persistor.LearnablePersistor"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.abstract.learnable_persistor.LearnablePersistor</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">abc.ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_persistor.ModelPersistor.load">
+<span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_persistor.html#ModelPersistor.load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_persistor.ModelPersistor.load" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>load the Learnable object.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> – FLContext</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Learnable object loaded</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_persistor.ModelPersistor.load_model">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">load_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_persistor.html#ModelPersistor.load_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_persistor.ModelPersistor.load_model" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>initialize and load the model.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> – FLContext</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Model object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_persistor.ModelPersistor.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">learnable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_persistor.html#ModelPersistor.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_persistor.ModelPersistor.save" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>persist the Learnable object</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>learnable</strong> – the Learnable object to be saved</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_persistor.ModelPersistor.save_model">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">save_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_persistor.html#ModelPersistor.save_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_persistor.ModelPersistor.save_model" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>persist the model object</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> – Model object to be saved</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.model_processor">
+<span id="nvflare-app-common-abstract-model-processor-module"></span><h2>nvflare.app_common.abstract.model_processor module<a class="headerlink" href="#module-nvflare.app_common.abstract.model_processor" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_processor.ModelProcessor">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ModelProcessor</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_processor.html#ModelProcessor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_processor.ModelProcessor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">abc.ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_processor.ModelProcessor.apply_model">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">apply_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_processor.html#ModelProcessor.apply_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_processor.ModelProcessor.apply_model" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_processor.ModelProcessor.extract_model">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">extract_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_vars</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_processor.html#ModelProcessor.extract_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_processor.ModelProcessor.extract_model" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_processor.ModelProcessor.get_local_models">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">get_local_models</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_processor.html#ModelProcessor.get_local_models"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_processor.ModelProcessor.get_local_models" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.model_processor.ModelProcessor.initialize">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/model_processor.html#ModelProcessor.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.model_processor.ModelProcessor.initialize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract.shareable_generator">
+<span id="nvflare-app-common-abstract-shareable-generator-module"></span><h2>nvflare.app_common.abstract.shareable_generator module<a class="headerlink" href="#module-nvflare.app_common.abstract.shareable_generator" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.shareable_generator.ShareableGenerator">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ShareableGenerator</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/shareable_generator.html#ShareableGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.shareable_generator.ShareableGenerator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.fl_component.FLComponent</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">abc.ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.shareable_generator.ShareableGenerator.learnable_to_shareable">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">learnable_to_shareable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/shareable_generator.html#ShareableGenerator.learnable_to_shareable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.shareable_generator.ShareableGenerator.learnable_to_shareable" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>generate the initial Shareable from the Learnable object.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> – model object</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>shareable</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.abstract.shareable_generator.ShareableGenerator.shareable_to_learnable">
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">shareable_to_learnable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/shareable_generator.html#ShareableGenerator.shareable_to_learnable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.shareable_generator.ShareableGenerator.shareable_to_learnable" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>construct the Learnable object from Shareable</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>shareable</strong> – shareable</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>model object</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.abstract">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.app_common.abstract" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.app_common.aggregators.html" class="btn btn-neutral float-right" title="nvflare.app_common.aggregators package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.app_common.html" class="btn btn-neutral float-left" title="nvflare.app_common package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

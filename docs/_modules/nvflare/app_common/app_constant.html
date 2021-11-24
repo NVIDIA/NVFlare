@@ -1,0 +1,432 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.app_common.app_constant &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.app_common.app_constant</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.app_common.app_constant</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+
+<div class="viewcode-block" id="ExecutorTasks"><a class="viewcode-back" href="../../../apidocs/nvflare.app_common.html#nvflare.app_common.app_constant.ExecutorTasks">[docs]</a><span class="k">class</span> <span class="nc">ExecutorTasks</span><span class="p">:</span>
+
+    <span class="n">TRAIN</span> <span class="o">=</span> <span class="s2">&quot;train&quot;</span>
+    <span class="n">VALIDATE</span> <span class="o">=</span> <span class="s2">&quot;validate&quot;</span>
+    <span class="n">CROSS_VALIDATION</span> <span class="o">=</span> <span class="s2">&quot;__cross_validation&quot;</span>
+    <span class="n">SUBMIT_BEST</span> <span class="o">=</span> <span class="s2">&quot;__submit_best&quot;</span>
+    <span class="n">REPORT_STATUS</span> <span class="o">=</span> <span class="s2">&quot;report_status&quot;</span></div>
+
+
+<div class="viewcode-block" id="AppConstants"><a class="viewcode-back" href="../../../apidocs/nvflare.app_common.html#nvflare.app_common.app_constant.AppConstants">[docs]</a><span class="k">class</span> <span class="nc">AppConstants</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">CONFIG_PATH</span> <span class="o">=</span> <span class="s2">&quot;config_path&quot;</span>
+    <span class="n">MODEL_NETWORK</span> <span class="o">=</span> <span class="s2">&quot;model_network&quot;</span>
+    <span class="n">MULTI_GPU</span> <span class="o">=</span> <span class="s2">&quot;multi_gpu&quot;</span>
+    <span class="n">TRAIN_CONTEXT</span> <span class="o">=</span> <span class="s2">&quot;train_context&quot;</span>
+    <span class="n">DEVICE</span> <span class="o">=</span> <span class="s2">&quot;device&quot;</span>
+    <span class="n">MODEL_NAME</span> <span class="o">=</span> <span class="s2">&quot;model_name&quot;</span>
+    <span class="n">MODEL_URL</span> <span class="o">=</span> <span class="s2">&quot;model_url&quot;</span>
+    <span class="n">START_ROUND</span> <span class="o">=</span> <span class="s2">&quot;start_round&quot;</span>
+    <span class="n">CURRENT_ROUND</span> <span class="o">=</span> <span class="s2">&quot;current_round&quot;</span>
+    <span class="n">CONTRIBUTION_ROUND</span> <span class="o">=</span> <span class="s2">&quot;contribution_round&quot;</span>
+    <span class="n">CONTRIBUTION_CLIENT</span> <span class="o">=</span> <span class="s2">&quot;contribution_client&quot;</span>
+    <span class="n">NUM_ROUNDS</span> <span class="o">=</span> <span class="s2">&quot;num_rounds&quot;</span>
+    <span class="n">WAIT_AFTER_MIN_CLIENTS</span> <span class="o">=</span> <span class="s2">&quot;wait_after_min_clients&quot;</span>
+
+    <span class="n">NUM_TOTAL_STEPS</span> <span class="o">=</span> <span class="s2">&quot;num_total_steps&quot;</span>  <span class="c1"># TOTAL_STEPS</span>
+    <span class="n">NUM_EPOCHS_CURRENT_ROUND</span> <span class="o">=</span> <span class="s2">&quot;num_epochs_current_round&quot;</span>  <span class="c1"># CURRENT_EPOCHS</span>
+    <span class="n">NUM_TOTAL_EPOCHS</span> <span class="o">=</span> <span class="s2">&quot;num_total_epochs&quot;</span>  <span class="c1"># LOCAL_EPOCHS</span>
+    <span class="n">LOCAL_EPOCHS</span> <span class="o">=</span> <span class="s2">&quot;local_epochs&quot;</span>
+
+    <span class="n">IS_FIRST_ROUND</span> <span class="o">=</span> <span class="s2">&quot;is_first_round&quot;</span>
+    <span class="n">MY_RANK</span> <span class="o">=</span> <span class="s2">&quot;my_rank&quot;</span>
+    <span class="n">INITIAL_LEARNING_RATE</span> <span class="o">=</span> <span class="s2">&quot;initial_learning_rate&quot;</span>
+    <span class="n">CURRENT_LEARNING_RATE</span> <span class="o">=</span> <span class="s2">&quot;current_learning_rate&quot;</span>
+    <span class="n">NUMBER_OF_GPUS</span> <span class="o">=</span> <span class="s2">&quot;number_of_gpus&quot;</span>
+    <span class="n">META_COOKIE</span> <span class="o">=</span> <span class="s2">&quot;cookie&quot;</span>
+    <span class="n">META_DATA</span> <span class="o">=</span> <span class="s2">&quot;meta_data&quot;</span>
+    <span class="n">GLOBAL_MODEL</span> <span class="o">=</span> <span class="s2">&quot;global_model&quot;</span>
+
+    <span class="n">IS_BEST</span> <span class="o">=</span> <span class="s2">&quot;is_best&quot;</span>
+    <span class="n">FAILURE</span> <span class="o">=</span> <span class="s2">&quot;failure&quot;</span>
+
+    <span class="n">LOG_DIR</span> <span class="o">=</span> <span class="s2">&quot;model_log_dir&quot;</span>
+    <span class="n">CKPT_PRELOAD_PATH</span> <span class="o">=</span> <span class="s2">&quot;ckpt_preload_path&quot;</span>
+
+    <span class="n">DXO</span> <span class="o">=</span> <span class="s2">&quot;DXO&quot;</span>
+
+    <span class="n">PHASE</span> <span class="o">=</span> <span class="s2">&quot;_phase_&quot;</span>
+    <span class="n">PHASE_INIT</span> <span class="o">=</span> <span class="s2">&quot;_init_&quot;</span>
+    <span class="n">PHASE_TRAIN</span> <span class="o">=</span> <span class="s2">&quot;train&quot;</span>
+    <span class="n">PHASE_MODEL_VALIDATION</span> <span class="o">=</span> <span class="s2">&quot;model_validation&quot;</span>
+    <span class="n">PHASE_FINISHED</span> <span class="o">=</span> <span class="s2">&quot;_finished_&quot;</span>
+
+    <span class="n">STATUS_WAIT</span> <span class="o">=</span> <span class="s2">&quot;_wait_&quot;</span>
+    <span class="n">STATUS_DONE</span> <span class="o">=</span> <span class="s2">&quot;_done_&quot;</span>
+    <span class="n">STATUS_TRAINING</span> <span class="o">=</span> <span class="s2">&quot;_training_&quot;</span>
+    <span class="n">STATUS_IDLE</span> <span class="o">=</span> <span class="s2">&quot;_idle_&quot;</span>
+
+    <span class="n">MODEL_LOAD_PATH</span> <span class="o">=</span> <span class="s2">&quot;_model_load_path&quot;</span>
+    <span class="n">MODEL_SAVE_PATH</span> <span class="o">=</span> <span class="s2">&quot;_model_save_path&quot;</span>
+    <span class="n">DEFAULT_MODEL_DIR</span> <span class="o">=</span> <span class="s2">&quot;models&quot;</span>
+
+    <span class="n">ROUND</span> <span class="o">=</span> <span class="s2">&quot;_round_&quot;</span>
+    <span class="n">MODEL_WEIGHTS</span> <span class="o">=</span> <span class="s2">&quot;_model_weights_&quot;</span>
+    <span class="n">AGGREGATION_RESULT</span> <span class="o">=</span> <span class="s2">&quot;_aggregation_result&quot;</span>
+    <span class="n">AGGREGATION_TRIGGERED</span> <span class="o">=</span> <span class="s2">&quot;_aggregation_triggered&quot;</span>
+    <span class="n">AGGREGATION_ACCEPTED</span> <span class="o">=</span> <span class="s2">&quot;_aggregation_accepted&quot;</span>
+    <span class="n">TRAIN_SHAREABLE</span> <span class="o">=</span> <span class="s2">&quot;_train_shareable_&quot;</span>
+    <span class="n">TRAINING_RESULT</span> <span class="o">=</span> <span class="s2">&quot;_training_result_&quot;</span>
+
+    <span class="n">SUBMIT_MODEL_FAILURE_REASON</span> <span class="o">=</span> <span class="s2">&quot;_submit_model_failure_reason&quot;</span>
+    <span class="n">CROSS_VAL_DIR</span> <span class="o">=</span> <span class="s2">&quot;cross_site_val&quot;</span>
+    <span class="n">CROSS_VAL_MODEL_DIR_NAME</span> <span class="o">=</span> <span class="s2">&quot;model_shareables&quot;</span>
+    <span class="n">CROSS_VAL_RESULTS_DIR_NAME</span> <span class="o">=</span> <span class="s2">&quot;result_shareables&quot;</span>
+    <span class="n">CROSS_VAL_MODEL_PATH</span> <span class="o">=</span> <span class="s2">&quot;_cross_val_model_path_&quot;</span>
+    <span class="n">CROSS_VAL_RESULTS_PATH</span> <span class="o">=</span> <span class="s2">&quot;_cross_val_results_path_&quot;</span>
+    <span class="n">RECEIVED_MODEL</span> <span class="o">=</span> <span class="s2">&quot;_receive_model_&quot;</span>
+    <span class="n">RECEIVED_MODEL_OWNER</span> <span class="o">=</span> <span class="s2">&quot;_receive_model_owner_&quot;</span>
+    <span class="n">MODEL_TO_VALIDATE</span> <span class="o">=</span> <span class="s2">&quot;_model_to_validate_&quot;</span>
+    <span class="n">DATA_CLIENT</span> <span class="o">=</span> <span class="s2">&quot;_data_client_&quot;</span>
+    <span class="n">VALIDATION_RESULT</span> <span class="o">=</span> <span class="s2">&quot;_validation_result_&quot;</span>
+
+    <span class="n">TASK_SUBMIT_MODEL</span> <span class="o">=</span> <span class="s2">&quot;submit_model&quot;</span>
+    <span class="n">TASK_VALIDATION</span> <span class="o">=</span> <span class="s2">&quot;validate&quot;</span>
+
+    <span class="n">CROSS_VAL_SERVER_MODEL</span> <span class="o">=</span> <span class="s2">&quot;_cross_val_server_model_&quot;</span>
+    <span class="n">CROSS_VAL_CLIENT_MODEL</span> <span class="o">=</span> <span class="s2">&quot;_cross_val_client_model_&quot;</span>
+    <span class="n">PARTICIPATING_CLIENTS</span> <span class="o">=</span> <span class="s2">&quot;_particpating_clients_&quot;</span>
+
+    <span class="n">MODEL_OWNER</span> <span class="o">=</span> <span class="s2">&quot;_model_owner_&quot;</span>
+
+    <span class="n">DEFAULT_FORMATTER_ID</span> <span class="o">=</span> <span class="s2">&quot;formatter&quot;</span>
+    <span class="n">DEFAULT_MODEL_LOCATOR_ID</span> <span class="o">=</span> <span class="s2">&quot;model_locator&quot;</span>
+
+    <span class="n">TASK_END_RUN</span> <span class="o">=</span> <span class="s2">&quot;_end_run_&quot;</span>
+    <span class="n">TASK_TRAIN</span> <span class="o">=</span> <span class="s2">&quot;train&quot;</span>
+
+    <span class="n">DEFAULT_AGGREGATOR_ID</span> <span class="o">=</span> <span class="s2">&quot;aggregator&quot;</span>
+    <span class="n">DEFAULT_PERSISTOR_ID</span> <span class="o">=</span> <span class="s2">&quot;persistor&quot;</span>
+    <span class="n">DEFAULT_SHAREABLE_GENERATOR_ID</span> <span class="o">=</span> <span class="s2">&quot;shareable_generator&quot;</span></div>
+
+
+<div class="viewcode-block" id="EnvironmentKey"><a class="viewcode-back" href="../../../apidocs/nvflare.app_common.html#nvflare.app_common.app_constant.EnvironmentKey">[docs]</a><span class="k">class</span> <span class="nc">EnvironmentKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">CHECKPOINT_DIR</span> <span class="o">=</span> <span class="s2">&quot;APP_CKPT_DIR&quot;</span>
+    <span class="n">CHECKPOINT_FILE_NAME</span> <span class="o">=</span> <span class="s2">&quot;APP_CKPT&quot;</span></div>
+
+
+<div class="viewcode-block" id="DefaultCheckpointFileName"><a class="viewcode-back" href="../../../apidocs/nvflare.app_common.html#nvflare.app_common.app_constant.DefaultCheckpointFileName">[docs]</a><span class="k">class</span> <span class="nc">DefaultCheckpointFileName</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">GLOBAL_MODEL</span> <span class="o">=</span> <span class="s2">&quot;FL_global_model.pt&quot;</span>
+    <span class="n">BEST_GLOBAL_MODEL</span> <span class="o">=</span> <span class="s2">&quot;best_FL_global_model.pt&quot;</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -1,0 +1,548 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.security.security &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.security.security</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.security.security</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.authz</span> <span class="kn">import</span> <span class="n">Authorizer</span><span class="p">,</span> <span class="n">AuthzContext</span>
+
+
+<div class="viewcode-block" id="Right"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.Right">[docs]</a><span class="k">class</span> <span class="nc">Right</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">UPLOAD_APP</span> <span class="o">=</span> <span class="s2">&quot;upload_app&quot;</span>
+    <span class="n">DEPLOY_ALL</span> <span class="o">=</span> <span class="s2">&quot;deploy_all&quot;</span>
+    <span class="n">DEPLOY_SELF</span> <span class="o">=</span> <span class="s2">&quot;deploy_self&quot;</span>
+    <span class="n">OPERATE_ALL</span> <span class="o">=</span> <span class="s2">&quot;operate_all&quot;</span>
+    <span class="n">OPERATE_SELF</span> <span class="o">=</span> <span class="s2">&quot;operate_self&quot;</span>
+    <span class="n">VIEW_ALL</span> <span class="o">=</span> <span class="s2">&quot;view_all&quot;</span>
+    <span class="n">VIEW_SELF</span> <span class="o">=</span> <span class="s2">&quot;view_self&quot;</span>
+    <span class="n">TRAIN_ALL</span> <span class="o">=</span> <span class="s2">&quot;train_all&quot;</span>
+    <span class="n">TRAIN_SELF</span> <span class="o">=</span> <span class="s2">&quot;train_self&quot;</span></div>
+
+
+<div class="viewcode-block" id="Rule"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.Rule">[docs]</a><span class="k">class</span> <span class="nc">Rule</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">ALLOW_BYOC</span> <span class="o">=</span> <span class="s2">&quot;allow_byoc&quot;</span>
+    <span class="n">ALLOW_CUSTOM_DATALIST</span> <span class="o">=</span> <span class="s2">&quot;allow_custom_datalist&quot;</span></div>
+
+
+<div class="viewcode-block" id="Action"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.Action">[docs]</a><span class="k">class</span> <span class="nc">Action</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">UPLOAD</span> <span class="o">=</span> <span class="s2">&quot;upload&quot;</span>
+    <span class="n">DEPLOY</span> <span class="o">=</span> <span class="s2">&quot;deploy&quot;</span>
+    <span class="n">OPERATE</span> <span class="o">=</span> <span class="s2">&quot;operate&quot;</span>
+    <span class="n">VIEW</span> <span class="o">=</span> <span class="s2">&quot;view&quot;</span>
+    <span class="n">TRAIN</span> <span class="o">=</span> <span class="s2">&quot;train&quot;</span>
+    <span class="n">BYOC</span> <span class="o">=</span> <span class="s2">&quot;byoc&quot;</span>
+    <span class="n">CUSTOM_DATALIST</span> <span class="o">=</span> <span class="s2">&quot;custom_datalist&quot;</span></div>
+
+
+<span class="n">ACTION_EXPLANATION</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">Action</span><span class="o">.</span><span class="n">UPLOAD</span><span class="p">:</span> <span class="s1">&#39;you are not authorized to upload app to &quot;</span><span class="si">{site}</span><span class="s1">&quot;&#39;</span><span class="p">,</span>
+    <span class="n">Action</span><span class="o">.</span><span class="n">DEPLOY</span><span class="p">:</span> <span class="s1">&#39;you are not authorized to deploy app to &quot;</span><span class="si">{site}</span><span class="s1">&quot;&#39;</span><span class="p">,</span>
+    <span class="n">Action</span><span class="o">.</span><span class="n">OPERATE</span><span class="p">:</span> <span class="s1">&#39;you are not authorized to operate site &quot;</span><span class="si">{site}</span><span class="s1">&quot;&#39;</span><span class="p">,</span>
+    <span class="n">Action</span><span class="o">.</span><span class="n">VIEW</span><span class="p">:</span> <span class="s1">&#39;you are not authorized to view info of site &quot;</span><span class="si">{site}</span><span class="s1">&quot;&#39;</span><span class="p">,</span>
+    <span class="n">Action</span><span class="o">.</span><span class="n">TRAIN</span><span class="p">:</span> <span class="s1">&#39;you are not authorized for training actions on site &quot;</span><span class="si">{site}</span><span class="s1">&quot;&#39;</span><span class="p">,</span>
+    <span class="n">Action</span><span class="o">.</span><span class="n">BYOC</span><span class="p">:</span> <span class="s1">&#39;the app contains custom code, which is not allowed on site &quot;</span><span class="si">{site}</span><span class="s1">&quot;&#39;</span><span class="p">,</span>
+    <span class="n">Action</span><span class="o">.</span><span class="n">CUSTOM_DATALIST</span><span class="p">:</span> <span class="s1">&#39;the app contains custom data list, which is not allowed on site &quot;</span><span class="si">{site}</span><span class="s1">&quot;&#39;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="FLAuthzContext"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.FLAuthzContext">[docs]</a><span class="k">class</span> <span class="nc">FLAuthzContext</span><span class="p">(</span><span class="n">AuthzContext</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_names</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">actions</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">AuthzContext</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_names</span><span class="o">=</span><span class="n">site_names</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">actions</span> <span class="o">=</span> <span class="n">actions</span>
+
+<div class="viewcode-block" id="FLAuthzContext.new_authz_context"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.FLAuthzContext.new_authz_context">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">new_authz_context</span><span class="p">(</span><span class="n">site_names</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">actions</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;actions must be specified&quot;</span>
+        <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">actions</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">[</span>
+                <span class="n">Action</span><span class="o">.</span><span class="n">UPLOAD</span><span class="p">,</span>
+                <span class="n">Action</span><span class="o">.</span><span class="n">DEPLOY</span><span class="p">,</span>
+                <span class="n">Action</span><span class="o">.</span><span class="n">OPERATE</span><span class="p">,</span>
+                <span class="n">Action</span><span class="o">.</span><span class="n">VIEW</span><span class="p">,</span>
+                <span class="n">Action</span><span class="o">.</span><span class="n">TRAIN</span><span class="p">,</span>
+                <span class="n">Action</span><span class="o">.</span><span class="n">BYOC</span><span class="p">,</span>
+                <span class="n">Action</span><span class="o">.</span><span class="n">CUSTOM_DATALIST</span><span class="p">,</span>
+            <span class="p">],</span> <span class="s2">&quot;invalid action </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">FLAuthzContext</span><span class="p">(</span><span class="n">user_name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">site_names</span><span class="o">=</span><span class="n">site_names</span><span class="p">,</span> <span class="n">actions</span><span class="o">=</span><span class="n">actions</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="action_checker_signature"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.action_checker_signature">[docs]</a><span class="k">def</span> <span class="nf">action_checker_signature</span><span class="p">(</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+    <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="FLAuthorizer"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.FLAuthorizer">[docs]</a><span class="k">class</span> <span class="nc">FLAuthorizer</span><span class="p">(</span><span class="n">Authorizer</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">Authorizer</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_checkers</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">Action</span><span class="o">.</span><span class="n">UPLOAD</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_user_can_upload</span><span class="p">,</span>
+            <span class="n">Action</span><span class="o">.</span><span class="n">DEPLOY</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_user_can_deploy</span><span class="p">,</span>
+            <span class="n">Action</span><span class="o">.</span><span class="n">OPERATE</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_user_can_operate</span><span class="p">,</span>
+            <span class="n">Action</span><span class="o">.</span><span class="n">VIEW</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_user_can_view</span><span class="p">,</span>
+            <span class="n">Action</span><span class="o">.</span><span class="n">TRAIN</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_user_can_train</span><span class="p">,</span>
+            <span class="n">Action</span><span class="o">.</span><span class="n">BYOC</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_site_allows_byoc</span><span class="p">,</span>
+            <span class="n">Action</span><span class="o">.</span><span class="n">CUSTOM_DATALIST</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_site_allows_custom_datalist</span><span class="p">,</span>
+        <span class="p">}</span>
+
+<div class="viewcode-block" id="FLAuthorizer.evaluate_user_right_on_site"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.FLAuthorizer.evaluate_user_right_on_site">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_user_right_on_site</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check whether a user has a right in an org.</span>
+<span class="sd">        Super user has all rights in all orgs.</span>
+<span class="sd">        Args:</span>
+<span class="sd">            right_name: right to be evaluated</span>
+<span class="sd">            user_name: user to be evaluated against</span>
+<span class="sd">            site_name: the org</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Result:</span>
+<span class="sd">                True/False for bool type right;</span>
+<span class="sd">                Int number for int rule;</span>
+<span class="sd">                None if error occurred during evaluation</span>
+<span class="sd">            Error: error string error occurred during evaluation</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">right_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">get_right_type</span><span class="p">(</span><span class="n">right_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">right_type</span> <span class="o">==</span> <span class="s2">&quot;bool&quot;</span><span class="p">:</span>
+            <span class="n">user</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;unknown user &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+            <span class="n">roles</span> <span class="o">=</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;roles&quot;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="s2">&quot;super&quot;</span> <span class="ow">in</span> <span class="n">roles</span><span class="p">:</span>
+                <span class="c1"># super user has all rights!</span>
+                <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">FLAuthorizer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">evaluate_user_right_on_site</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_any_bool_rights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right_names</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check whether the user has any of the specified right</span>
+<span class="sd">        Args:</span>
+<span class="sd">            right_names:</span>
+<span class="sd">            user_name:</span>
+<span class="sd">            site_name:</span>
+
+<span class="sd">        Returns:</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;policy not defined&quot;</span>
+
+        <span class="n">user</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;unknown user &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+
+        <span class="n">roles</span> <span class="o">=</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;roles&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s2">&quot;super&quot;</span> <span class="ow">in</span> <span class="n">roles</span><span class="p">:</span>
+            <span class="c1"># super user has all rights!</span>
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="k">for</span> <span class="n">right_name</span> <span class="ow">in</span> <span class="n">right_names</span><span class="p">:</span>
+            <span class="n">value</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">evaluate_user_right_on_site</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">err</span>
+
+            <span class="k">if</span> <span class="n">value</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_any_bool_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rule_names</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;policy not defined&quot;</span>
+
+        <span class="k">for</span> <span class="n">rule_name</span> <span class="ow">in</span> <span class="n">rule_names</span><span class="p">:</span>
+            <span class="n">value</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">evaluate_rule_on_site</span><span class="p">(</span><span class="n">rule_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">err</span>
+            <span class="k">if</span> <span class="n">value</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_user_can_upload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="c1"># must follow action_checker_signature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_bool_rights</span><span class="p">(</span><span class="n">user_name</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">,</span> <span class="n">right_names</span><span class="o">=</span><span class="p">[</span><span class="n">Right</span><span class="o">.</span><span class="n">UPLOAD_APP</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_user_can_deploy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="c1"># must follow action_checker_signature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_bool_rights</span><span class="p">(</span>
+            <span class="n">user_name</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">,</span> <span class="n">right_names</span><span class="o">=</span><span class="p">[</span><span class="n">Right</span><span class="o">.</span><span class="n">DEPLOY_ALL</span><span class="p">,</span> <span class="n">Right</span><span class="o">.</span><span class="n">DEPLOY_SELF</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_user_can_train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="c1"># must follow action_checker_signature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_bool_rights</span><span class="p">(</span>
+            <span class="n">user_name</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">,</span> <span class="n">right_names</span><span class="o">=</span><span class="p">[</span><span class="n">Right</span><span class="o">.</span><span class="n">TRAIN_ALL</span><span class="p">,</span> <span class="n">Right</span><span class="o">.</span><span class="n">TRAIN_SELF</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_user_can_operate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="c1"># must follow action_checker_signature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_bool_rights</span><span class="p">(</span>
+            <span class="n">user_name</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">,</span> <span class="n">right_names</span><span class="o">=</span><span class="p">[</span><span class="n">Right</span><span class="o">.</span><span class="n">OPERATE_ALL</span><span class="p">,</span> <span class="n">Right</span><span class="o">.</span><span class="n">OPERATE_SELF</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_user_can_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="c1"># must follow action_checker_signature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_bool_rights</span><span class="p">(</span>
+            <span class="n">user_name</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">,</span> <span class="n">right_names</span><span class="o">=</span><span class="p">[</span><span class="n">Right</span><span class="o">.</span><span class="n">VIEW_ALL</span><span class="p">,</span> <span class="n">Right</span><span class="o">.</span><span class="n">VIEW_SELF</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_site_allows_byoc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="c1"># must follow action_checker_signature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_bool_rules</span><span class="p">(</span><span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">,</span> <span class="n">rule_names</span><span class="o">=</span><span class="p">[</span><span class="n">Rule</span><span class="o">.</span><span class="n">ALLOW_BYOC</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_site_allows_custom_datalist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="c1"># must follow action_checker_signature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_bool_rules</span><span class="p">(</span><span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">,</span> <span class="n">rule_names</span><span class="o">=</span><span class="p">[</span><span class="n">Rule</span><span class="o">.</span><span class="n">ALLOW_CUSTOM_DATALIST</span><span class="p">])</span>
+
+<div class="viewcode-block" id="FLAuthorizer.authorize"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.FLAuthorizer.authorize">[docs]</a>    <span class="k">def</span> <span class="nf">authorize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">FLAuthzContext</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ctx</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">FLAuthzContext</span><span class="p">),</span> <span class="s2">&quot;authz_ctx must be FLAuthzContext but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">ctx</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ctx</span><span class="o">.</span><span class="n">actions</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">user_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">user_name</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;program error: no user name in ctx!&quot;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ctx</span><span class="o">.</span><span class="n">site_names</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="k">for</span> <span class="n">action</span> <span class="ow">in</span> <span class="n">ctx</span><span class="o">.</span><span class="n">actions</span><span class="p">:</span>
+            <span class="n">checker</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_checkers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">checker</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;program error: invalid action name </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">action</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">site_name</span> <span class="ow">in</span> <span class="n">ctx</span><span class="o">.</span><span class="n">site_names</span><span class="p">:</span>
+                <span class="n">authorized</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">checker</span><span class="p">(</span><span class="n">user_name</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="n">err</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">authorized</span><span class="p">:</span>
+                    <span class="n">text_vars</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;site&quot;</span><span class="p">:</span> <span class="n">site_name</span><span class="p">,</span> <span class="s2">&quot;user&quot;</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">user_name</span><span class="p">}</span>
+                    <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="n">ACTION_EXPLANATION</span><span class="p">[</span><span class="n">action</span><span class="p">]</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="n">text_vars</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span></div></div>
+
+
+<div class="viewcode-block" id="EmptyAuthorizer"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.EmptyAuthorizer">[docs]</a><span class="k">class</span> <span class="nc">EmptyAuthorizer</span><span class="p">(</span><span class="n">Authorizer</span><span class="p">):</span>
+<div class="viewcode-block" id="EmptyAuthorizer.authorize"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.EmptyAuthorizer.authorize">[docs]</a>    <span class="k">def</span> <span class="nf">authorize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">AuthzContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="nb">object</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="EmptyAuthorizer.evaluate_user_right_on_site"><a class="viewcode-back" href="../../../apidocs/nvflare.security.html#nvflare.security.security.EmptyAuthorizer.evaluate_user_right_on_site">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_user_right_on_site</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

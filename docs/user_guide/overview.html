@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>Overview &mdash; NVFlare 1.1 documentation</title>
+  <title>Overview &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -71,8 +71,8 @@
     
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="NVFlare Application" href="application.html" />
-    <link rel="prev" title="User Guide" href="../user_guide.html" /> 
+    <link rel="next" title="NVIDIA FLARE Application" href="application.html" />
+    <link rel="prev" title="User Guide - Provision, Start, Operate" href="../user_guide.html" /> 
 </head>
 
 <body class="wy-body-for-nav">
@@ -86,7 +86,7 @@
            
 
           
-            <a href="../index.html" class="icon icon-home"> NVFlare
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -96,7 +96,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -164,7 +164,7 @@
               <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
-<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide</a><ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a><ul class="current">
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Overview</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#introduction">Introduction</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#provision-start-operate">Provision - Start - Operate</a><ul>
@@ -182,39 +182,31 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#start-instructions-for-each-participant-to-start-running-fl-with-their-startup-kits">Start: Instructions for each participant to start running FL with their startup kits</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#federated-learning-server-server-zip">Federated learning server (server.zip)</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#federated-learning-server-server-name-zip">Federated learning server ($SERVER_NAME.zip)</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#federated-learning-client-client-name-zip">Federated learning client ($CLIENT_NAME.zip)</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#federated-learning-administration-client-email-zip">Federated learning administration client ($EMAIL.zip)</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#operate-running-federated-learning-as-an-administrator">Operate: Running federated learning as an administrator</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#example-of-running-federated-learning-from-the-administration-client">Example of running federated learning from the administration client</a><ul>
-<li class="toctree-l5"><a class="reference internal" href="#check-status-of-fl-server-and-fl-client">Check status of FL server and FL client</a></li>
-<li class="toctree-l5"><a class="reference internal" href="#set-run-number-for-fl-training">Set run number for FL training</a></li>
-<li class="toctree-l5"><a class="reference internal" href="#upload-application-from-admin-client-to-fl-server">Upload application from admin client to FL server</a></li>
-<li class="toctree-l5"><a class="reference internal" href="#deploy-application-from-transfer-directory-of-fl-server-to-active-run-on-server-and-client">Deploy application from transfer directory of FL server to active run on server and client</a></li>
-<li class="toctree-l5"><a class="reference internal" href="#start-training-by-starting-fl-server-and-fl-clients">Start training by starting FL server and FL clients</a></li>
-<li class="toctree-l5"><a class="reference internal" href="#stopping-federated-learning-training">Stopping federated learning training</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#running-federated-learning-from-the-administration-client">Running federated learning from the administration client</a></li>
 </ul>
 </li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#internal-folder-and-file-structures-for-nvidia-flare">Internal folder and file structures for NVIDIA FLARE</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#server-side-folder-and-file-structure">Server side folder and file structure</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#client-side-folder-and-file-structure">Client side folder and file structure</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#administrator-side-folder-and-file-structure">Administrator side folder and file structure</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#known-issues">Known issues</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="application.html">NVFlare Application</a></li>
-<li class="toctree-l2"><a class="reference internal" href="provisioning_tool.html">Provisioning tool</a></li>
+<li class="toctree-l2"><a class="reference internal" href="application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="workspace.html">NVIDIA FLARE Workspace</a></li>
+<li class="toctree-l2"><a class="reference internal" href="provisioning_tool.html">Provisioning in NVIDIA FLARE</a></li>
 <li class="toctree-l2"><a class="reference internal" href="authorization.html">Authorization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="admin_commands.html">Administrator commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin_commands.html">Admin Client, Commands, FLAdminAPI</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
@@ -233,7 +225,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../index.html">NVFlare</a>
+          <a href="../index.html">NVIDIA FLARE</a>
         
       </nav>
 
@@ -266,13 +258,15 @@
     
       <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
         
-          <li><a href="../user_guide.html">User Guide</a> &raquo;</li>
+          <li><a href="../user_guide.html">User Guide - Provision, Start, Operate</a> &raquo;</li>
         
       <li>Overview</li>
     
     
       <li class="wy-breadcrumbs-aside">
         
+          
+            <a href="../_sources/user_guide/overview.rst.txt" rel="nofollow"> View page source</a>
           
         
       </li>
@@ -289,7 +283,7 @@
 <h1>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="introduction">
 <h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
-<p>NVFlare utilizes provisioning and admin client to reduce the amount of human coordination involved to set up a federated learning project
+<p>NVIDIA FLARE utilizes provisioning and admin client to reduce the amount of human coordination involved to set up a federated learning project
 and provides an admin the ability to deploy the server and client configurations, start the server / clients, abort the training,
 restart the training, and more. A provisioning tool can be configured to create one startup kit for each site in an encrypted package.
 These packages can then be delivered to each site ready to go, streamlining the process to provision, start, and operate federated learning.</p>
@@ -315,11 +309,11 @@ These packages can then be delivered to each site ready to go, streamlining the 
 the federated learning training project:</p>
 <div class="section" id="preparation-for-using-the-provisioning-tool">
 <h3>Preparation for using the provisioning tool<a class="headerlink" href="#preparation-for-using-the-provisioning-tool" title="Permalink to this headline">¶</a></h3>
-<p>After installation <code class="docutils literal notranslate"><span class="pre">NVFlare</span></code>, provisioning tool is available via <code class="docutils literal notranslate"><span class="pre">provision</span></code> command.</p>
+<p>After <a class="reference internal" href="../installation.html#installation"><span class="std std-ref">Installation</span></a>, the provisioning tool is available via <code class="docutils literal notranslate"><span class="pre">provision</span></code> command.</p>
 </div>
 <div class="section" id="provisioning-a-federated-learning-project">
 <h3>Provisioning a federated learning project<a class="headerlink" href="#provisioning-a-federated-learning-project" title="Permalink to this headline">¶</a></h3>
-<p>The <a class="reference internal" href="provisioning_tool.html#provisioning-tool"><span class="std std-ref">Provisioning tool</span></a> page has details on the contents of the
+<p>The <a class="reference internal" href="provisioning_tool.html#provisioning"><span class="std std-ref">Provisioning in NVIDIA FLARE</span></a> page has details on the contents of the
 provisioning tool. Edit the <a class="reference internal" href="provisioning_tool.html#project-yaml-file"><span class="std std-ref">Project yaml file</span></a> in the directory with the provisioning tool to meet your
 project requirements, then run the startup kit with (here we assume your project.yml is in current working directory):</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">provision</span> <span class="o">-</span><span class="n">p</span> <span class="n">project</span><span class="o">.</span><span class="n">yml</span>
@@ -332,7 +326,7 @@ and “packages” folder to a safe location. The passwords shown below are for 
 ┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
 ┃ participant           ┃ org    ┃ destination               ┃ password         ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-│ localhost             │ nvidia │ server.zip                │ Dby2BhwJdLKfStWl │
+│ localhost             │ nvidia │ localhost.zip             │ Dby2BhwJdLKfStWl │
 │ org1-a                │ org1   │ org1-a.zip                │ BlLXFKgWp0Qu28cS │
 │ org1-b                │ org1   │ org1-b.zip                │ Lu6w0aCf1RhAqSlJ │
 │ org2                  │ org2   │ org2.zip                  │ KdotOafkUl2ziRh5 │
@@ -369,7 +363,7 @@ running the package will need write access there.</p>
 <p class="admonition-title">Note</p>
 <p>It is important that this “startup” folder is not renamed because the code relies upon this for operation. Please
 note that a “transfer” directory and deployed applications will be created at the level of this “startup” folder. See the
-section on <a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a> below for more details.</p>
+section on <a class="reference internal" href="#internal-folder-and-file-structures-for-nvidia-flare">Internal folder and file structures for NVIDIA FLARE</a> below for more details.</p>
 </div>
 </div>
 </div>
@@ -379,8 +373,8 @@ section on <a class="reference internal" href="#internal-folder-and-file-structu
 <p class="admonition-title">Attention</p>
 <p>Please always safeguard .key files!</p>
 </div>
-<div class="section" id="federated-learning-server-server-zip">
-<h3>Federated learning server (server.zip)<a class="headerlink" href="#federated-learning-server-server-zip" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="federated-learning-server-server-name-zip">
+<h3>Federated learning server ($SERVER_NAME.zip)<a class="headerlink" href="#federated-learning-server-server-name-zip" title="Permalink to this headline">¶</a></h3>
 <p>One single server will coordinate the federated learning training and be the main hub all clients and administrator
 clients connect to.</p>
 <p>After unzipping the package server.zip, run the start.sh file from the “startup” folder you unzipped to start the server.</p>
@@ -405,10 +399,10 @@ name specified when provisioning the project.</p>
 from the “startup” folder you unzipped to start the client.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>You need to first install NVFlare package before running the <code class="docutils literal notranslate"><span class="pre">start.sh</span></code> shell script.  NVFlare is available
+<p>You need to first install NVIDIA FLARE package before running the <code class="docutils literal notranslate"><span class="pre">start.sh</span></code> shell script.  NVIDIA FLARE is available
 on PyPi and can be installed with <code class="docutils literal notranslate"><span class="pre">python3</span> <span class="pre">-m</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">nvflare</span></code>.</p>
 <p>Depending on the deployed application which shall start later, your environment may need some additional
-Python packages.  If you haven’t installed them, do it after you install NVFlare.  NVFlare does not dictate
+Python packages.  If you haven’t installed them, do it after you install NVIDIA FLARE.  NVIDIA FLARE does not dictate
 your deep learning environments.  It’s completely up to you to set it up.</p>
 </div>
 <div class="admonition note">
@@ -457,160 +451,24 @@ the participant. As such, please safeguard its private key, client.key.</p>
 <p class="admonition-title">Attention</p>
 <p>You will need write access in the directory containing the “startup” folder because the “transfer” directory for
 uploading files as well as directories created for federated learning runs will live here. For details, see
-<a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a>.</p>
+<a class="reference internal" href="#internal-folder-and-file-structures-for-nvidia-flare">Internal folder and file structures for NVIDIA FLARE</a>.</p>
 </div>
 </div>
 </div>
 <div class="section" id="operate-running-federated-learning-as-an-administrator">
 <h2>Operate: Running federated learning as an administrator<a class="headerlink" href="#operate-running-federated-learning-as-an-administrator" title="Permalink to this headline">¶</a></h2>
-<div class="section" id="example-of-running-federated-learning-from-the-administration-client">
-<h3>Example of running federated learning from the administration client<a class="headerlink" href="#example-of-running-federated-learning-from-the-administration-client" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="running-federated-learning-from-the-administration-client">
+<h3>Running federated learning from the administration client<a class="headerlink" href="#running-federated-learning-from-the-administration-client" title="Permalink to this headline">¶</a></h3>
 <p>With all connections between the FL server, FL clients, and administration clients open and all of the parties
 started successfully as described in the preceding section, <a class="reference internal" href="#federated-learning-administration-client-email-zip">Federated learning administration client ($EMAIL.zip)</a>,
-the following is an example of a series of admin commands and their outputs to operate a federated learning project.</p>
-<p>For a complete list of admin commands, see <a class="reference internal" href="admin_commands.html#administrator-commands"><span class="std std-ref">Administrator commands</span></a>.</p>
-<div class="section" id="check-status-of-fl-server-and-fl-client">
-<h4>Check status of FL server and FL client<a class="headerlink" href="#check-status-of-fl-server-and-fl-client" title="Permalink to this headline">¶</a></h4>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt; check_status server</span>
-<span class="go">FL run number has not been set.</span>
-<span class="go">FL server status: training not started</span>
-<span class="go">Registered clients: 2</span>
-<span class="go">client name:flclient1   instance name:flclient1     token: 53b6f87a-79f0-4127-9735-72051de2dad9</span>
-<span class="go">client name:flclient2       instance name:flclient2 token: b37644d4-7910-4a11-adf9-14cd790c1151</span>
-
-<span class="go">Done [9325 usecs] 2020-07-07 16:31:15.175153</span>
-
-<span class="go">&gt; check_status client</span>
-<span class="go">instance:flclient1 : client name: flclient1 token: 53b6f87a-79f0-4127-9735-72051de2dad9     status: training not started</span>
-<span class="go">instance:flclient2 : client name: flclient2 token: b37644d4-7910-4a11-adf9-14cd790c1151     status: training not started</span>
-
-<span class="go">Done [308172 usecs] 2020-07-07 16:31:27.300195</span>
-</pre></div>
-</div>
-<p>The two commands above are not necessary, but check the status of the server and clients to confirm that they are registered
-and that the FL server and FL client statuses are all “training not started”.</p>
-<p>Please note that in the status of the server above, FL run number has not been set. Let us set a new run number next:</p>
-</div>
-<div class="section" id="set-run-number-for-fl-training">
-<h4>Set run number for FL training<a class="headerlink" href="#set-run-number-for-fl-training" title="Permalink to this headline">¶</a></h4>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt; set_run_number 123</span>
-<span class="go">Create a new run folder: run_123</span>
-<span class="go">Done [8810 usecs] 2020-07-07 17:05:05.145405</span>
-</pre></div>
-</div>
-<p>The FL run number is critical to starting and managing FL training projects because all training happens within a run.</p>
-<div class="admonition attention">
-<p class="admonition-title">Attention</p>
-<p>You must not start a new run before the previous run is finished completely.</p>
-</div>
-<div class="admonition attention">
-<p class="admonition-title">Attention</p>
-<p>We suggest restarting the server if you are running different applications so that the previously imported codes
-will not affect the new application.</p>
-</div>
-<p>After setting a run number, a folder for that run is created on the server under the root of the server’s workspace at
-the same level as the startup directory (see the section on <a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a>
-below for more details). Initially, this folder will be empty when created for a new run.</p>
-<p>In order to start training for a federated learning project, an application with the proper configurations needs to
-be uploaded and deployed to the server and all the participating clients.</p>
-</div>
-<div class="section" id="upload-application-from-admin-client-to-fl-server">
-<h4>Upload application from admin client to FL server<a class="headerlink" href="#upload-application-from-admin-client-to-fl-server" title="Permalink to this headline">¶</a></h4>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt; upload_app segmentation_ct_spleen</span>
-<span class="go">Created folder /path_on_server/fl_server_workspace_root/startup/../transfer/segmentation_ct_spleen</span>
-<span class="go">Done [962809 usecs] 2020-07-07 17:16:09.947498</span>
-</pre></div>
-</div>
-<p>The admin command <code class="docutils literal notranslate"><span class="pre">upload_app</span></code> uploads an application from the administrator’s machine’s transfer directory to the
-server’s transfer directory (both at the same level as their respective startup directories).  The administrator
-can run <code class="docutils literal notranslate"><span class="pre">upload_app</span></code> either before or after <code class="docutils literal notranslate"><span class="pre">set_run_number</span></code> but in order to deploy the application for the next step,
-a run number must be set:</p>
-</div>
-<div class="section" id="deploy-application-from-transfer-directory-of-fl-server-to-active-run-on-server-and-client">
-<h4>Deploy application from transfer directory of FL server to active run on server and client<a class="headerlink" href="#deploy-application-from-transfer-directory-of-fl-server-to-active-run-on-server-and-client" title="Permalink to this headline">¶</a></h4>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt; deploy_app segmentation_ct_spleen server</span>
-<span class="go">mmar_server has been deployed.</span>
-<span class="go">Done [14036 usecs] 2020-07-07 17:27:21.365732</span>
-
-<span class="go">&gt; deploy_app segmentation_ct_spleen client</span>
-<span class="go">instance:flclient1 : MMAR deployed.</span>
-<span class="go">instance:flclient2 : MMAR deployed.</span>
-
-<span class="go">Done [521724 usecs] 2020-07-07 17:27:28.337640</span>
-</pre></div>
-</div>
-<p>The two commands above deployed the specified application that had already been uploaded to the server’s transfer directory into
-directories corresponding to the run number. In this case, since the run number was set to 123, the segmentation_ct_spleen
-application was copied into the run_123 directory on the FL server and FL clients
-(see the section on <a class="reference internal" href="#internal-folder-and-file-structures-for-nvflare">Internal folder and file structures for NVFlare</a> below for a more visual representation).</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The first command deployed the application to the FL server, and the second command deployed the application to all active
-FL clients. You can also choose to deploy an application to a specific client by specifying the client instance name after
-the command, for example, the following would only deploy the application to flclient1: deploy_app segmentation_ct_spleen client flclient1</p>
-</div>
-<p>After the application is deployed to the FL server and participating FL clients, training can be started:</p>
-</div>
-<div class="section" id="start-training-by-starting-fl-server-and-fl-clients">
-<h4>Start training by starting FL server and FL clients<a class="headerlink" href="#start-training-by-starting-fl-server-and-fl-clients" title="Permalink to this headline">¶</a></h4>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt; start_app server</span>
-<span class="go">Server training is starting....</span>
-<span class="go">Done [13004 usecs] 2020-07-07 13:27:37.325887</span>
-
-<span class="go">&gt; start_app client</span>
-<span class="go">instance:flclient1 : Starting the client...</span>
-<span class="go">instance:flclient2 : Starting the client...</span>
-
-<span class="go">Done [210790 usecs] 2020-07-07 13:27:46.968446</span>
-</pre></div>
-</div>
-<p>The server status should proceed from “training not started” to “training starting” then to “training started”, and this
-can be checked with the command <code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code>. The clients should begin training after the server is in the
-“training started” status.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The command <code class="docutils literal notranslate"><span class="pre">start_mgpu</span> <span class="pre">client</span> <span class="pre">&lt;gpu</span> <span class="pre">number&gt;</span> <span class="pre">&lt;client</span> <span class="pre">name&gt;</span></code> can be used to start multiple GPU federated learning
-training on clients. Please refer to <a class="reference internal" href="../faq.html#multi-gpu-training"><span class="std std-ref">multi-gpu training</span></a>.</p>
+admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
+issue commands to operate the system so it can be run with a script.</p>
+<p>For a complete list of admin commands, see <a class="reference internal" href="admin_commands.html#admin-commands"><span class="std std-ref">Admin Client, Commands, FLAdminAPI</span></a>.</p>
+<p>For examples of using the commands to operate a FL system, see the examples in the <a class="reference internal" href="../quickstart.html#quickstart"><span class="std std-ref">Quickstart</span></a> section.</p>
 </div>
 </div>
-<div class="section" id="stopping-federated-learning-training">
-<h4>Stopping federated learning training<a class="headerlink" href="#stopping-federated-learning-training" title="Permalink to this headline">¶</a></h4>
-<p>Do not use ctrl-c to stop the FL server or FL clients, as there are known issues that can leave clients in a state where
-they are stuck and unable to communicate with the FL server. Instead the following command can be used to abort a client
-to stop training</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt; abort client flclient1</span>
-<span class="go">instance:flclient1 : Aborting the client...</span>
-
-<span class="go">Done [511128 usecs] 2020-07-08 13:28:32.235777</span>
-</pre></div>
-</div>
-<p>You can also use <code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">client</span></code> to stop training on all clients. Please note that abort will not work unless the client
-has already successfully started training.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The “Done” displayed on the admin client is referring to the message sending being done. The actual completion
-of aborting the client may occur after some slight delay.</p>
-</div>
-<p>To then shut down the client entirely and end the FL client process</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt; shutdown client flclient1</span>
-<span class="go">Are you sure (Y/N): Y</span>
-<span class="go">instance:flclient1 : Shutdown the client...</span>
-
-<span class="go">Done [272239 usecs] 2020-07-08 13:33:31.377445</span>
-</pre></div>
-</div>
-<p>The <code class="docutils literal notranslate"><span class="pre">shutdown</span> <span class="pre">client</span></code> command can also be issued without a specific client to shut down all clients, and this command
-requires the administrator to enter “Y” for confirmation.</p>
-<p>Both <code class="docutils literal notranslate"><span class="pre">abort</span></code> and <code class="docutils literal notranslate"><span class="pre">shutdown</span></code> can be used to stop training and end the FL server process as well, with <code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">server</span></code>
-and <code class="docutils literal notranslate"><span class="pre">shutdown</span> <span class="pre">server</span></code>. Please note that you should shut down the clients before the server because the clients receive
-commands through the server. If a client refuses to die, wait the duration of the heartbeat to see if it gets dropped,
-then after all clients are shut down, you can shut down the server. If a client still refuses to die, IT personnel at
-the site may have to kill it.</p>
-</div>
-</div>
-</div>
-<div class="section" id="internal-folder-and-file-structures-for-nvflare">
-<h2>Internal folder and file structures for NVFlare<a class="headerlink" href="#internal-folder-and-file-structures-for-nvflare" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="internal-folder-and-file-structures-for-nvidia-flare">
+<h2>Internal folder and file structures for NVIDIA FLARE<a class="headerlink" href="#internal-folder-and-file-structures-for-nvidia-flare" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="server-side-folder-and-file-structure">
 <h3>Server side folder and file structure<a class="headerlink" href="#server-side-folder-and-file-structure" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">some_path_on_fl_server</span><span class="o">/</span><span class="n">fl_server_workspace_root</span><span class="o">/</span>
@@ -707,20 +565,6 @@ the site may have to kill it.</p>
 </div>
 </div>
 </div>
-<div class="section" id="known-issues">
-<h2>Known issues<a class="headerlink" href="#known-issues" title="Permalink to this headline">¶</a></h2>
-<ol class="arabic simple">
-<li><p>If server dies and then is restarted, intentionally or unintentionally, all clients will have to be restarted.</p></li>
-<li><p>Running out of memory can happen at any time, especially if the server and clients are running on same machine.
-This can cause the server to die unexpectedly.</p></li>
-<li><p>Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models
-folder inside, a mysterious error may occur when running the deploy_app command because the application folder is too
-large to be uploaded and that causes timeout.</p></li>
-<li><p>Please don’t start a new training run or start a new app before the previous application is fully stopped. If
-cross-site validation is enabled, please wait until it ends. Or users can do <code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">client</span></code> and
-<code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">server</span></code> before they <code class="docutils literal notranslate"><span class="pre">start_app</span></code> for the new run.</p></li>
-</ol>
-</div>
 </div>
 
 
@@ -729,8 +573,8 @@ cross-site validation is enabled, please wait until it ends. Or users can do <co
           </div>
           <footer>
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-        <a href="application.html" class="btn btn-neutral float-right" title="NVFlare Application" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-        <a href="../user_guide.html" class="btn btn-neutral float-left" title="User Guide" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="application.html" class="btn btn-neutral float-right" title="NVIDIA FLARE Application" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../user_guide.html" class="btn btn-neutral float-left" title="User Guide - Provision, Start, Operate" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

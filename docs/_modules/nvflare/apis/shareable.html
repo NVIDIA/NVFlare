@@ -1,0 +1,442 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.apis.shareable &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.apis.shareable</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.apis.shareable</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">pickle</span>
+
+<span class="kn">from</span> <span class="nn">.fl_constant</span> <span class="kn">import</span> <span class="n">ReservedKey</span><span class="p">,</span> <span class="n">ReturnCode</span>
+
+
+<div class="viewcode-block" id="ReservedHeaderKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.ReservedHeaderKey">[docs]</a><span class="k">class</span> <span class="nc">ReservedHeaderKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">HEADERS</span> <span class="o">=</span> <span class="s2">&quot;__headers__&quot;</span>
+    <span class="n">TOPIC</span> <span class="o">=</span> <span class="s2">&quot;__topic__&quot;</span>
+    <span class="n">RC</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">RC</span>
+    <span class="n">COOKIE_JAR</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">COOKIE_JAR</span>
+    <span class="n">PEER_PROPS</span> <span class="o">=</span> <span class="s2">&quot;__peer_props__&quot;</span>
+    <span class="n">REPLY_IS_LATE</span> <span class="o">=</span> <span class="s2">&quot;__reply_is_late__&quot;</span>
+    <span class="n">TASK_NAME</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">TASK_NAME</span>
+    <span class="n">TASK_ID</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">TASK_ID</span>
+    <span class="n">WORKFLOW</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">WORKFLOW</span>
+    <span class="n">CONTENT_TYPE</span> <span class="o">=</span> <span class="s2">&quot;__content_type__&quot;</span></div>
+
+
+<div class="viewcode-block" id="Shareable"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable">[docs]</a><span class="k">class</span> <span class="nc">Shareable</span><span class="p">(</span><span class="nb">dict</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The information communicated between server and client</span>
+
+<span class="sd">    Shareable is just a dict that can have any keys and values, defined by developers and users.</span>
+<span class="sd">    It is recommended that keys are strings. Values must be serializable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="p">[</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">HEADERS</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="Shareable.set_header"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.set_header">[docs]</a>    <span class="k">def</span> <span class="nf">set_header</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">HEADERS</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">header</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="bp">self</span><span class="p">[</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">HEADERS</span><span class="p">]</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="n">header</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span></div>
+
+<div class="viewcode-block" id="Shareable.get_header"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.get_header">[docs]</a>    <span class="k">def</span> <span class="nf">get_header</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">HEADERS</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">header</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">default</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;header object must be a dict, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">header</span><span class="p">)))</span>
+            <span class="k">return</span> <span class="n">header</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span></div>
+
+    <span class="c1"># some convenience methods</span>
+<div class="viewcode-block" id="Shareable.get_return_code"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.get_return_code">[docs]</a>    <span class="k">def</span> <span class="nf">get_return_code</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">RC</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.set_return_code"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.set_return_code">[docs]</a>    <span class="k">def</span> <span class="nf">set_return_code</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rc</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">RC</span><span class="p">,</span> <span class="n">rc</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.add_cookie"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.add_cookie">[docs]</a>    <span class="k">def</span> <span class="nf">add_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add a cookie that is to be sent to the client and echoed back in response.</span>
+<span class="sd">        This method is intended to be called by the Server side.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: the name of the cookie</span>
+<span class="sd">            data: the data of the cookie, which must be serializable</span>
+
+<span class="sd">        Returns:</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cookie_jar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cookie_jar</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cookie_jar</span><span class="p">:</span>
+            <span class="n">cookie_jar</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">COOKIE_JAR</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">cookie_jar</span><span class="p">)</span>
+        <span class="n">cookie_jar</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span></div>
+
+<div class="viewcode-block" id="Shareable.get_cookie_jar"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.get_cookie_jar">[docs]</a>    <span class="k">def</span> <span class="nf">get_cookie_jar</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">COOKIE_JAR</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.set_cookie_jar"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.set_cookie_jar">[docs]</a>    <span class="k">def</span> <span class="nf">set_cookie_jar</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jar</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">COOKIE_JAR</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">jar</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.get_cookie"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.get_cookie">[docs]</a>    <span class="k">def</span> <span class="nf">get_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">jar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cookie_jar</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">jar</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">default</span>
+        <span class="k">return</span> <span class="n">jar</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.set_peer_props"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.set_peer_props">[docs]</a>    <span class="k">def</span> <span class="nf">set_peer_props</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">props</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">PEER_PROPS</span><span class="p">,</span> <span class="n">props</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.get_peer_props"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.get_peer_props">[docs]</a>    <span class="k">def</span> <span class="nf">get_peer_props</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">PEER_PROPS</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.get_peer_prop"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.get_peer_prop">[docs]</a>    <span class="k">def</span> <span class="nf">get_peer_prop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="p">):</span>
+        <span class="n">props</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_peer_props</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">props</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">default</span>
+        <span class="k">return</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.to_bytes"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.to_bytes">[docs]</a>    <span class="k">def</span> <span class="nf">to_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;method to serialize the Model object into bytes.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            object serialized in bytes.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Shareable.from_bytes"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.Shareable.from_bytes">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_bytes</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;method to convert the object bytes into Model object.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: a bytes object</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            an object loaded by pickle from data</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span class="p">)</span></div></div>
+
+
+<span class="c1"># some convenience functions</span>
+<div class="viewcode-block" id="make_reply"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.shareable.make_reply">[docs]</a><span class="k">def</span> <span class="nf">make_reply</span><span class="p">(</span><span class="n">rc</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+    <span class="n">reply</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
+    <span class="n">reply</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">rc</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">reply</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

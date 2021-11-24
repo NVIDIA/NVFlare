@@ -8,8 +8,11 @@ Subpackages
    :maxdepth: 4
 
    nvflare.apis
-   nvflare.components
-   nvflare.pt
+   nvflare.app_common
+   nvflare.fuel
+   nvflare.lighter
+   nvflare.security
+   nvflare.widgets
 
 Module contents
 ---------------

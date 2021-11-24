@@ -1,0 +1,29 @@
+nvflare.app\_common.handlers package
+====================================
+
+Submodules
+----------
+
+nvflare.app\_common.handlers.event\_recorder module
+---------------------------------------------------
+
+.. automodule:: nvflare.app_common.handlers.event_recorder
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.app\_common.handlers.intime\_model\_selection\_handler module
+---------------------------------------------------------------------
+
+.. automodule:: nvflare.app_common.handlers.intime_model_selection_handler
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: nvflare.app_common.handlers
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -1,0 +1,456 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.lighter.impl.cert &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../../" src="../../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+        <script src="../../../../_static/jquery.js"></script>
+        <script src="../../../../_static/underscore.js"></script>
+        <script src="../../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.lighter.impl.cert</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.lighter.impl.cert</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pickle</span>
+
+<span class="kn">from</span> <span class="nn">cryptography</span> <span class="kn">import</span> <span class="n">x509</span>
+<span class="kn">from</span> <span class="nn">cryptography.hazmat.backends</span> <span class="kn">import</span> <span class="n">default_backend</span>
+<span class="kn">from</span> <span class="nn">cryptography.hazmat.primitives</span> <span class="kn">import</span> <span class="n">hashes</span><span class="p">,</span> <span class="n">serialization</span>
+<span class="kn">from</span> <span class="nn">cryptography.hazmat.primitives.asymmetric</span> <span class="kn">import</span> <span class="n">rsa</span>
+<span class="kn">from</span> <span class="nn">cryptography.x509.oid</span> <span class="kn">import</span> <span class="n">NameOID</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.lighter.spec</span> <span class="kn">import</span> <span class="n">Builder</span>
+
+
+<div class="viewcode-block" id="serialize_pri_key"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.html#nvflare.lighter.impl.cert.serialize_pri_key">[docs]</a><span class="k">def</span> <span class="nf">serialize_pri_key</span><span class="p">(</span><span class="n">pri_key</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">pri_key</span><span class="o">.</span><span class="n">private_bytes</span><span class="p">(</span>
+        <span class="n">encoding</span><span class="o">=</span><span class="n">serialization</span><span class="o">.</span><span class="n">Encoding</span><span class="o">.</span><span class="n">PEM</span><span class="p">,</span>
+        <span class="nb">format</span><span class="o">=</span><span class="n">serialization</span><span class="o">.</span><span class="n">PrivateFormat</span><span class="o">.</span><span class="n">TraditionalOpenSSL</span><span class="p">,</span>
+        <span class="n">encryption_algorithm</span><span class="o">=</span><span class="n">serialization</span><span class="o">.</span><span class="n">NoEncryption</span><span class="p">(),</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="serialize_cert"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.html#nvflare.lighter.impl.cert.serialize_cert">[docs]</a><span class="k">def</span> <span class="nf">serialize_cert</span><span class="p">(</span><span class="n">cert</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">cert</span><span class="o">.</span><span class="n">public_bytes</span><span class="p">(</span><span class="n">serialization</span><span class="o">.</span><span class="n">Encoding</span><span class="o">.</span><span class="n">PEM</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CertBuilder"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.html#nvflare.lighter.impl.cert.CertBuilder">[docs]</a><span class="k">class</span> <span class="nc">CertBuilder</span><span class="p">(</span><span class="n">Builder</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+
+<div class="viewcode-block" id="CertBuilder.initialize"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.html#nvflare.lighter.impl.cert.CertBuilder.initialize">[docs]</a>    <span class="k">def</span> <span class="nf">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="n">state_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_state_dir</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+        <span class="n">cert_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">state_dir</span><span class="p">,</span> <span class="s2">&quot;cert.pkl&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">cert_file</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="n">cert_file</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">serialized_cert</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">[</span><span class="s2">&quot;root_cert&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span> <span class="o">=</span> <span class="n">x509</span><span class="o">.</span><span class="n">load_pem_x509_certificate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serialized_cert</span><span class="p">,</span> <span class="n">default_backend</span><span class="p">())</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pri_key</span> <span class="o">=</span> <span class="n">serialization</span><span class="o">.</span><span class="n">load_pem_private_key</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">[</span><span class="s2">&quot;root_pri_key&quot;</span><span class="p">],</span> <span class="n">password</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="n">default_backend</span><span class="p">()</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pub_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pri_key</span><span class="o">.</span><span class="n">public_key</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">subject</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span><span class="o">.</span><span class="n">subject</span></div>
+
+    <span class="k">def</span> <span class="nf">_build_root</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">subject</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">:</span>
+            <span class="n">pri_key</span><span class="p">,</span> <span class="n">pub_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_keys</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">subject</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_x509_name</span><span class="p">(</span><span class="n">subject</span><span class="p">)</span>
+            <span class="n">issuer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">subject</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_cert</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">subject</span><span class="p">,</span> <span class="n">issuer</span><span class="p">,</span> <span class="n">pri_key</span><span class="p">,</span> <span class="n">pub_key</span><span class="p">,</span> <span class="n">ca</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pri_key</span> <span class="o">=</span> <span class="n">pri_key</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pub_key</span> <span class="o">=</span> <span class="n">pub_key</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">serialized_cert</span> <span class="o">=</span> <span class="n">serialize_cert</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">[</span><span class="s2">&quot;root_cert&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">serialized_cert</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">[</span><span class="s2">&quot;root_pri_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">serialize_pri_key</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pri_key</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_build_write_cert_pair</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">participant</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="n">subject</span> <span class="o">=</span> <span class="n">participant</span><span class="o">.</span><span class="n">subject</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span> <span class="ow">and</span> <span class="n">subject</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">:</span>
+            <span class="n">cert</span> <span class="o">=</span> <span class="n">x509</span><span class="o">.</span><span class="n">load_pem_x509_certificate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">[</span><span class="n">subject</span><span class="p">][</span><span class="s2">&quot;cert&quot;</span><span class="p">],</span> <span class="n">default_backend</span><span class="p">())</span>
+            <span class="n">pri_key</span> <span class="o">=</span> <span class="n">serialization</span><span class="o">.</span><span class="n">load_pem_private_key</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">[</span><span class="n">subject</span><span class="p">][</span><span class="s2">&quot;pri_key&quot;</span><span class="p">],</span> <span class="n">password</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="n">default_backend</span><span class="p">()</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pri_key</span><span class="p">,</span> <span class="n">cert</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_pri_key_cert</span><span class="p">(</span><span class="n">participant</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">[</span><span class="n">subject</span><span class="p">]</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">cert</span><span class="o">=</span><span class="n">serialize_cert</span><span class="p">(</span><span class="n">cert</span><span class="p">),</span> <span class="n">pri_key</span><span class="o">=</span><span class="n">serialize_pri_key</span><span class="p">(</span><span class="n">pri_key</span><span class="p">))</span>
+        <span class="n">dest_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_kit_dir</span><span class="p">(</span><span class="n">participant</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">.crt&quot;</span><span class="p">),</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">serialize_cert</span><span class="p">(</span><span class="n">cert</span><span class="p">))</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">.key&quot;</span><span class="p">),</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">serialize_pri_key</span><span class="p">(</span><span class="n">pri_key</span><span class="p">))</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;rootCA.pem&quot;</span><span class="p">),</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serialized_cert</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CertBuilder.build"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.html#nvflare.lighter.impl.cert.CertBuilder.build">[docs]</a>    <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">study</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_build_root</span><span class="p">(</span><span class="n">study</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;root_cert&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span>
+        <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;root_pri_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pri_key</span>
+        <span class="n">server</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;server&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_build_write_cert_pair</span><span class="p">(</span><span class="n">server</span><span class="p">,</span> <span class="s2">&quot;server&quot;</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="n">study</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;client&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_build_write_cert_pair</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="s2">&quot;client&quot;</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">admin</span> <span class="ow">in</span> <span class="n">study</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_build_write_cert_pair</span><span class="p">(</span><span class="n">admin</span><span class="p">,</span> <span class="s2">&quot;client&quot;</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CertBuilder.get_pri_key_cert"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.html#nvflare.lighter.impl.cert.CertBuilder.get_pri_key_cert">[docs]</a>    <span class="k">def</span> <span class="nf">get_pri_key_cert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">participant</span><span class="p">):</span>
+        <span class="n">pri_key</span><span class="p">,</span> <span class="n">pub_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_keys</span><span class="p">()</span>
+        <span class="n">subject</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_x509_name</span><span class="p">(</span><span class="n">participant</span><span class="o">.</span><span class="n">subject</span><span class="p">)</span>
+        <span class="n">issuer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">subject</span>
+        <span class="n">cert</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_cert</span><span class="p">(</span><span class="n">subject</span><span class="p">,</span> <span class="n">issuer</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">pri_key</span><span class="p">,</span> <span class="n">pub_key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">pri_key</span><span class="p">,</span> <span class="n">cert</span></div>
+
+    <span class="k">def</span> <span class="nf">_generate_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">pri_key</span> <span class="o">=</span> <span class="n">rsa</span><span class="o">.</span><span class="n">generate_private_key</span><span class="p">(</span><span class="n">public_exponent</span><span class="o">=</span><span class="mi">65537</span><span class="p">,</span> <span class="n">key_size</span><span class="o">=</span><span class="mi">2048</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="n">default_backend</span><span class="p">())</span>
+        <span class="n">pub_key</span> <span class="o">=</span> <span class="n">pri_key</span><span class="o">.</span><span class="n">public_key</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">pri_key</span><span class="p">,</span> <span class="n">pub_key</span>
+
+    <span class="k">def</span> <span class="nf">_generate_cert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">subject</span><span class="p">,</span> <span class="n">issuer</span><span class="p">,</span> <span class="n">signing_pri_key</span><span class="p">,</span> <span class="n">subject_pub_key</span><span class="p">,</span> <span class="n">valid_days</span><span class="o">=</span><span class="mi">360</span><span class="p">,</span> <span class="n">ca</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="n">builder</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">x509</span><span class="o">.</span><span class="n">CertificateBuilder</span><span class="p">()</span>
+            <span class="o">.</span><span class="n">subject_name</span><span class="p">(</span><span class="n">subject</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">issuer_name</span><span class="p">(</span><span class="n">issuer</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">public_key</span><span class="p">(</span><span class="n">subject_pub_key</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">serial_number</span><span class="p">(</span><span class="n">x509</span><span class="o">.</span><span class="n">random_serial_number</span><span class="p">())</span>
+            <span class="o">.</span><span class="n">not_valid_before</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">())</span>
+            <span class="o">.</span><span class="n">not_valid_after</span><span class="p">(</span>
+                <span class="c1"># Our certificate will be valid for 360 days</span>
+                <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span>
+                <span class="o">+</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">valid_days</span><span class="p">)</span>
+                <span class="c1"># Sign our certificate with our private key</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">ca</span><span class="p">:</span>
+            <span class="n">builder</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">builder</span><span class="o">.</span><span class="n">add_extension</span><span class="p">(</span>
+                    <span class="n">x509</span><span class="o">.</span><span class="n">SubjectKeyIdentifier</span><span class="o">.</span><span class="n">from_public_key</span><span class="p">(</span><span class="n">subject_pub_key</span><span class="p">),</span>
+                    <span class="n">critical</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="o">.</span><span class="n">add_extension</span><span class="p">(</span>
+                    <span class="n">x509</span><span class="o">.</span><span class="n">AuthorityKeyIdentifier</span><span class="o">.</span><span class="n">from_issuer_public_key</span><span class="p">(</span><span class="n">subject_pub_key</span><span class="p">),</span>
+                    <span class="n">critical</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="o">.</span><span class="n">add_extension</span><span class="p">(</span><span class="n">x509</span><span class="o">.</span><span class="n">BasicConstraints</span><span class="p">(</span><span class="n">ca</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">path_length</span><span class="o">=</span><span class="kc">None</span><span class="p">),</span> <span class="n">critical</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">signing_pri_key</span><span class="p">,</span> <span class="n">hashes</span><span class="o">.</span><span class="n">SHA256</span><span class="p">(),</span> <span class="n">default_backend</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">_x509_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cn_name</span><span class="p">,</span> <span class="n">org_name</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="p">[</span><span class="n">x509</span><span class="o">.</span><span class="n">NameAttribute</span><span class="p">(</span><span class="n">NameOID</span><span class="o">.</span><span class="n">COMMON_NAME</span><span class="p">,</span> <span class="n">cn_name</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">org_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">name</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">x509</span><span class="o">.</span><span class="n">NameAttribute</span><span class="p">(</span><span class="n">NameOID</span><span class="o">.</span><span class="n">ORGANIZATION_NAME</span><span class="p">,</span> <span class="n">org_name</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">x509</span><span class="o">.</span><span class="n">Name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CertBuilder.finalize"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.html#nvflare.lighter.impl.cert.CertBuilder.finalize">[docs]</a>    <span class="k">def</span> <span class="nf">finalize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="n">state_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_state_dir</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+        <span class="n">cert_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">state_dir</span><span class="p">,</span> <span class="s2">&quot;cert.pkl&quot;</span><span class="p">)</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">persistent_state</span><span class="p">,</span> <span class="nb">open</span><span class="p">(</span><span class="n">cert_file</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">))</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

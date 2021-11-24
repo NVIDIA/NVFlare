@@ -1,13 +1,70 @@
 nvflare.apis package
 ====================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   nvflare.apis.impl
+   nvflare.apis.utils
+
 Submodules
 ----------
 
-nvflare.apis.aggregator module
-------------------------------
+nvflare.apis.analytix module
+----------------------------
 
-.. automodule:: nvflare.apis.aggregator
+.. automodule:: nvflare.apis.analytix
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.app\_validation module
+-----------------------------------
+
+.. automodule:: nvflare.apis.app_validation
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.aux module
+-----------------------
+
+.. automodule:: nvflare.apis.aux
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.client module
+--------------------------
+
+.. automodule:: nvflare.apis.client
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.client\_engine\_spec module
+----------------------------------------
+
+.. automodule:: nvflare.apis.client_engine_spec
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.controller\_spec module
+------------------------------------
+
+.. automodule:: nvflare.apis.controller_spec
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.dxo module
+-----------------------
+
+.. automodule:: nvflare.apis.dxo
    :members:
    :undoc-members:
    :show-inheritance:
@@ -16,6 +73,14 @@ nvflare.apis.event\_type module
 -------------------------------
 
 .. automodule:: nvflare.apis.event_type
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.executor module
+----------------------------
+
+.. automodule:: nvflare.apis.executor
    :members:
    :undoc-members:
    :show-inheritance:
@@ -52,42 +117,26 @@ nvflare.apis.fl\_context module
    :undoc-members:
    :show-inheritance:
 
-nvflare.apis.learnable module
+nvflare.apis.fl\_exception module
+---------------------------------
+
+.. automodule:: nvflare.apis.fl_exception
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.apis.responder module
 -----------------------------
 
-.. automodule:: nvflare.apis.learnable
+.. automodule:: nvflare.apis.responder
    :members:
    :undoc-members:
    :show-inheritance:
 
-nvflare.apis.learnable\_persistor module
+nvflare.apis.server\_engine\_spec module
 ----------------------------------------
 
-.. automodule:: nvflare.apis.learnable_persistor
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-nvflare.apis.model module
--------------------------
-
-.. automodule:: nvflare.apis.model
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-nvflare.apis.model\_persistor module
-------------------------------------
-
-.. automodule:: nvflare.apis.model_persistor
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-nvflare.apis.model\_processor module
-------------------------------------
-
-.. automodule:: nvflare.apis.model_processor
+.. automodule:: nvflare.apis.server_engine_spec
    :members:
    :undoc-members:
    :show-inheritance:
@@ -100,34 +149,18 @@ nvflare.apis.shareable module
    :undoc-members:
    :show-inheritance:
 
-nvflare.apis.shareable\_generator module
-----------------------------------------
+nvflare.apis.signal module
+--------------------------
 
-.. automodule:: nvflare.apis.shareable_generator
+.. automodule:: nvflare.apis.signal
    :members:
    :undoc-members:
    :show-inheritance:
 
-nvflare.apis.train\_config\_validator module
---------------------------------------------
-
-.. automodule:: nvflare.apis.train_config_validator
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-nvflare.apis.trainer module
----------------------------
-
-.. automodule:: nvflare.apis.trainer
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-nvflare.apis.validator module
+nvflare.apis.workspace module
 -----------------------------
 
-.. automodule:: nvflare.apis.validator
+.. automodule:: nvflare.apis.workspace
    :members:
    :undoc-members:
    :show-inheritance:

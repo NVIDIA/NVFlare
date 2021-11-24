@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>NVFlare &mdash; NVFlare 1.1 documentation</title>
+  <title>NVIDIA FLARE &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -85,7 +85,7 @@
            
 
           
-            <a href="#" class="icon icon-home"> NVFlare
+            <a href="#" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -95,7 +95,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -163,8 +163,8 @@
               <ul>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
@@ -183,7 +183,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="#">NVFlare</a>
+          <a href="#">NVIDIA FLARE</a>
         
       </nav>
 
@@ -216,11 +216,13 @@
     
       <li><a href="#" class="icon icon-home"></a> &raquo;</li>
         
-      <li>NVFlare</li>
+      <li>NVIDIA FLARE</li>
     
     
       <li class="wy-breadcrumbs-aside">
         
+          
+            <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
           
         
       </li>
@@ -233,22 +235,28 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
             
-  <div class="section" id="nvflare">
-<h1>NVFlare<a class="headerlink" href="#nvflare" title="Permalink to this headline">¶</a></h1>
-<p>Nvidia Federated Learning Application Runtime Environment (NVFlare) is a extensible federated learning framework.
-You can bring existing machine learning tasks into a federated setting easily.
-Moreover, NVFlare is built on a componentized architecture, which allows the researchers to experiment with
-different ideas of FL quickly.</p>
-<p>Federated learning allows for multiple clients each with their own data to collaborate on training together without
+  <div class="section" id="nvidia-flare">
+<h1>NVIDIA FLARE<a class="headerlink" href="#nvidia-flare" title="Permalink to this headline">¶</a></h1>
+<p>NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible
+SDK that allows researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to
+a federated paradigm; and enables platform developers to build a secure, privacy preserving offering for a distributed
+multi-party collaboration.</p>
+<p>Federated learning allows for multiple clients each with their own data to collaborate together without
 having to share their actual data. This allows for different parties located any place in the world to use their local
-secure protected data to perform learning tasks while the FL server set up in the secure cloud can coordinate and
-exchange results to achieve better learning results.</p>
+secure protected data to perform tasks coordinated by an FL server set up in the secure cloud to achieve better learning
+results.</p>
+<p>NVIDIA FLARE is built on a componentized architecture, which allows researchers to customize workflows to their
+liking and experiment with different ideas quickly.</p>
+<p>Collaborative computing is not limited to deep learning, and with NVIDIA FLARE 2.0, you can develop any FL workflows
+with the newly provided <a class="reference external" href="programming_guide/controllers">Controller API</a>. A full reference implementation of the
+<a class="reference external" href="programming_guide/controllers/scatter_and_gather_workflow">previous default workflow</a> is included along with the
+source code.</p>
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>

@@ -1,0 +1,464 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.fuel.hci.tools package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.fuel.sec package" href="nvflare.fuel.sec.html" />
+    <link rel="prev" title="nvflare.fuel.hci.server package" href="nvflare.fuel.hci.server.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.fuel.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.fuel.html#module-nvflare.fuel">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+          <li><a href="nvflare.fuel.html">nvflare.fuel package</a> &raquo;</li>
+        
+          <li><a href="nvflare.fuel.hci.html">nvflare.fuel.hci package</a> &raquo;</li>
+        
+      <li>nvflare.fuel.hci.tools package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.fuel.hci.tools.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-fuel-hci-tools-package">
+<h1>nvflare.fuel.hci.tools package<a class="headerlink" href="#nvflare-fuel-hci-tools-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.fuel.hci.tools.admin">
+<span id="nvflare-fuel-hci-tools-admin-module"></span><h2>nvflare.fuel.hci.tools.admin module<a class="headerlink" href="#module-nvflare.fuel.hci.tools.admin" title="Permalink to this headline">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.admin.main">
+<span class="sig-name descname"><span class="pre">main</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/admin.html#main"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.admin.main" title="Permalink to this definition">¶</a></dt>
+<dd><p>Script to launch the admin client to issue admin commands to the server.</p>
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.tools.authz_preview">
+<span id="nvflare-fuel-hci-tools-authz-preview-module"></span><h2>nvflare.fuel.hci.tools.authz_preview module<a class="headerlink" href="#module-nvflare.fuel.hci.tools.authz_preview" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Commander</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">policy</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy" title="nvflare.fuel.sec.authz.Policy"><span class="pre">nvflare.fuel.sec.authz.Policy</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">cmd.Cmd</span></code></p>
+<p>Command line prompt helper tool for getting information for authorization configurations.
+:param policy: authorization policy object</p>
+<p>Instantiate a line-oriented interpreter framework.</p>
+<p>The optional argument ‘completekey’ is the readline name of a
+completion key; it defaults to the Tab key. If completekey is
+not None and the readline module is available, command completion
+is done automatically. The optional arguments stdin and stdout
+specify alternate input and output file objects; if not specified,
+sys.stdin and sys.stdout are used.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_bye">
+<span class="sig-name descname"><span class="pre">do_bye</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_bye"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_bye" title="Permalink to this definition">¶</a></dt>
+<dd><p>exit from the client</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_eval_right">
+<span class="sig-name descname"><span class="pre">do_eval_right</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_eval_right"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_eval_right" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_eval_rule">
+<span class="sig-name descname"><span class="pre">do_eval_rule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_eval_rule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_eval_rule" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_eval_user">
+<span class="sig-name descname"><span class="pre">do_eval_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_eval_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_eval_user" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_show_config">
+<span class="sig-name descname"><span class="pre">do_show_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_show_config"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_show_config" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_show_rights">
+<span class="sig-name descname"><span class="pre">do_show_rights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_show_rights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_show_rights" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_show_rules">
+<span class="sig-name descname"><span class="pre">do_show_rules</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_show_rules"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_show_rules" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_show_site_rules">
+<span class="sig-name descname"><span class="pre">do_show_site_rules</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_show_site_rules"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_show_site_rules" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_show_sites">
+<span class="sig-name descname"><span class="pre">do_show_sites</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_show_sites"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_show_sites" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.do_show_users">
+<span class="sig-name descname"><span class="pre">do_show_users</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.do_show_users"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.do_show_users" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.emptyline">
+<span class="sig-name descname"><span class="pre">emptyline</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.emptyline"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.emptyline" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when an empty line is entered in response to the prompt.</p>
+<p>If this method is not overridden, it repeats the last nonempty
+command entered.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.write_error">
+<span class="sig-name descname"><span class="pre">write_error</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">err</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.write_error"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.write_error" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.write_string">
+<span class="sig-name descname"><span class="pre">write_string</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.write_string"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.write_string" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.Commander.write_table">
+<span class="sig-name descname"><span class="pre">write_table</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">table</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.table.Table" title="nvflare.fuel.hci.table.Table"><span class="pre">nvflare.fuel.hci.table.Table</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#Commander.write_table"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.Commander.write_table" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.authz_preview.main">
+<span class="sig-name descname"><span class="pre">main</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/authz_preview.html#main"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.authz_preview.main" title="Permalink to this definition">¶</a></dt>
+<dd><p>Tool to help preview and see the details of an authorization policy with command line commands.</p>
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.tools.make_pwd">
+<span id="nvflare-fuel-hci-tools-make-pwd-module"></span><h2>nvflare.fuel.hci.tools.make_pwd module<a class="headerlink" href="#module-nvflare.fuel.hci.tools.make_pwd" title="Permalink to this headline">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.tools.make_pwd.main">
+<span class="sig-name descname"><span class="pre">main</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/tools/make_pwd.html#main"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.tools.make_pwd.main" title="Permalink to this definition">¶</a></dt>
+<dd><p>TODO: should this file be removed?</p>
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.tools">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.fuel.hci.tools" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.fuel.sec.html" class="btn btn-neutral float-right" title="nvflare.fuel.sec package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.fuel.hci.server.html" class="btn btn-neutral float-left" title="nvflare.fuel.hci.server package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

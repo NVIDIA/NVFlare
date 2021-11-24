@@ -1,0 +1,886 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.fuel.hci.server package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.fuel.hci.tools package" href="nvflare.fuel.hci.tools.html" />
+    <link rel="prev" title="nvflare.fuel.hci.client package" href="nvflare.fuel.hci.client.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.fuel.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.fuel.html#module-nvflare.fuel">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+          <li><a href="nvflare.fuel.html">nvflare.fuel package</a> &raquo;</li>
+        
+          <li><a href="nvflare.fuel.hci.html">nvflare.fuel.hci package</a> &raquo;</li>
+        
+      <li>nvflare.fuel.hci.server package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.fuel.hci.server.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-fuel-hci-server-package">
+<h1>nvflare.fuel.hci.server package<a class="headerlink" href="#nvflare-fuel-hci-server-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.audit">
+<span id="nvflare-fuel-hci-server-audit-module"></span><h2>nvflare.fuel.hci.server.audit module<a class="headerlink" href="#module-nvflare.fuel.hci.server.audit" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.audit.CommandAudit">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">CommandAudit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">auditor</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.audit.Auditor" title="nvflare.fuel.sec.audit.Auditor"><span class="pre">nvflare.fuel.sec.audit.Auditor</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/audit.html#CommandAudit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.audit.CommandAudit" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.fuel.hci.server.reg.CommandFilter" title="nvflare.fuel.hci.server.reg.CommandFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.server.reg.CommandFilter</span></code></a></p>
+<p>Command filter for auditing by adding events.</p>
+<p>This filter needs to be registered after the login filter because it needs the user name established
+by the login filter.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.audit.CommandAudit.pre_command">
+<span class="sig-name descname"><span class="pre">pre_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/audit.html#CommandAudit.pre_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.audit.CommandAudit.pre_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Code to execute before executing a command.</p>
+<p>Returns: True to continue filter chain or False to not</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.authz">
+<span id="nvflare-fuel-hci-server-authz-module"></span><h2>nvflare.fuel.hci.server.authz module<a class="headerlink" href="#module-nvflare.fuel.hci.server.authz" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthorizationService">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AuthorizationService</span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthorizationService"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthorizationService" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthorizationService.authorize">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">authorize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.authz.AuthzContext" title="nvflare.fuel.sec.authz.AuthzContext"><span class="pre">nvflare.fuel.sec.authz.AuthzContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthorizationService.authorize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthorizationService.authorize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthorizationService.get_authorizer">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">get_authorizer</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthorizationService.get_authorizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthorizationService.get_authorizer" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthorizationService.initialize">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">authorizer:</span> <span class="pre">nvflare.fuel.sec.authz.Authorizer</span></em>, <em class="sig-param"><span class="pre">policy_file:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'authorization.json')</span> <span class="pre">-&gt;</span> <span class="pre">(&lt;class</span> <span class="pre">'nvflare.fuel.sec.authz.Authorizer'&gt;</span></em>, <em class="sig-param"><span class="pre">&lt;class</span> <span class="pre">'str'&gt;</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthorizationService.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthorizationService.initialize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthorizationService.initialize_with_policy">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">initialize_with_policy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">authorizer:</span> <span class="pre">nvflare.fuel.sec.authz.Authorizer</span></em>, <em class="sig-param"><span class="pre">policy_file_path:</span> <span class="pre">str)</span> <span class="pre">-&gt;</span> <span class="pre">(&lt;class</span> <span class="pre">'nvflare.fuel.sec.authz.Authorizer'&gt;</span></em>, <em class="sig-param"><span class="pre">&lt;class</span> <span class="pre">'str'&gt;</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthorizationService.initialize_with_policy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthorizationService.initialize_with_policy" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthorizationService.the_authorizer">
+<span class="sig-name descname"><span class="pre">the_authorizer</span></span><em class="property"> <span class="pre">=</span> <span class="pre">None</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthorizationService.the_authorizer" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AuthzCommandModule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">authorizer</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer" title="nvflare.fuel.sec.authz.Authorizer"><span class="pre">nvflare.fuel.sec.authz.Authorizer</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.reg.CommandModule" title="nvflare.fuel.hci.reg.CommandModule"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.reg.CommandModule</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.eval_right">
+<span class="sig-name descname"><span class="pre">eval_right</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.eval_right"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.eval_right" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.eval_rule">
+<span class="sig-name descname"><span class="pre">eval_rule</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.eval_rule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.eval_rule" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.get_spec">
+<span class="sig-name descname"><span class="pre">get_spec</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.get_spec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.get_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns: CommandModuleSpec</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.show_config">
+<span class="sig-name descname"><span class="pre">show_config</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.show_config"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.show_config" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.show_info">
+<span class="sig-name descname"><span class="pre">show_info</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.show_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.show_info" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.show_rights">
+<span class="sig-name descname"><span class="pre">show_rights</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.show_rights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.show_rights" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.show_rules">
+<span class="sig-name descname"><span class="pre">show_rules</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.show_rules"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.show_rules" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.show_sites">
+<span class="sig-name descname"><span class="pre">show_sites</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.show_sites"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.show_sites" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzCommandModule.show_users">
+<span class="sig-name descname"><span class="pre">show_users</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzCommandModule.show_users"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzCommandModule.show_users" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzFilter">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AuthzFilter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">authorizer</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer" title="nvflare.fuel.sec.authz.Authorizer"><span class="pre">nvflare.fuel.sec.authz.Authorizer</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzFilter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzFilter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.fuel.hci.server.reg.CommandFilter" title="nvflare.fuel.hci.server.reg.CommandFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.server.reg.CommandFilter</span></code></a></p>
+<p>Filter for authorization of admin commands.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzFilter.check_authz">
+<span class="sig-name descname"><span class="pre">check_authz</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">authz_ctx</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzFilter.check_authz"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzFilter.check_authz" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.authz.AuthzFilter.pre_command">
+<span class="sig-name descname"><span class="pre">pre_command</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/authz.html#AuthzFilter.pre_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.authz.AuthzFilter.pre_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Code to execute before executing a command.</p>
+<p>Returns: True to continue filter chain or False to not</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.builtin">
+<span id="nvflare-fuel-hci-server-builtin-module"></span><h2>nvflare.fuel.hci.server.builtin module<a class="headerlink" href="#module-nvflare.fuel.hci.server.builtin" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.builtin.BuiltInCmdModule">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">BuiltInCmdModule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.fuel.hci.server.reg.ServerCommandRegister" title="nvflare.fuel.hci.server.reg.ServerCommandRegister"><span class="pre">nvflare.fuel.hci.server.reg.ServerCommandRegister</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/builtin.html#BuiltInCmdModule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.builtin.BuiltInCmdModule" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.reg.CommandModule" title="nvflare.fuel.hci.reg.CommandModule"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.reg.CommandModule</span></code></a></p>
+<p>Built in CommandModule with the ability to list commands.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.builtin.BuiltInCmdModule.get_spec">
+<span class="sig-name descname"><span class="pre">get_spec</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/builtin.html#BuiltInCmdModule.get_spec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.builtin.BuiltInCmdModule.get_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns: CommandModuleSpec</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.builtin.BuiltInCmdModule.handle_echo">
+<span class="sig-name descname"><span class="pre">handle_echo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/builtin.html#BuiltInCmdModule.handle_echo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.builtin.BuiltInCmdModule.handle_echo" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.builtin.BuiltInCmdModule.handle_list_commands">
+<span class="sig-name descname"><span class="pre">handle_list_commands</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/builtin.html#BuiltInCmdModule.handle_list_commands"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.builtin.BuiltInCmdModule.handle_list_commands" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.builtin.new_command_register_with_builtin_module">
+<span class="sig-name descname"><span class="pre">new_command_register_with_builtin_module</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">app_ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/builtin.html#new_command_register_with_builtin_module"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.builtin.new_command_register_with_builtin_module" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates ServerCommandRegister and registers builtin command module.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>app_ctx</strong> – engine</p>
+</dd>
+</dl>
+<p>Returns: ServerCommandRegister</p>
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.constants">
+<span id="nvflare-fuel-hci-server-constants-module"></span><h2>nvflare.fuel.hci.server.constants module<a class="headerlink" href="#module-nvflare.fuel.hci.server.constants" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.constants.ConnProps">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ConnProps</span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/constants.html#ConnProps"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.constants.ConnProps" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Constants for connection properties.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.constants.ConnProps.AUTHZ_CTX">
+<span class="sig-name descname"><span class="pre">AUTHZ_CTX</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_authztx'</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.constants.ConnProps.AUTHZ_CTX" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.constants.ConnProps.CMD_ENTRY">
+<span class="sig-name descname"><span class="pre">CMD_ENTRY</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_cmdEntry'</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.constants.ConnProps.CMD_ENTRY" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.constants.ConnProps.EVENT_ID">
+<span class="sig-name descname"><span class="pre">EVENT_ID</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_eventId'</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.constants.ConnProps.EVENT_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.constants.ConnProps.SESSION">
+<span class="sig-name descname"><span class="pre">SESSION</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_session'</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.constants.ConnProps.SESSION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.constants.ConnProps.TOKEN">
+<span class="sig-name descname"><span class="pre">TOKEN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_sessionToken'</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.constants.ConnProps.TOKEN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.constants.ConnProps.USER_NAME">
+<span class="sig-name descname"><span class="pre">USER_NAME</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'_userName'</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.constants.ConnProps.USER_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.file_transfer">
+<span id="nvflare-fuel-hci-server-file-transfer-module"></span><h2>nvflare.fuel.hci.server.file_transfer module<a class="headerlink" href="#module-nvflare.fuel.hci.server.file_transfer" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">FileTransferModule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">upload_dir</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">download_dir</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upload_folder_authz_func</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.reg.CommandModule" title="nvflare.fuel.hci.reg.CommandModule"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.reg.CommandModule</span></code></a></p>
+<p>Command module for file transfers.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_binary_file">
+<span class="sig-name descname"><span class="pre">download_binary_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.download_binary_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_binary_file" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_file">
+<span class="sig-name descname"><span class="pre">download_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.download_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_file" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_folder">
+<span class="sig-name descname"><span class="pre">download_folder</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.download_folder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_folder" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_text_file">
+<span class="sig-name descname"><span class="pre">download_text_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.download_text_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.download_text_file" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.get_spec">
+<span class="sig-name descname"><span class="pre">get_spec</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.get_spec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.get_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns: CommandModuleSpec</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.info">
+<span class="sig-name descname"><span class="pre">info</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.info" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_binary_file">
+<span class="sig-name descname"><span class="pre">upload_binary_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.upload_binary_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_binary_file" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_file">
+<span class="sig-name descname"><span class="pre">upload_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.upload_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_file" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_folder">
+<span class="sig-name descname"><span class="pre">upload_folder</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.upload_folder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_folder" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_text_file">
+<span class="sig-name descname"><span class="pre">upload_text_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#FileTransferModule.upload_text_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.FileTransferModule.upload_text_file" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.file_transfer.upload_folder_authz_func_signature">
+<span class="sig-name descname"><span class="pre">upload_folder_authz_func_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">folder_path:</span> <span class="pre">str)</span> <span class="pre">-&gt;</span> <span class="pre">(&lt;class</span> <span class="pre">'str'&gt;</span></em>, <em class="sig-param"><span class="pre">&lt;class</span> <span class="pre">'nvflare.fuel.sec.authz.AuthzContext'&gt;</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/file_transfer.html#upload_folder_authz_func_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.file_transfer.upload_folder_authz_func_signature" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.hci">
+<span id="nvflare-fuel-hci-server-hci-module"></span><h2>nvflare.fuel.hci.server.hci module<a class="headerlink" href="#module-nvflare.fuel.hci.server.hci" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AdminServer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cmd_reg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.fuel.hci.server.reg.ServerCommandRegister" title="nvflare.fuel.hci.server.reg.ServerCommandRegister"><span class="pre">nvflare.fuel.hci.server.reg.ServerCommandRegister</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">host</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ca_cert</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_cert</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">accepted_client_cns</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/hci.html#AdminServer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">socketserver.ThreadingTCPServer</span></code></p>
+<p>Base class of FedAdminServer to create a server that can receive commands.</p>
+<p>Constructor.  May be extended, do not override.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer.allow_reuse_address">
+<span class="sig-name descname"><span class="pre">allow_reuse_address</span></span><em class="property"> <span class="pre">=</span> <span class="pre">True</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer.allow_reuse_address" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer.daemon_threads">
+<span class="sig-name descname"><span class="pre">daemon_threads</span></span><em class="property"> <span class="pre">=</span> <span class="pre">True</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer.daemon_threads" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer.request_queue_size">
+<span class="sig-name descname"><span class="pre">request_queue_size</span></span><em class="property"> <span class="pre">=</span> <span class="pre">10</span></em><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer.request_queue_size" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer.set_command_registry">
+<span class="sig-name descname"><span class="pre">set_command_registry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cmd_reg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.fuel.hci.server.reg.ServerCommandRegister" title="nvflare.fuel.hci.server.reg.ServerCommandRegister"><span class="pre">nvflare.fuel.hci.server.reg.ServerCommandRegister</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/hci.html#AdminServer.set_command_registry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer.set_command_registry" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer.start">
+<span class="sig-name descname"><span class="pre">start</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/hci.html#AdminServer.start"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer.start" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer.stop">
+<span class="sig-name descname"><span class="pre">stop</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/hci.html#AdminServer.stop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer.stop" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.AdminServer.validate_client_cn">
+<span class="sig-name descname"><span class="pre">validate_client_cn</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cn</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/hci.html#AdminServer.validate_client_cn"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.hci.AdminServer.validate_client_cn" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.hci.initialize_hci">
+<span class="sig-name descname"><span class="pre">initialize_hci</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/hci.html#initialize_hci"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.hci.initialize_hci" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.login">
+<span id="nvflare-fuel-hci-server-login-module"></span><h2>nvflare.fuel.hci.server.login module<a class="headerlink" href="#module-nvflare.fuel.hci.server.login" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.Authenticator">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Authenticator</span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#Authenticator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.Authenticator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Base class for authenticating credentials.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.Authenticator.authenticate">
+<span class="sig-name descname"><span class="pre">authenticate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credential</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credential_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#Authenticator.authenticate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.Authenticator.authenticate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Authenticate a specified user with the provided credential.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>user_name</strong> – user login name</p></li>
+<li><p><strong>credential</strong> – provided credential</p></li>
+<li><p><strong>credential_type</strong> – type of credential</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: True if successful, False otherwise</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.LoginModule">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">LoginModule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">authenticator</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.fuel.hci.server.login.Authenticator" title="nvflare.fuel.hci.server.login.Authenticator"><span class="pre">nvflare.fuel.hci.server.login.Authenticator</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sess_mgr</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.fuel.hci.server.sess.SessionManager" title="nvflare.fuel.hci.server.sess.SessionManager"><span class="pre">nvflare.fuel.hci.server.sess.SessionManager</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#LoginModule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.LoginModule" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.reg.CommandModule" title="nvflare.fuel.hci.reg.CommandModule"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.reg.CommandModule</span></code></a>, <a class="reference internal" href="#nvflare.fuel.hci.server.reg.CommandFilter" title="nvflare.fuel.hci.server.reg.CommandFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.server.reg.CommandFilter</span></code></a></p>
+<p>CommandModule containing the login commands to handle login and logout of admin clients, as well as the
+CommandFilter pre_command to check that a client is logged in with a valid session.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.LoginModule.get_spec">
+<span class="sig-name descname"><span class="pre">get_spec</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#LoginModule.get_spec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.LoginModule.get_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns: CommandModuleSpec</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.LoginModule.handle_cert_login">
+<span class="sig-name descname"><span class="pre">handle_cert_login</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#LoginModule.handle_cert_login"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.LoginModule.handle_cert_login" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.LoginModule.handle_login">
+<span class="sig-name descname"><span class="pre">handle_login</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#LoginModule.handle_login"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.LoginModule.handle_login" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.LoginModule.handle_logout">
+<span class="sig-name descname"><span class="pre">handle_logout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#LoginModule.handle_logout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.LoginModule.handle_logout" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.LoginModule.pre_command">
+<span class="sig-name descname"><span class="pre">pre_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#LoginModule.pre_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.LoginModule.pre_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Code to execute before executing a command.</p>
+<p>Returns: True to continue filter chain or False to not</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.SimpleAuthenticator">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">SimpleAuthenticator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">users</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#SimpleAuthenticator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.SimpleAuthenticator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.fuel.hci.server.login.Authenticator" title="nvflare.fuel.hci.server.login.Authenticator"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.server.login.Authenticator</span></code></a></p>
+<p>Authenticator to use in the LoginModule for authenticating admin clients for login.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.SimpleAuthenticator.authenticate">
+<span class="sig-name descname"><span class="pre">authenticate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credential</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credential_type</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#SimpleAuthenticator.authenticate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.SimpleAuthenticator.authenticate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Authenticate a specified user with the provided credential.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>user_name</strong> – user login name</p></li>
+<li><p><strong>credential</strong> – provided credential</p></li>
+<li><p><strong>credential_type</strong> – type of credential</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: True if successful, False otherwise</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.SimpleAuthenticator.authenticate_cn">
+<span class="sig-name descname"><span class="pre">authenticate_cn</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cn</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#SimpleAuthenticator.authenticate_cn"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.SimpleAuthenticator.authenticate_cn" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.login.SimpleAuthenticator.authenticate_password">
+<span class="sig-name descname"><span class="pre">authenticate_password</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pwd</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/login.html#SimpleAuthenticator.authenticate_password"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.login.SimpleAuthenticator.authenticate_password" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.reg">
+<span id="nvflare-fuel-hci-server-reg-module"></span><h2>nvflare.fuel.hci.server.reg module<a class="headerlink" href="#module-nvflare.fuel.hci.server.reg" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.CommandFilter">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">CommandFilter</span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#CommandFilter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.CommandFilter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Base class for filters to run before or after commands.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.CommandFilter.close">
+<span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#CommandFilter.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.CommandFilter.close" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.CommandFilter.post_command">
+<span class="sig-name descname"><span class="pre">post_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#CommandFilter.post_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.CommandFilter.post_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Code to execute after executing a command.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.CommandFilter.pre_command">
+<span class="sig-name descname"><span class="pre">pre_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#CommandFilter.pre_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.CommandFilter.pre_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Code to execute before executing a command.</p>
+<p>Returns: True to continue filter chain or False to not</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.ServerCommandRegister">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ServerCommandRegister</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">app_ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#ServerCommandRegister"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.ServerCommandRegister" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.reg.CommandRegister" title="nvflare.fuel.hci.reg.CommandRegister"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.reg.CommandRegister</span></code></a></p>
+<p>Runs filters and executes commands by calling their handler function. This is the main command register used by
+AdminServer.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.ServerCommandRegister.add_filter">
+<span class="sig-name descname"><span class="pre">add_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cmd_filter</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.fuel.hci.server.reg.CommandFilter" title="nvflare.fuel.hci.server.reg.CommandFilter"><span class="pre">nvflare.fuel.hci.server.reg.CommandFilter</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#ServerCommandRegister.add_filter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.ServerCommandRegister.add_filter" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.ServerCommandRegister.close">
+<span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#ServerCommandRegister.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.ServerCommandRegister.close" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.reg.ServerCommandRegister.process_command">
+<span class="sig-name descname"><span class="pre">process_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">command</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/reg.html#ServerCommandRegister.process_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.reg.ServerCommandRegister.process_command" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server.sess">
+<span id="nvflare-fuel-hci-server-sess-module"></span><h2>nvflare.fuel.hci.server.sess module<a class="headerlink" href="#module-nvflare.fuel.hci.server.sess" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.Session">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Session</span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#Session"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.Session" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Object keeping track of an admin client session with token and time data.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.Session.mark_active">
+<span class="sig-name descname"><span class="pre">mark_active</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#Session.mark_active"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.Session.mark_active" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">SessionManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idle_timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3600</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">monitor_interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.reg.CommandModule" title="nvflare.fuel.hci.reg.CommandModule"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.hci.reg.CommandModule</span></code></a></p>
+<p>CommandModule handling session management.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.create_session">
+<span class="sig-name descname"><span class="pre">create_session</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.create_session"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.create_session" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates new session with a new session token.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>user_name</strong> – user name for session</p>
+</dd>
+</dl>
+<p>Returns: Session</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.end_session">
+<span class="sig-name descname"><span class="pre">end_session</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.end_session"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.end_session" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.get_session">
+<span class="sig-name descname"><span class="pre">get_session</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.get_session"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.get_session" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.get_sessions">
+<span class="sig-name descname"><span class="pre">get_sessions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.get_sessions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.get_sessions" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.get_spec">
+<span class="sig-name descname"><span class="pre">get_spec</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.get_spec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.get_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns: CommandModuleSpec</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.handle_list_sessions">
+<span class="sig-name descname"><span class="pre">handle_list_sessions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conn</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.fuel.hci.html#nvflare.fuel.hci.conn.Connection" title="nvflare.fuel.hci.conn.Connection"><span class="pre">nvflare.fuel.hci.conn.Connection</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.handle_list_sessions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.handle_list_sessions" title="Permalink to this definition">¶</a></dt>
+<dd><p>Lists sessions and the details in a table. Not registered by default but can be registered in FedAdminServer
+with cmd_reg.register_module(sess_mgr).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.monitor_sessions">
+<span class="sig-name descname"><span class="pre">monitor_sessions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.monitor_sessions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.monitor_sessions" title="Permalink to this definition">¶</a></dt>
+<dd><p>Runs loop in a thread to end sessions that time out.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.server.sess.SessionManager.shutdown">
+<span class="sig-name descname"><span class="pre">shutdown</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/server/sess.html#SessionManager.shutdown"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.server.sess.SessionManager.shutdown" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.fuel.hci.server">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.fuel.hci.server" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.fuel.hci.tools.html" class="btn btn-neutral float-right" title="nvflare.fuel.hci.tools package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.fuel.hci.client.html" class="btn btn-neutral float-left" title="nvflare.fuel.hci.client package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

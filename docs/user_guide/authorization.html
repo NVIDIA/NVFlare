@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>Authorization &mdash; NVFlare 1.1 documentation</title>
+  <title>Authorization &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -71,8 +71,8 @@
     
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Administrator commands" href="admin_commands.html" />
-    <link rel="prev" title="Provisioning tool" href="provisioning_tool.html" /> 
+    <link rel="next" title="Admin Client, Commands, FLAdminAPI" href="admin_commands.html" />
+    <link rel="prev" title="Provisioning in NVIDIA FLARE" href="provisioning_tool.html" /> 
 </head>
 
 <body class="wy-body-for-nav">
@@ -86,7 +86,7 @@
            
 
           
-            <a href="../index.html" class="icon icon-home"> NVFlare
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -96,7 +96,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -164,10 +164,11 @@
               <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
-<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide</a><ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="application.html">NVFlare Application</a></li>
-<li class="toctree-l2"><a class="reference internal" href="provisioning_tool.html">Provisioning tool</a></li>
+<li class="toctree-l2"><a class="reference internal" href="application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="workspace.html">NVIDIA FLARE Workspace</a></li>
+<li class="toctree-l2"><a class="reference internal" href="provisioning_tool.html">Provisioning in NVIDIA FLARE</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Authorization</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#terminology-for-fl-authorization">Terminology for FL authorization</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#rights">Rights</a></li>
@@ -194,10 +195,10 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="admin_commands.html">Administrator commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin_commands.html">Admin Client, Commands, FLAdminAPI</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
@@ -216,7 +217,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../index.html">NVFlare</a>
+          <a href="../index.html">NVIDIA FLARE</a>
         
       </nav>
 
@@ -249,13 +250,15 @@
     
       <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
         
-          <li><a href="../user_guide.html">User Guide</a> &raquo;</li>
+          <li><a href="../user_guide.html">User Guide - Provision, Start, Operate</a> &raquo;</li>
         
       <li>Authorization</li>
     
     
       <li class="wy-breadcrumbs-aside">
         
+          
+            <a href="../_sources/user_guide/authorization.rst.txt" rel="nofollow"> View page source</a>
           
         
       </li>
@@ -270,10 +273,11 @@
             
   <div class="section" id="authorization">
 <h1>Authorization<a class="headerlink" href="#authorization" title="Permalink to this headline">¶</a></h1>
-<p>NVFlare implements a role-based authorization framework that determines what a user can or cannot do based on the user’s assigned roles.</p>
+<p>NVIDIA FLARE implements a role-based authorization framework that determines what a user can or cannot do based on the user’s
+assigned roles configured through AuthPolicyBuilder at provisioning.</p>
 <div class="section" id="terminology-for-fl-authorization">
 <h2>Terminology for FL authorization<a class="headerlink" href="#terminology-for-fl-authorization" title="Permalink to this headline">¶</a></h2>
-<p>The following concepts are used in defining an authorization policy for NVFlare.</p>
+<p>The following concepts are used in defining an authorization policy for NVIDIA FLARE.</p>
 <div class="section" id="rights">
 <h3>Rights<a class="headerlink" href="#rights" title="Permalink to this headline">¶</a></h3>
 <p>A right is a permission for a user to do certain things. For example, the right “train_all” allows the user to do
@@ -413,7 +417,7 @@ and edit the <code class="docutils literal notranslate"><span class="pre">config
 </div>
 <div class="section" id="policy-definition-example">
 <h2>Policy definition example<a class="headerlink" href="#policy-definition-example" title="Permalink to this headline">¶</a></h2>
-<p>The authorization policy is configured in the authz_policy section of study project YAML file: <a class="reference internal" href="provisioning_tool.html#project-yml"><span class="std std-ref">Default project.yml file</span></a>.  When
+<p>The authorization policy is configured in the authz_policy section of study project YAML file: <a class="reference internal" href="provisioning_tool.html#id1"><span class="std std-ref">Default project.yml file</span></a>.  When
 using the provisioning tool to generate a set of packages, the authorization policy json file is included in the server’s
 startup kit zip file.</p>
 <p>Here is an example of the generated file:</p>
@@ -546,8 +550,8 @@ Furthermore, if the application contains a custom data list, the site’s “all
           </div>
           <footer>
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-        <a href="admin_commands.html" class="btn btn-neutral float-right" title="Administrator commands" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-        <a href="provisioning_tool.html" class="btn btn-neutral float-left" title="Provisioning tool" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="admin_commands.html" class="btn btn-neutral float-right" title="Admin Client, Commands, FLAdminAPI" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="provisioning_tool.html" class="btn btn-neutral float-left" title="Provisioning in NVIDIA FLARE" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

@@ -1,8 +1,10 @@
-###################
-NVFlare Application
-###################
+.. _application:
 
-To upload and run your FL application with NVFlare, you need to put required files into an application folder.
+########################
+NVIDIA FLARE Application
+########################
+
+To upload and run your FL application with NVIDIA FLARE, you need to put required files into an application folder.
 The structure of the folder needs to be::
 
     app_folder/
@@ -11,12 +13,15 @@ The structure of the folder needs to be::
             config_fed_server.json
         custom/
             [any of your custom code].py
-            [another custom code].py
+            [another file with custom code].py
             ...
         resources/
             log.config
 
-We will explain each item in the following sections.
+.. note::
+
+    The configuration JSON files config_fed_server.json and config_fed_client.json may be in the root folder of the FL
+    application or in a sub-folder (for example: config) of the FL application.
 
 ***********************
 FL server configuration
@@ -32,25 +37,12 @@ Example:
 .. csv-table::
     :header: Key, Notes
 
-    format_version, The NVFlare version for this config
-    servers, Specify server-specific attributes
-    aggregator, What aggregator to use for this application
-    outbound_filters, "What filters to apply at outbound, check :ref:`programming_guide:Filters`"
-    inbound_filters, "What filters to apply at inbound, check :ref:`programming_guide:Filters`"
-    persistor, What ``LearnablePersistor`` to use
-    shareable_generator, What ``ShareableGenerator`` to use
-
-The server-specific attributes:
-
-.. csv-table::
-    :header: Key, Notes
-
-    min_num_clients, Minimum number of clients' updates required for aggregation to start
-    max_num_clients, Maximum number of clients' updates allowed for aggregation
-    wait_after_min_clients, How many seconds to wait before aggregation and after receive minimum clients' updates
-    heart_beat_timeout, How many seconds before the heart beat times out
-    start_round, "Starting round, usually 0"
-    num_rounds, Total number of rounds to run
+    format_version, The NVIDIA FLARE version for this config
+    server, Specify server-specific attributes like heart_beat_timeout for seconds before the heart beat times out
+    task_data_filters, "What filters to apply to data leaving server, see :ref:`filters`"
+    task_result_filters, "What filters to apply to data arriving to server, see :ref:`filters`"
+    components, All of the Components to use
+    workflows, "What Workflows to use, see :ref:`Controllers and Controller API`"
 
 ***********************
 FL client configuration
@@ -66,49 +58,39 @@ Example:
 .. csv-table::
     :header: Key, Notes
 
-    format_version, The NVFlare version for this config
-    platform, "What platform to run on, for example: numpy, PT, TF2"
-    client, Specify client-specific attributes
-    client_trainer, "What ``Trainer`` to use, refer to :ref:`programming_guide:Trainer` for write a custom one"
-    handlers, A list of handlers to register
-
-The client-specific attributes:
-
-.. csv-table::
-    :header: Key, Notes
-
-    outbound_filters, "What filters to apply at outbound, check :ref:`programming_guide:Filters`"
-    inbound_filters, "What filters to apply at inbound, check :ref:`programming_guide:Filters`"
+    format_version, The NVIDIA FLARE version for this config
+    executors, The configuration for Tasks and Executors which now includes Trainers
+    task_data_filters, "What filters to apply to data arriving at client, see :ref:`filters`"
+    task_result_filters, "What filters to apply to data leaving client, :ref:`filters`"
+    components, All of the Components to use
 
 ***********
 Custom Code
 ***********
 
-You can write your own components following :ref:`programming_guide:Programming Guide`
+You can write your own components following the :ref:`programming_guide`.
 
-To use it in your application, you need to put those codes inside the "custom" folder of the application folder.
+To use it in your application, put the code inside the "custom" folder of the application folder.
 
-And in your server or client config, you need to use path to refer to that component.
+In your server or client config, use path to refer to that component.
 
-For example, if I have a ``SimpleTrainer`` class stored in a file ``my_trainer.py`` inside the custom folder.
-Then in the client config I can do the following:
+For example, with a ``SimpleTrainer`` class stored in a file ``my_trainer.py`` inside the custom folder,
+the client config should have the following in order to configure it as an Executor:
 
 .. code-block:: json
 
-    {
-      {
-        "client_trainer": {
-          "path": "my_trainer.SimpleTrainer",
-          "args": {}
-        },
-      }
-    }
-
-Please follow :ref:`quickstart:Quickstart` to learn more.
+    ...
+    "executor": {
+      "path": "my_trainer.SimpleTrainer",
+      "args": {}
+    },
+    ...
 
 .. note::
 
-    You can leave "custom" folder empty if you are only using built-in components provided by NVFlare.
+    Configuration of Executor Tasks is ignored here.
+
+Please follow :ref:`quickstart:Quickstart` to learn more.
 
 *********
 Resources

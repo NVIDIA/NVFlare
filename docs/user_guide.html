@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>User Guide &mdash; NVFlare 1.1 documentation</title>
+  <title>User Guide - Provision, Start, Operate &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -86,7 +86,7 @@
            
 
           
-            <a href="index.html" class="icon icon-home"> NVFlare
+            <a href="index.html" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -96,7 +96,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -164,15 +164,16 @@
               <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">User Guide</a><ul>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">User Guide - Provision, Start, Operate</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="user_guide/overview.html">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="user_guide/application.html">NVFlare Application</a></li>
-<li class="toctree-l2"><a class="reference internal" href="user_guide/provisioning_tool.html">Provisioning tool</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/workspace.html">NVIDIA FLARE Workspace</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/provisioning_tool.html">Provisioning in NVIDIA FLARE</a></li>
 <li class="toctree-l2"><a class="reference internal" href="user_guide/authorization.html">Authorization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="user_guide/admin_commands.html">Administrator commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/admin_commands.html">Admin Client, Commands, FLAdminAPI</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
@@ -191,7 +192,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">NVFlare</a>
+          <a href="index.html">NVIDIA FLARE</a>
         
       </nav>
 
@@ -224,11 +225,13 @@
     
       <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
         
-      <li>User Guide</li>
+      <li>User Guide - Provision, Start, Operate</li>
     
     
       <li class="wy-breadcrumbs-aside">
         
+          
+            <a href="_sources/user_guide.rst.txt" rel="nofollow"> View page source</a>
           
         
       </li>
@@ -241,19 +244,24 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
             
-  <div class="section" id="user-guide">
-<h1>User Guide<a class="headerlink" href="#user-guide" title="Permalink to this headline">¶</a></h1>
-<p>This user guide shows how to use NVFlare to deploy and operate an FL system on multiple sites with a Provision-Start-Operating procedure.</p>
-<p>You can also check some example applications integration like <a class="reference external" href="https://docs.nvidia.com/clara/clara-train-sdk/">Clara Train</a>
-and <a class="reference external" href="https://github.com/Project-MONAI/tutorials/tree/master/federated_learning/nvflare">MONAI</a>
+  <div class="section" id="user-guide-provision-start-operate">
+<h1>User Guide - Provision, Start, Operate<a class="headerlink" href="#user-guide-provision-start-operate" title="Permalink to this headline">¶</a></h1>
+<p>This user guide shows how to use NVIDIA FLARE to deploy and operate an FL system on multiple sites with a
+Provision-Start-Operating procedure. A reference application will be used here to show provisioning and basic operation
+of the system through the admin client, but for more details on what you can do with apps with custom components and
+the flexibility that the new NVIDIA FLARE APIs bring, see the <a class="reference internal" href="programming_guide.html#programming-guide"><span class="std std-ref">Programming Guide - Developing Apps with NVIDIA FLARE</span></a>.</p>
+<p>You can also see some example applications integrating with
+<a class="reference external" href="https://docs.nvidia.com/clara/clara-train-sdk/">Clara Train</a> and
+<a class="reference external" href="https://github.com/Project-MONAI/tutorials/tree/master/federated_learning/nvflare">MONAI</a>
 to see the capabilities of the system and how it can be operated.</p>
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/overview.html">Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="user_guide/application.html">NVFlare Application</a></li>
-<li class="toctree-l1"><a class="reference internal" href="user_guide/provisioning_tool.html">Provisioning tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide/application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide/workspace.html">NVIDIA FLARE Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide/provisioning_tool.html">Provisioning in NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/authorization.html">Authorization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="user_guide/admin_commands.html">Administrator commands</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide/admin_commands.html">Admin Client, Commands, FLAdminAPI</a></li>
 </ul>
 </div>
 </div>

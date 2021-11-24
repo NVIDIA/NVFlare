@@ -1,0 +1,1184 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.fuel.hci.client.fl_admin_api &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../../../" src="../../../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.fuel.hci.client.fl_admin_api</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.fuel.hci.client.fl_admin_api</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.client.api</span> <span class="kn">import</span> <span class="n">AdminAPI</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.client.api_status</span> <span class="kn">import</span> <span class="n">APIStatus</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.client.fl_admin_api_constants</span> <span class="kn">import</span> <span class="n">FLDetailKey</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.client.fl_admin_api_spec</span> <span class="kn">import</span> <span class="n">APISyntaxError</span><span class="p">,</span> <span class="n">FLAdminAPIResponse</span><span class="p">,</span> <span class="n">FLAdminAPISpec</span><span class="p">,</span> <span class="n">TargetType</span>
+
+
+<div class="viewcode-block" id="wrap_with_return_exception_responses"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.wrap_with_return_exception_responses">[docs]</a><span class="k">def</span> <span class="nf">wrap_with_return_exception_responses</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Decorator on all FLAdminAPI calls to handle any raised exceptions and return the fitting error status.&quot;&quot;&quot;</span>
+
+    <span class="nd">@wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">reply</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">reply</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">reply</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+                    <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not generate reply.&quot;</span><span class="p">}</span>
+                <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ConnectionRefusedError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_AUTHENTICATION</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Error: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)})</span>
+        <span class="k">except</span> <span class="ne">PermissionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_AUTHORIZATION</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Error: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)})</span>
+        <span class="k">except</span> <span class="ne">LookupError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_INVALID_CLIENT</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Error: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)})</span>
+        <span class="k">except</span> <span class="n">APISyntaxError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_SYNTAX</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Error: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)})</span>
+        <span class="k">except</span> <span class="ne">TimeoutError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+                <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span>
+                <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;TimeoutError: possibly unable to communicate with server. &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)},</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Exception: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)})</span>
+
+    <span class="k">return</span> <span class="n">wrapper</span></div>
+
+
+<div class="viewcode-block" id="default_server_status_handling_cb"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.default_server_status_handling_cb">[docs]</a><span class="k">def</span> <span class="nf">default_server_status_handling_cb</span><span class="p">(</span><span class="n">reply</span><span class="p">:</span> <span class="n">FLAdminAPIResponse</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;details&quot;</span><span class="p">][</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">SERVER_ENGINE_STATUS</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;stopped&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="default_client_status_handling_cb"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.default_client_status_handling_cb">[docs]</a><span class="k">def</span> <span class="nf">default_client_status_handling_cb</span><span class="p">(</span><span class="n">reply</span><span class="p">:</span> <span class="n">FLAdminAPIResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">client_statuses</span> <span class="o">=</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;details&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;client_statuses&quot;</span><span class="p">)</span>
+    <span class="n">stopped_client_count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">client_statuses</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="n">client_statuses</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">3</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;stopped&quot;</span><span class="p">:</span>
+            <span class="n">stopped_client_count</span> <span class="o">=</span> <span class="n">stopped_client_count</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">stopped_client_count</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">client_statuses</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="default_stats_handling_cb"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.default_stats_handling_cb">[docs]</a><span class="k">def</span> <span class="nf">default_stats_handling_cb</span><span class="p">(</span><span class="n">reply</span><span class="p">:</span> <span class="n">FLAdminAPIResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;details&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;message&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ServerRunner&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;done&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="FLAdminAPI"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI">[docs]</a><span class="k">class</span> <span class="nc">FLAdminAPI</span><span class="p">(</span><span class="n">AdminAPI</span><span class="p">,</span> <span class="n">FLAdminAPISpec</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">host</span><span class="p">,</span>
+        <span class="n">port</span><span class="p">,</span>
+        <span class="n">ca_cert</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">client_cert</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">client_key</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">upload_dir</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">download_dir</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">poc</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initializes FLAdminAPI with required parameters to serve as foundation for communications to FL server.</span>
+<span class="sd">        Inherited AdminAPI&#39;s login(username) function can be called with the username of the admin corresponding to the</span>
+<span class="sd">        cert and key files to enable the usage of FLAdminAPI&#39;s functions.</span>
+<span class="sd">        Args:</span>
+<span class="sd">            host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server</span>
+<span class="sd">            port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int</span>
+<span class="sd">            ca_cert: path to CA Cert file, by default provisioned rootCA.pem</span>
+<span class="sd">            client_cert: path to admin client Cert file, by default provisioned as client.crt</span>
+<span class="sd">            client_key: path to admin client Key file, by default provisioned as client.key</span>
+<span class="sd">            upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.</span>
+<span class="sd">            download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.</span>
+<span class="sd">            poc: Whether to enable poc mode for using the proof of concept example without secure communication.</span>
+<span class="sd">            debug: Whether to print debug messages. False by default.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
+            <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span>
+            <span class="n">ca_cert</span><span class="o">=</span><span class="n">ca_cert</span><span class="p">,</span>
+            <span class="n">client_cert</span><span class="o">=</span><span class="n">client_cert</span><span class="p">,</span>
+            <span class="n">client_key</span><span class="o">=</span><span class="n">client_key</span><span class="p">,</span>
+            <span class="n">upload_dir</span><span class="o">=</span><span class="n">upload_dir</span><span class="p">,</span>
+            <span class="n">download_dir</span><span class="o">=</span><span class="n">download_dir</span><span class="p">,</span>
+            <span class="n">poc</span><span class="o">=</span><span class="n">poc</span><span class="p">,</span>
+            <span class="n">debug</span><span class="o">=</span><span class="n">debug</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">upload_dir</span> <span class="o">=</span> <span class="n">upload_dir</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">download_dir</span> <span class="o">=</span> <span class="n">download_dir</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_error_buffer</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_process_targets_into_str</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">targets</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;targets is not a list.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">targets</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;all targets in the list of targets must be strings.&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">targets</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_required_target_string</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">APISyntaxError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;each target in targets must be a string of only valid characters and no spaces.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_validate_required_target_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the target string if it exists and is valid.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">target</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target is required but not specified.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target is not str.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="s2">&quot;^[A-Za-z0-9._-]*$&quot;</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target must be a string of only valid characters and no spaces.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">target</span>
+
+    <span class="k">def</span> <span class="nf">_validate_options_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the options string if it is valid.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;options is not str.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="s2">&quot;^[A-Za-z0-9- ]*$&quot;</span><span class="p">,</span> <span class="n">options</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;options must be a string of only valid characters.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">options</span>
+
+    <span class="k">def</span> <span class="nf">_validate_path_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the path string if it is valid.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;path is not str.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="s2">&quot;^[A-Za-z0-9-._/]*$&quot;</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;unsupported characters in path </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;absolute path is not allowed&quot;</span><span class="p">)</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">p</span> <span class="o">==</span> <span class="s2">&quot;..&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;.. in path name is not allowed&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">path</span>
+
+    <span class="k">def</span> <span class="nf">_validate_file_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the file string if it is valid.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;file is not str.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="s2">&quot;^[A-Za-z0-9-._/]*$&quot;</span><span class="p">,</span> <span class="n">file</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;unsupported characters in file </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">file</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">file</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;absolute path for file is not allowed&quot;</span><span class="p">)</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="n">file</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">p</span> <span class="o">==</span> <span class="s2">&quot;..&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;.. in file path is not allowed&quot;</span><span class="p">)</span>
+        <span class="n">basename</span><span class="p">,</span> <span class="n">file_extension</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">file_extension</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;.log&quot;</span><span class="p">,</span> <span class="s2">&quot;.json&quot;</span><span class="p">,</span> <span class="s2">&quot;.csv&quot;</span><span class="p">,</span> <span class="s2">&quot;.sh&quot;</span><span class="p">,</span> <span class="s2">&quot;.config&quot;</span><span class="p">,</span> <span class="s2">&quot;.py&quot;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span>
+                <span class="s2">&quot;this command cannot be applied to file </span><span class="si">{}</span><span class="s2">. Only files with the following extensions are &quot;</span>
+                <span class="s2">&quot;permitted: .txt, .log, .json, .csv, .sh, .config, .py&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">file</span>
+
+    <span class="k">def</span> <span class="nf">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+        <span class="sd">&quot;&quot;&quot;Executes the specified command through the underlying AdminAPI&#39;s do_command() and checks the response to</span>
+<span class="sd">        raise common errors.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tuple of bool to indicate if success is in reply data, str with full response of the reply data, and the raw</span>
+<span class="sd">            reply.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">success_in_data</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">do_command</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="c1"># handle errors from write_error (these can be from FileTransferModule)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_error_buffer</span><span class="p">:</span>
+            <span class="n">err</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_error_buffer</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_error_buffer</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;details&quot;</span><span class="p">))</span>
+        <span class="n">reply_data_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">reply_data_full_response</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;success&quot;</span><span class="p">:</span>
+                    <span class="n">success_in_data</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;string&quot;</span> <span class="ow">or</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span>
+                    <span class="n">reply_data_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span>
+            <span class="n">reply_data_full_response</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">reply_data_list</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;not authenticated - no user&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ConnectionRefusedError</span><span class="p">(</span><span class="n">reply_data_full_response</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;Failed to communicate&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ConnectionError</span><span class="p">(</span><span class="n">reply_data_full_response</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;invalid client&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">LookupError</span><span class="p">(</span><span class="n">reply_data_full_response</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;unknown site&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">LookupError</span><span class="p">(</span><span class="n">reply_data_full_response</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;Authorization Error&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">PermissionError</span><span class="p">(</span><span class="n">reply_data_full_response</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">success_in_data</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span>
+
+    <span class="k">def</span> <span class="nf">_parse_section_of_response_text</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">start_string</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">end_string</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">end_index</span><span class="o">=</span><span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Convenience method to get portion of string based on parameters.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">offset</span><span class="p">:</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">start_string</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">end_string</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">data</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">start_string</span><span class="p">)</span> <span class="o">+</span> <span class="n">offset</span> <span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">end_string</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">end_index</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">data</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">start_string</span><span class="p">)</span> <span class="o">+</span> <span class="n">offset</span> <span class="p">:</span> <span class="n">end_index</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">data</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">start_string</span><span class="p">)</span> <span class="o">+</span> <span class="n">offset</span> <span class="p">:]</span>
+
+    <span class="k">def</span> <span class="nf">_parse_section_of_response_text_as_int</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">start_string</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">end_string</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">end_index</span><span class="o">=</span><span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_parse_section_of_response_text</span><span class="p">(</span>
+                    <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">start_string</span><span class="o">=</span><span class="n">start_string</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">offset</span><span class="p">,</span> <span class="n">end_string</span><span class="o">=</span><span class="n">end_string</span><span class="p">,</span> <span class="n">end_index</span><span class="o">=</span><span class="n">end_index</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="o">-</span><span class="mi">1</span>
+
+<div class="viewcode-block" id="FLAdminAPI.write_error"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.write_error">[docs]</a>    <span class="k">def</span> <span class="nf">write_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">error</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Internally used to handle errors from FileTransferModule&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_error_buffer</span> <span class="o">=</span> <span class="n">error</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.check_status"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.check_status">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">check_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_status_server</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_status_client</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server or client.&quot;</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_check_status_server</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Checks the server status and returns the details. This call does not wait for the server to retrieve information</span>
+<span class="sd">        on the clients but returns the last information the server had at the time this call is made.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="s2">&quot;check_status server&quot;</span><span class="p">)</span>
+        <span class="n">details</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;string&quot;</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;Engine status:&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                        <span class="n">details</span><span class="p">[</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">SERVER_ENGINE_STATUS</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_section_of_response_text</span><span class="p">(</span>
+                            <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">start_string</span><span class="o">=</span><span class="s2">&quot;Engine status:&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;Current run number:&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                        <span class="n">details</span><span class="p">[</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">RUN_NUMBER</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_section_of_response_text</span><span class="p">(</span>
+                            <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">start_string</span><span class="o">=</span><span class="s2">&quot;Current run number:&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;FL_app name:&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                        <span class="n">details</span><span class="p">[</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">APP_NAME</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_section_of_response_text</span><span class="p">(</span>
+                            <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">start_string</span><span class="o">=</span><span class="s2">&quot;FL_app name:&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;Registered clients:&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                        <span class="n">details</span><span class="p">[</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">REGISTERED_CLIENTS</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_section_of_response_text_as_int</span><span class="p">(</span>
+                            <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">],</span> <span class="n">start_string</span><span class="o">=</span><span class="s2">&quot;Registered clients:&quot;</span>
+                        <span class="p">)</span>
+                <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;table&quot;</span><span class="p">:</span>
+                    <span class="n">details</span><span class="p">[</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">STATUS_TABLE</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;rows&quot;</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="n">details</span><span class="p">,</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_check_status_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+            <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;check_status client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;check_status client&quot;</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="n">details</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;table&quot;</span><span class="p">:</span>
+                    <span class="n">details</span><span class="p">[</span><span class="s2">&quot;client_statuses&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;rows&quot;</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="n">details</span><span class="p">,</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="FLAdminAPI.set_run_number"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.set_run_number">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">set_run_number</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">run_number</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;run_number must be int.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">run_number</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;run_number must be int &gt; 0.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span>
+            <span class="s2">&quot;set_run_number &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">run_number</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;Created a new run folder&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+            <span class="k">if</span> <span class="s2">&quot;run number already exist&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+            <span class="k">if</span> <span class="s2">&quot;needs to be an integer&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_SYNTAX</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+            <span class="k">if</span> <span class="s2">&quot;run_number can not be changed&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.delete_run_number"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.delete_run_number">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">delete_run_number</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">run_number</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;run_number must be int.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">run_number</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;run_number must be int &gt; 0.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span>
+            <span class="s2">&quot;delete_run_number &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">run_number</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;needs to be an integer&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_SYNTAX</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+            <span class="k">if</span> <span class="s2">&quot;Current running run_number can not be deleted&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.upload_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.upload_app">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">upload_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">app</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;app is required but not specified.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;app must be str.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="s2">&quot;upload_app &quot;</span> <span class="o">+</span> <span class="n">app</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;Created folder&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.deploy_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.deploy_app">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">deploy_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">app</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;app is required but not specified.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;app must be str.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">ALL</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;deploy_app &quot;</span> <span class="o">+</span> <span class="n">app</span> <span class="o">+</span> <span class="s2">&quot; all&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;deploy_app &quot;</span> <span class="o">+</span> <span class="n">app</span> <span class="o">+</span> <span class="s2">&quot; server&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;deploy_app &quot;</span> <span class="o">+</span> <span class="n">app</span> <span class="o">+</span> <span class="s2">&quot; client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;deploy_app &quot;</span> <span class="o">+</span> <span class="n">app</span> <span class="o">+</span> <span class="s2">&quot; client&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server, client, or all.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;does not exist&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;Please set a run number&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.start_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.start_app">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">start_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">ALL</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;start_app all&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;start_app server&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;start_app client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;start_app client&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server, client, or all.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;Server already starting or started&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;Please set a run number&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.abort"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.abort">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">abort</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">ALL</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;abort all&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;abort server&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;abort client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;abort client&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server, client, or all.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;Server app has not started&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;No clients to abort&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;please wait for started before abort&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="n">return_details</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="n">return_details</span><span class="p">[</span><span class="s2">&quot;message&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">reply_data_full_response</span>
+            <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]:</span>
+                    <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;table&quot;</span><span class="p">:</span>
+                        <span class="n">return_details</span><span class="p">[</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">RESPONSES</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;rows&quot;</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="n">return_details</span><span class="p">,</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.restart"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.restart">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">restart</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">ALL</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;restart all&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;restart server&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;restart client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;restart client&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server, client, or all.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;no clients available&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+            <span class="k">if</span> <span class="s2">&quot;Server is starting, please wait for started before restart&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.shutdown"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.shutdown">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">ALL</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;shutdown all&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;shutdown server&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;shutdown client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;shutdown client&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server, client, or all.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;There are still active clients. Shutdown all clients first.&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+            <span class="k">if</span> <span class="s2">&quot;no clients to shutdown&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+            <span class="k">if</span> <span class="s2">&quot;Server is starting, please wait for started before shutdown&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.remove_client"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.remove_client">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">remove_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">targets</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;targets needs to be provided as a list of client names.&quot;</span><span class="p">)</span>
+        <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;remove_client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.set_timeout"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.set_timeout">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">set_timeout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;timeout is not float.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="s2">&quot;set_timeout &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">timeout</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.get_available_apps_to_upload"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.get_available_apps_to_upload">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">get_available_apps_to_upload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">dir_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">upload_dir</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">upload_dir</span><span class="p">,</span> <span class="n">item</span><span class="p">)):</span>
+                <span class="n">dir_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;app_list&quot;</span><span class="p">:</span> <span class="n">dir_list</span><span class="p">})</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.ls_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.ls_target">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">ls_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_required_target_string</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;ls &quot;</span> <span class="o">+</span> <span class="n">target</span>
+        <span class="k">if</span> <span class="n">options</span><span class="p">:</span>
+            <span class="n">options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_options_string</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">options</span>
+        <span class="k">if</span> <span class="n">path</span><span class="p">:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_path_string</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">path</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.cat_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.cat_target">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">cat_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">file</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;file is required but not specified.&quot;</span><span class="p">)</span>
+        <span class="n">file</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_file_string</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_required_target_string</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;cat &quot;</span> <span class="o">+</span> <span class="n">target</span>
+        <span class="k">if</span> <span class="n">options</span><span class="p">:</span>
+            <span class="n">options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_options_string</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">options</span>
+        <span class="k">if</span> <span class="n">file</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">file</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.tail_target_log"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.tail_target_log">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">tail_target_log</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_required_target_string</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;tail &quot;</span> <span class="o">+</span> <span class="n">target</span>
+        <span class="k">if</span> <span class="n">options</span><span class="p">:</span>
+            <span class="n">options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_options_string</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">options</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; log.txt&quot;</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.env_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.env_target">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">env_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_required_target_string</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;env &quot;</span> <span class="o">+</span> <span class="n">target</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="n">details</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">environment</span> <span class="o">=</span> <span class="n">reply_data_full_response</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">environment</span><span class="p">:</span>
+                <span class="c1"># set key and value to contents of each line with first = as separator</span>
+                <span class="n">details</span><span class="p">[</span><span class="n">e</span><span class="p">[</span><span class="mi">0</span> <span class="p">:</span> <span class="n">e</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)]]</span> <span class="o">=</span> <span class="n">e</span><span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:]</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="n">details</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.get_working_directory"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.get_working_directory">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">get_working_directory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_required_target_string</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;pwd &quot;</span> <span class="o">+</span> <span class="n">target</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.grep_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.grep_target">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">grep_target</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">file</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;file is required but not specified.&quot;</span><span class="p">)</span>
+        <span class="n">file</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_file_string</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">pattern</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;pattern is required but not specified.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;pattern is not str.&quot;</span><span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_required_target_string</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;grep &quot;</span> <span class="o">+</span> <span class="n">target</span>
+        <span class="k">if</span> <span class="n">options</span><span class="p">:</span>
+            <span class="n">options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_options_string</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">options</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="n">command</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">pattern</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">file</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.show_stats"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.show_stats">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">show_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;show_stats server&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;show_stats client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;show_stats client&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server or client.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;dict&quot;</span><span class="p">:</span>
+                    <span class="n">stats_result</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span>
+                    <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">stats_result</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;App is not running&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.show_errors"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.show_errors">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">show_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;show_errors server&quot;</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="n">processed_targets_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_targets_into_str</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;show_errors client &quot;</span> <span class="o">+</span> <span class="n">processed_targets_str</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;show_errors client&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">APISyntaxError</span><span class="p">(</span><span class="s2">&quot;target_type must be server or client.&quot;</span><span class="p">)</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;dict&quot;</span><span class="p">:</span>
+                    <span class="n">errors_result</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span>
+                    <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">errors_result</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;App is not running&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;No errors.&quot;</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.reset_errors"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.reset_errors">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">reset_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="n">success</span><span class="p">,</span> <span class="n">reply_data_full_response</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_processed_cmd_reply_data</span><span class="p">(</span><span class="s2">&quot;reset_errors&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;App is not running&quot;</span> <span class="ow">in</span> <span class="n">reply_data_full_response</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">reply_data_full_response</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+            <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Runtime error: could not handle server reply.&quot;</span><span class="p">},</span> <span class="n">reply</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.get_connected_client_list"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.get_connected_client_list">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">get_connected_client_list</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_status_server</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">:</span>
+            <span class="n">status_table</span> <span class="o">=</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;details&quot;</span><span class="p">][</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">STATUS_TABLE</span><span class="p">]</span>
+            <span class="n">list_of_connected_clients</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">status_table</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;CLIENT NAME&quot;</span><span class="p">:</span>
+                    <span class="n">list_of_connected_clients</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">CONNECTED_CLIENTS</span><span class="p">:</span> <span class="n">list_of_connected_clients</span><span class="p">})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;runtime error&quot;</span><span class="p">},</span> <span class="n">reply</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.wait_until_server_status"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.wait_until_server_status">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">wait_until_server_status</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">FLAdminAPIResponse</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">]],</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="n">default_server_status_handling_cb</span><span class="p">,</span>
+        <span class="n">fail_attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="n">failed_attempts</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_status_server</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;details&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">FLDetailKey</span><span class="o">.</span><span class="n">SERVER_ENGINE_STATUS</span><span class="p">):</span>
+                <span class="n">met</span> <span class="o">=</span> <span class="n">callback</span><span class="p">(</span><span class="n">reply</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">met</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{},</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">fail_attempts</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Could not get reply from check status server, trying again later&quot;</span><span class="p">)</span>
+                <span class="n">failed_attempts</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">now</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&gt;=</span> <span class="n">timeout</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Waited until timeout.&quot;</span><span class="p">},</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">failed_attempts</span> <span class="o">&gt;</span> <span class="n">fail_attempts</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+                    <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span>
+                    <span class="p">{</span>
+                        <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;FL server status was not obtainable for more than the specified number of &quot;</span>
+                        <span class="s2">&quot;fail_attempts. &quot;</span>
+                    <span class="p">},</span>
+                    <span class="kc">None</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">interval</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.wait_until_client_status"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.wait_until_client_status">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">wait_until_client_status</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">FLAdminAPIResponse</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">]],</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="n">default_client_status_handling_cb</span><span class="p">,</span>
+        <span class="n">fail_attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;This is similar to wait_until_server_status() and is an example for using other information from a repeated</span>
+<span class="sd">        call, in this case check_status(TargetType.CLIENT). Custom code can be written to use any data available from</span>
+<span class="sd">        any call to make decisions for how to proceed. Take caution that the conditions will be met at some point, or</span>
+<span class="sd">        timeout should be set with logic outside this function to handle checks for potential errors or this may loop</span>
+<span class="sd">        indefinitely.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            interval: in seconds, the time between consecutive checks of the server</span>
+<span class="sd">            timeout: if set, the amount of time this function will run until before returning a response message</span>
+<span class="sd">            callback: the reply from show_stats(TargetType.SERVER) will be passed to the callback, along with any additional kwargs</span>
+<span class="sd">            which can go on to perform additional logic.</span>
+<span class="sd">            fail_attempts: number of consecutive failed attempts of getting the server status before returning with ERROR_RUNTIME.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">failed_attempts</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_status</span><span class="p">(</span><span class="n">TargetType</span><span class="o">.</span><span class="n">CLIENT</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">reply</span><span class="p">:</span>
+                    <span class="n">met</span> <span class="o">=</span> <span class="n">callback</span><span class="p">(</span><span class="n">reply</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">met</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{},</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="n">fail_attempts</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Could not get reply from check status client, trying again later&quot;</span><span class="p">)</span>
+                    <span class="n">failed_attempts</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Could not get clients stats, trying again later. Exception: &quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                <span class="n">failed_attempts</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">now</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&gt;=</span> <span class="n">timeout</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Waited until timeout.&quot;</span><span class="p">},</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">failed_attempts</span> <span class="o">&gt;</span> <span class="n">fail_attempts</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+                    <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span>
+                    <span class="p">{</span>
+                        <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;FL client status was not obtainable for more than the specified number of &quot;</span>
+                        <span class="s2">&quot;fail_attempts. &quot;</span>
+                    <span class="p">},</span>
+                    <span class="kc">None</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">interval</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FLAdminAPI.wait_until_server_stats"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI.wait_until_server_stats">[docs]</a>    <span class="nd">@wrap_with_return_exception_responses</span>
+    <span class="k">def</span> <span class="nf">wait_until_server_stats</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">FLAdminAPIResponse</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">]],</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="n">default_stats_handling_cb</span><span class="p">,</span>
+        <span class="n">fail_attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;This is similar to wait_until_server_status() and is an example for using other information from a repeated</span>
+<span class="sd">        call, in this case show_stats(TargetType.SERVER). Custom code can be written to use any data available from any</span>
+<span class="sd">        call to make decisions for how to proceed. Take caution that the conditions will be met at some point, or</span>
+<span class="sd">        timeout should be set with logic outside this function to handle checks for potential errors or this may loop</span>
+<span class="sd">        indefinitely.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            interval: in seconds, the time between consecutive checks of the server</span>
+<span class="sd">            timeout: if set, the amount of time this function will run until before returning a response message</span>
+<span class="sd">            callback: the reply from show_stats(TargetType.SERVER) will be passed to the callback, along with any additional kwargs</span>
+<span class="sd">            which can go on to perform additional logic.</span>
+<span class="sd">            fail_attempts: number of consecutive failed attempts of getting the server status before returning with ERROR_RUNTIME.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">failed_attempts</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">show_stats</span><span class="p">(</span><span class="n">TargetType</span><span class="o">.</span><span class="n">SERVER</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">reply</span><span class="p">:</span>
+                        <span class="n">met</span> <span class="o">=</span> <span class="n">callback</span><span class="p">(</span><span class="n">reply</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">met</span><span class="p">:</span>
+                            <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{},</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="n">fail_attempts</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Could not get reply from show stats server, trying again later&quot;</span><span class="p">)</span>
+                        <span class="n">failed_attempts</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                    <span class="c1"># if attribute cannot be found, check if app is no longer running to return APIStatus.SUCCESS</span>
+                    <span class="k">if</span> <span class="n">reply</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;details&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;message&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;App is not running&quot;</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Waited until app not running.&quot;</span><span class="p">},</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Could not get server stats, trying again later. Exception: &quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                <span class="n">failed_attempts</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">now</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&gt;=</span> <span class="n">timeout</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span><span class="n">APIStatus</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;Waited until timeout.&quot;</span><span class="p">},</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">failed_attempts</span> <span class="o">&gt;</span> <span class="n">fail_attempts</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">FLAdminAPIResponse</span><span class="p">(</span>
+                    <span class="n">APIStatus</span><span class="o">.</span><span class="n">ERROR_RUNTIME</span><span class="p">,</span>
+                    <span class="p">{</span>
+                        <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;FL server stats was not obtainable for more than the specified number of &quot;</span>
+                        <span class="s2">&quot;fail_attempts. &quot;</span>
+                    <span class="p">},</span>
+                    <span class="kc">None</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">interval</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

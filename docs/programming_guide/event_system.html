@@ -1,0 +1,749 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>NVIDIA FLARE Event Mechanism &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Shareable" href="shareable.html" />
+    <link rel="prev" title="Executors" href="executor.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_component.html">FLComponent</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html">Controllers and Controller API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#scatter-and-gather-workflow">Scatter and Gather Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#cross-site-model-evaluation-federated-evaluation">Cross Site Model Evaluation / Federated Evaluation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#cyclic-workflow">Cyclic Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="filters.html">Filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="executor.html">Executors</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">NVIDIA FLARE Event Mechanism</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#events">Events</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#event-type">Event Type</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#event-data">Event Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#firing-events">Firing Events</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#handling-events">Handling Events</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#built-in-event-types">Built-in Event Types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#run-lifecycle-events">RUN Lifecycle Events</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="shareable.html">Shareable</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="best_practices.html">NVIDIA FLARE Programming Best Practices</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a> &raquo;</li>
+        
+      <li>NVIDIA FLARE Event Mechanism</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/programming_guide/event_system.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvidia-flare-event-mechanism">
+<span id="event-system"></span><h1>NVIDIA FLARE Event Mechanism<a class="headerlink" href="#nvidia-flare-event-mechanism" title="Permalink to this headline">¶</a></h1>
+<p>NVIDIA FLARE comes with a powerful event mechanism that allows dynamic notifications sent to all objects that are of a
+subclass of <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLComponent</span></code></a>.</p>
+<p>All component types in NVIDIA FLARE (e.g. Filter, Executor, Responder, Controller, Widget, etc.) are subclasses of
+<code class="docutils literal notranslate"><span class="pre">FLComponent</span></code>, hence they are all event handlers. You can create additional subclasses, and their objects will
+automatically become event handlers too.</p>
+<div class="section" id="events">
+<h2>Events<a class="headerlink" href="#events" title="Permalink to this headline">¶</a></h2>
+<p>Events represent some important moments during the execution of the system logic. Following are typical examples of
+such moments:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Before some action happens (e.g. before aggregation)</p></li>
+<li><p>After some action happens (e.g. after aggregation)</p></li>
+<li><p>When some important data becomes available (e.g. best model updated)</p></li>
+</ul>
+</div></blockquote>
+<p>You can freely invent your own event types and fire events in your processing logic.</p>
+<div class="section" id="event-type">
+<h3>Event Type<a class="headerlink" href="#event-type" title="Permalink to this headline">¶</a></h3>
+<p>An event type is simply a string. Since anyone can invent a new event type, event naming conventions should be defined
+to avoid possible name conflicts.</p>
+</div>
+<div class="section" id="event-data">
+<h3>Event Data<a class="headerlink" href="#event-data" title="Permalink to this headline">¶</a></h3>
+<p>Event data can be anything. Most (but not all) event types have data. Event data is placed into the FLContext object as
+a property under a well-defined name. Event handlers that listen to the event type get the event data with FLContext’s
+get_prop() method.</p>
+<p>Not all event types have data - some events are merely used for the timing of the events.</p>
+</div>
+<div class="section" id="firing-events">
+<h3>Firing Events<a class="headerlink" href="#firing-events" title="Permalink to this headline">¶</a></h3>
+<dl class="simple">
+<dt>To fire an event in your processing logic:</dt><dd><ul class="simple">
+<li><p>First, decide when to fire the event in your processing logic</p></li>
+<li><p>Second, if the event has some data, add it to the fl_ctx. Note that in most cases you should already have a
+fl_ctx. If not, you can create a new one with engine.new_context().</p></li>
+<li><p>Finally, fire the event.</p></li>
+</ul>
+</dd>
+</dl>
+<p>The following is a typical code pattern:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="s2">&quot;yourEventDataKey&quot;</span><span class="p">,</span>
+                  <span class="n">data</span><span class="o">=</span><span class="n">yourEventData</span><span class="p">,</span>
+                  <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                  <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">event_type</span><span class="o">=</span><span class="s2">&quot;youEventTypeName&quot;</span><span class="p">,</span>
+                    <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Usually the event data should be private and non-sticky. But if you also want to keep the data around permanently
+during the RUN, you can set it to sticky.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If your event could have multiple pieces of data, you can simply call fl_ctx.set_prop() multiple times - one for
+each piece of data.</p>
+</div>
+<p>If your event doesn’t have any data, then you can skip the first step.</p>
+</div>
+<div class="section" id="handling-events">
+<h3>Handling Events<a class="headerlink" href="#handling-events" title="Permalink to this headline">¶</a></h3>
+<p>When an event is fired, the handle_event() method of all event handling components are invoked to process the event.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The order in which the components are invoked is non-deterministic. Therefore you cannot rely on a component being
+invoked before another. This behavior may change in the future if needed.</p>
+</div>
+<p>The following is a typical code pattern for handling events you are interested in:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+   <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="s1">&#39;event1&#39;</span><span class="p">:</span>
+       <span class="n">event_data</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="s1">&#39;eventDataKeyName&#39;</span><span class="p">)</span>
+       <span class="o">...</span>
+   <span class="k">elif</span> <span class="n">event_type</span> <span class="o">==</span> <span class="s1">&#39;event2&#39;</span><span class="p">:</span>
+       <span class="c1"># process</span>
+</pre></div>
+</div>
+<p>Event handlers are called in sequence. The failure (exception) of one handler does not stop the invocation of subsequent handlers.</p>
+</div>
+</div>
+<div class="section" id="built-in-event-types">
+<h2>Built-in Event Types<a class="headerlink" href="#built-in-event-types" title="Permalink to this headline">¶</a></h2>
+<p>NVIDIA FLARE’s system-defined event types are specified in <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.event_type.EventType" title="nvflare.apis.event_type.EventType"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.event_type.EventType</span></code></a>:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Event</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Data Key</p></th>
+<th class="head"><p>Data Type</p></th>
+<th class="head"><p>Server</p></th>
+<th class="head"><p>Client</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>START_RUN</p></td>
+<td><p>A new RUN is about to start</p></td>
+<td><p>fl_ctx.get_run_number()</p></td>
+<td><p>int</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-odd"><td><p>END_RUN</p></td>
+<td><p>The current RUN is about to end</p></td>
+<td><p>fl_ctx.get_run_number()</p></td>
+<td><p>int</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td><p>START_WORKFLOW</p></td>
+<td><p>Workflow is about start</p></td>
+<td><p>FLContextKey.WORKFLOW</p></td>
+<td><p>int</p></td>
+<td><p>X</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>END_WORKFLOW</p></td>
+<td><p>Workflow is about to end</p></td>
+<td><p>FLContextKey.WORKFLOW</p></td>
+<td><p>int</p></td>
+<td><p>X</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>BEFORE_PROCESS_SUBMISSION</p></td>
+<td><p>Task result submission is about to be processed</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td><p>X</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_RESULT</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>AFTER_PROCESS_SUBMISSION</p></td>
+<td><p>Task result processing is done</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td><p>X</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_RESULT</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>BEFORE_TASK_DATA_FILTER</p></td>
+<td><p>task data is about to be filtered</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_DATA</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>AFTER_TASK_DATA_FILTER</p></td>
+<td><p>task data has been filtered</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_DATA</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>BEFORE_TASK_RESULT_FILTER</p></td>
+<td><p>task result is about to be filtered</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_RESULT</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>AFTER_TASK_RESULT_FILTER</p></td>
+<td><p>task result has been filtered</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_RESULT</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>BEFORE_TASK_EXECUTION</p></td>
+<td><p>task execution is about to start</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_DATA</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>AFTER_TASK_EXECUTION</p></td>
+<td><p>task execution is has finished</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td><p>str</p></td>
+<td></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_DATA</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_RESULT</p></td>
+<td><p>Shareable</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td><p>str</p></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>BEFORE_SEND_TASK_RESULT</p></td>
+<td><p>task result is about to be sent to the Server</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td></td>
+<td></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_DATA</p></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_RESULT</p></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>AFTER_SEND_TASK_RESULT</p></td>
+<td><p>task result has been sent to the Server</p></td>
+<td><p>FLContextKey.TASK_NAME</p></td>
+<td></td>
+<td></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_RESULT</p></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_DATA</p></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-even"><td></td>
+<td></td>
+<td><p>FLContextKey.TASK_ID</p></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>FATAL_SYSTEM_ERROR</p></td>
+<td><p>fatal error occurred; the RUN is to be aborted</p></td>
+<td><p>FLContextKey.EVENT_DATA</p></td>
+<td><p>str; the error text</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td><p>FATAL_TASK_ERROR</p></td>
+<td><p>fatal error in task execution; the task is to be aborted</p></td>
+<td><p>FLContextKey.EVENT_DATA</p></td>
+<td><p>str; the error text</p></td>
+<td></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-odd"><td><p>ERROR_LOG_AVAILABLE</p></td>
+<td><p>error log message available</p></td>
+<td><p>FLContextKey.EVENT_DATA</p></td>
+<td><p>str; the log message</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+<tr class="row-even"><td><p>EXCEPTION_LOG_AVAILABLE</p></td>
+<td><p>exception log message available</p></td>
+<td><p>FLContextKey.EVENT_DATA</p></td>
+<td><p>str; the log message</p></td>
+<td><p>X</p></td>
+<td><p>X</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="run-lifecycle-events">
+<h2>RUN Lifecycle Events<a class="headerlink" href="#run-lifecycle-events" title="Permalink to this headline">¶</a></h2>
+<p>The most important event types of all are START_RUN and END_RUN.</p>
+<p>In NVIDIA FLARE, a FL experiment is conducted in a RUN. During the course of a FL study, researchers usually need to conduct
+many RUNs to achieve expected results.</p>
+<p>START_RUN event occurs when a new RUN is about to start, usually triggered by the researcher via admin commands. If your
+component needs to be initialized, you must listen to this event type and get your component ready for work.</p>
+<p>The END_RUN event occurs when the RUN is about to end, usually triggered by completion of the workflow or the abort
+command from the researcher. If needed, you can use this event to gracefully finalize and/or clean up your component.</p>
+<p>If your component provides some services that other components can use, you can put your component as a private and
+sticky prop into the fl_ctx at the time of START_RUN under a uniquely defined prop name. Other components can later get
+your component with this name and invoke the services of your component.</p>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="shareable.html" class="btn btn-neutral float-right" title="Shareable" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="executor.html" class="btn btn-neutral float-left" title="Executors" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -1,0 +1,831 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.app_common.workflows.cross_site_model_eval &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../../" src="../../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+        <script src="../../../../_static/jquery.js"></script>
+        <script src="../../../../_static/underscore.js"></script>
+        <script src="../../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.app_common.workflows.cross_site_model_eval</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.app_common.workflows.cross_site_model_eval</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Union</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.client</span> <span class="kn">import</span> <span class="n">Client</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.controller_spec</span> <span class="kn">import</span> <span class="n">ClientTask</span><span class="p">,</span> <span class="n">Task</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.dxo</span> <span class="kn">import</span> <span class="n">DXO</span><span class="p">,</span> <span class="n">from_bytes</span><span class="p">,</span> <span class="n">from_shareable</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">ReturnCode</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.impl.controller</span> <span class="kn">import</span> <span class="n">Controller</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.signal</span> <span class="kn">import</span> <span class="n">Signal</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.workspace</span> <span class="kn">import</span> <span class="n">Workspace</span>
+<span class="kn">from</span> <span class="nn">nvflare.app_common.abstract.formatter</span> <span class="kn">import</span> <span class="n">Formatter</span>
+<span class="kn">from</span> <span class="nn">nvflare.app_common.abstract.model_locator</span> <span class="kn">import</span> <span class="n">ModelLocator</span>
+<span class="kn">from</span> <span class="nn">nvflare.app_common.app_constant</span> <span class="kn">import</span> <span class="n">AppConstants</span>
+<span class="kn">from</span> <span class="nn">nvflare.app_common.app_event_type</span> <span class="kn">import</span> <span class="n">AppEventType</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.info_collector</span> <span class="kn">import</span> <span class="n">GroupInfoCollector</span><span class="p">,</span> <span class="n">InfoCollector</span>
+
+
+<div class="viewcode-block" id="CrossSiteModelEval"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval">[docs]</a><span class="k">class</span> <span class="nc">CrossSiteModelEval</span><span class="p">(</span><span class="n">Controller</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task_check_period</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+        <span class="n">cross_val_dir</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">CROSS_VAL_DIR</span><span class="p">,</span>
+        <span class="n">submit_model_timeout</span><span class="o">=</span><span class="mi">600</span><span class="p">,</span>
+        <span class="n">validation_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">6000</span><span class="p">,</span>
+        <span class="n">model_locator_id</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">formatter_id</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">submit_model_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_SUBMIT_MODEL</span><span class="p">,</span>
+        <span class="n">validation_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_VALIDATION</span><span class="p">,</span>
+        <span class="n">cleanup_models</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">participating_clients</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">wait_for_clients_timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Cross Site Model Validation workflow</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_check_period (float, optional): How often to check for new tasks or tasks being finished.</span>
+<span class="sd">                Defaults to 0.5.</span>
+<span class="sd">            cross_val_dir (str, optional): Path to cross site validation directory relative to run directory.</span>
+<span class="sd">                Defaults to &quot;cross_site_val&quot;.</span>
+<span class="sd">            submit_model_timeout (int, optional): Timeout of submit_model_task. Defaults to 600 secs.</span>
+<span class="sd">            validation_timeout (int, optional): Timeout for validate_model task. Defaults to 6000 secs.</span>
+<span class="sd">            model_locator_id (str, optional): ID for model_locator component. Defaults to &quot;&quot;.</span>
+<span class="sd">            formatter_id (str, optional): ID for formatter component. Defaults to &quot;&quot;.</span>
+<span class="sd">            submit_model_task_name (str, optional): Name of submit_model task. Defaults to &quot;&quot;.</span>
+<span class="sd">            validation_task_name (str, optional): Name of validate_model task. Defaults to &quot;validate&quot;.</span>
+<span class="sd">            cleanup_models (bool, optional): Whether or not models should be deleted after run. Defaults to False.</span>
+<span class="sd">            participating_clients (list, optional): List of participating client names. If not provided, defaults</span>
+<span class="sd">                to all clients connected at start of controller.</span>
+<span class="sd">            wait_for_clients_timeout (int, optional): Timeout for clients to appear. Defaults to 300 secs</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">CrossSiteModelEval</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">task_check_period</span><span class="o">=</span><span class="n">task_check_period</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task_check_period</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;task_check_period must be float.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cross_val_dir</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;cross_val_dir must be a string.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">submit_model_timeout</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;submit_model_timeout must be int.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">validation_timeout</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;validation_timeout must be int.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">model_locator_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;model_locator_id must be a string.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">formatter_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;formatter_id must be a string.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">submit_model_task_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;submit_model_task_name must be a string.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">validation_task_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;validation_task_name must be a string.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cleanup_models</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;cleanup_models must be bool.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">submit_model_timeout</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;submit_model_timeout must be greater than or equal to 0.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">validation_timeout</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;model_validate_timeout must be greater than or equal to 0.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">wait_for_clients_timeout</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;wait_for_clients_timeout must be greater than or equal to 0.&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_dir</span> <span class="o">=</span> <span class="n">cross_val_dir</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator_id</span> <span class="o">=</span> <span class="n">model_locator_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_formatter_id</span> <span class="o">=</span> <span class="n">formatter_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span> <span class="o">=</span> <span class="n">submit_model_task_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validation_task_name</span> <span class="o">=</span> <span class="n">validation_task_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_timeout</span> <span class="o">=</span> <span class="n">submit_model_timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validation_timeout</span> <span class="o">=</span> <span class="n">validation_timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_clients_timeout</span> <span class="o">=</span> <span class="n">wait_for_clients_timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cleanup_models</span> <span class="o">=</span> <span class="n">cleanup_models</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span> <span class="o">=</span> <span class="n">participating_clients</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_val_results</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_server_models</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_client_models</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_formatter</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="CrossSiteModelEval.start_controller"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.start_controller">[docs]</a>    <span class="k">def</span> <span class="nf">start_controller</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">engine</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span><span class="s2">&quot;Engine not found. Workflow exiting.&quot;</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="c1"># If the list of participating clients is not provided, include all clients currently available.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">:</span>
+            <span class="n">clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">,</span> <span class="nb">list</span><span class="p">),</span> <span class="s2">&quot;participating_clients must be a list&quot;</span>
+            <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">),</span> <span class="s2">&quot;participating_clients must be strings&quot;</span>
+
+        <span class="c1"># Create shareable dirs for models and results</span>
+        <span class="n">workspace</span><span class="p">:</span> <span class="n">Workspace</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_workspace</span><span class="p">()</span>
+        <span class="n">run_dir</span> <span class="o">=</span> <span class="n">workspace</span><span class="o">.</span><span class="n">get_run_dir</span><span class="p">(</span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_run_number</span><span class="p">())</span>
+        <span class="n">cross_val_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">run_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_dir</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cross_val_path</span><span class="p">,</span> <span class="n">AppConstants</span><span class="o">.</span><span class="n">CROSS_VAL_MODEL_DIR_NAME</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cross_val_path</span><span class="p">,</span> <span class="n">AppConstants</span><span class="o">.</span><span class="n">CROSS_VAL_RESULTS_DIR_NAME</span><span class="p">)</span>
+
+        <span class="c1"># Fire the init event.</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">CROSS_VAL_MODEL_PATH</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">CROSS_VAL_RESULTS_PATH</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">AppEventType</span><span class="o">.</span><span class="n">CROSS_VAL_INIT</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="c1"># Cleanup/create the cross val models and results directories</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="p">):</span>
+            <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span><span class="p">):</span>
+            <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span><span class="p">)</span>
+
+        <span class="c1"># Recreate new directories.</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span><span class="p">)</span>
+
+        <span class="c1"># Get components</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator_id</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model_locator_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model_locator</span><span class="p">,</span> <span class="n">ModelLocator</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span>
+                    <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;bad model locator </span><span class="si">{}</span><span class="s2">: expect ModelLocator but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator_id</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model_locator</span><span class="p">)</span>
+                    <span class="p">),</span>
+                    <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">return</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_formatter_id</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_formatter</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_formatter_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_formatter</span><span class="p">,</span> <span class="n">Formatter</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span>
+                    <span class="n">reason</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;formatter </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_formatter_id</span><span class="si">}</span><span class="s2"> is not an instance of Formatter.&quot;</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span>
+                <span class="p">)</span>
+                <span class="k">return</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_formatter</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Formatter not found. Stats will not be printed.&quot;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">c_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_client_models</span><span class="p">[</span><span class="n">c_name</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_val_results</span><span class="p">[</span><span class="n">c_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="CrossSiteModelEval.control_flow"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.control_flow">[docs]</a>    <span class="k">def</span> <span class="nf">control_flow</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># wait until there are some clients</span>
+            <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+            <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_clients_timeout</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;No clients available - quit model validation.&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;No clients available - waiting ...&quot;</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Abort signal triggered. Finishing model validation.&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Beginning model validation with clients: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span><span class="p">:</span>
+                <span class="n">submit_model_task</span> <span class="o">=</span> <span class="n">Task</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span><span class="p">,</span>
+                    <span class="n">data</span><span class="o">=</span><span class="n">Shareable</span><span class="p">(),</span>
+                    <span class="n">result_received_cb</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_receive_local_model_cb</span><span class="p">,</span>
+                    <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_timeout</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">broadcast</span><span class="p">(</span>
+                    <span class="n">task</span><span class="o">=</span><span class="n">submit_model_task</span><span class="p">,</span>
+                    <span class="n">targets</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">,</span>
+                    <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+                    <span class="n">min_responses</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">),</span>
+                <span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Abort signal triggered. Finishing model validation.&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+
+            <span class="c1"># Load server models and assign those tasks</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator</span><span class="p">:</span>
+                <span class="n">success</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_locate_server_models</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+                    <span class="k">return</span>
+
+                <span class="k">for</span> <span class="n">server_model</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_server_models</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_send_validation_task</span><span class="p">(</span><span class="n">server_model</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;ModelLocator not present. No server models will be included.&quot;</span><span class="p">)</span>
+
+            <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_num_standing_tasks</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Abort signal triggered. Finishing cross site validation.&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Checking standing tasks to see if cross site validation finished.&quot;</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_task_check_period</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">error_msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Exception in cross site validator control_flow: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="fm">__str__</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">error_msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span><span class="n">error_msg</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CrossSiteModelEval.stop_controller"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.stop_controller">[docs]</a>    <span class="k">def</span> <span class="nf">stop_controller</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cancel_all_tasks</span><span class="p">(</span><span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cleanup_models</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Removing local models kept for validation.&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">model_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_server_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">model_path</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">model_path</span><span class="p">):</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Removing server model </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2"> at </span><span class="si">{</span><span class="n">model_path</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">model_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">model_path</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">model_path</span><span class="p">):</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Removing client </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">&#39;s model at </span><span class="si">{</span><span class="n">model_path</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_receive_local_model_cb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_task</span><span class="p">:</span> <span class="n">ClientTask</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">client_name</span> <span class="o">=</span> <span class="n">client_task</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">result</span><span class="p">:</span> <span class="n">Shareable</span> <span class="o">=</span> <span class="n">client_task</span><span class="o">.</span><span class="n">result</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_accept_local_model</span><span class="p">(</span><span class="n">client_name</span><span class="o">=</span><span class="n">client_name</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="c1"># Cleanup task result</span>
+        <span class="n">client_task</span><span class="o">.</span><span class="n">result</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_before_send_validate_task_cb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_task</span><span class="p">:</span> <span class="n">ClientTask</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">model_name</span> <span class="o">=</span> <span class="n">client_task</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">model_dxo</span><span class="p">:</span> <span class="n">DXO</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_validation_content</span><span class="p">(</span><span class="n">model_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">v_e</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Error in loading model shareable for </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">. CrossSiteValidator exiting.&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span><span class="n">reason</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">model_dxo</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Model contents for </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2"> not found in </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="si">}</span><span class="s2">. &quot;</span>
+                <span class="s2">&quot;CrossSiteValidator exiting&quot;</span><span class="p">,</span>
+                <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">model_shareable</span> <span class="o">=</span> <span class="n">model_dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
+        <span class="n">model_shareable</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">,</span> <span class="n">model_name</span><span class="p">)</span>
+        <span class="n">model_shareable</span><span class="o">.</span><span class="n">add_cookie</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">,</span> <span class="n">model_name</span><span class="p">)</span>
+        <span class="n">client_task</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">model_shareable</span>
+
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">DATA_CLIENT</span><span class="p">,</span> <span class="n">client_task</span><span class="o">.</span><span class="n">client</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">,</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_TO_VALIDATE</span><span class="p">,</span> <span class="n">model_shareable</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">PARTICIPATING_CLIENTS</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">AppEventType</span><span class="o">.</span><span class="n">SEND_MODEL_FOR_VALIDATION</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_after_send_validate_task_cb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_task</span><span class="p">:</span> <span class="n">ClientTask</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="c1"># Once task is sent clear data to restore memory</span>
+        <span class="n">client_task</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_receive_val_result_cb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_task</span><span class="p">:</span> <span class="n">ClientTask</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="c1"># Find name of the client sending this</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">client_task</span><span class="o">.</span><span class="n">result</span>
+        <span class="n">client_name</span> <span class="o">=</span> <span class="n">client_task</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">name</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_accept_val_result</span><span class="p">(</span><span class="n">client_name</span><span class="o">=</span><span class="n">client_name</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="n">client_task</span><span class="o">.</span><span class="n">result</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_locate_server_models</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="c1"># Load models from model_locator</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Locating server models.&quot;</span><span class="p">)</span>
+        <span class="n">server_model_names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator</span><span class="o">.</span><span class="n">get_model_names</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="n">unique_names</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">server_model_names</span><span class="p">:</span>
+            <span class="c1"># Get the model</span>
+            <span class="n">dxo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_locator</span><span class="o">.</span><span class="n">locate_model</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dxo</span><span class="p">,</span> <span class="n">DXO</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ModelLocator produced invalid data: expect DXO but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">dxo</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">False</span>
+
+            <span class="c1"># Save to workspace</span>
+            <span class="n">unique_name</span> <span class="o">=</span> <span class="s2">&quot;SRV_&quot;</span> <span class="o">+</span> <span class="n">name</span>
+            <span class="n">unique_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">unique_name</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">save_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_save_validation_content</span><span class="p">(</span><span class="n">unique_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="p">,</span> <span class="n">dxo</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">except</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Unable to save shareable contents of server model </span><span class="si">{</span><span class="n">unique_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unable to save shareable contents of server model </span><span class="si">{</span><span class="n">unique_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">False</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_server_models</span><span class="p">[</span><span class="n">unique_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">save_path</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_val_results</span><span class="p">[</span><span class="n">unique_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="n">unique_names</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Server models loaded: </span><span class="si">{</span><span class="n">unique_names</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;no server models to validate!&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">def</span> <span class="nf">_accept_local_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">RECEIVED_MODEL</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">RECEIVED_MODEL_OWNER</span><span class="p">,</span> <span class="n">client_name</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">CROSS_VAL_DIR</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_dir</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">AppEventType</span><span class="o">.</span><span class="n">RECEIVE_BEST_MODEL</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="c1"># get return code</span>
+        <span class="n">rc</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get_return_code</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rc</span> <span class="ow">and</span> <span class="n">rc</span> <span class="o">!=</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">:</span>
+            <span class="c1"># Raise errors if bad peer context or execution exception.</span>
+            <span class="k">if</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">MISSING_PEER_CONTEXT</span><span class="p">,</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_PEER_CONTEXT</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Peer context is bad or missing. No model submitted for this client.&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">,</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                    <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Execution Exception on client during model submission. No model submitted for this client.&quot;</span>
+                <span class="p">)</span>
+            <span class="c1"># Ignore contribution if result invalid.</span>
+            <span class="k">elif</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">[</span>
+                <span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_RESULT_ERROR</span><span class="p">,</span>
+                <span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_DATA_FILTER_ERROR</span><span class="p">,</span>
+                <span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_RESULT_FILTER_ERROR</span><span class="p">,</span>
+                <span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">,</span>
+            <span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Execution result is not a shareable. Model submission will be ignored.&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Return code set. Model submission from client will be ignored.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Save shareable in models directory.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Extracting DXO from shareable.&quot;</span><span class="p">)</span>
+                <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                <span class="n">save_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_save_validation_content</span><span class="p">(</span><span class="n">client_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_models_dir</span><span class="p">,</span> <span class="n">dxo</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">v_e</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                    <span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Unable to save shareable contents of </span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2">&#39;s model. Exception: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">v_e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_warning</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Ignoring client </span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2">&#39;s model.&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Received local model from client </span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_client_models</span><span class="p">[</span><span class="n">client_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">save_path</span>
+
+            <span class="c1"># Send a model to this client to validate</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_send_validation_task</span><span class="p">(</span><span class="n">client_name</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_send_validation_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Sending </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2"> model to all participating clients for validation.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Create validation task and broadcast to all participating clients.</span>
+        <span class="n">task</span> <span class="o">=</span> <span class="n">Task</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_validation_task_name</span><span class="p">,</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">Shareable</span><span class="p">(),</span>
+            <span class="n">before_task_sent_cb</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_before_send_validate_task_cb</span><span class="p">,</span>
+            <span class="n">after_task_sent_cb</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_after_send_validate_task_cb</span><span class="p">,</span>
+            <span class="n">result_received_cb</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_receive_val_result_cb</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_validation_timeout</span><span class="p">,</span>
+            <span class="n">props</span><span class="o">=</span><span class="p">{</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">:</span> <span class="n">model_name</span><span class="p">},</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">broadcast</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">,</span>
+            <span class="n">min_responses</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_participating_clients</span><span class="p">),</span>
+            <span class="n">wait_time_after_min_received</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_accept_val_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">model_owner</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get_cookie</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Fire event. This needs to be a new local context per each client</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">,</span> <span class="n">model_owner</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">DATA_CLIENT</span><span class="p">,</span> <span class="n">client_name</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">VALIDATION_RESULT</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">AppEventType</span><span class="o">.</span><span class="n">VALIDATION_RESULT_RECEIVED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="n">rc</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get_return_code</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rc</span> <span class="ow">and</span> <span class="n">rc</span> <span class="o">!=</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">:</span>
+            <span class="c1"># Raise errors if bad peer context or execution exception.</span>
+            <span class="k">if</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">MISSING_PEER_CONTEXT</span><span class="p">,</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_PEER_CONTEXT</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Peer context is bad or missing.&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">,</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Execution Exception in model validation.&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">[</span>
+                <span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_RESULT_ERROR</span><span class="p">,</span>
+                <span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_DATA_FILTER_ERROR</span><span class="p">,</span>
+                <span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_RESULT_FILTER_ERROR</span><span class="p">,</span>
+            <span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Execution result is not a shareable. Validation results will be ignored.&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                    <span class="n">fl_ctx</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">&quot;Client </span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2"> sent results for validating </span><span class="si">{</span><span class="n">model_owner</span><span class="si">}</span><span class="s2"> model with return code set.&quot;</span>
+                    <span class="s2">&quot; Logging empty results.&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_val_results</span><span class="p">[</span><span class="n">client_name</span><span class="p">][</span><span class="n">model_owner</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">save_file_name</span> <span class="o">=</span> <span class="n">client_name</span> <span class="o">+</span> <span class="s2">&quot;_&quot;</span> <span class="o">+</span> <span class="n">model_owner</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_save_validation_content</span><span class="p">(</span><span class="n">save_file_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span><span class="p">,</span> <span class="n">dxo</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_val_results</span><span class="p">[</span><span class="n">client_name</span><span class="p">][</span><span class="n">model_owner</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cross_val_results_dir</span><span class="p">,</span> <span class="n">save_file_name</span><span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Client </span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2"> sent results for validating </span><span class="si">{</span><span class="n">model_owner</span><span class="si">}</span><span class="s2"> model.&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">v_e</span><span class="p">:</span>
+                <span class="n">reason</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Unable to save validation result from </span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">model_owner</span><span class="si">}</span><span class="s2">&#39;s model. &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;Exception: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">v_e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_save_validation_content</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">save_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dxo</span><span class="p">:</span> <span class="n">DXO</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Saves shareable to given directory within the app_dir</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name (str): Name of shareable</span>
+<span class="sd">            save_dir (str): Relative path to directory in which to save</span>
+<span class="sd">            shareable (Shareable): Shareable object</span>
+<span class="sd">            fl_ctx (FLContext): FLContext object</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: Path to the file saved.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Save the model with name as the filename to shareable directory</span>
+        <span class="n">data_filename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">save_dir</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">bytes_to_save</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unable to extract shareable contents. Exception: </span><span class="si">{</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="fm">__str__</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
+
+        <span class="c1"># Save contents to path</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_filename</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">bytes_to_save</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unable to save shareable contents: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Saved cross validation model with name: </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">data_filename</span>
+
+    <span class="k">def</span> <span class="nf">_load_validation_content</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">load_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">DXO</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
+        <span class="c1"># Load shareable from disk</span>
+        <span class="n">shareable_filename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">load_dir</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="n">dxo</span><span class="p">:</span> <span class="n">DXO</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># load shareable</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">shareable_filename</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+            <span class="n">dxo</span><span class="p">:</span> <span class="n">DXO</span> <span class="o">=</span> <span class="n">from_bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Loading cross validation shareable content with name: </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exception in loading shareable content for </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">dxo</span>
+
+<div class="viewcode-block" id="CrossSiteModelEval.handle_event"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.handle_event">[docs]</a>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">handle_event</span><span class="p">(</span><span class="n">event_type</span><span class="o">=</span><span class="n">event_type</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">InfoCollector</span><span class="o">.</span><span class="n">EVENT_TYPE_GET_STATS</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_formatter</span><span class="p">:</span>
+                <span class="n">collector</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">InfoCollector</span><span class="o">.</span><span class="n">CTX_KEY_STATS_COLLECTOR</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">collector</span><span class="p">:</span>
+                    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">collector</span><span class="p">,</span> <span class="n">GroupInfoCollector</span><span class="p">)</span>
+
+                    <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">VALIDATION_RESULT</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_val_results</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                    <span class="n">val_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_formatter</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+                    <span class="n">collector</span><span class="o">.</span><span class="n">add_info</span><span class="p">(</span>
+                        <span class="n">group_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_name</span><span class="p">,</span>
+                        <span class="n">info</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;val_results&quot;</span><span class="p">:</span> <span class="n">val_info</span><span class="p">},</span>
+                    <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_warning</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;No formatter provided. Validation results can&#39;t be printed.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CrossSiteModelEval.process_result_of_unknown_task"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.process_result_of_unknown_task">[docs]</a>    <span class="k">def</span> <span class="nf">process_result_of_unknown_task</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">Client</span><span class="p">,</span> <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">client_task_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="n">task_name</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_accept_local_model</span><span class="p">(</span><span class="n">client_name</span><span class="o">=</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">task_name</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validation_task_name</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_accept_val_result</span><span class="p">(</span><span class="n">client_name</span><span class="o">=</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Ignoring result from unknown task.&quot;</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -19,15 +19,6 @@ Client related questions
     No, federated learning training does not require for FL clients to open their network for inbound traffic. The server
     never sends uninvited requests to clients but only responds to client requests.
 
-.. _multi gpu training:
-
-#. Can a client train with multiple GPUs?
-
-    Yes, the administrator command ``start_mgpu client <gpu number> <client name>`` can be used to start training
-    on FL clients with different numbers of GPUs when starting training. But you will need to install ``torch`` for
-    PyTorch based Trainer, and ``mpi4py`` for all other trainers. It is possible for different clients to be
-    training with different numbers of GPUs.
-
 #. How do FL clients get identified?
 
     The federated learning clients are identified by a dynamically generated FL token issued by the server during runtime.
@@ -192,3 +183,16 @@ Cross Site Validation
 
     This is the intended behavior. If a client is aborted, it will transition to cross site validation phase (if participating). To
     completely abort, call "abort client" command again.
+
+************
+Known issues
+************
+
+#. If server dies and then is restarted, intentionally or unintentionally, all clients will have to be restarted.
+#. Running out of memory can happen at any time, especially if the server and clients are running on same machine.
+   This can cause the server to die unexpectedly.
+#. Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models
+   folder inside, a mysterious error may occur when running the deploy_app command because the application folder is too
+   large to be uploaded and that causes timeout.
+#. Please don't start a new training run or start a new app before the previous application is fully stopped. Or users
+   can do ``abort client`` and ``abort server`` before ``start_app`` for the new run.

@@ -1,0 +1,103 @@
+nvflare.fuel.hci package
+========================
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   nvflare.fuel.hci.client
+   nvflare.fuel.hci.server
+   nvflare.fuel.hci.tools
+
+Submodules
+----------
+
+nvflare.fuel.hci.base64\_utils module
+-------------------------------------
+
+.. automodule:: nvflare.fuel.hci.base64_utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.cmd\_arg\_utils module
+---------------------------------------
+
+.. automodule:: nvflare.fuel.hci.cmd_arg_utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.conn module
+----------------------------
+
+.. automodule:: nvflare.fuel.hci.conn
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.file\_transfer\_defs module
+--------------------------------------------
+
+.. automodule:: nvflare.fuel.hci.file_transfer_defs
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.proto module
+-----------------------------
+
+.. automodule:: nvflare.fuel.hci.proto
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.reg module
+---------------------------
+
+.. automodule:: nvflare.fuel.hci.reg
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.security module
+--------------------------------
+
+.. automodule:: nvflare.fuel.hci.security
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.shell\_cmd\_val module
+---------------------------------------
+
+.. automodule:: nvflare.fuel.hci.shell_cmd_val
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.table module
+-----------------------------
+
+.. automodule:: nvflare.fuel.hci.table
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.fuel.hci.zip\_utils module
+----------------------------------
+
+.. automodule:: nvflare.fuel.hci.zip_utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: nvflare.fuel.hci
+   :members:
+   :undoc-members:
+   :show-inheritance:

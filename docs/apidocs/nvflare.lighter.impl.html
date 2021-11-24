@@ -1,0 +1,505 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.lighter.impl package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.security package" href="nvflare.security.html" />
+    <link rel="prev" title="nvflare.lighter package" href="nvflare.lighter.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.lighter.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.lighter.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.lighter.html#module-nvflare.lighter.poc">nvflare.lighter.poc module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.lighter.html#module-nvflare.lighter.provision">nvflare.lighter.provision module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.lighter.html#module-nvflare.lighter.spec">nvflare.lighter.spec module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.lighter.html#module-nvflare.lighter.utils">nvflare.lighter.utils module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.lighter.html#module-nvflare.lighter">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+          <li><a href="nvflare.lighter.html">nvflare.lighter package</a> &raquo;</li>
+        
+      <li>nvflare.lighter.impl package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.lighter.impl.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-lighter-impl-package">
+<h1>nvflare.lighter.impl package<a class="headerlink" href="#nvflare-lighter-impl-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.lighter.impl.auth_policy">
+<span id="nvflare-lighter-impl-auth-policy-module"></span><h2>nvflare.lighter.impl.auth_policy module<a class="headerlink" href="#module-nvflare.lighter.impl.auth_policy" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.auth_policy.AuthPolicyBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AuthPolicyBuilder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">orgs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">roles</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">groups</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disabled</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/auth_policy.html#AuthPolicyBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.auth_policy.AuthPolicyBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.auth_policy.AuthPolicyBuilder.build">
+<span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">study</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Study" title="nvflare.lighter.spec.Study"><span class="pre">nvflare.lighter.spec.Study</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/auth_policy.html#AuthPolicyBuilder.build"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.auth_policy.AuthPolicyBuilder.build" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.lighter.impl.cert">
+<span id="nvflare-lighter-impl-cert-module"></span><h2>nvflare.lighter.impl.cert module<a class="headerlink" href="#module-nvflare.lighter.impl.cert" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.cert.CertBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">CertBuilder</span></span><a class="reference internal" href="../_modules/nvflare/lighter/impl/cert.html#CertBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.cert.CertBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.cert.CertBuilder.build">
+<span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">study</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/cert.html#CertBuilder.build"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.cert.CertBuilder.build" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.cert.CertBuilder.finalize">
+<span class="sig-name descname"><span class="pre">finalize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/cert.html#CertBuilder.finalize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.cert.CertBuilder.finalize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.cert.CertBuilder.get_pri_key_cert">
+<span class="sig-name descname"><span class="pre">get_pri_key_cert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">participant</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/cert.html#CertBuilder.get_pri_key_cert"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.cert.CertBuilder.get_pri_key_cert" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.cert.CertBuilder.initialize">
+<span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/cert.html#CertBuilder.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.cert.CertBuilder.initialize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.cert.serialize_cert">
+<span class="sig-name descname"><span class="pre">serialize_cert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cert</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/cert.html#serialize_cert"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.cert.serialize_cert" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.cert.serialize_pri_key">
+<span class="sig-name descname"><span class="pre">serialize_pri_key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pri_key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/cert.html#serialize_pri_key"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.cert.serialize_pri_key" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.lighter.impl.he">
+<span id="nvflare-lighter-impl-he-module"></span><h2>nvflare.lighter.impl.he module<a class="headerlink" href="#module-nvflare.lighter.impl.he" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.he.HEBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">HEBuilder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">poly_modulus_degree</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8192</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">coeff_mod_bit_sizes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[60,</span> <span class="pre">40,</span> <span class="pre">40]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale_bits</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">40</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheme</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'CKKS'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/he.html#HEBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.he.HEBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.he.HEBuilder.build">
+<span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">study</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/he.html#HEBuilder.build"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.he.HEBuilder.build" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.he.HEBuilder.get_serialized_context">
+<span class="sig-name descname"><span class="pre">get_serialized_context</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_client</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/he.html#HEBuilder.get_serialized_context"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.he.HEBuilder.get_serialized_context" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.he.HEBuilder.initialize">
+<span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/he.html#HEBuilder.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.he.HEBuilder.initialize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.lighter.impl.signature">
+<span id="nvflare-lighter-impl-signature-module"></span><h2>nvflare.lighter.impl.signature module<a class="headerlink" href="#module-nvflare.lighter.impl.signature" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.signature.SignatureBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">SignatureBuilder</span></span><a class="reference internal" href="../_modules/nvflare/lighter/impl/signature.html#SignatureBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.signature.SignatureBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.signature.SignatureBuilder.build">
+<span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">study</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Study" title="nvflare.lighter.spec.Study"><span class="pre">nvflare.lighter.spec.Study</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/signature.html#SignatureBuilder.build"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.signature.SignatureBuilder.build" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.lighter.impl.static_file">
+<span id="nvflare-lighter-impl-static-file-module"></span><h2>nvflare.lighter.impl.static_file module<a class="headerlink" href="#module-nvflare.lighter.impl.static_file" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.static_file.StaticFileBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">StaticFileBuilder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">enable_byoc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">docker_image</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/static_file.html#StaticFileBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.static_file.StaticFileBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.static_file.StaticFileBuilder.build">
+<span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">study</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/static_file.html#StaticFileBuilder.build"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.static_file.StaticFileBuilder.build" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.lighter.impl.template">
+<span id="nvflare-lighter-impl-template-module"></span><h2>nvflare.lighter.impl.template module<a class="headerlink" href="#module-nvflare.lighter.impl.template" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.template.TemplateBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">TemplateBuilder</span></span><a class="reference internal" href="../_modules/nvflare/lighter/impl/template.html#TemplateBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.template.TemplateBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.template.TemplateBuilder.initialize">
+<span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/template.html#TemplateBuilder.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.template.TemplateBuilder.initialize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.lighter.impl.workspace">
+<span id="nvflare-lighter-impl-workspace-module"></span><h2>nvflare.lighter.impl.workspace module<a class="headerlink" href="#module-nvflare.lighter.impl.workspace" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.workspace.DistributionBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">DistributionBuilder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">zip_password</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/workspace.html#DistributionBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.workspace.DistributionBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.workspace.DistributionBuilder.build">
+<span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">study</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Study" title="nvflare.lighter.spec.Study"><span class="pre">nvflare.lighter.spec.Study</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/workspace.html#DistributionBuilder.build"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.workspace.DistributionBuilder.build" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.workspace.WorkspaceBuilder">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">WorkspaceBuilder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">template_file</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/workspace.html#WorkspaceBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.workspace.WorkspaceBuilder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Builder" title="nvflare.lighter.spec.Builder"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.lighter.spec.Builder</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.workspace.WorkspaceBuilder.build">
+<span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">study</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.lighter.html#nvflare.lighter.spec.Study" title="nvflare.lighter.spec.Study"><span class="pre">nvflare.lighter.spec.Study</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/workspace.html#WorkspaceBuilder.build"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.workspace.WorkspaceBuilder.build" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.workspace.WorkspaceBuilder.finalize">
+<span class="sig-name descname"><span class="pre">finalize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/workspace.html#WorkspaceBuilder.finalize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.workspace.WorkspaceBuilder.finalize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.lighter.impl.workspace.WorkspaceBuilder.initialize">
+<span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/lighter/impl/workspace.html#WorkspaceBuilder.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.lighter.impl.workspace.WorkspaceBuilder.initialize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.lighter.impl">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.lighter.impl" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.security.html" class="btn btn-neutral float-right" title="nvflare.security package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.lighter.html" class="btn btn-neutral float-left" title="nvflare.lighter package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

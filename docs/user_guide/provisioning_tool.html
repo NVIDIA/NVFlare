@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>Provisioning tool &mdash; NVFlare 1.1 documentation</title>
+  <title>Provisioning in NVIDIA FLARE &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -72,7 +72,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Authorization" href="authorization.html" />
-    <link rel="prev" title="NVFlare Application" href="application.html" /> 
+    <link rel="prev" title="NVIDIA FLARE Workspace" href="workspace.html" /> 
 </head>
 
 <body class="wy-body-for-nav">
@@ -86,7 +86,7 @@
            
 
           
-            <a href="../index.html" class="icon icon-home"> NVFlare
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -96,7 +96,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -164,24 +164,47 @@
               <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
-<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide</a><ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="application.html">NVFlare Application</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Provisioning tool</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="workspace.html">NVIDIA FLARE Workspace</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Provisioning in NVIDIA FLARE</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#open-provision-api">Open Provision API</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#architecture">Architecture</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#details">Details</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#project-yml">project.yml</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#provision-py">provision.py</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#provisioner">Provisioner</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#study">Study</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#participant">Participant</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#builder">Builder</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#workspace">Workspace</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#provision-context">Provision Context</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="#open-provision-api-case-studies">Open Provision API Case Studies</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#case-1-generating-additional-files">Case 1: generating additional files</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#case-2-enhancing-an-existing-builder">Case 2: enhancing an existing builder</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#case-3-adding-both-new-builders-and-participants-of-new-types">Case 3: adding both new builders and participants of new types</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#takeaways-for-custom-builders">Takeaways for Custom Builders</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="#bundled-builders">Bundled builders</a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#project-yaml-file">Project yaml file</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#default-project-yml-file">Default project.yml file</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#provision-commandline-options">Provision commandline options</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#provisioning-tool-ui-page">Provisioning tool UI page</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#provision-api">Provision API</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="authorization.html">Authorization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="admin_commands.html">Administrator commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin_commands.html">Admin Client, Commands, FLAdminAPI</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
@@ -200,7 +223,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../index.html">NVFlare</a>
+          <a href="../index.html">NVIDIA FLARE</a>
         
       </nav>
 
@@ -233,13 +256,15 @@
     
       <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
         
-          <li><a href="../user_guide.html">User Guide</a> &raquo;</li>
+          <li><a href="../user_guide.html">User Guide - Provision, Start, Operate</a> &raquo;</li>
         
-      <li>Provisioning tool</li>
+      <li>Provisioning in NVIDIA FLARE</li>
     
     
       <li class="wy-breadcrumbs-aside">
         
+          
+            <a href="../_sources/user_guide/provisioning_tool.rst.txt" rel="nofollow"> View page source</a>
           
         
       </li>
@@ -252,9 +277,343 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
             
-  <div class="section" id="provisioning-tool">
-<h1>Provisioning tool<a class="headerlink" href="#provisioning-tool" title="Permalink to this headline">¶</a></h1>
-<p>This page contains details about the FL provisioning tool for creating packages for the server, client, and administrators.</p>
+  <div class="section" id="provisioning-in-nvidia-flare">
+<span id="provisioning"></span><h1>Provisioning in NVIDIA FLARE<a class="headerlink" href="#provisioning-in-nvidia-flare" title="Permalink to this headline">¶</a></h1>
+<p>The purpose of provisioning in NVIDIA FLARE is to generate mutual-trusted system-wide configurations for all participants
+so all of them can join the NVIDIA FLARE system across different locations. The mutual-trust is a mandatory feature of the
+Open Provision API as every participant authenticates others by the information inside the configuration. The
+configurations usually include, but are not limited to, the following information:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>network discovery, such as domain names, port numbers or IP addresses</p></li>
+<li><p>credentials for authentication, such as certificates of participants and root authority</p></li>
+<li><p>authorization policy, such as roles, rights and rules</p></li>
+<li><p>tamper-proof mechanism, such as signatures</p></li>
+<li><p>convenient commands, such as shell scripts with default command line options to easily start an individual participant</p></li>
+</ul>
+</div></blockquote>
+<p>In order to enable developers to freely add / modify / remove the above configurations to fit their own requirements,
+we created the Open Provision API. Now developers can take advantage of this API to perform the provisioning tasks
+which meet their own requirements in addition to the default provisioning before for creating packages for the
+server, client, and administrators.</p>
+<div class="section" id="open-provision-api">
+<h2>Open Provision API<a class="headerlink" href="#open-provision-api" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="architecture">
+<h3>Architecture<a class="headerlink" href="#architecture" title="Permalink to this headline">¶</a></h3>
+<img alt="../_images/Open_Provision_API.png" src="../_images/Open_Provision_API.png" style="height: 350px;" />
+<p>The above diagram describes the architecture of Open Provision API in blue.  Those two green blocks are the sample
+python code (provision.py) collecting information (project.yml) and interacting with components of Open Provision API to
+accomplish one provisioning task.  The Provisioner and blocks inside the blue box are classes or subclasses of Open
+Provision API.</p>
+</div>
+<div class="section" id="details">
+<h3>Details<a class="headerlink" href="#details" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="project-yml">
+<h4>project.yml<a class="headerlink" href="#project-yml" title="Permalink to this headline">¶</a></h4>
+<p>This is a simple yaml file, describing participants and builders.  Note that Open Provision API itself does not define
+the format of this file.  Any developer can create his/her own file that describes participants and builders in a
+different format.  The developer can even store such information in one URL as long as there is code
+(provision.py in the above sample diagram) that can load the information and convert such information to calls
+to Open Provision API.</p>
+</div>
+<div class="section" id="provision-py">
+<h4>provision.py<a class="headerlink" href="#provision-py" title="Permalink to this headline">¶</a></h4>
+<p>This python file is the sample application to interact with the Open Provision API.  It also loads project.yml, parses
+command line options, instantiates classes/subclasses defined from Open Provision API and displays helpful messages to users.
+As mentioned previously, developers are encouraged to modify provision.py or write their own applications that fit their own requirements.
+It is also possible to completely utilize Open Provision API without any standalone applications.  For example, if
+developers have their existing applications and would like to add provisioning capabilities for the NVIDIA FLARE system,
+they can add API calls to Open Provision API to generate required outputs.</p>
+</div>
+<div class="section" id="provisioner">
+<h4>Provisioner<a class="headerlink" href="#provisioner" title="Permalink to this headline">¶</a></h4>
+<p>This is the container class that owns all instances of Study, Workspace, Provision Context, Builders and Participants,
+as shown in the above diagram.  A typical usage of this class is like the following:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">provisioner</span> <span class="o">=</span> <span class="n">Provisioner</span><span class="p">(</span><span class="n">workspace_full_path</span><span class="p">,</span> <span class="n">builders</span><span class="p">)</span>
+
+<span class="n">provisioner</span><span class="o">.</span><span class="n">provision</span><span class="p">(</span><span class="n">study</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="study">
+<h4>Study<a class="headerlink" href="#study" title="Permalink to this headline">¶</a></h4>
+<p>The Study class keeps information about participants.  Therefore, information of any participant can be retrieved from
+the Study instance:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Study</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+   <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">description</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">participants</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Participant</span><span class="p">]):</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+       <span class="n">all_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+       <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">participants</span><span class="p">:</span>
+           <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">all_names</span><span class="p">:</span>
+               <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unable to add a duplicate name </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> into this study.&quot;</span><span class="p">)</span>
+           <span class="k">else</span><span class="p">:</span>
+               <span class="n">all_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">description</span> <span class="o">=</span> <span class="n">description</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">participants</span> <span class="o">=</span> <span class="n">participants</span>
+
+   <span class="k">def</span> <span class="nf">get_participants_by_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+       <span class="n">found</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+       <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">participants</span><span class="p">:</span>
+           <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="nb">type</span><span class="p">:</span>
+               <span class="k">if</span> <span class="n">first_only</span><span class="p">:</span>
+                   <span class="k">return</span> <span class="n">p</span>
+               <span class="k">else</span><span class="p">:</span>
+                   <span class="n">found</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+       <span class="k">return</span> <span class="n">found</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="participant">
+<h4>Participant<a class="headerlink" href="#participant" title="Permalink to this headline">¶</a></h4>
+<p>Each participant is one entity that communicates with other participants inside the NVIDIA FLARE system during runtime.
+Each participant has the following attributes: type, name, org and props.  The attribute <code class="docutils literal notranslate"><span class="pre">props</span></code> is a dictionary and
+stores additional information:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Participant</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+   <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">org</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">type</span> <span class="o">=</span> <span class="nb">type</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">org</span> <span class="o">=</span> <span class="n">org</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">subject</span> <span class="o">=</span> <span class="n">name</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">props</span> <span class="o">=</span> <span class="n">kwargs</span>
+</pre></div>
+</div>
+<p>The name of each participant must be unique.  This is enforced in Study’s __init__ method.  The type
+defines the behavior of this participant when it is alive in the NVIDIA FLARE system.  For example, type = ‘server’ defines
+that the participant acts as a server.  Three types are commonly used for a typical NVIDIA FLARE system: server, client, and
+admin.  However, developers can freely add other types when needed, such as ‘gateway,’ ‘proxy,’ or ‘database.’  The
+builders can take such information into consideration so that they can generate relevant results based on the type
+attribute.</p>
+</div>
+<div class="section" id="builder">
+<h4>Builder<a class="headerlink" href="#builder" title="Permalink to this headline">¶</a></h4>
+<p>The builders in the above diagram are provided as a convenient way to generate commonly used zip files for a typical
+NVIDIA FLARE system.  Developers are encouraged to add / modify or even remove those builders to fit their own requirements.</p>
+<p>Each builder is responsible for taking the information from study, its own __init__ arguments, and provisioner to
+generate data.  For example, the HEBuilder is responsible for generating tenseal context files for server and client,
+but not admin.  Additionally, the context for servers does not include either public key or secret key while the
+context for clients include both.  Its __init__ arguments consist of poly_modules_degree, coeff_mod_bit_sizes,
+scale_bits and scheme.  With all of the information, HEBuilder can output context files correctly.</p>
+<p>Provisioner calls each builder’s initialize method first during provisioning time in a loop.  This allows builders to
+prepare information and to populate their instance variables.  After calling each builder’s initialize method, the
+Provisioner calls each builder’s build method in another loop.  This method is usually implemented to execute the
+actual build process (generating necessary files).  At the end, the provisioner calls the finalize method of each
+builder in REVERSE ORDER in the third loop so all builders have a chance to wrap up their states.  This comes from
+the convention that the earlier a builder’s initialize method is called, the later its finalize method should be called.</p>
+<p>The iterations in each of the above three loops are always determined by the builders list, the second argument
+passed to Provisioner class.  Therefore, different orders in the builders list affect the results.</p>
+<p>For example, when one builder’s finalize method cleans up and removes the wip folder which is shared by all builders,
+builders being called after it will not be able to access the wip folder.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The collaboration among all builders is the responsibility of Open Provision API developers.</p>
+</div>
+<p>Every builder has to subclass the Builder class and override one or more of these three methods:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Builder</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+   <span class="k">def</span> <span class="nf">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+       <span class="k">pass</span>
+
+   <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">study</span><span class="p">:</span> <span class="n">Study</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+       <span class="k">pass</span>
+
+   <span class="k">def</span> <span class="nf">finalize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+       <span class="k">pass</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="workspace">
+<h4>Workspace<a class="headerlink" href="#workspace" title="Permalink to this headline">¶</a></h4>
+<p>Each builder can access four folders under provision workspace which is managed by Provisioner (see Provisioner’s
+first argument).  Those folders are ‘wip’ (for working-in-progress), ‘kit_dir’ (a subfolder in ‘wip’), ‘state’ (used
+to persist information between different revisions) and ‘resources’ (for read-only / static information).</p>
+</div>
+<div class="section" id="provision-context">
+<h4>Provision Context<a class="headerlink" href="#provision-context" title="Permalink to this headline">¶</a></h4>
+<p>Provision context is created by Provisioner and can be read / written by all participants and builders.  A builder
+might add a piece of information to it so that another builder can retrieve it.  As a hypothetical example, developers
+might want to add a second homomorphic encryption builder to generate a different set of HE contexts based on
+certificates from CertBuilder and the context of the first HE builder.  To achieve this, the developers can write
+certificates to provision context at CertBuilder and he context to provision context at HEBuilder.  The information
+is automatically available to the second HE builder.</p>
+</div>
+</div>
+<div class="section" id="open-provision-api-case-studies">
+<h3>Open Provision API Case Studies<a class="headerlink" href="#open-provision-api-case-studies" title="Permalink to this headline">¶</a></h3>
+<p>Before we start, please remember that the builders have three methods to be implemented optionally, initialize, build
+and finalize.  The Provisioner calls initialize methods of all builders, then build methods of all builders.  Both in
+the order of builders list.  However, the finalize methods of all builders are called by Provisioner in REVERSE order.
+Please keep this in mind.</p>
+<p>For example, in Case 2, the builders is a list and append method adds the WebPostDistributionBuilder to the end of the
+builder list.  As mentioned above, the initialize and build methods are called in the order of the builder list while
+the finalize method is called in the reverse order.  We can expect the finalize method of the WebPostDistributionBuilder
+is called before other builders’ finalize methods and before other builders’ build methods.</p>
+<div class="section" id="case-1-generating-additional-files">
+<h4>Case 1: generating additional files<a class="headerlink" href="#case-1-generating-additional-files" title="Permalink to this headline">¶</a></h4>
+<p>The developers would like to add a configuration file about a database server to admin participants.  The configuration
+is like this:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">database</span><span class="p">]</span>
+<span class="n">db_server</span> <span class="o">=</span> <span class="n">server</span> <span class="n">name</span>
+<span class="n">db_port</span> <span class="o">=</span> <span class="n">port_number</span>
+<span class="n">user_name</span> <span class="o">=</span> <span class="n">admin</span><span class="s1">&#39;s name</span>
+</pre></div>
+</div>
+<p>As this requires adding one file to every admin participant, the developer can write a DBBuilder as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">DBConfigBuilder</span><span class="p">(</span><span class="n">Builder</span><span class="p">):</span>
+   <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_server</span><span class="p">,</span> <span class="n">db_port</span><span class="p">):</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">db_server</span> <span class="o">=</span> <span class="n">db_server</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">db_port</span> <span class="o">=</span> <span class="n">db_port</span>
+
+   <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">study</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+       <span class="k">for</span> <span class="n">admin</span> <span class="ow">in</span> <span class="n">study</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+           <span class="n">dest_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_kit_dir</span><span class="p">(</span><span class="n">admin</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+           <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;database.conf&quot;</span><span class="p">),</span> <span class="s1">&#39;wt&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+               <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;[database]</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+               <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;db_server = </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">db_server</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+               <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;db_port = </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">db_port</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+               <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;user_name = </span><span class="si">{</span><span class="n">admin</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>And in project.yml, add an entry in the builders section:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">-</span> <span class="n">path</span><span class="p">:</span> <span class="n">byob</span><span class="o">.</span><span class="n">DBConfigBuilder</span>
+  <span class="n">args</span><span class="p">:</span>
+    <span class="n">db_server</span><span class="p">:</span> <span class="n">example</span><span class="o">.</span><span class="n">com</span>
+    <span class="n">db_port</span><span class="p">:</span> <span class="mi">5432</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="case-2-enhancing-an-existing-builder">
+<h4>Case 2: enhancing an existing builder<a class="headerlink" href="#case-2-enhancing-an-existing-builder" title="Permalink to this headline">¶</a></h4>
+<p>The developer would like to push the generated zip file, done by nvflare.lighter.impl.workspace.DistributionBuilder, to
+a web server via a POST method.  This can be done easily by replacing the DistributionBuilder with a new builder as
+follows (after pip install requests):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">WebPostDistributionBuilder</span><span class="p">(</span><span class="n">Builder</span><span class="p">):</span>
+   <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">):</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">url</span> <span class="o">=</span> <span class="n">url</span>
+
+   <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">study</span><span class="p">:</span> <span class="n">Study</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+       <span class="n">wip_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_wip_dir</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+       <span class="n">dirs</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">wip_dir</span><span class="p">)</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">wip_dir</span><span class="p">,</span> <span class="n">name</span><span class="p">))]</span>
+       <span class="k">for</span> <span class="nb">dir</span> <span class="ow">in</span> <span class="n">dirs</span><span class="p">:</span>
+           <span class="n">dest_zip_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">wip_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">dir</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+           <span class="n">shutil</span><span class="o">.</span><span class="n">make_archive</span><span class="p">(</span><span class="n">dest_zip_file</span><span class="p">,</span> <span class="s2">&quot;zip&quot;</span><span class="p">,</span> <span class="n">root_dir</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">wip_dir</span><span class="p">,</span> <span class="nb">dir</span><span class="p">),</span> <span class="n">base_dir</span><span class="o">=</span><span class="s2">&quot;startup&quot;</span><span class="p">)</span>
+           <span class="n">files</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;upload_file&quot;</span><span class="p">:</span> <span class="nb">open</span><span class="p">(</span><span class="n">dest_zip_file</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)}</span>
+           <span class="n">r</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">url</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="n">files</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>And just replace the existing one with the new builder under Builders in the project.yml:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">-</span> <span class="n">path</span><span class="p">:</span> <span class="n">byob</span><span class="o">.</span><span class="n">WebPostDistributionBuilder</span>
+  <span class="n">args</span><span class="p">:</span>
+    <span class="n">url</span><span class="p">:</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">example</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">nvflare</span><span class="o">/</span><span class="n">provision</span>
+</pre></div>
+</div>
+<p>For the above two cases, if developers opt to use Open Provision API directly instead of project.yml, they can do this
+(some code omitted for clarity):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">byob</span> <span class="kn">import</span> <span class="n">WebPostDistributionBuilder</span>
+<span class="n">builders</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+<span class="c1"># Adding other builders</span>
+<span class="c1"># ...</span>
+
+<span class="c1"># Using our new WebPostDistributionBuilder builders.append(WebPostDistributionBuilder(url=&quot;https://example.com/nvflare/provision&quot;))</span>
+
+<span class="c1"># Instantiate Provisioner</span>
+<span class="n">provisioner</span> <span class="o">=</span> <span class="n">Provisioner</span><span class="p">(</span><span class="n">workspace_full_path</span><span class="p">,</span> <span class="n">builders</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="case-3-adding-both-new-builders-and-participants-of-new-types">
+<h4>Case 3: adding both new builders and participants of new types<a class="headerlink" href="#case-3-adding-both-new-builders-and-participants-of-new-types" title="Permalink to this headline">¶</a></h4>
+<p>The developers would like to add participants of type = ‘gateway.’  In order to handle this type of participants, a new
+builder is needed to write gateway specific configuration.  First, specify that in project.yml:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">-</span> <span class="n">name</span><span class="p">:</span> <span class="n">gateway1</span>
+  <span class="nb">type</span><span class="p">:</span> <span class="n">gateway</span>
+  <span class="n">org</span><span class="p">:</span> <span class="n">nvidia</span>
+  <span class="n">port</span><span class="p">:</span> <span class="mi">8102</span>
+</pre></div>
+</div>
+<p>or in API style:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">participants</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+<span class="n">p</span> <span class="o">=</span> <span class="n">Participant</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;gateway1&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;gateway&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;nvidia&quot;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">8102</span><span class="p">)</span>
+<span class="n">participants</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>A new builder to write ‘gateway.conf’ can be implemented as follows (for reference):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">GWConfigBuilder</span><span class="p">(</span><span class="n">Builder</span><span class="p">):</span>
+  <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">study</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+      <span class="k">for</span> <span class="n">gw</span> <span class="ow">in</span> <span class="n">study</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;gateway&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+          <span class="n">dest_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_kit_dir</span><span class="p">(</span><span class="n">gw</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+          <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;gateway.conf&quot;</span><span class="p">),</span> <span class="s1">&#39;wt&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+              <span class="n">port</span> <span class="o">=</span> <span class="n">gw</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;port&quot;</span><span class="p">)</span>
+              <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;[gateway]</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+              <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;name = </span><span class="si">{</span><span class="n">gw</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+              <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;port = </span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="takeaways-for-custom-builders">
+<h4>Takeaways for Custom Builders<a class="headerlink" href="#takeaways-for-custom-builders" title="Permalink to this headline">¶</a></h4>
+<p>From the cases shown previously, implementing your own Builders only requires the following steps:</p>
+<ol class="arabic simple">
+<li><p>Subclass the Builder class</p></li>
+<li><p>Implement the required methods (initialize, build, finalize).  Not all of them have to be implemented.</p></li>
+<li><p>The builder can locate the working-in-progress space from the return value of this method self.get_wip_dir(ctx).  This
+space is shared by all builders.</p></li>
+<li><p>Builder writes participant-specific files to the kit directory which is the return value of self.get_kit_dir(participant, ctx)</p></li>
+<li><p>Builders have to coordinate with one another.  For example, the WebPostDistributionBuilder generates zip files from the
+contents inside kit directories.  That implies some other builders have to write those contents first.</p></li>
+</ol>
+</div>
+</div>
+<div class="section" id="bundled-builders">
+<h3>Bundled builders<a class="headerlink" href="#bundled-builders" title="Permalink to this headline">¶</a></h3>
+<p>The following is the list of bundled builders included by default in the NVIDIA FLARE package.  They are provided as a convenient tool.  As
+mentioned previously, developers are encouraged to add / modify / remove builders based on their own requirements:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>CertBuilder</p></li>
+<li><p>HEBuilder</p></li>
+<li><p>SignatureBuilder</p></li>
+<li><p>TemplateBuilder</p></li>
+<li><p>StaticFileBuilder</p></li>
+<li><p>WorkspaceBuilder</p></li>
+<li><p>DistributionBuilder</p></li>
+<li><p>AuthPolicyBuilder</p></li>
+</ul>
+</div></blockquote>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace structure
+└── example_project
+    ├── prod_00
+    │   ├── admin@nvidia.com
+    │   │   └── startup
+    │   ├── localhost
+    │   │   └── startup
+    │   ├── site1
+    │   │   └── startup
+    │   └── site2
+    │       └── startup
+    ├── prod_01
+    │   ├── admin@nvidia.com
+    │   │   └── startup
+    │   ├── localhost
+    │   │   └── startup
+    │   ├── site1
+    │   │   └── startup
+    │   └── site2
+    │       └── startup
+    ├── prod_02
+    │   ├── admin@nvidia.com
+    │   │   └── startup
+    │   ├── localhost
+    │   │   └── startup
+    │   ├── site1
+    │   │   └── startup
+    │   └── site2
+    │       └── startup
+    ├── resources
+    └── state
+</pre></div>
+</div>
+<p>The prod_NN folders contain the provisioning results.  The number, NN, increases every time the provision command runs successfully.</p>
+</div>
+</div>
 <div class="section" id="project-yaml-file">
 <h2>Project yaml file<a class="headerlink" href="#project-yaml-file" title="Permalink to this headline">¶</a></h2>
 <p>This is the key file that describes the information which provisioning tool will be using to generate startup kits for server, clients and admins.
@@ -270,149 +629,72 @@ No project.yml found <span class="k">in</span> current folder.  Is it OK to gene
 <p>Please make sure that the FL server port number is accessible by all participating sides.</p>
 </div>
 <div class="section" id="default-project-yml-file">
-<span id="project-yml"></span><h3>Default project.yml file<a class="headerlink" href="#default-project-yml-file" title="Permalink to this headline">¶</a></h3>
+<span id="id1"></span><h3>Default project.yml file<a class="headerlink" href="#default-project-yml-file" title="Permalink to this headline">¶</a></h3>
 <p>The following is an example of the default project.yml file.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">api_version</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">1</span>
-
-<span class="c1"># org is to describe each participant&#39;s organization</span>
-<span class="c1"># schema change: org is now mandatory</span>
-
-<span class="c1"># the name of this project</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">api_version</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">2</span>
 <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">example_project</span>
+<span class="nt">description</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">NVFlare sample project yaml file</span>
 
-<span class="c1"># homomorphic encryption</span>
-<span class="nt">he_config</span><span class="p">:</span>
-  <span class="nt">poly_modulus_degree</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">8192</span>
-  <span class="nt">coeff_mod_bit_sizes</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">60</span><span class="p p-Indicator">,</span> <span class="nv">40</span><span class="p p-Indicator">,</span> <span class="nv">40</span><span class="p p-Indicator">]</span>
-  <span class="nt">scale_bits</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">40</span>
-  <span class="nt">scheme</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">CKKS</span>
-
-<span class="nt">config_folder</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">config</span>
-
-<span class="c1"># Server enforcing role-based rights on admin users. true means all admin users are in role super</span>
-<span class="nt">disable_authz</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span> 
-
-<span class="nt">server</span><span class="p">:</span>
-  <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvidia</span>
-
-  <span class="c1"># set cn to the server&#39;s fully qualified domain name</span>
-  <span class="c1"># never set it to example.com</span>
-  <span class="nt">cn</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">localhost</span>
-
-  <span class="c1"># replace the number with that all clients can reach out to and that the server can open to listen to</span>
-  <span class="nt">fed_learn_port</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">8002</span>
-
-  <span class="c1"># again replace the number with that all clients can reach out to and that the server can open to listen to</span>
-  <span class="c1"># the value must be different from fed_learn_port</span>
-  <span class="nt">admin_port</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">8003</span>
-
-  <span class="c1"># admin_storage is the mmar upload folder name on the server</span>
-  <span class="nt">admin_storage</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">transfer</span>
-
-  <span class="nt">min_num_clients</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">1</span>
-  <span class="nt">max_num_clients</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">100</span>
-
-  <span class="c1"># The configuration validator class path.</span>
-  <span class="c1"># This line must have ONE indentation.  That is, it must be</span>
-  <span class="c1"># inside server section.</span>
-  <span class="c1">#</span>
-  <span class="c1"># Server does not load configuration validator when it&#39;s commented out.</span>
-  <span class="c1">#</span>
-  <span class="c1"># Users can specifiy their own validator.  For example:</span>
-  <span class="c1"># config_validator:</span>
-  <span class="c1">#  hello.world.BestValdator</span>
-  <span class="c1">#</span>
-  <span class="c1"># User can also provide args for their own validator.  For example:</span>
-  <span class="c1">#  config_validator:</span>
-  <span class="c1">#    hello.world.BestValidator:</span>
-  <span class="c1">#      arg1: abc</span>
-  <span class="c1">#      arg2: 123</span>
-
-  <span class="c1"># config_validator:</span>
-
-<span class="c1"># The following values under fl_clients and admin_clients are for demo purpose only.</span>
-<span class="c1"># Please change them according to the information of actual project.</span>
-<span class="nt">fl_clients</span><span class="p">:</span>
-  <span class="c1"># client_name must be unique</span>
-  <span class="c1"># email is optional</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org1</span>
-    <span class="nt">site</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org1-a</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org1</span>
-    <span class="nt">site</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org1-b</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org2</span>
-    <span class="nt">site</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org2</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org3</span>
-    <span class="nt">site</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org3</span>
-
-<span class="nt">admin_clients</span><span class="p">:</span>
-  <span class="c1"># email is the user name for admin authentication.  Hence it must be unique within the project</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvidia</span>
-    <span class="nt">email</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">admin@nvidia.com</span>
+<span class="nt">participants</span><span class="p">:</span>
+  <span class="c1"># change example.com to the FQDN of the server</span>
+  <span class="p p-Indicator">-</span> <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">example.com</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">server</span>
+    <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvidia</span>
+    <span class="nt">fed_learn_port</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">8002</span>
+    <span class="nt">admin_port</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">8003</span>
+    <span class="c1"># enable_byoc loads python codes in app.  Default is false.</span>
+    <span class="nt">enable_byoc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+  <span class="p p-Indicator">-</span> <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">site1</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">client</span>
+    <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvidia</span>
+    <span class="nt">enable_byoc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+  <span class="p p-Indicator">-</span> <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">site2</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">client</span>
+    <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvidia</span>
+    <span class="nt">enable_byoc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
+  <span class="p p-Indicator">-</span> <span class="nt">name</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">admin@nvidia.com</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">admin</span>
+    <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvidia</span>
     <span class="nt">roles</span><span class="p">:</span>
       <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">super</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvidia</span>
-    <span class="nt">email</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">researcher@nvidia.com</span>
-    <span class="nt">roles</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">lead_it</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">site_researcher</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org1</span>
-    <span class="nt">email</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">researcher@org1.com</span>
-    <span class="nt">roles</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">site_researcher</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org2</span>
-    <span class="nt">email</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">researcher@org2.com</span>
-    <span class="nt">roles</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">lead_researcher</span>
-  <span class="p p-Indicator">-</span> <span class="nt">org</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org2</span>
-    <span class="nt">email</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">it@org2.com</span>
-    <span class="nt">roles</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">lead_it</span>
 
-<span class="nt">authz_policy</span><span class="p">:</span>
-  <span class="nt">orgs</span><span class="p">:</span>
-    <span class="nt">org1</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">strict</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">general</span>
-    <span class="nt">org2</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">relaxed</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">general</span>
-    <span class="nt">nvidia</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">general</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">relaxed</span>
-    <span class="nt">org3</span><span class="p">:</span>
-      <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">general</span>
-  <span class="nt">roles</span><span class="p">:</span>
-    <span class="nt">super</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">super user of system</span>
-    <span class="nt">lead_researcher</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">lead researcher of the study</span>
-    <span class="nt">site_researcher</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">site researcher of the study</span>
-    <span class="nt">site_it</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">site IT of the study</span>
-    <span class="nt">lead_it</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">lead IT of the study</span>
-  <span class="nt">groups</span><span class="p">:</span> 
-    <span class="nt">relaxed</span><span class="p">:</span> 
-      <span class="nt">desc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org group with relaxed policies</span>
-      <span class="nt">rules</span><span class="p">:</span> 
-        <span class="nt">byoc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-        <span class="nt">custom_datalist</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-    <span class="nt">strict</span><span class="p">:</span> 
-      <span class="nt">desc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org group with strict policies</span>
-      <span class="nt">rules</span><span class="p">:</span> 
-        <span class="nt">byoc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
-        <span class="nt">custom_datalist</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
-    <span class="nt">general</span><span class="p">:</span> 
-      <span class="nt">desc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">general group user rights</span>
-      <span class="nt">role_rights</span><span class="p">:</span> 
-        <span class="nt">lead_researcher</span><span class="p">:</span> 
-          <span class="nt">train_all</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-          <span class="nt">view_all</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-        <span class="nt">site_researcher</span><span class="p">:</span> 
-          <span class="nt">train_self</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-          <span class="nt">view_self</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-        <span class="nt">lead_it</span><span class="p">:</span> 
-          <span class="nt">operate_all</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-          <span class="nt">view_all</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-        <span class="nt">site_it</span><span class="p">:</span> 
-          <span class="nt">operate_self</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
-          <span class="nt">view_self</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="c1"># The same methods in all builders are called in their order defined in builders section</span>
+<span class="nt">builders</span><span class="p">:</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.workspace.WorkspaceBuilder</span>
+    <span class="nt">args</span><span class="p">:</span>
+      <span class="nt">template_file</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">master_template.yml</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.template.TemplateBuilder</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.static_file.StaticFileBuilder</span>
+    <span class="nt">args</span><span class="p">:</span>
+      <span class="c1"># config_folder can be set to inform NVFlare where to get configuration</span>
+      <span class="nt">config_folder</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">config</span>
+      <span class="c1"># when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin</span>
+      <span class="c1"># docker_image:</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.auth_policy.AuthPolicyBuilder</span>
+    <span class="nt">args</span><span class="p">:</span>
+      <span class="nt">orgs</span><span class="p">:</span>
+        <span class="nt">nvidia</span><span class="p">:</span>
+          <span class="p p-Indicator">-</span> <span class="l l-Scalar l-Scalar-Plain">relaxed</span>
+      <span class="nt">roles</span><span class="p">:</span>
+        <span class="nt">super</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">super user of system</span>
+      <span class="nt">groups</span><span class="p">:</span> 
+        <span class="nt">relaxed</span><span class="p">:</span> 
+          <span class="nt">desc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">org group with relaxed policies</span>
+          <span class="nt">rules</span><span class="p">:</span> 
+            <span class="nt">allow_byoc</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+            <span class="nt">allow_custom_datalist</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+      <span class="nt">disabled</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.cert.CertBuilder</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.he.HEBuilder</span>
+    <span class="nt">args</span><span class="p">:</span>
+      <span class="nt">poly_modulus_degree</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">8192</span> 
+      <span class="nt">coeff_mod_bit_sizes</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">60</span><span class="p p-Indicator">,</span> <span class="nv">40</span><span class="p p-Indicator">,</span> <span class="nv">40</span><span class="p p-Indicator">]</span>
+      <span class="nt">scale_bits</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">40</span>
+      <span class="nt">scheme</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">CKKS</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.signature.SignatureBuilder</span>
+  <span class="p p-Indicator">-</span> <span class="nt">path</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nvflare.lighter.impl.workspace.DistributionBuilder</span>
+    <span class="nt">args</span><span class="p">:</span>
+      <span class="nt">zip_password</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
 </pre></div>
 </div>
 </div>
@@ -424,219 +706,22 @@ No project.yml found <span class="k">in</span> current folder.  Is it OK to gene
 usage: provision <span class="o">[</span>-h<span class="o">]</span> <span class="o">[</span>-p PROJECT_FILE<span class="o">]</span> <span class="o">[</span>-o OUTPUT_DIR<span class="o">]</span> <span class="o">[</span>-n<span class="o">]</span> <span class="o">[</span>-u<span class="o">]</span>
 
 optional arguments:
-  -h, --help            show this <span class="nb">help</span> message and <span class="nb">exit</span>
-  -p PROJECT_FILE, --project_file PROJECT_FILE
-                        file to describe FL project
-  -o OUTPUT_DIR, --output_dir OUTPUT_DIR
-                        directory to store all packages
-  -n, --no_zip_password
-                        Disable password protection <span class="k">in</span> final zip files
+  -h, --help                                  show this <span class="nb">help</span> message and <span class="nb">exit</span>
+  -p PROJECT_FILE, --project_file PROJECT_FILE    file to describe FL project
+  -w WORKSPACE, --workspace WORKSPACE             directory used by provision
   -u, --ui_tool         Run provisioning UI tool to generate project.yml file
 </pre></div>
 </div>
+<p>Running <code class="docutils literal notranslate"><span class="pre">provision</span></code> without any options and without a project.yml file in the current working directory will prompt
+to copy a default project.yml to the current working directory.</p>
 </div>
 <div class="section" id="provisioning-tool-ui-page">
 <h2>Provisioning tool UI page<a class="headerlink" href="#provisioning-tool-ui-page" title="Permalink to this headline">¶</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">-u</span></code> option will open provisioning tool UI page in your browser.  Once finishing configuring, click generate and download to save your
-copy of project.yml.  Then you can run <code class="docutils literal notranslate"><span class="pre">provision</span> <span class="pre">-p</span> <span class="pre">project.yml</span></code> to generate the final startup kits.</p>
-<img alt="../_images/provisioning_ui.png" src="../_images/provisioning_ui.png" style="height: 560px;" />
-</div>
-<div class="section" id="provision-api">
-<h2>Provision API<a class="headerlink" href="#provision-api" title="Permalink to this headline">¶</a></h2>
-<p>Provision command is built on top of Provision API.
-The following python code demonstrates how to use the API to build your own provisioning process.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Provision command does not use all of Provision API.  You can find some API appearing only in the demo python codes.</p>
-</div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">pathlib</span>
-
-<span class="kn">from</span> <span class="nn">nvflare.lighter.study</span> <span class="kn">import</span> <span class="n">AuthzGroup</span><span class="p">,</span> <span class="n">Study</span>
-<span class="kn">from</span> <span class="nn">nvflare.lighter.utils</span> <span class="kn">import</span> <span class="n">ZipFileDestination</span><span class="p">,</span> <span class="n">generate_password</span>
-
-<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
-
-
-<span class="k">def</span> <span class="nf">show_result</span><span class="p">(</span><span class="n">result</span><span class="p">):</span>
-    <span class="kn">from</span> <span class="nn">rich.console</span> <span class="kn">import</span> <span class="n">Console</span>
-    <span class="kn">from</span> <span class="nn">rich.table</span> <span class="kn">import</span> <span class="n">Table</span>
-
-    <span class="n">console</span> <span class="o">=</span> <span class="n">Console</span><span class="p">()</span>
-    <span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="n">show_header</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">header_style</span><span class="o">=</span><span class="s2">&quot;bold magenta&quot;</span><span class="p">)</span>
-    <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="s2">&quot;participant&quot;</span><span class="p">)</span>
-    <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="s2">&quot;org&quot;</span><span class="p">)</span>
-    <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="s2">&quot;destination&quot;</span><span class="p">)</span>
-    <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="s2">&quot;password&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">result</span><span class="p">:</span>
-        <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s2">&quot;subject&quot;</span><span class="p">],</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;org&quot;</span><span class="p">],</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;destination&quot;</span><span class="p">],</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;password&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
-    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
-
-
-<span class="n">current_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
-
-<span class="n">study</span> <span class="o">=</span> <span class="n">Study</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;example_project&quot;</span><span class="p">)</span>
-
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">set_he_context</span><span class="p">(</span>
-    <span class="n">poly_modulus_degree</span><span class="o">=</span><span class="mi">8192</span><span class="p">,</span>
-    <span class="n">coeff_mod_bit_sizes</span><span class="o">=</span><span class="p">[</span><span class="mi">60</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="mi">40</span><span class="p">],</span>
-    <span class="n">scale_bits</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span>
-    <span class="n">scheme</span><span class="o">=</span><span class="s2">&quot;CKKS&quot;</span><span class="p">,</span>
-<span class="p">)</span>
-
-<span class="c1"># When study.release is called, all packages will be</span>
-<span class="c1"># generated by destination&#39;s pack method.  This ZipFileDestination</span>
-<span class="c1"># generates zip files for server, fl clients and admins.</span>
-<span class="c1"># Setting pw_gen to None disable encrypting zip files with passwords.</span>
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">set_destination</span><span class="p">(</span>
-    <span class="n">destination</span><span class="o">=</span><span class="n">ZipFileDestination</span><span class="p">(</span>
-        <span class="n">dest_folder</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">current_dir</span><span class="p">,</span> <span class="s2">&quot;packages&quot;</span><span class="p">),</span>
-        <span class="n">pw_gen</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-
-<span class="c1"># Each AuthzGroup defines the operations and roles for each group</span>
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">set_authz_groups</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="n">AuthzGroup</span><span class="p">(</span>
-            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;relaxed&quot;</span><span class="p">,</span>
-            <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;org group with relaxed policies&quot;</span><span class="p">,</span>
-            <span class="n">byoc</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="n">custom_datalist</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="n">AuthzGroup</span><span class="p">(</span>
-            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;strict&quot;</span><span class="p">,</span>
-            <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;org group with strict policies&quot;</span><span class="p">,</span>
-            <span class="n">byoc</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-            <span class="n">custom_datalist</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="n">AuthzGroup</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;general&quot;</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;general group user rights&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">set_roles_rights</span><span class="p">(</span>
-            <span class="p">[</span>
-                <span class="nb">dict</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="s2">&quot;lead_researcher&quot;</span><span class="p">,</span> <span class="n">train_all</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">view_all</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-                <span class="nb">dict</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="s2">&quot;site_researcher&quot;</span><span class="p">,</span> <span class="n">train_self</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">view_self</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-                <span class="nb">dict</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="s2">&quot;lead_it&quot;</span><span class="p">,</span> <span class="n">operate_all</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">view_all</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-                <span class="nb">dict</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="s2">&quot;site_it&quot;</span><span class="p">,</span> <span class="n">operate_self</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">view_self</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-            <span class="p">]</span>
-        <span class="p">),</span>
-        <span class="n">AuthzGroup</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;dummy&quot;</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;dummy group user rights&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">set_roles_rights</span><span class="p">(</span>
-            <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="s2">&quot;dummy_role&quot;</span><span class="p">,</span> <span class="n">train_all</span><span class="o">=</span><span class="kc">False</span><span class="p">)]</span>
-        <span class="p">),</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-
-
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">set_server</span><span class="p">(</span><span class="n">cn</span><span class="o">=</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;nvidia&quot;</span><span class="p">,</span> <span class="n">config_validator</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="c1"># setting config_validator to None disables config_validator</span>
-<span class="c1"># Alternatively, it can be set to</span>
-<span class="c1">#   1. a string, the class path of validator</span>
-<span class="c1">#   2. a dictionary, as follows:</span>
-<span class="c1">#      config_validator={&quot;foo.bar.Validator&quot;: {&quot;arg1&quot;: &quot;abc_string&quot;, &quot;arg2&quot;: 12345}}</span>
-
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">set_admins</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">email</span><span class="o">=</span><span class="s2">&quot;admin@nvidia.com&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;nvidia&quot;</span><span class="p">,</span> <span class="n">roles</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;super&quot;</span><span class="p">]),</span>
-        <span class="nb">dict</span><span class="p">(</span>
-            <span class="n">email</span><span class="o">=</span><span class="s2">&quot;researcher@nvidia.com&quot;</span><span class="p">,</span>
-            <span class="n">org</span><span class="o">=</span><span class="s2">&quot;nvidia&quot;</span><span class="p">,</span>
-            <span class="n">roles</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lead_it&quot;</span><span class="p">,</span> <span class="s2">&quot;site_researcher&quot;</span><span class="p">],</span>
-        <span class="p">),</span>
-        <span class="nb">dict</span><span class="p">(</span>
-            <span class="n">email</span><span class="o">=</span><span class="s2">&quot;researcher@org1.com&quot;</span><span class="p">,</span>
-            <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org1&quot;</span><span class="p">,</span>
-            <span class="n">roles</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;site_researcher&quot;</span><span class="p">],</span>
-        <span class="p">),</span>
-        <span class="nb">dict</span><span class="p">(</span>
-            <span class="n">email</span><span class="o">=</span><span class="s2">&quot;researcher@org2.com&quot;</span><span class="p">,</span>
-            <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org2&quot;</span><span class="p">,</span>
-            <span class="n">roles</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lead_researcher&quot;</span><span class="p">],</span>
-        <span class="p">),</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">email</span><span class="o">=</span><span class="s2">&quot;it@org2.com&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org2&quot;</span><span class="p">,</span> <span class="n">roles</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lead_it&quot;</span><span class="p">]),</span>
-        <span class="nb">dict</span><span class="p">(</span>
-            <span class="n">email</span><span class="o">=</span><span class="s2">&quot;dummy@dummy.com&quot;</span><span class="p">,</span>
-            <span class="n">org</span><span class="o">=</span><span class="s2">&quot;dummy_org&quot;</span><span class="p">,</span>
-            <span class="n">roles</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;dummy_role&quot;</span><span class="p">],</span>
-        <span class="p">),</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">set_clients</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">site</span><span class="o">=</span><span class="s2">&quot;org1-a&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org1&quot;</span><span class="p">),</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">site</span><span class="o">=</span><span class="s2">&quot;org1-b&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org1&quot;</span><span class="p">),</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">site</span><span class="o">=</span><span class="s2">&quot;org2&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org2&quot;</span><span class="p">),</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-
-<span class="c1"># Assign each org to one or more authz groups</span>
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">set_orgs_to_groups</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">org</span><span class="o">=</span><span class="s2">&quot;org1&quot;</span><span class="p">,</span> <span class="n">group_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;strict&quot;</span><span class="p">,</span> <span class="s2">&quot;general&quot;</span><span class="p">]),</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">org</span><span class="o">=</span><span class="s2">&quot;org2&quot;</span><span class="p">,</span> <span class="n">group_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;relaxed&quot;</span><span class="p">,</span> <span class="s2">&quot;general&quot;</span><span class="p">]),</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">org</span><span class="o">=</span><span class="s2">&quot;nvidia&quot;</span><span class="p">,</span> <span class="n">group_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;general&quot;</span><span class="p">,</span> <span class="s2">&quot;relaxed&quot;</span><span class="p">]),</span>
-        <span class="nb">dict</span><span class="p">(</span><span class="n">org</span><span class="o">=</span><span class="s2">&quot;dummy_org&quot;</span><span class="p">,</span> <span class="n">group_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;dummy&quot;</span><span class="p">]),</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-
-<span class="c1"># Five roles are pre-populated, super, lead_researcher, site_researcher, lead_it and site_it.</span>
-<span class="c1"># We would like to add one new role.  Based on the AuthzGroup, this role can not do train_all operation.</span>
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">add_role</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="s2">&quot;dummy_role&quot;</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;This is a dummy role&quot;</span><span class="p">)</span>
-
-<span class="c1"># After all data is collected, build_content builds all information, such as certificate and file contents</span>
-<span class="n">study</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">build_content</span><span class="p">()</span>
-
-<span class="c1"># release method calls destination&#39;s pack to save the contents</span>
-
-<span class="n">result</span> <span class="o">=</span> <span class="n">study</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
-
-
-<span class="c1"># show_result is a convenient function to show what has been genreated</span>
-<span class="n">show_result</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
-
-<span class="c1"># save method serializes the study object to a pickle file.  Note this method modifies</span>
-<span class="c1"># study object.  So please call save at the end of this study object life cycle.</span>
-<span class="n">study</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">current_dir</span><span class="p">,</span> <span class="s2">&quot;study.pkl&quot;</span><span class="p">))</span>
-
-
-<span class="c1"># Now loading the pickle data back and changing clients/admins</span>
-<span class="n">new_study</span> <span class="o">=</span> <span class="n">Study</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">current_dir</span><span class="p">,</span> <span class="s2">&quot;study.pkl&quot;</span><span class="p">))</span>
-<span class="n">new_study</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">set_destination</span><span class="p">(</span>
-    <span class="n">destination</span><span class="o">=</span><span class="n">ZipFileDestination</span><span class="p">(</span>
-        <span class="n">dest_folder</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">current_dir</span><span class="p">,</span> <span class="s2">&quot;new_packages&quot;</span><span class="p">),</span>
-        <span class="n">pw_gen</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-
-<span class="c1"># we keep the first two clients</span>
-<span class="n">client_list</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()[:</span><span class="mi">2</span><span class="p">]</span>
-
-<span class="c1"># and add one new client</span>
-<span class="n">client_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">site</span><span class="o">=</span><span class="s2">&quot;org1-c&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org1&quot;</span><span class="p">))</span>
-
-<span class="c1"># modify org1-a to a different org &quot;org2.&quot;</span>
-<span class="n">client_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">site</span><span class="o">=</span><span class="s2">&quot;org1-a&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org2&quot;</span><span class="p">))</span>
-
-<span class="c1"># because we have two org1-a, set_clients raises exception</span>
-<span class="k">try</span><span class="p">:</span>
-    <span class="n">new_study</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">set_clients</span><span class="p">(</span><span class="n">client_list</span><span class="p">)</span>
-<span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error during set_clients: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># remove the first element dict(site=&quot;org1-a&quot;, org=&quot;org1&quot;)</span>
-<span class="n">client_list</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-
-<span class="n">new_study</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">set_clients</span><span class="p">(</span><span class="n">client_list</span><span class="p">)</span>
-
-
-<span class="n">admin_list</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">get_admins</span><span class="p">()[:</span><span class="mi">2</span><span class="p">]</span>
-<span class="n">admin_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">email</span><span class="o">=</span><span class="s2">&quot;helloworld@123.com&quot;</span><span class="p">,</span> <span class="n">org</span><span class="o">=</span><span class="s2">&quot;org1&quot;</span><span class="p">,</span> <span class="n">roles</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lead_it&quot;</span><span class="p">]))</span>
-<span class="n">new_study</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">set_admins</span><span class="p">(</span><span class="n">admin_list</span><span class="p">)</span>
-
-<span class="n">new_study</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">build_content</span><span class="p">()</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">new_study</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
-<span class="n">show_result</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
-</pre></div>
-</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">-u</span></code> option will open the provisioning tool helper UI page in your browser.  This tool is built to help with
+setting up and generating a project.yml to work with the reference configuration of default bundled builders in the
+NVIDIA FLARE package. You may need to add to or edit the builders section before running <code class="docutils literal notranslate"><span class="pre">provision</span> <span class="pre">-p</span> <span class="pre">project.yml</span></code> if you
+have customized builders.</p>
+<img alt="../_images/provisioning_ui.png" src="../_images/provisioning_ui.png" style="height: 400px;" />
 </div>
 </div>
 
@@ -647,7 +732,7 @@ The following python code demonstrates how to use the API to build your own prov
           <footer>
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
         <a href="authorization.html" class="btn btn-neutral float-right" title="Authorization" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-        <a href="application.html" class="btn btn-neutral float-left" title="NVFlare Application" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="workspace.html" class="btn btn-neutral float-left" title="NVIDIA FLARE Workspace" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

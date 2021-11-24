@@ -1,0 +1,703 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.app_common.workflows package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.fuel package" href="nvflare.fuel.html" />
+    <link rel="prev" title="nvflare.app_common.widgets package" href="nvflare.app_common.widgets.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.app_common.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common.app_constant">nvflare.app_common.app_constant module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common.app_event_type">nvflare.app_common.app_event_type module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+          <li><a href="nvflare.app_common.html">nvflare.app_common package</a> &raquo;</li>
+        
+      <li>nvflare.app_common.workflows package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.app_common.workflows.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-app-common-workflows-package">
+<h1>nvflare.app_common.workflows package<a class="headerlink" href="#nvflare-app-common-workflows-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.app_common.workflows.cross_site_model_eval">
+<span id="nvflare-app-common-workflows-cross-site-model-eval-module"></span><h2>nvflare.app_common.workflows.cross_site_model_eval module<a class="headerlink" href="#module-nvflare.app_common.workflows.cross_site_model_eval" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">CrossSiteModelEval</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task_check_period</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cross_val_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cross_site_val'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">submit_model_timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">600</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">validation_timeout</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">6000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_locator_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">formatter_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">submit_model_task_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'submit_model'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">validation_task_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'validate'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cleanup_models</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">participating_clients</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wait_for_clients_timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cross_site_model_eval.html#CrossSiteModelEval"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller" title="nvflare.apis.impl.controller.Controller"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.impl.controller.Controller</span></code></a></p>
+<p>Cross Site Model Validation workflow</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task_check_period</strong> (<em>float</em><em>, </em><em>optional</em>) – How often to check for new tasks or tasks being finished.
+Defaults to 0.5.</p></li>
+<li><p><strong>cross_val_dir</strong> (<em>str</em><em>, </em><em>optional</em>) – Path to cross site validation directory relative to run directory.
+Defaults to “cross_site_val”.</p></li>
+<li><p><strong>submit_model_timeout</strong> (<em>int</em><em>, </em><em>optional</em>) – Timeout of submit_model_task. Defaults to 600 secs.</p></li>
+<li><p><strong>validation_timeout</strong> (<em>int</em><em>, </em><em>optional</em>) – Timeout for validate_model task. Defaults to 6000 secs.</p></li>
+<li><p><strong>model_locator_id</strong> (<em>str</em><em>, </em><em>optional</em>) – ID for model_locator component. Defaults to “”.</p></li>
+<li><p><strong>formatter_id</strong> (<em>str</em><em>, </em><em>optional</em>) – ID for formatter component. Defaults to “”.</p></li>
+<li><p><strong>submit_model_task_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Name of submit_model task. Defaults to “”.</p></li>
+<li><p><strong>validation_task_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Name of validate_model task. Defaults to “validate”.</p></li>
+<li><p><strong>cleanup_models</strong> (<em>bool</em><em>, </em><em>optional</em>) – Whether or not models should be deleted after run. Defaults to False.</p></li>
+<li><p><strong>participating_clients</strong> (<em>list</em><em>, </em><em>optional</em>) – List of participating client names. If not provided, defaults
+to all clients connected at start of controller.</p></li>
+<li><p><strong>wait_for_clients_timeout</strong> (<em>int</em><em>, </em><em>optional</em>) – Timeout for clients to appear. Defaults to 300 secs</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.control_flow">
+<span class="sig-name descname"><span class="pre">control_flow</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">abort_signal</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.signal.Signal" title="nvflare.apis.signal.Signal"><span class="pre">nvflare.apis.signal.Signal</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cross_site_model_eval.html#CrossSiteModelEval.control_flow"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.control_flow" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is the control logic for the RUN.
+NOTE: this is running in a separate thread, and its life is the duration of the RUN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – </p></li>
+<li><p><strong>abort_signal</strong> – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cross_site_model_eval.html#CrossSiteModelEval.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when events are fired</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> (<em>str</em>) – all event types, including AppEventType and EventType</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FLContext information with current event type</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.process_result_of_unknown_task">
+<span class="sig-name descname"><span class="pre">process_result_of_unknown_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">nvflare.apis.client.Client</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">client_task_id</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cross_site_model_eval.html#CrossSiteModelEval.process_result_of_unknown_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.process_result_of_unknown_task" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is called when a result submission is received from a client, but no standing
+task can be found for it (from the task queue)</p>
+<p>This could happen when:
+- the client’s submission is too late - the task is already completed
+- the Controller lost the task, e.g. the Server is restarted</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client</strong> – the client that the result comes from</p></li>
+<li><p><strong>task_name</strong> – the name of the task</p></li>
+<li><p><strong>client_task_id</strong> – ID of the task</p></li>
+<li><p><strong>result</strong> – the result from the client</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context that comes with the client’s submission</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.start_controller">
+<span class="sig-name descname"><span class="pre">start_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cross_site_model_eval.html#CrossSiteModelEval.start_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.start_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Starts the controller.</p>
+<p>This method is called at the beginning of the RUN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and register</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.stop_controller">
+<span class="sig-name descname"><span class="pre">stop_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cross_site_model_eval.html#CrossSiteModelEval.stop_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval.stop_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Stops the controller</p>
+<p>This method is called right before the RUN is ended.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and unregister</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.workflows.cyclic_ctl">
+<span id="nvflare-app-common-workflows-cyclic-ctl-module"></span><h2>nvflare.app_common.workflows.cyclic_ctl module<a class="headerlink" href="#module-nvflare.app_common.workflows.cyclic_ctl" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cyclic_ctl.CyclicController">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">CyclicController</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_rounds</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_assignment_timeout</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">persistor_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'persistor'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shareable_generator_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'shareable_generator'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'train'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cyclic_ctl.html#CyclicController"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cyclic_ctl.CyclicController" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller" title="nvflare.apis.impl.controller.Controller"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.impl.controller.Controller</span></code></a></p>
+<p>A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning</p>
+<p>Manage life cycles of tasks and their destinations</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>task_check_period</strong> (<em>float</em><em>, </em><em>optional</em>) – interval for checking status of tasks. Defaults to 0.5.</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cyclic_ctl.CyclicController.control_flow">
+<span class="sig-name descname"><span class="pre">control_flow</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">abort_signal</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.signal.Signal" title="nvflare.apis.signal.Signal"><span class="pre">nvflare.apis.signal.Signal</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cyclic_ctl.html#CyclicController.control_flow"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cyclic_ctl.CyclicController.control_flow" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is the control logic for the RUN.
+NOTE: this is running in a separate thread, and its life is the duration of the RUN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – </p></li>
+<li><p><strong>abort_signal</strong> – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cyclic_ctl.CyclicController.process_result_of_unknown_task">
+<span class="sig-name descname"><span class="pre">process_result_of_unknown_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">nvflare.apis.client.Client</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">client_task_id</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cyclic_ctl.html#CyclicController.process_result_of_unknown_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cyclic_ctl.CyclicController.process_result_of_unknown_task" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is called when a result submission is received from a client, but no standing
+task can be found for it (from the task queue)</p>
+<p>This could happen when:
+- the client’s submission is too late - the task is already completed
+- the Controller lost the task, e.g. the Server is restarted</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client</strong> – the client that the result comes from</p></li>
+<li><p><strong>task_name</strong> – the name of the task</p></li>
+<li><p><strong>client_task_id</strong> – ID of the task</p></li>
+<li><p><strong>result</strong> – the result from the client</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context that comes with the client’s submission</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cyclic_ctl.CyclicController.start_controller">
+<span class="sig-name descname"><span class="pre">start_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cyclic_ctl.html#CyclicController.start_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cyclic_ctl.CyclicController.start_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Starts the controller.</p>
+<p>This method is called at the beginning of the RUN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and register</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.cyclic_ctl.CyclicController.stop_controller">
+<span class="sig-name descname"><span class="pre">stop_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/cyclic_ctl.html#CyclicController.stop_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.cyclic_ctl.CyclicController.stop_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Stops the controller</p>
+<p>This method is called right before the RUN is ended.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and unregister</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.workflows.global_model_eval">
+<span id="nvflare-app-common-workflows-global-model-eval-module"></span><h2>nvflare.app_common.workflows.global_model_eval module<a class="headerlink" href="#module-nvflare.app_common.workflows.global_model_eval" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.global_model_eval.GlobalModelEval">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">GlobalModelEval</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task_check_period</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cross_val_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cross_site_val'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">validation_timeout</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">6000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_locator_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">formatter_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">validation_task_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'validate'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cleanup_models</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">participating_clients</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wait_for_clients_timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/global_model_eval.html#GlobalModelEval"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.global_model_eval.GlobalModelEval" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval</span></code></a></p>
+<p>Cross Site Model Validation workflow</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task_check_period</strong> (<em>float</em><em>, </em><em>optional</em>) – How often to check for new tasks or tasks being finished.
+Defaults to 0.5.</p></li>
+<li><p><strong>cross_val_dir</strong> (<em>str</em><em>, </em><em>optional</em>) – Path to cross site validation directory relative to run directory.
+Defaults to “cross_site_val”.</p></li>
+<li><p><strong>validation_timeout</strong> (<em>int</em><em>, </em><em>optional</em>) – Timeout for validate_model task. Defaults to 6000.</p></li>
+<li><p><strong>model_locator_id</strong> (<em>str</em><em>, </em><em>optional</em>) – ID for model_locator component. Defaults to None.</p></li>
+<li><p><strong>formatter_id</strong> (<em>str</em><em>, </em><em>optional</em>) – ID for formatter component. Defaults to None.</p></li>
+<li><p><strong>validation_task_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Name of validate_model task. Defaults to “validate”.</p></li>
+<li><p><strong>cleanup_models</strong> (<em>bool</em><em>, </em><em>optional</em>) – Whether or not models should be deleted after run. Defaults to False.</p></li>
+<li><p><strong>participating_clients</strong> (<em>list</em><em>, </em><em>optional</em>) – List of participating client names. If not provided, defaults
+to all clients connected at start of controller.</p></li>
+<li><p><strong>wait_for_clients_timeout</strong> (<em>int</em><em>, </em><em>optional</em>) – Timeout for clients to appear. Defaults to 300 secs</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.workflows.scatter_and_gather">
+<span id="nvflare-app-common-workflows-scatter-and-gather-module"></span><h2>nvflare.app_common.workflows.scatter_and_gather module<a class="headerlink" href="#module-nvflare.app_common.workflows.scatter_and_gather" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ScatterAndGather</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">min_clients</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_rounds</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_round</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wait_time_after_min_received</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aggregator_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'aggregator'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">persistor_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'persistor'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shareable_generator_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'shareable_generator'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_task_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'train'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_timeout</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ignore_result_error</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">bool</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/scatter_and_gather.html#ScatterAndGather"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller" title="nvflare.apis.impl.controller.Controller"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.impl.controller.Controller</span></code></a></p>
+<p>FederatedAveraging Workflow. The ScatterAndGather workflow defines Federated training on all clients.
+The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.
+Each clients sends it’s updated weights after local training which is aggregated (aggregator_id). The
+shareable generator is used to convert the aggregated weights to shareable and shareable back to weights.
+The model_persistor also saves the model after training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>min_clients</strong> (<em>int</em><em>, </em><em>optional</em>) – Min number of clients in training. Defaults to 1.</p></li>
+<li><p><strong>num_rounds</strong> (<em>int</em><em>, </em><em>optional</em>) – The total number of training rounds. Defaults to 5.</p></li>
+<li><p><strong>start_round</strong> (<em>int</em><em>, </em><em>optional</em>) – Start round for training. Defaults to 0.</p></li>
+<li><p><strong>wait_time_after_min_received</strong> (<em>int</em><em>, </em><em>optional</em>) – Time to wait before beginning aggregation after
+contributions received. Defaults to 10.</p></li>
+<li><p><strong>train_timeout</strong> (<em>int</em><em>, </em><em>optional</em>) – Time to wait for clients to do local training.</p></li>
+<li><p><strong>aggregator_id</strong> (<em>str</em><em>, </em><em>optional</em>) – ID of the aggregator component. Defaults to “aggregator”.</p></li>
+<li><p><strong>persistor_id</strong> (<em>str</em><em>, </em><em>optional</em>) – ID of the persistor component. Defaults to “persistor”.</p></li>
+<li><p><strong>shareable_generator_id</strong> (<em>str</em><em>, </em><em>optional</em>) – ID of the shareable generator. Defaults to “shareable_generator”.</p></li>
+<li><p><strong>train_task_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Name of the train task. Defaults to “train”.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.control_flow">
+<span class="sig-name descname"><span class="pre">control_flow</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">abort_signal</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.signal.Signal" title="nvflare.apis.signal.Signal"><span class="pre">nvflare.apis.signal.Signal</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/scatter_and_gather.html#ScatterAndGather.control_flow"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.control_flow" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is the control logic for the RUN.
+NOTE: this is running in a separate thread, and its life is the duration of the RUN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – </p></li>
+<li><p><strong>abort_signal</strong> – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/scatter_and_gather.html#ScatterAndGather.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when events are fired</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> (<em>str</em>) – all event types, including AppEventType and EventType</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FLContext information with current event type</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.process_result_of_unknown_task">
+<span class="sig-name descname"><span class="pre">process_result_of_unknown_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">nvflare.apis.client.Client</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">client_task_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/scatter_and_gather.html#ScatterAndGather.process_result_of_unknown_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.process_result_of_unknown_task" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is called when a result submission is received from a client, but no standing
+task can be found for it (from the task queue)</p>
+<p>This could happen when:
+- the client’s submission is too late - the task is already completed
+- the Controller lost the task, e.g. the Server is restarted</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client</strong> – the client that the result comes from</p></li>
+<li><p><strong>task_name</strong> – the name of the task</p></li>
+<li><p><strong>client_task_id</strong> – ID of the task</p></li>
+<li><p><strong>result</strong> – the result from the client</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context that comes with the client’s submission</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.start_controller">
+<span class="sig-name descname"><span class="pre">start_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/scatter_and_gather.html#ScatterAndGather.start_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.start_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Starts the controller.</p>
+<p>This method is called at the beginning of the RUN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and register</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.stop_controller">
+<span class="sig-name descname"><span class="pre">stop_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/workflows/scatter_and_gather.html#ScatterAndGather.stop_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather.stop_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Stops the controller</p>
+<p>This method is called right before the RUN is ended.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and unregister</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.workflows">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.app_common.workflows" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.fuel.html" class="btn btn-neutral float-right" title="nvflare.fuel package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.app_common.widgets.html" class="btn btn-neutral float-left" title="nvflare.app_common.widgets package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>
