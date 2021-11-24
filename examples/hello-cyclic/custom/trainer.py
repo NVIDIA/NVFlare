@@ -66,10 +66,7 @@ class SimpleTrainer(Executor):
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         model.compile(optimizer="adam", loss=loss_fn, metrics=["accuracy"])
         _ = model(tf.keras.Input(shape=(28, 28)))
-        self.var_list = [
-            model.get_layer(index=index).name
-            for index in range(len(model.get_weights()))
-        ]
+        self.var_list = [model.get_layer(index=index).name for index in range(len(model.get_weights()))]
         self.model = model
 
     def execute(
@@ -98,20 +95,19 @@ class SimpleTrainer(Executor):
 
         # retrieve model weights download from server's shareable
         if abort_signal.triggered:
-            return make_reply(ReturnCode.OK)
+            return make_reply(ReturnCode.TASK_ABORTED)
 
         if task_name != "train":
-            return shareable
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
         dxo = from_shareable(shareable)
         model_weights = dxo.data
 
         # use previous round's client weights to replace excluded layers from server
         prev_weights = {
-            self.model.get_layer(index=key).name: value
-            for key, value in enumerate(self.model.get_weights())
+            self.model.get_layer(index=key).name: value for key, value in enumerate(self.model.get_weights())
         }
-        print("dxo")
+
         ordered_model_weights = {key: model_weights.get(key) for key in prev_weights}
         for key in self.var_list:
             value = ordered_model_weights.get(key)
@@ -131,12 +127,9 @@ class SimpleTrainer(Executor):
         )
 
         # report updated weights in shareable
-        weights = {
-            self.model.get_layer(index=key).name: value
-            for key, value in enumerate(self.model.get_weights())
-        }
+        weights = {self.model.get_layer(index=key).name: value for key, value in enumerate(self.model.get_weights())}
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights)
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
-
-        return dxo.update_shareable(shareable)
+        new_shareable = dxo.to_shareable()
+        return new_shareable
