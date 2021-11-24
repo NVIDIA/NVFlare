@@ -39,7 +39,7 @@ class ScatterAndGather(Controller):
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
-        ignore_result_error: bool = False,
+        ignore_result_error: bool = True,
     ):
         """FederatedAveraging Workflow. The ScatterAndGather workflow defines Federated training on all clients.
         The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.
@@ -269,7 +269,7 @@ class ScatterAndGather(Controller):
         # Raise errors if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
             if self.ignore_result_error:
-                self.log_error(f"Ignore the client train result. Train result error code: {rc}")
+                self.log_error(fl_ctx, f"Ignore the client train result. Train result error code: {rc}")
                 return False
             else:
                 if rc in [ReturnCode.MISSING_PEER_CONTEXT, ReturnCode.BAD_PEER_CONTEXT]:

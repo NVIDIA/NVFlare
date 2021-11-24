@@ -49,7 +49,7 @@ class ClientAuxRunner(AuxRunner):
             self.sender.start()
         elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
-            if self.sender.is_alive():
+            if self.sender and self.sender.is_alive():
                 self.sender.join()
 
     def send_aux_request(
