@@ -1,3 +1,17 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os.path
 
 import torch
@@ -5,6 +19,7 @@ import torchvision
 from torch import nn
 from torchvision import transforms
 
+from net import SimpleNetwork
 from nvflare.apis.dxo import from_shareable, DXO, DataKind, MetaKey
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode, ReservedKey
@@ -14,8 +29,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import make_model_learnable, model_learnable_to_dxo
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
-from test.app_testing.test_apps.pt.custom.constants import PTConstants
-from test.app_testing.test_apps.pt.custom.net import SimpleNetwork
+from pt_constants import PTConstants
 
 
 class Cifar10Trainer(Executor):

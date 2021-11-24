@@ -3,7 +3,6 @@
   "server": {
     "heart_beat_timeout": 600
   },
-  "handlers": [],
   "task_data_filters": [],
   "task_result_filters": [],
   "components": [
