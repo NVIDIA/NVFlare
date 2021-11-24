@@ -1,0 +1,756 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.fuel.sec.authz &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../../" src="../../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+        <script src="../../../../_static/jquery.js"></script>
+        <script src="../../../../_static/underscore.js"></script>
+        <script src="../../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.fuel.sec.authz</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.fuel.sec.authz</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
+
+
+<span class="k">def</span> <span class="nf">_validate_value</span><span class="p">(</span><span class="n">type_def</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+    <span class="n">value_type</span> <span class="o">=</span> <span class="n">type_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;bool&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">value_type</span> <span class="o">==</span> <span class="s2">&quot;bool&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span>
+
+
+<div class="viewcode-block" id="validate_policy_config"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.validate_policy_config">[docs]</a><span class="k">def</span> <span class="nf">validate_policy_config</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validates that an authorization policy configuration has the right syntax.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        config: configuration dictionary to validate</span>
+
+<span class="sd">    Returns: empty string if there are no errors, else a string describing the error encountered</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;policy definition must be a dict&quot;</span>
+
+    <span class="c1"># validate rules</span>
+    <span class="n">policy_rules</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rules&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">policy_rules</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;missing rules in policy&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">policy_rules</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;rules must be dict&quot;</span>
+    <span class="k">for</span> <span class="n">rule_name</span><span class="p">,</span> <span class="n">rule_def</span> <span class="ow">in</span> <span class="n">policy_rules</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rule_def</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s1">&#39;bad rule &quot;</span><span class="si">{}</span><span class="s1">&quot;: must be a dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rule_name</span><span class="p">)</span>
+
+        <span class="n">default_value</span> <span class="o">=</span> <span class="n">rule_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">default_value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad rule &quot;</span><span class="si">{}</span><span class="s1">&quot;: missing default value&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rule_name</span><span class="p">)</span>
+
+        <span class="n">rule_type</span> <span class="o">=</span> <span class="n">rule_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;bool&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rule_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;bool&quot;</span><span class="p">,</span> <span class="s2">&quot;int&quot;</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad rule &quot;</span><span class="si">{}</span><span class="s1">&quot;: invalid type &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rule_name</span><span class="p">,</span> <span class="n">rule_type</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_validate_value</span><span class="p">(</span><span class="n">rule_def</span><span class="p">,</span> <span class="n">default_value</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s1">&#39;bad rule &quot;</span><span class="si">{}</span><span class="s1">&quot;: invalid default &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rule_name</span><span class="p">,</span> <span class="n">default_value</span><span class="p">)</span>
+
+    <span class="c1"># validate rights</span>
+    <span class="n">policy_rights</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rights&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">policy_rights</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;missing rights in policy&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">policy_rights</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;rights must be dict&quot;</span>
+    <span class="k">for</span> <span class="n">right_name</span><span class="p">,</span> <span class="n">right_def</span> <span class="ow">in</span> <span class="n">policy_rights</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">right_def</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s1">&#39;bad right &quot;</span><span class="si">{}</span><span class="s1">&quot;: must be a dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">right_name</span><span class="p">)</span>
+
+        <span class="n">precond</span> <span class="o">=</span> <span class="n">right_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;precond&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">precond</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">precond</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;selfOrg&quot;</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad right &quot;</span><span class="si">{}</span><span class="s1">&quot;: unknown precond &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="n">precond</span><span class="p">)</span>
+
+        <span class="n">default_value</span> <span class="o">=</span> <span class="n">right_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">default_value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad right &quot;</span><span class="si">{}</span><span class="s1">&quot;: missing default value&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">right_name</span><span class="p">)</span>
+
+        <span class="n">right_type</span> <span class="o">=</span> <span class="n">right_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;bool&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">right_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;bool&quot;</span><span class="p">,</span> <span class="s2">&quot;int&quot;</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad right &quot;</span><span class="si">{}</span><span class="s1">&quot;: invalid type &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="n">right_type</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_validate_value</span><span class="p">(</span><span class="n">right_def</span><span class="p">,</span> <span class="n">default_value</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s1">&#39;bad right &quot;</span><span class="si">{}</span><span class="s1">&quot;: invalid default &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="n">default_value</span><span class="p">)</span>
+
+    <span class="c1"># validate roles</span>
+    <span class="n">policy_roles</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;roles&quot;</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="k">if</span> <span class="n">policy_roles</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">policy_roles</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;roles must be dict&quot;</span>
+
+        <span class="k">for</span> <span class="n">role_name</span><span class="p">,</span> <span class="n">role_desc</span> <span class="ow">in</span> <span class="n">policy_roles</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">role_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s1">&#39;bad role name &quot;</span><span class="si">{}</span><span class="s1">&quot;: must be str&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">role_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">role_desc</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s1">&#39;bad role desc &quot;</span><span class="si">{}</span><span class="s1">&quot;: must be str&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">role_desc</span><span class="p">)</span>
+
+    <span class="c1"># validate groups</span>
+    <span class="n">policy_groups</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;groups&quot;</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="k">if</span> <span class="n">policy_groups</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">policy_groups</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;groups must be dict&quot;</span>
+
+        <span class="k">for</span> <span class="n">grp_name</span><span class="p">,</span> <span class="n">grp_def</span> <span class="ow">in</span> <span class="n">policy_groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grp_def</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: group def must be dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">grp_name</span><span class="p">)</span>
+            <span class="n">rules</span> <span class="o">=</span> <span class="n">grp_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rules&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rules</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rules</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: rules must be dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">grp_name</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">rule_name</span><span class="p">,</span> <span class="n">rule_value</span> <span class="ow">in</span> <span class="n">rules</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">rule_def</span> <span class="o">=</span> <span class="n">policy_rules</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">rule_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">rule_def</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: unknown rule &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="n">rule_name</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">_validate_value</span><span class="p">(</span><span class="n">rule_def</span><span class="p">,</span> <span class="n">rule_value</span><span class="p">):</span>
+                        <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: invalid value &quot;</span><span class="si">{}</span><span class="s1">&quot; for rule &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                            <span class="n">grp_name</span><span class="p">,</span> <span class="n">rule_value</span><span class="p">,</span> <span class="n">rule_name</span>
+                        <span class="p">)</span>
+
+            <span class="n">role_rights</span> <span class="o">=</span> <span class="n">grp_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;role_rights&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">role_rights</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">role_rights</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: role_rights must be dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">grp_name</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">role_name</span><span class="p">,</span> <span class="n">rights</span> <span class="ow">in</span> <span class="n">role_rights</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rights</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                        <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: rights of role &quot;</span><span class="si">{}</span><span class="s1">&quot; must be dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="n">role_name</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">right_name</span><span class="p">,</span> <span class="n">right_value</span> <span class="ow">in</span> <span class="n">rights</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                        <span class="n">right_def</span> <span class="o">=</span> <span class="n">policy_rights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="n">right_def</span><span class="p">:</span>
+                            <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: unknown right &quot;</span><span class="si">{}</span><span class="s1">&quot; in role &quot;</span><span class="si">{}</span><span class="s1">&quot; must be dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                                <span class="n">grp_name</span><span class="p">,</span> <span class="n">right_name</span><span class="p">,</span> <span class="n">role_name</span>
+                            <span class="p">)</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="n">_validate_value</span><span class="p">(</span><span class="n">right_def</span><span class="p">,</span> <span class="n">right_value</span><span class="p">):</span>
+                            <span class="k">return</span> <span class="s1">&#39;bad group &quot;</span><span class="si">{}</span><span class="s1">&quot;: invalid value &quot;</span><span class="si">{}</span><span class="s1">&quot; for right &quot;</span><span class="si">{}</span><span class="s1">&quot; in role &quot;</span><span class="si">{}</span><span class="s1">&quot; must be dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                                <span class="n">grp_name</span><span class="p">,</span> <span class="n">right_value</span><span class="p">,</span> <span class="n">right_name</span><span class="p">,</span> <span class="n">role_name</span>
+                            <span class="p">)</span>
+
+    <span class="c1"># validate orgs</span>
+    <span class="n">policy_orgs</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;orgs&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">policy_orgs</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;missing orgs in policy&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">policy_orgs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;orgs must be a dict&quot;</span>
+
+    <span class="k">for</span> <span class="n">org_name</span><span class="p">,</span> <span class="n">groups</span> <span class="ow">in</span> <span class="n">policy_orgs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s1">&#39;bad org &quot;</span><span class="si">{}</span><span class="s1">&quot;: groups must be a list&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad org &quot;</span><span class="si">{}</span><span class="s1">&quot;: groups not defined&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">grp_name</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s1">&#39;bad org &quot;</span><span class="si">{}</span><span class="s1">&quot;: group name must be str&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+            <span class="n">grp_def</span> <span class="o">=</span> <span class="n">policy_groups</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">grp_def</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s1">&#39;bad org &quot;</span><span class="si">{}</span><span class="s1">&quot;: undefined group &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">org_name</span><span class="p">,</span> <span class="n">grp_name</span><span class="p">)</span>
+
+    <span class="c1"># validate users</span>
+    <span class="n">policy_users</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;users&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">policy_users</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;missing users in policy&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">policy_users</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;users must be dict&quot;</span>
+
+    <span class="k">for</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">user_def</span> <span class="ow">in</span> <span class="n">policy_users</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_def</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: definition must be dict&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+        <span class="n">org_name</span> <span class="o">=</span> <span class="n">user_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;org&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">org_name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: missing org&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+
+        <span class="n">org_def</span> <span class="o">=</span> <span class="n">policy_orgs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">org_def</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: undefined org &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">,</span> <span class="n">org_name</span><span class="p">)</span>
+
+        <span class="n">roles</span> <span class="o">=</span> <span class="n">user_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;roles&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">roles</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: missing roles&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">roles</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: roles must be list&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">roles</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: no roles defined&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">role_name</span> <span class="ow">in</span> <span class="n">roles</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">role_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: role name must be str&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+            <span class="n">role_def</span> <span class="o">=</span> <span class="n">policy_roles</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">role_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">role_def</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s1">&#39;bad user &quot;</span><span class="si">{}</span><span class="s1">&quot;: undefined role &quot;</span><span class="si">{}</span><span class="s1">&quot; must be str&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">,</span> <span class="n">role_name</span><span class="p">)</span>
+
+    <span class="c1"># validate sites</span>
+    <span class="n">sites</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;sites&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sites</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;missing sites in policy&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sites</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;sites must be dict&quot;</span>
+
+    <span class="k">for</span> <span class="n">site_name</span><span class="p">,</span> <span class="n">org_name</span> <span class="ow">in</span> <span class="n">sites</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">org_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">policy_orgs</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;bad site &quot;</span><span class="si">{}</span><span class="s1">&quot;: undefined org &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">site_name</span><span class="p">,</span> <span class="n">org_name</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+
+<span class="k">def</span> <span class="nf">_group_rule_key</span><span class="p">(</span><span class="n">grp_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">rule_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">grp_name</span> <span class="o">+</span> <span class="s2">&quot;:&quot;</span> <span class="o">+</span> <span class="n">rule_name</span>
+
+
+<span class="k">def</span> <span class="nf">_group_role_right_key</span><span class="p">(</span><span class="n">grp_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">role_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">right_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">grp_name</span> <span class="o">+</span> <span class="s2">&quot;:&quot;</span> <span class="o">+</span> <span class="n">role_name</span> <span class="o">+</span> <span class="s2">&quot;:&quot;</span> <span class="o">+</span> <span class="n">right_name</span>
+
+
+<span class="k">def</span> <span class="nf">_eval_bool</span><span class="p">(</span><span class="n">space</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+    <span class="n">exit_value</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">exit_value</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="n">exit_value</span>
+
+
+<span class="k">def</span> <span class="nf">_eval_int</span><span class="p">(</span><span class="n">space</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+    <span class="n">exit_value</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">exit_value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">exit_value</span> <span class="o">&lt;</span> <span class="n">value</span><span class="p">:</span>
+                <span class="n">exit_value</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">return</span> <span class="n">exit_value</span>
+
+
+<div class="viewcode-block" id="Policy"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy">[docs]</a><span class="k">class</span> <span class="nc">Policy</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Authorization policy definition with methods to access information about the policy. Init creates the internal</span>
+<span class="sd">    representation of the policy from a config dictionary.</span>
+
+<span class="sd">    Policy evaluation result:</span>
+
+<span class="sd">    For bool type of rules or rights:</span>
+
+<span class="sd">        True - the rule is satisfied or the right is granted</span>
+<span class="sd">        False - the rule is not satisfied; the right iis not granted</span>
+<span class="sd">        None - the rule or right is not applicable (precondition not met)</span>
+
+<span class="sd">    For int type or rules or rights:</span>
+
+<span class="sd">        Number - the value of the evaluation</span>
+<span class="sd">        None - the rule or right is not applicable (precondition not met)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conf</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">conf</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preconf_valuators</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;selfOrg&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eval_precond_self_org</span><span class="p">}</span>
+
+        <span class="c1"># compute the rule and right spaces</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rule_space</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">right_space</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="n">conf</span><span class="p">[</span><span class="s2">&quot;groups&quot;</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">grp_name</span><span class="p">,</span> <span class="n">grp_def</span> <span class="ow">in</span> <span class="n">groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">rules</span> <span class="o">=</span> <span class="n">grp_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rules&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rules</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">rule_name</span><span class="p">,</span> <span class="n">rule_value</span> <span class="ow">in</span> <span class="n">rules</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">key</span> <span class="o">=</span> <span class="n">_group_rule_key</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="n">rule_name</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">rule_space</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">rule_value</span>
+
+            <span class="n">role_rights</span> <span class="o">=</span> <span class="n">grp_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;role_rights&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">role_rights</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">role_name</span><span class="p">,</span> <span class="n">rights</span> <span class="ow">in</span> <span class="n">role_rights</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="k">for</span> <span class="n">right_name</span><span class="p">,</span> <span class="n">right_value</span> <span class="ow">in</span> <span class="n">rights</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                        <span class="n">key</span> <span class="o">=</span> <span class="n">_group_role_right_key</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="n">role_name</span><span class="p">,</span> <span class="n">right_name</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">right_space</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">right_value</span>
+
+<div class="viewcode-block" id="Policy.get_config"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.get_config">[docs]</a>    <span class="k">def</span> <span class="nf">get_config</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span></div>
+
+    <span class="k">def</span> <span class="nf">_eval_precond</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">precond</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">org_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">evaluator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preconf_valuators</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">precond</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">evaluator</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">evaluator</span><span class="p">(</span><span class="n">user_name</span><span class="p">,</span> <span class="n">org_name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_eval_precond_self_org</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">org_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">users</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;users&quot;</span><span class="p">]</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">users</span><span class="p">[</span><span class="n">user_name</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;org&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">org_name</span>
+
+    <span class="k">def</span> <span class="nf">_get_org_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">org_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">orgs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;orgs&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">orgs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">org_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Policy.evaluate_rule_on_org"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.evaluate_rule_on_org">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_rule_on_org</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rule_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">org_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">rules</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;rules&quot;</span><span class="p">]</span>
+        <span class="n">rule_def</span> <span class="o">=</span> <span class="n">rules</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">rule_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">rule_def</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;undefined rule &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rule_name</span><span class="p">)</span>
+
+        <span class="n">rule_type</span> <span class="o">=</span> <span class="n">rule_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;bool&quot;</span><span class="p">)</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_org_groups</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;unknown org &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+
+        <span class="n">keys</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">grp_name</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="n">keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_group_rule_key</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="n">rule_name</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">rule_type</span> <span class="o">==</span> <span class="s2">&quot;bool&quot;</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">_eval_bool</span><span class="p">(</span><span class="n">space</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rule_space</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="n">keys</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">_eval_bool</span><span class="p">(</span><span class="n">space</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rule_space</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="n">keys</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">rule_def</span><span class="p">[</span><span class="s2">&quot;default&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="s2">&quot;&quot;</span></div>
+
+    <span class="k">def</span> <span class="nf">_get_org_of_site</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">site_name</span><span class="p">):</span>
+        <span class="n">sites</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;sites&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">sites</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">site_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Policy.evaluate_rule_on_site"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.evaluate_rule_on_site">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_rule_on_site</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rule_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">org_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_org_of_site</span><span class="p">(</span><span class="n">site_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">org_name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;unknown site &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">site_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">evaluate_rule_on_org</span><span class="p">(</span><span class="n">rule_name</span><span class="p">,</span> <span class="n">org_name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Policy.evaluate_user_right_on_org"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.evaluate_user_right_on_org">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_user_right_on_org</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">org_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">rights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;rights&quot;</span><span class="p">]</span>
+        <span class="n">right_def</span> <span class="o">=</span> <span class="n">rights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">right_def</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;undefined right &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">right_name</span><span class="p">)</span>
+
+        <span class="n">right_type</span> <span class="o">=</span> <span class="n">right_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;bool&quot;</span><span class="p">)</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_org_groups</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;unknown org &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">org_name</span><span class="p">)</span>
+
+        <span class="n">users</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;users&quot;</span><span class="p">]</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">users</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">user_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;unknown user &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">)</span>
+
+        <span class="n">precond</span> <span class="o">=</span> <span class="n">right_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;precond&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">precond</span><span class="p">:</span>
+            <span class="n">matched</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eval_precond</span><span class="p">(</span><span class="n">precond</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">org_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">matched</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">right_type</span> <span class="o">==</span> <span class="s2">&quot;bool&quot;</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="n">roles</span> <span class="o">=</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;roles&quot;</span><span class="p">]</span>
+        <span class="n">keys</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">grp_name</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">role_name</span> <span class="ow">in</span> <span class="n">roles</span><span class="p">:</span>
+                <span class="n">keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_group_role_right_key</span><span class="p">(</span><span class="n">grp_name</span><span class="p">,</span> <span class="n">role_name</span><span class="p">,</span> <span class="n">right_name</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">right_type</span> <span class="o">==</span> <span class="s2">&quot;bool&quot;</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">_eval_bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">right_space</span><span class="p">,</span> <span class="n">keys</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">_eval_int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">right_space</span><span class="p">,</span> <span class="n">keys</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">right_def</span><span class="p">[</span><span class="s2">&quot;default&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="Policy.evaluate_user_right_on_site"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.evaluate_user_right_on_site">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_user_right_on_site</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">org_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_org_of_site</span><span class="p">(</span><span class="n">site_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">org_name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">&#39;unknown site &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">site_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">evaluate_user_right_on_org</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="n">user_name</span><span class="p">,</span> <span class="n">org_name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Policy.get_user"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.get_user">[docs]</a>    <span class="k">def</span> <span class="nf">get_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">users</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;users&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">users</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">user_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Policy.get_users"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.get_users">[docs]</a>    <span class="k">def</span> <span class="nf">get_users</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;users&quot;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Policy.get_sites"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.get_sites">[docs]</a>    <span class="k">def</span> <span class="nf">get_sites</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;sites&quot;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Policy.get_rights"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.get_rights">[docs]</a>    <span class="k">def</span> <span class="nf">get_rights</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;rights&quot;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Policy.get_rules"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.get_rules">[docs]</a>    <span class="k">def</span> <span class="nf">get_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;rules&quot;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Policy.get_right_type"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Policy.get_right_type">[docs]</a>    <span class="k">def</span> <span class="nf">get_right_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">rights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;rights&quot;</span><span class="p">]</span>
+        <span class="n">right_def</span> <span class="o">=</span> <span class="n">rights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">right_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">right_def</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">right_def</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;bool&quot;</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="AuthzContext"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.AuthzContext">[docs]</a><span class="k">class</span> <span class="nc">AuthzContext</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base class to contain context data for authorization.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">user_name</span> <span class="o">=</span> <span class="n">user_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">site_names</span> <span class="o">=</span> <span class="n">site_names</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attrs</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="AuthzContext.set_attr"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.AuthzContext.set_attr">[docs]</a>    <span class="k">def</span> <span class="nf">set_attr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span></div>
+
+<div class="viewcode-block" id="AuthzContext.get_attr"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.AuthzContext.get_attr">[docs]</a>    <span class="k">def</span> <span class="nf">get_attr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="Authorizer"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer">[docs]</a><span class="k">class</span> <span class="nc">Authorizer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base class containing the authorization policy.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">policy</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_load_time</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="Authorizer.get_policy"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer.get_policy">[docs]</a>    <span class="k">def</span> <span class="nf">get_policy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Policy</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span></div>
+
+<div class="viewcode-block" id="Authorizer.authorize"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer.authorize">[docs]</a>    <span class="k">def</span> <span class="nf">authorize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">AuthzContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="nb">object</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="Authorizer.evaluate_user_right_on_site"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer.evaluate_user_right_on_site">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_user_right_on_site</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">user_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;policy not defined&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">evaluate_user_right_on_site</span><span class="p">(</span><span class="n">right_name</span><span class="o">=</span><span class="n">right_name</span><span class="p">,</span> <span class="n">user_name</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Authorizer.evaluate_rule_on_site"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer.evaluate_rule_on_site">[docs]</a>    <span class="k">def</span> <span class="nf">evaluate_rule_on_site</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rule_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">site_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;policy not defined&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">evaluate_rule_on_site</span><span class="p">(</span><span class="n">rule_name</span><span class="o">=</span><span class="n">rule_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="n">site_name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Authorizer.load_policy"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer.load_policy">[docs]</a>    <span class="k">def</span> <span class="nf">load_policy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">policy_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">validate_policy_config</span><span class="p">(</span><span class="n">policy_config</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">err</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">policy</span> <span class="o">=</span> <span class="n">Policy</span><span class="p">(</span><span class="n">policy_config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_load_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

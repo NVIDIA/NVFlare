@@ -1,0 +1,941 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.fuel.hci.client.lib &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../../../" src="../../../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.fuel.hci.client.lib</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.fuel.hci.client.lib</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">cmd</span>
+<span class="kn">import</span> <span class="nn">getpass</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">socket</span>
+<span class="kn">import</span> <span class="nn">ssl</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">traceback</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.cmd_arg_utils</span> <span class="kn">import</span> <span class="n">join_args</span><span class="p">,</span> <span class="n">split_to_args</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.conn</span> <span class="kn">import</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">receive_and_process</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.proto</span> <span class="kn">import</span> <span class="n">make_error</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.reg</span> <span class="kn">import</span> <span class="n">CommandModule</span><span class="p">,</span> <span class="n">CommandModuleSpec</span><span class="p">,</span> <span class="n">CommandRegister</span><span class="p">,</span> <span class="n">CommandSpec</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.security</span> <span class="kn">import</span> <span class="n">get_certificate_common_name</span><span class="p">,</span> <span class="n">hash_password</span><span class="p">,</span> <span class="n">verify_password</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.table</span> <span class="kn">import</span> <span class="n">Table</span>
+
+
+<span class="k">class</span> <span class="nc">_BuiltInCmdModule</span><span class="p">(</span><span class="n">CommandModule</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">get_spec</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">CommandModuleSpec</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="n">cmd_specs</span><span class="o">=</span><span class="p">[</span>
+                <span class="n">CommandSpec</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;bye&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;exit from the client&quot;</span><span class="p">,</span> <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;bye&quot;</span><span class="p">,</span> <span class="n">handler_func</span><span class="o">=</span><span class="kc">None</span><span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;help&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;get command help information&quot;</span><span class="p">,</span> <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;help&quot;</span><span class="p">,</span> <span class="n">handler_func</span><span class="o">=</span><span class="kc">None</span><span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lpwd&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;print local work dir of the admin client&quot;</span><span class="p">,</span> <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;lpwd&quot;</span><span class="p">,</span> <span class="n">handler_func</span><span class="o">=</span><span class="kc">None</span>
+                <span class="p">),</span>
+            <span class="p">],</span>
+        <span class="p">)</span>
+
+
+<div class="viewcode-block" id="ReplyProcessor"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor">[docs]</a><span class="k">class</span> <span class="nc">ReplyProcessor</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<div class="viewcode-block" id="ReplyProcessor.reply_start"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.reply_start">[docs]</a>    <span class="k">def</span> <span class="nf">reply_start</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">reply_json</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.process_string"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.process_string">[docs]</a>    <span class="k">def</span> <span class="nf">process_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.process_success"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.process_success">[docs]</a>    <span class="k">def</span> <span class="nf">process_success</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.process_error"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.process_error">[docs]</a>    <span class="k">def</span> <span class="nf">process_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">err</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.process_table"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.process_table">[docs]</a>    <span class="k">def</span> <span class="nf">process_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">table</span><span class="p">:</span> <span class="n">Table</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.process_dict"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.process_dict">[docs]</a>    <span class="k">def</span> <span class="nf">process_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.process_shutdown"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.process_shutdown">[docs]</a>    <span class="k">def</span> <span class="nf">process_shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">msg</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.process_token"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.process_token">[docs]</a>    <span class="k">def</span> <span class="nf">process_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">token</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.protocol_error"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.protocol_error">[docs]</a>    <span class="k">def</span> <span class="nf">protocol_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">err</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ReplyProcessor.reply_done"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.ReplyProcessor.reply_done">[docs]</a>    <span class="k">def</span> <span class="nf">reply_done</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">):</span>
+        <span class="k">pass</span></div></div>
+
+
+<span class="k">class</span> <span class="nc">_RegularReplyProcessor</span><span class="p">(</span><span class="n">ReplyProcessor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">process_shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">msg</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">shutdown_received</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">shutdown_msg</span> <span class="o">=</span> <span class="n">msg</span>
+
+    <span class="k">def</span> <span class="nf">process_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">process_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">err</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">write_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">process_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">table</span><span class="p">:</span> <span class="n">Table</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">process_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">write_dict</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">protocol_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">err</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">write_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">reply_done</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">_LoginReplyProcessor</span><span class="p">(</span><span class="n">ReplyProcessor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">reply_start</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">reply_json</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">login_result</span> <span class="o">=</span> <span class="s2">&quot;error&quot;</span>
+
+    <span class="k">def</span> <span class="nf">process_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">login_result</span> <span class="o">=</span> <span class="n">item</span>
+
+    <span class="k">def</span> <span class="nf">process_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">token</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">token</span> <span class="o">=</span> <span class="n">token</span>
+
+
+<span class="k">class</span> <span class="nc">_CmdListReplyProcessor</span><span class="p">(</span><span class="n">ReplyProcessor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">reply_start</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">reply_json</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">server_cmd_received</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span> <span class="nf">process_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">table</span><span class="p">:</span> <span class="n">Table</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">rows</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># this is header</span>
+                <span class="k">continue</span>
+
+            <span class="n">row</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">rows</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+                <span class="k">return</span>
+
+            <span class="n">scope</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">cmd_name</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">desc</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="n">usage</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+            <span class="n">confirm</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">confirm</span> <span class="o">==</span> <span class="s2">&quot;auth&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">client</span><span class="o">.</span><span class="n">require_login</span><span class="p">:</span>
+                <span class="c1"># the user is not authenticated - skip this command</span>
+                <span class="k">continue</span>
+
+            <span class="n">client</span><span class="o">.</span><span class="n">server_cmd_reg</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span>
+                <span class="n">scope_name</span><span class="o">=</span><span class="n">scope</span><span class="p">,</span>
+                <span class="n">cmd_name</span><span class="o">=</span><span class="n">cmd_name</span><span class="p">,</span>
+                <span class="n">desc</span><span class="o">=</span><span class="n">desc</span><span class="p">,</span>
+                <span class="n">usage</span><span class="o">=</span><span class="n">usage</span><span class="p">,</span>
+                <span class="n">handler</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">authz_func</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">confirm</span><span class="o">=</span><span class="n">confirm</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">client</span><span class="o">.</span><span class="n">server_cmd_received</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">server_cmd_reg</span><span class="o">.</span><span class="n">finalize</span><span class="p">(</span><span class="n">client</span><span class="o">.</span><span class="n">register_command</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="AdminClient"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient">[docs]</a><span class="k">class</span> <span class="nc">AdminClient</span><span class="p">(</span><span class="n">cmd</span><span class="o">.</span><span class="n">Cmd</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Admin command prompt for submitting admin commands to the server through the CLI.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server</span>
+<span class="sd">        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int</span>
+<span class="sd">        prompt: prompt to use for the command prompt</span>
+<span class="sd">        ca_cert: path to CA Cert file, by default provisioned rootCA.pem</span>
+<span class="sd">        client_cert: path to admin client Cert file, by default provisioned as client.crt</span>
+<span class="sd">        client_key: path to admin client Key file, by default provisioned as client.key</span>
+<span class="sd">        server_cn: server cn</span>
+<span class="sd">        require_login: whether or not to require login</span>
+<span class="sd">        credential_type: what type of credential to use</span>
+<span class="sd">        cmd_modules: command modules to load and register</span>
+<span class="sd">        debug: Whether or not to print debug messages. False by default.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">host</span><span class="p">,</span>
+        <span class="n">port</span><span class="p">,</span>
+        <span class="n">prompt</span><span class="o">=</span><span class="s2">&quot;&gt; &quot;</span><span class="p">,</span>
+        <span class="n">ca_cert</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">client_cert</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">client_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">server_cn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">require_login</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">credential_type</span><span class="o">=</span><span class="s2">&quot;password&quot;</span><span class="p">,</span>
+        <span class="n">cmd_modules</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">cmd</span><span class="o">.</span><span class="n">Cmd</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">intro</span> <span class="o">=</span> <span class="s2">&quot;Type help or ? to list commands.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prompt</span> <span class="o">=</span> <span class="n">prompt</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">host</span> <span class="o">=</span> <span class="n">host</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">port</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ca_cert</span> <span class="o">=</span> <span class="n">ca_cert</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_cert</span> <span class="o">=</span> <span class="n">client_cert</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_key</span> <span class="o">=</span> <span class="n">client_key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server_cn</span> <span class="o">=</span> <span class="n">server_cn</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">require_login</span> <span class="o">=</span> <span class="n">require_login</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">credential_type</span> <span class="o">=</span> <span class="n">credential_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">user_name</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pwd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">token</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login_result</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server_cmd_reg</span> <span class="o">=</span> <span class="n">CommandRegister</span><span class="p">(</span><span class="n">app_ctx</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span> <span class="o">=</span> <span class="n">CommandRegister</span><span class="p">(</span><span class="n">app_ctx</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server_cmd_received</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">debug</span> <span class="o">=</span> <span class="n">debug</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shutdown_received</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shutdown_msg</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reply_processor</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">all_cmds</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">assert</span> <span class="n">credential_type</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;password&quot;</span><span class="p">,</span> <span class="s2">&quot;cert&quot;</span><span class="p">],</span> <span class="s2">&quot;invalid credential_type </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">credential_type</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="o">.</span><span class="n">register_module</span><span class="p">(</span><span class="n">_BuiltInCmdModule</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">cmd_modules</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cmd_modules</span><span class="p">,</span> <span class="nb">list</span><span class="p">),</span> <span class="s2">&quot;cmd_modules must be a list&quot;</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">cmd_modules</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">CommandModule</span><span class="p">),</span> <span class="s2">&quot;cmd_modules must be a list of CommandModule&quot;</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="o">.</span><span class="n">register_module</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">include_invisible</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="o">.</span><span class="n">finalize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">register_command</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_set_output_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file</span><span class="p">,</span> <span class="n">no_stdout</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_close_output_file</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span> <span class="o">=</span> <span class="n">file</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span> <span class="o">=</span> <span class="n">no_stdout</span>
+
+    <span class="k">def</span> <span class="nf">_close_output_file</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="AdminClient.register_command"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.register_command">[docs]</a>    <span class="k">def</span> <span class="nf">register_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd_entry</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">all_cmds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd_entry</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.do_bye"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.do_bye">[docs]</a>    <span class="k">def</span> <span class="nf">do_bye</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+        <span class="s2">&quot;exit from the client&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">require_login</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">server_execute</span><span class="p">(</span><span class="s2">&quot;_logout&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="AdminClient.do_lpwd"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.do_lpwd">[docs]</a>    <span class="k">def</span> <span class="nf">do_lpwd</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+        <span class="s2">&quot;print local current work dir&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">())</span></div>
+
+<div class="viewcode-block" id="AdminClient.emptyline"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.emptyline">[docs]</a>    <span class="k">def</span> <span class="nf">emptyline</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span></div>
+
+    <span class="k">def</span> <span class="nf">_show_one_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd_name</span><span class="p">,</span> <span class="n">reg</span><span class="p">):</span>
+        <span class="n">entries</span> <span class="o">=</span> <span class="n">reg</span><span class="o">.</span><span class="n">get_command_entries</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Undefined command </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">))</span>
+            <span class="k">return</span>
+
+        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">e</span><span class="o">.</span><span class="n">visible</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">scope</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Command: </span><span class="si">{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">scope</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">cmd_name</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Command: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">))</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Description: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">desc</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Usage: </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">usage</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_show_commands</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reg</span><span class="p">:</span> <span class="n">CommandRegister</span><span class="p">):</span>
+        <span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">([</span><span class="s2">&quot;Scope&quot;</span><span class="p">,</span> <span class="s2">&quot;Command&quot;</span><span class="p">,</span> <span class="s2">&quot;Description&quot;</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">scope_name</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">reg</span><span class="o">.</span><span class="n">scopes</span><span class="p">):</span>
+            <span class="n">scope</span> <span class="o">=</span> <span class="n">reg</span><span class="o">.</span><span class="n">scopes</span><span class="p">[</span><span class="n">scope_name</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">cmd_name</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">scope</span><span class="o">.</span><span class="n">entries</span><span class="p">):</span>
+                <span class="n">e</span> <span class="o">=</span> <span class="n">scope</span><span class="o">.</span><span class="n">entries</span><span class="p">[</span><span class="n">cmd_name</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">visible</span><span class="p">:</span>
+                    <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">([</span><span class="n">scope_name</span><span class="p">,</span> <span class="n">cmd_name</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">desc</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+
+<div class="viewcode-block" id="AdminClient.do_help"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.do_help">[docs]</a>    <span class="k">def</span> <span class="nf">do_help</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Client Commands&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_show_commands</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Server Commands&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_show_commands</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">server_cmd_reg</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">server_cmds</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">local_cmds</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">:</span>
+                <span class="n">entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="o">.</span><span class="n">get_command_entries</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">local_cmds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+
+                <span class="n">entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server_cmd_reg</span><span class="o">.</span><span class="n">get_command_entries</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">server_cmds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">local_cmds</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Client Commands&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;---------------&quot;</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">cmd_name</span> <span class="ow">in</span> <span class="n">local_cmds</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_show_one_command</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">server_cmds</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Server Commands&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;---------------&quot;</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">cmd_name</span> <span class="ow">in</span> <span class="n">server_cmds</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_show_one_command</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">server_cmd_reg</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.complete"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.complete">[docs]</a>    <span class="k">def</span> <span class="nf">complete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_cmds</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">text</span><span class="p">)]</span> <span class="o">+</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">state</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="AdminClient.default"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.default">[docs]</a>    <span class="k">def</span> <span class="nf">default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_close_output_file</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_do_default</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_stdout</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="n">traceback</span><span class="o">.</span><span class="n">print_exc</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_stdout</span><span class="p">(</span><span class="s2">&quot;exception occurred: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ex</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_close_output_file</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">_do_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line</span><span class="p">):</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">split_to_args</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="n">cmd_name</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># check for file output</span>
+        <span class="n">out_file_name</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">no_stdout</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">out_arg_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)):</span>
+            <span class="n">arg</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;&gt;&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">out_file_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_error</span><span class="p">(</span><span class="s2">&quot;only one output file is supported&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+
+            <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;&gt;&gt;&quot;</span><span class="p">):</span>
+                <span class="c1"># only output to file</span>
+                <span class="n">out_file_name</span> <span class="o">=</span> <span class="n">arg</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+                <span class="n">no_stdout</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">out_arg_idx</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="k">elif</span> <span class="n">arg</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;&gt;&quot;</span><span class="p">):</span>
+                <span class="c1"># only output to file</span>
+                <span class="n">out_file_name</span> <span class="o">=</span> <span class="n">arg</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+                <span class="n">no_stdout</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="n">out_arg_idx</span> <span class="o">=</span> <span class="n">i</span>
+
+        <span class="k">if</span> <span class="n">out_file_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">out_file_name</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_error</span><span class="p">(</span><span class="s2">&quot;output file name must not be empty&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+            <span class="n">args</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">out_arg_idx</span><span class="p">)</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">join_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">out_file</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">out_file_name</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_error</span><span class="p">(</span><span class="s2">&quot;cannot open file </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">out_file_name</span><span class="p">,</span> <span class="n">ex</span><span class="p">))</span>
+                <span class="k">return</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_output_file</span><span class="p">(</span><span class="n">out_file</span><span class="p">,</span> <span class="n">no_stdout</span><span class="p">)</span>
+
+        <span class="c1"># check client command first</span>
+        <span class="n">entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="o">.</span><span class="n">get_command_entries</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Ambiguous client command </span><span class="si">{}</span><span class="s2"> - qualify with scope&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">))</span>
+            <span class="k">return</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">ent</span> <span class="o">=</span> <span class="n">entries</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">ent</span><span class="o">.</span><span class="n">handler</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_cmd_reg</span><span class="o">.</span><span class="n">app_ctx</span><span class="p">)</span>
+
+        <span class="n">entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server_cmd_reg</span><span class="o">.</span><span class="n">get_command_entries</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Undefined server command </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">))</span>
+            <span class="k">return</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Ambiguous server command </span><span class="si">{}</span><span class="s2"> - qualify with scope&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">))</span>
+            <span class="k">return</span>
+
+        <span class="n">ent</span> <span class="o">=</span> <span class="n">entries</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">confirm_method</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">confirm</span>
+        <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">confirm</span> <span class="o">==</span> <span class="s2">&quot;auth&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">credential_type</span> <span class="o">==</span> <span class="s2">&quot;password&quot;</span><span class="p">:</span>
+                <span class="n">confirm_method</span> <span class="o">=</span> <span class="s2">&quot;pwd&quot;</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_name</span><span class="p">:</span>
+                <span class="n">confirm_method</span> <span class="o">=</span> <span class="s2">&quot;username&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">confirm_method</span> <span class="o">=</span> <span class="s2">&quot;yesno&quot;</span>
+
+        <span class="k">if</span> <span class="n">confirm_method</span> <span class="o">==</span> <span class="s2">&quot;yesno&quot;</span><span class="p">:</span>
+            <span class="n">answer</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="s2">&quot;Are you sure (Y/N): &quot;</span><span class="p">)</span>
+            <span class="n">answer</span> <span class="o">=</span> <span class="n">answer</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">answer</span> <span class="o">!=</span> <span class="s2">&quot;y&quot;</span> <span class="ow">and</span> <span class="n">answer</span> <span class="o">!=</span> <span class="s2">&quot;yes&quot;</span><span class="p">:</span>
+                <span class="k">return</span>
+        <span class="k">elif</span> <span class="n">confirm_method</span> <span class="o">==</span> <span class="s2">&quot;username&quot;</span><span class="p">:</span>
+            <span class="n">answer</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="s2">&quot;Confirm with User Name: &quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">answer</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_name</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;user name mismatch&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+        <span class="k">elif</span> <span class="n">confirm_method</span> <span class="o">==</span> <span class="s2">&quot;pwd&quot;</span><span class="p">:</span>
+            <span class="n">pwd</span> <span class="o">=</span> <span class="n">getpass</span><span class="o">.</span><span class="n">getpass</span><span class="p">(</span><span class="s2">&quot;Enter password to confirm: &quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">verify_password</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pwd</span><span class="p">,</span> <span class="n">pwd</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="s2">&quot;Not authenticated&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">server_execute</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shutdown_received</span><span class="p">:</span>
+            <span class="c1"># exit the client</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_string</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shutdown_msg</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">def</span> <span class="nf">_send_to_sock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sock</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">process_json_func</span><span class="p">):</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">Connection</span><span class="p">(</span><span class="n">sock</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_command</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_token</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">)</span>
+
+        <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">ok</span> <span class="o">=</span> <span class="n">receive_and_process</span><span class="p">(</span><span class="n">sock</span><span class="p">,</span> <span class="n">process_json_func</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ok</span><span class="p">:</span>
+            <span class="n">process_json_func</span><span class="p">(</span>
+                <span class="n">make_error</span><span class="p">(</span><span class="s2">&quot;Failed to communicate with Admin Server </span><span class="si">{}</span><span class="s2"> on </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_process_server_reply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resp</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Server Reply: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">resp</span><span class="p">))</span>
+
+        <span class="n">reply_processor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reply_processor</span>
+        <span class="k">if</span> <span class="n">reply_processor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">reply_processor</span> <span class="o">=</span> <span class="n">_RegularReplyProcessor</span><span class="p">()</span>
+
+        <span class="n">reply_processor</span><span class="o">.</span><span class="n">reply_start</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resp</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">resp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">resp</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+                <span class="n">it</span> <span class="o">=</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">it</span> <span class="o">==</span> <span class="s2">&quot;string&quot;</span><span class="p">:</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">process_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">it</span> <span class="o">==</span> <span class="s2">&quot;success&quot;</span><span class="p">:</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">process_success</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">it</span> <span class="o">==</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">process_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">it</span> <span class="o">==</span> <span class="s2">&quot;table&quot;</span><span class="p">:</span>
+                    <span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+                    <span class="n">table</span><span class="o">.</span><span class="n">set_rows</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s2">&quot;rows&quot;</span><span class="p">])</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">process_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">it</span> <span class="o">==</span> <span class="s2">&quot;dict&quot;</span><span class="p">:</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">process_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">it</span> <span class="o">==</span> <span class="s2">&quot;token&quot;</span><span class="p">:</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">process_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">it</span> <span class="o">==</span> <span class="s2">&quot;shutdown&quot;</span><span class="p">:</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">process_shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">reply_processor</span><span class="o">.</span><span class="n">protocol_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;Invalid item type: &quot;</span> <span class="o">+</span> <span class="n">it</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">reply_processor</span><span class="o">.</span><span class="n">protocol_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;Protocol Error&quot;</span><span class="p">)</span>
+
+        <span class="n">reply_processor</span><span class="o">.</span><span class="n">reply_done</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_try_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">reply_processor</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reply_processor</span> <span class="o">=</span> <span class="n">reply_processor</span>
+        <span class="n">process_json_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_server_reply</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ca_cert</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_cert</span><span class="p">:</span>
+                <span class="c1"># SSL communication</span>
+                <span class="n">ctx</span> <span class="o">=</span> <span class="n">ssl</span><span class="o">.</span><span class="n">create_default_context</span><span class="p">()</span>
+                <span class="n">ctx</span><span class="o">.</span><span class="n">verify_mode</span> <span class="o">=</span> <span class="n">ssl</span><span class="o">.</span><span class="n">CERT_REQUIRED</span>
+                <span class="n">ctx</span><span class="o">.</span><span class="n">check_hostname</span> <span class="o">=</span> <span class="kc">False</span>
+
+                <span class="n">ctx</span><span class="o">.</span><span class="n">load_verify_locations</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ca_cert</span><span class="p">)</span>
+                <span class="n">ctx</span><span class="o">.</span><span class="n">load_cert_chain</span><span class="p">(</span><span class="n">certfile</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">client_cert</span><span class="p">,</span> <span class="n">keyfile</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">client_key</span><span class="p">)</span>
+
+                <span class="k">with</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">SOCK_STREAM</span><span class="p">)</span> <span class="k">as</span> <span class="n">sock</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="n">ctx</span><span class="o">.</span><span class="n">wrap_socket</span><span class="p">(</span><span class="n">sock</span><span class="p">)</span> <span class="k">as</span> <span class="n">ssock</span><span class="p">:</span>
+                        <span class="n">ssock</span><span class="o">.</span><span class="n">connect</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+                        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">server_cn</span><span class="p">:</span>
+                            <span class="c1"># validate server CN</span>
+                            <span class="n">cn</span> <span class="o">=</span> <span class="n">get_certificate_common_name</span><span class="p">(</span><span class="n">ssock</span><span class="o">.</span><span class="n">getpeercert</span><span class="p">())</span>
+                            <span class="k">if</span> <span class="n">cn</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server_cn</span><span class="p">:</span>
+                                <span class="n">process_json_func</span><span class="p">(</span>
+                                    <span class="n">make_error</span><span class="p">(</span><span class="s2">&quot;wrong server: expecting </span><span class="si">{}</span><span class="s2"> but connected </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">server_cn</span><span class="p">,</span> <span class="n">cn</span><span class="p">))</span>
+                                <span class="p">)</span>
+                                <span class="k">return</span>
+
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_send_to_sock</span><span class="p">(</span><span class="n">ssock</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">process_json_func</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Non-SSL</span>
+                <span class="k">with</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">SOCK_STREAM</span><span class="p">)</span> <span class="k">as</span> <span class="n">sock</span><span class="p">:</span>
+                    <span class="n">sock</span><span class="o">.</span><span class="n">connect</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_send_to_sock</span><span class="p">(</span><span class="n">sock</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">process_json_func</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="n">traceback</span><span class="o">.</span><span class="n">print_exc</span><span class="p">()</span>
+
+            <span class="n">process_json_func</span><span class="p">(</span>
+                <span class="n">make_error</span><span class="p">(</span><span class="s2">&quot;Failed to communicate with Admin Server </span><span class="si">{}</span><span class="s2"> on </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">,</span> <span class="n">ex</span><span class="p">))</span>
+            <span class="p">)</span>
+
+<div class="viewcode-block" id="AdminClient.server_execute"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.server_execute">[docs]</a>    <span class="k">def</span> <span class="nf">server_execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">reply_processor</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_try_command</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">reply_processor</span><span class="p">)</span>
+        <span class="n">secs</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span>
+        <span class="n">usecs</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">secs</span> <span class="o">*</span> <span class="mi">1000000</span><span class="p">)</span>
+        <span class="n">done</span> <span class="o">=</span> <span class="s2">&quot;Done [</span><span class="si">{}</span><span class="s2"> usecs] </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">usecs</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write_stdout</span><span class="p">(</span><span class="n">done</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.cmdloop"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.cmdloop">[docs]</a>    <span class="k">def</span> <span class="nf">cmdloop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">intro</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Repeatedly issue a prompt, accept input, parse an initial prefix</span>
+<span class="sd">        off the received input, and dispatch to action methods, passing them</span>
+<span class="sd">        the remainder of the line as argument.</span>
+
+<span class="sd">        Overriding what is in cmd.Cmd to handle exiting client on Ctrl+D (EOF).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">preloop</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_rawinput</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">completekey</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">import</span> <span class="nn">readline</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">old_completer</span> <span class="o">=</span> <span class="n">readline</span><span class="o">.</span><span class="n">get_completer</span><span class="p">()</span>
+                <span class="n">readline</span><span class="o">.</span><span class="n">set_completer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">complete</span><span class="p">)</span>
+                <span class="n">readline</span><span class="o">.</span><span class="n">parse_and_bind</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">completekey</span> <span class="o">+</span> <span class="s2">&quot;: complete&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">intro</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">intro</span> <span class="o">=</span> <span class="n">intro</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">intro</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">intro</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">stop</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">while</span> <span class="ow">not</span> <span class="n">stop</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmdqueue</span><span class="p">:</span>
+                    <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmdqueue</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_rawinput</span><span class="p">:</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">line</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prompt</span><span class="p">)</span>
+                        <span class="k">except</span> <span class="ne">EOFError</span><span class="p">:</span>
+                            <span class="n">line</span> <span class="o">=</span> <span class="s2">&quot;bye&quot;</span>
+                        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="n">line</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prompt</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                        <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+                            <span class="n">line</span> <span class="o">=</span> <span class="s2">&quot;EOF&quot;</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\r\n</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">precmd</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                <span class="n">stop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">onecmd</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                <span class="n">stop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postcmd</span><span class="p">(</span><span class="n">stop</span><span class="p">,</span> <span class="n">line</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">postloop</span><span class="p">()</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_rawinput</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">completekey</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="kn">import</span> <span class="nn">readline</span>
+
+                    <span class="n">readline</span><span class="o">.</span><span class="n">set_completer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">old_completer</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+                    <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="AdminClient.run"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">require_login</span><span class="p">:</span>
+            <span class="n">user_name</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="s2">&quot;User Name: &quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">credential_type</span> <span class="o">==</span> <span class="s2">&quot;password&quot;</span><span class="p">:</span>
+                <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                    <span class="n">pwd</span> <span class="o">=</span> <span class="n">getpass</span><span class="o">.</span><span class="n">getpass</span><span class="p">(</span><span class="s2">&quot;Password: &quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_try_command</span><span class="p">(</span><span class="s2">&quot;_login </span><span class="si">{}</span><span class="s2"> </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">,</span> <span class="n">pwd</span><span class="p">),</span> <span class="n">_LoginReplyProcessor</span><span class="p">())</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">login_result</span> <span class="o">==</span> <span class="s2">&quot;OK&quot;</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">user_name</span> <span class="o">=</span> <span class="n">user_name</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">pwd</span> <span class="o">=</span> <span class="n">hash_password</span><span class="p">(</span><span class="n">pwd</span><span class="p">)</span>
+                        <span class="k">break</span>
+                    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">login_result</span> <span class="o">==</span> <span class="s2">&quot;REJECT&quot;</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Incorrect password - please try again&quot;</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Communication Error - please try later&quot;</span><span class="p">)</span>
+                        <span class="k">return</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">credential_type</span> <span class="o">==</span> <span class="s2">&quot;cert&quot;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_try_command</span><span class="p">(</span><span class="s2">&quot;_cert_login </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user_name</span><span class="p">),</span> <span class="n">_LoginReplyProcessor</span><span class="p">())</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">login_result</span> <span class="o">==</span> <span class="s2">&quot;OK&quot;</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">user_name</span> <span class="o">=</span> <span class="n">user_name</span>
+                <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">login_result</span> <span class="o">==</span> <span class="s2">&quot;REJECT&quot;</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Incorrect user name or certificate&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Communication Error - please try later&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+
+        <span class="c1"># get command list from server</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_try_command</span><span class="p">(</span><span class="s2">&quot;_commands&quot;</span><span class="p">,</span> <span class="n">_CmdListReplyProcessor</span><span class="p">())</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">server_cmd_received</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Failed to handshake with server - please try later&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cmdloop</span><span class="p">(</span><span class="n">intro</span><span class="o">=</span><span class="s1">&#39;Type ? to list commands; type &quot;? cmdName&quot; to show usage of a command.&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.write_stdout"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.write_stdout">[docs]</a>    <span class="k">def</span> <span class="nf">write_stdout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.write_string"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.write_string">[docs]</a>    <span class="k">def</span> <span class="nf">write_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">content</span> <span class="o">=</span> <span class="n">data</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.write_table"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.write_table">[docs]</a>    <span class="k">def</span> <span class="nf">write_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">:</span> <span class="n">Table</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span><span class="p">:</span>
+            <span class="n">table</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="p">:</span>
+            <span class="n">table</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.write_dict"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.write_dict">[docs]</a>    <span class="k">def</span> <span class="nf">write_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">content</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.write_error"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.write_error">[docs]</a>    <span class="k">def</span> <span class="nf">write_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">err</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">content</span> <span class="o">=</span> <span class="s2">&quot;Error: &quot;</span> <span class="o">+</span> <span class="n">err</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AdminClient.flush"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.lib.AdminClient.flush">[docs]</a>    <span class="k">def</span> <span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_stdout</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out_file</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

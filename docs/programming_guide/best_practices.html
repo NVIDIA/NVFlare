@@ -1,0 +1,666 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>NVIDIA FLARE Programming Best Practices &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="FAQ" href="../faq.html" />
+    <link rel="prev" title="Data Exchange Object (DXO)" href="data_exchange_object.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_component.html">FLComponent</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html">Controllers and Controller API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#scatter-and-gather-workflow">Scatter and Gather Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#cross-site-model-evaluation-federated-evaluation">Cross Site Model Evaluation / Federated Evaluation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="controllers.html#cyclic-workflow">Cyclic Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="filters.html">Filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="executor.html">Executors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="shareable.html">Shareable</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">NVIDIA FLARE Programming Best Practices</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#define-your-logic-in-a-subclass-of-flcomponent">Define your logic in a subclass of FLComponent</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#simple-use-of-flcontext">Simple use of FLContext</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#agreement-on-data-format-and-content">Agreement on Data Format and Content</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#use-filters-to-accommodate-data-differences">Use Filters to accommodate data differences</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#be-aware-of-the-running-environment">Be aware of the running environment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#manage-your-component-s-life-cycle-gracefully">Manage your component’s life cycle gracefully</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#respect-the-abort-signal">Respect the abort signal</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#handle-eventtype-abort-task-event">Handle EventType.ABORT_TASK event</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#avoid-recursive-events-if-possible">Avoid recursive events if possible</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#if-you-develop-workflow-controllers">If you develop workflow controllers</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#use-a-new-task-object-for-each-task">Use a new Task object for each task</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#set-reasonable-timeouts-for-your-tasks">Set reasonable timeouts for your tasks</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#callbacks-should-be-short-lived">Callbacks should be short-lived</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#task-props-usage">Task props usage</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#task-completion-status">Task completion_status</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#easy-config-of-your-components">Easy Config of your components</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nested-components">Nested Components?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#manage-your-resources-properly">Manage your resources properly</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#promote-decoupled-component-interactions">Promote Decoupled Component Interactions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#event-handling">Event Handling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#naming-of-event-types-flcontext-props-shareable-keys-and-headers">Naming of Event Types, FLContext props, Shareable keys, and Headers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#use-shareable-properly">Use Shareable Properly</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#do-not-share-flcontext-objects-across-different-threads">Do not share FLContext objects across different threads</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#handle-exceptions">Handle exceptions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#panic-or-not">Panic or Not</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#logging">Logging</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#be-sensitive-to-data-privacy">Be Sensitive to Data Privacy</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a> &raquo;</li>
+        
+      <li>NVIDIA FLARE Programming Best Practices</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/programming_guide/best_practices.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvidia-flare-programming-best-practices">
+<h1>NVIDIA FLARE Programming Best Practices<a class="headerlink" href="#nvidia-flare-programming-best-practices" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="define-your-logic-in-a-subclass-of-flcomponent">
+<h2>Define your logic in a subclass of FLComponent<a class="headerlink" href="#define-your-logic-in-a-subclass-of-flcomponent" title="Permalink to this headline">¶</a></h2>
+<p>NVIDIA FLARE has a componentized architecture - business logic is implemented by components that interact with each
+other to get the job done. Most of your code, if not all, should be implemented as subclasses of the
+<a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLComponent</span></code></a> class.</p>
+<p>There are many benefits of being a FLComponent:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>All such components are automatically event handlers</p></li>
+<li><p>Convenience methods for logging, and firing events</p></li>
+<li><p>Error log streaming to server for centralized error management (if enabled)</p></li>
+<li><p>Well-defined component lifecycle</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="simple-use-of-flcontext">
+<h2>Simple use of FLContext<a class="headerlink" href="#simple-use-of-flcontext" title="Permalink to this headline">¶</a></h2>
+<p><a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLContext</span></code></a> caters relevant data to your component’s processing methods. All
+methods of FLComponent have a fl_ctx input arg.</p>
+<p>The fl_ctx object typically contains the following information:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>The overall system settings (identity name, workspace, run-time args, run abort signal, etc.): All FLContext
+objects have these, and there are convenience methods for them.</p></li>
+<li><p>Event data: When an event is fired, the event poster usually places some event specific data into the FLContext
+before firing the event. Event handlers can access such data in their handle_event() methods.</p></li>
+</ul>
+</div></blockquote>
+<p>You could also use the fl_ctx to pass around information between your own functions, but make sure all these function
+calls happen within the same processing stack of your own component.</p>
+<p>Do not assume all components share the same fl_ctx and use fl_ctx to pass information between different components. If
+you want to reliably pass a piece of information to others, use event instead: you fire an event type to announce the
+information, and others receive the information by handling your event.</p>
+</div>
+<div class="section" id="agreement-on-data-format-and-content">
+<h2>Agreement on Data Format and Content<a class="headerlink" href="#agreement-on-data-format-and-content" title="Permalink to this headline">¶</a></h2>
+<p>FL is data-based collaboration among different parties (components running on server and clients). Having
+an accurate understanding of the shared data is a basic requirement. For example, the model weights generated by the
+trainer on the client must be consumable by the aggregator running on the server.</p>
+<p>NVIDIA FLARE encourages data content to be self-sufficient in that it provides not only the content (e.g. values of
+model weights), but also complete contextual/meta information about the content (e.g. whether value is model weights or
+weight diffs, whether the value has been processed by any algorithm, and any processed properties).</p>
+<p>To enable easy adoption of this strategy, NVIDIA FLARE provides a simple DXO API (Data eXchange Object) that you can use
+to describe the data you want to communicate between server and clients.</p>
+</div>
+<div class="section" id="use-filters-to-accommodate-data-differences">
+<h2>Use Filters to accommodate data differences<a class="headerlink" href="#use-filters-to-accommodate-data-differences" title="Permalink to this headline">¶</a></h2>
+<p>When two parties get into disagreements on the data format, you may modify one of them to accommodate the other. This
+is doable but may not be the best solution, since it makes code hard to reuse.</p>
+<p>A better solution is to use filters. As long as both parties agree on the data content (not format), you can write a
+filter to convert the data from one format to another, so both parties can stay intact.</p>
+<p>Filters can do a lot more than just converting data formats. You can apply any type of massaging to the data for the
+purpose of security. In fact, NVIDIA FLARE provided privacy protection techniques are all implemented as filters.</p>
+</div>
+<div class="section" id="be-aware-of-the-running-environment">
+<h2>Be aware of the running environment<a class="headerlink" href="#be-aware-of-the-running-environment" title="Permalink to this headline">¶</a></h2>
+<p>NVIDIA FLARE is a messaging system running in a multithreaded environment. Care must be taken when programming
+with NVIDIA FLARE to ensure smooth operation of the system.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Methods of a component may be running in different threads. Controller callbacks are running in threads that
+receive messages on a connection with the client.</p></li>
+<li><p>The control_flow() method of the controller runs in a dedicated thread throughout the RUN.</p></li>
+<li><p>In your own component, you can create more separate threads for your own design logic.</p></li>
+<li><p>Events could be fired from any thread, and the <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.handle_event" title="nvflare.apis.fl_component.FLComponent.handle_event"><code class="xref py py-meth docutils literal notranslate"><span class="pre">handle_event()</span></code></a> method runs within the same
+thread from which the event is fired.</p></li>
+<li><p>All components are running within a RUN, and components are created and released at the beginning and end of the RUN.</p></li>
+</ul>
+</div></blockquote>
+<p>Your component may have many methods. Keep in mind that these methods may be running in different threads at the same
+time!</p>
+</div>
+<div class="section" id="manage-your-component-s-life-cycle-gracefully">
+<h2>Manage your component’s life cycle gracefully<a class="headerlink" href="#manage-your-component-s-life-cycle-gracefully" title="Permalink to this headline">¶</a></h2>
+<p>During the life cycle of your component, things may happen that could interrupt the normal processing of the component.
+For example, the admin user or the workflow controller may ask to terminate the current RUN; or to terminate the
+execution of the current task on the client.</p>
+<p>Since many components and threads could be involved in the RUN, it is important to ensure graceful exits of the
+components and threads, for the smooth operation of the FL system.</p>
+<p>To manage these gracefully, follow the following rule-of-thumbs.</p>
+</div>
+<div class="section" id="respect-the-abort-signal">
+<h2>Respect the abort signal<a class="headerlink" href="#respect-the-abort-signal" title="Permalink to this headline">¶</a></h2>
+<p>An abort-signal is a simple Python object that can be triggered to indicate that either the RUN or Task should be ended.
+There are two kinds of abort signals:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><strong>RUN abort signal</strong>. When triggered, it indicates that the current RUN is to be aborted. If you have long-running
+logic, you should check this signal frequently and exit when it is triggered.</p></li>
+<li><p><strong>Task Execution abort signal</strong>. This is the abort_signal passed to the execute() method of an executor (on the
+client side). If you write executors, make sure to check this signal frequently in the execute() method and return
+from the method when the signal is triggered.</p></li>
+</ul>
+</div></blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You can always get the RUN abort_signal from an FL context: <code class="docutils literal notranslate"><span class="pre">fl_ctx.get_abort_signal()</span></code>. You can also keep it with
+your component object when starting your component (i.e. when handling the EventType.START_RUN event).</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You cannot get the Task Abort Signal from an FL Context!</p>
+</div>
+<p>The triggering of abort signals is the responsibility of the framework. NEVER try to trigger them in your component!</p>
+<p>If your component runs into a condition that definitely requires drastic actions, call self.system_panic() to abort the
+whole RUN, or self.task_panic() to end the task execution (in the Executor on client).</p>
+</div>
+<div class="section" id="handle-eventtype-abort-task-event">
+<h2>Handle EventType.ABORT_TASK event<a class="headerlink" href="#handle-eventtype-abort-task-event" title="Permalink to this headline">¶</a></h2>
+<p>What if you use a 3rd-party solution to run a long-running execution in your executor, and the 3rd-party solution does
+not take the abort_signal?</p>
+<p>If the 3rd-party solution does not provide any way to interrupt/end its execution prematurely, then you are out of
+luck - the task cannot be aborted, and the system will just have to wait until the end of the execution. Though this
+will not cause any logical errors, it could cause the overall slowdown of the FL system, because the client won’t be
+able to fetch the next task until the current task is done.</p>
+<p>If the 3rd-party solution provides a method you can call from a different thread to end its execution, then you are
+lucky. In addition to triggering the task abort signal, NVIDIA FLARE also fires the special event EventType.ABORT_TASK!
+You just need to handle this event in your executor’s handle_event() method and call the 3rd-party provided method to
+stop the execution.</p>
+</div>
+<div class="section" id="avoid-recursive-events-if-possible">
+<h2>Avoid recursive events if possible<a class="headerlink" href="#avoid-recursive-events-if-possible" title="Permalink to this headline">¶</a></h2>
+<p>You can fire another event in your event handling logic. But try to avoid this if possible so as to avoid potential
+dead-loops. If you have to do it, be very careful that it won’t cause cyclic event firing.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The system has a built-in protection against cyclic event firing - if the firing goes beyond certain predefined
+depth, the firing will be stopped.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Firing an event from an event handler could be useful in some cases. For example, NVIDIA FLARE’s event system does
+not enforce any order when invoking handle_event() methods of event handlers, hence you cannot assume some handlers
+are invoked before some other handlers. If you must ensure handler A is invoked before B for an event type E, you
+can do it yourself: in A’s handle_event() method, you fire a new event E2 when handling E, and B only handles E2.</p>
+</div>
+</div>
+<div class="section" id="if-you-develop-workflow-controllers">
+<h2>If you develop workflow controllers<a class="headerlink" href="#if-you-develop-workflow-controllers" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="use-a-new-task-object-for-each-task">
+<h3>Use a new Task object for each task<a class="headerlink" href="#use-a-new-task-object-for-each-task" title="Permalink to this headline">¶</a></h3>
+<p>Do not reuse <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><code class="xref py py-class docutils literal notranslate"><span class="pre">Task</span></code></a> objects – always create a new Task object when scheduling
+tasks instead. Try to avoid using the same “task name” for different functions.</p>
+<p>For maximum flexibility, make your task names configurable so you only need to define them in the JSON config file at
+the time of app creation.</p>
+</div>
+<div class="section" id="set-reasonable-timeouts-for-your-tasks">
+<h3>Set reasonable timeouts for your tasks<a class="headerlink" href="#set-reasonable-timeouts-for-your-tasks" title="Permalink to this headline">¶</a></h3>
+<p>In the <code class="docutils literal notranslate"><span class="pre">control_flow()</span></code> method of your controller, you will create tasks. Don’t forget to set a reasonable timeout value
+(number of secs for the task to complete). The default value is 0, which means never timeout. If you don’t specify a
+non-zero timeout, under certain circumstances, your task may just keep on waiting until clients start the RUN.</p>
+</div>
+<div class="section" id="callbacks-should-be-short-lived">
+<h3>Callbacks should be short-lived<a class="headerlink" href="#callbacks-should-be-short-lived" title="Permalink to this headline">¶</a></h3>
+<p>Since callbacks are running within a connection thread, they must return very quickly to release the underlying
+connection; otherwise the whole system could become frozen when all connections are used.</p>
+</div>
+<div class="section" id="task-props-usage">
+<h3>Task props usage<a class="headerlink" href="#task-props-usage" title="Permalink to this headline">¶</a></h3>
+<p>Once a task is created, do not modify the task.props dict directly (e.g. task.props = {“key”: “value”}) since this dict
+is carefully managed by the framework.</p>
+<p>Instead, always use <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.controller_spec.Task.set_prop" title="nvflare.apis.controller_spec.Task.set_prop"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_prop()</span></code></a>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">task</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="task-completion-status">
+<h3>Task completion_status<a class="headerlink" href="#task-completion-status" title="Permalink to this headline">¶</a></h3>
+<p>If the task.completion_status is not None, this task will be treated as finished or errored-out. It will not be sent
+to any clients.</p>
+</div>
+</div>
+<div class="section" id="easy-config-of-your-components">
+<h2>Easy Config of your components<a class="headerlink" href="#easy-config-of-your-components" title="Permalink to this headline">¶</a></h2>
+<p>To make it easy to configure your components in JSON, use only primitive data types for init args: number, str, list,
+dict. Never use Python objects.</p>
+</div>
+<div class="section" id="nested-components">
+<h2>Nested Components?<a class="headerlink" href="#nested-components" title="Permalink to this headline">¶</a></h2>
+<p>Sometimes your component is composed of other parts (Python objects). How do you get your component created with all the parts instantiated?</p>
+<p>Use component ID!</p>
+<blockquote>
+<div><ul>
+<li><p>Parts should be configured in the “components” section of the config. You need to specify a unique ID for each part.</p></li>
+<li><p>In the configuration of the parent component, specify the ID of the part as an init arg in the JSON configuration file.</p></li>
+<li><p>When handling the EventType.START_RUN event, get the part object from the engine and keep it in the parent component:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">my_part</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">my_part_id</span><span class="p">)</span>
+</pre></div>
+</div>
+</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="manage-your-resources-properly">
+<h2>Manage your resources properly<a class="headerlink" href="#manage-your-resources-properly" title="Permalink to this headline">¶</a></h2>
+<p>The life span of your components is that of a RUN.</p>
+<p>Your components may use resources such as memory, threads, and even processes. Make sure to manage them properly,
+following this pattern:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>In __init__(), create your resources but do not start them.</p></li>
+<li><p>In handling EventType.START_RUN, start the resources (e.g. open files, start threads, etc.).</p></li>
+<li><p>In handling EventType.END_RUN, terminate the resources (e.g. close files, join threads and/or processes). Make
+sure to test the resources before terminating them (e.g. if self.thread.is_active()).</p></li>
+</ul>
+</div></blockquote>
+<p>Do not terminate your resources before EventType.END_RUN.</p>
+</div>
+<div class="section" id="promote-decoupled-component-interactions">
+<h2>Promote Decoupled Component Interactions<a class="headerlink" href="#promote-decoupled-component-interactions" title="Permalink to this headline">¶</a></h2>
+<p>Throughout the FL execution, many pieces of data are generated. What if you want to do something about that data? You
+may have the urge to modify the code that generated the data and insert your logic there to manipulate the data. Don’t!
+Use event handling instead.</p>
+<p>NVIDIA FLARE’s event system is like a pub-sub mechanism. The publisher fires an event, and subscribers handle the event.
+The mechanism even works across network boundaries - a component on the server can post an event and components on
+the server and components on clients can handle the event; and vice versa.</p>
+<p>Fire an event for the following cases:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Your component generates a piece of data that could be useful for other components. You should name the event type to be like “datatype_available” where datatype specifies the type of the data.</p></li>
+<li><p>Your component’s processing flow has come to a point that could be interesting to others. You should name event types like: “before_somepoint” and “after_somepoint”, where somepoint specifies the point.</p></li>
+</ul>
+</div></blockquote>
+<p>To fire an event, call <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.fire_event" title="nvflare.apis.fl_component.FLComponent.fire_event"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.fire_event()</span></code></a> or <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.fire_fed_event" title="nvflare.apis.fl_component.FLComponent.fire_fed_event"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.fire_fed_event()</span></code></a>.</p>
+<p>What events should you fire? Well, it’s up to your imagination whether the event could be useful to others.</p>
+</div>
+<div class="section" id="event-handling">
+<h2>Event Handling<a class="headerlink" href="#event-handling" title="Permalink to this headline">¶</a></h2>
+<p>If you are interested in the data or timing of an event type that is fired by another component, you can handle that
+event type in the <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.handle_event" title="nvflare.apis.fl_component.FLComponent.handle_event"><code class="xref py py-meth docutils literal notranslate"><span class="pre">handle_event()</span></code></a> method of your component.</p>
+<p>Event data is contained in the FLContext object that is passed to the <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.handle_event" title="nvflare.apis.fl_component.FLComponent.handle_event"><code class="xref py py-meth docutils literal notranslate"><span class="pre">handle_event()</span></code></a> method. Unless absolutely
+necessary, you should treat data in the FLContext as read-only.</p>
+</div>
+<div class="section" id="naming-of-event-types-flcontext-props-shareable-keys-and-headers">
+<h2>Naming of Event Types, FLContext props, Shareable keys, and Headers<a class="headerlink" href="#naming-of-event-types-flcontext-props-shareable-keys-and-headers" title="Permalink to this headline">¶</a></h2>
+<p>Name the names with only letters, digits and underscores. Do not prefix the key names with underscores - such names are
+for the internal use of NVIDIA FLARE framework.</p>
+<p>The name of the fed event type should be prefixed with “fed.”.</p>
+</div>
+<div class="section" id="use-shareable-properly">
+<h2>Use Shareable Properly<a class="headerlink" href="#use-shareable-properly" title="Permalink to this headline">¶</a></h2>
+<p>Shareable is just a dictionary. However observe these rules of thumb:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>The headers element (ReservedHeaderKey.HEADERS) is reserved. Never overwrite it!</p></li>
+<li><p>You can add additional props into the headers element, but never use reserved header names.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="do-not-share-flcontext-objects-across-different-threads">
+<h2>Do not share FLContext objects across different threads<a class="headerlink" href="#do-not-share-flcontext-objects-across-different-threads" title="Permalink to this headline">¶</a></h2>
+<p>To avoid potential race conditions that could compromise data integrity of FLContext objects, avoid sharing the same
+FLContext across in multiple threads. The framework guarantees to create a new FLContext object for each messaging
+thread. If your component creates its own thread, that thread can create a FLContext object with engine.new_context().</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>The Engine object can be shared across threads.</p>
+</div>
+</div>
+<div class="section" id="handle-exceptions">
+<h2>Handle exceptions<a class="headerlink" href="#handle-exceptions" title="Permalink to this headline">¶</a></h2>
+<p>Things can go wrong unexpectedly, even if there are no logical errors in your code. You should place your logic in the
+<code class="docutils literal notranslate"><span class="pre">try</span></code> block and handle exceptions gracefully. If not, the framework will catch the exception and may take actions that
+may not be what you wanted (e.g. stop the whole RUN).</p>
+</div>
+<div class="section" id="panic-or-not">
+<h2>Panic or Not<a class="headerlink" href="#panic-or-not" title="Permalink to this headline">¶</a></h2>
+<p>To create solid components that work well in real-world apps, you are encouraged to do “defensive programming” - trust
+nothing and test everything, and cover all kinds of edge conditions. In doing so, you may come to face some extreme
+situations: what to do when a combination of conditions makes the whole thing just unworkable? For example, none of the
+Clients sends you meaningful training results. Should you just extend the number of rounds and see whether the clients
+will get better?</p>
+<p>If you decide that the situation is truly unworkable, you can simply end the whole RUN by calling <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.system_panic" title="nvflare.apis.fl_component.FLComponent.system_panic"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.system_panic()</span></code></a>.
+Similarly, if you run into a bad situation while executing a task (on client), you can end the task by calling
+<a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.task_panic" title="nvflare.apis.fl_component.FLComponent.task_panic"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.task_panic()</span></code></a>.</p>
+<p>The panic methods are effective regardless of component types and which thread it is called from.</p>
+</div>
+<div class="section" id="logging">
+<h2>Logging<a class="headerlink" href="#logging" title="Permalink to this headline">¶</a></h2>
+<p>Instead of directly using self.logger to log messages, always use the methods <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.log_debug" title="nvflare.apis.fl_component.FLComponent.log_debug"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.log_debug</span></code></a>,
+<a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.log_info" title="nvflare.apis.fl_component.FLComponent.log_info"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.log_info</span></code></a>, <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.log_warning" title="nvflare.apis.fl_component.FLComponent.log_warning"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.log_warning</span></code></a>, <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.fl_component.FLComponent.log_error" title="nvflare.apis.fl_component.FLComponent.log_error"><code class="xref py py-meth docutils literal notranslate"><span class="pre">self.log_error</span></code></a> instead.
+These methods provide many benefits:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>All log messages are prefixed with some contextual information (e.g. run number, peer name, peer run number, etc.) that can help you understand the log messages more easily.</p></li>
+<li><p>Some log messages may be integrated with other system features. For example, error messages may be reported via admin commands, and/or streamed over to a centralized location.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="be-sensitive-to-data-privacy">
+<h2>Be Sensitive to Data Privacy<a class="headerlink" href="#be-sensitive-to-data-privacy" title="Permalink to this headline">¶</a></h2>
+<p>Data is exchanged between the Server and Clients in following situations:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Task execution</p></li>
+<li><p>Fed events</p></li>
+<li><p>Aux channel communication</p></li>
+<li><p>Centralized error reporting</p></li>
+</ul>
+</div></blockquote>
+<p>Be very careful about the data sent to peers! Make sure it never contains privacy sensitive information. This
+also applies to error messages, since they may be sent to a centralized location.</p>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="../faq.html" class="btn btn-neutral float-right" title="FAQ" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="data_exchange_object.html" class="btn btn-neutral float-left" title="Data Exchange Object (DXO)" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

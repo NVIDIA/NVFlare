@@ -1,258 +1,32 @@
-#################
-Programming Guide
-#################
+.. _programming_guide:
 
-Nvidia Federated Learning Application Runtime Environment (NVFlare) is designed with a componentized architecture which
-allows different users to bring in customized server and client ``Trainer``, ``Validator`` and ``Aggregator`` into NVFlare framework.
+#####################################################
+Programming Guide - Developing Apps with NVIDIA FLARE
+#####################################################
 
-You can also define customized ``Learnable`` and ``LearnablePersistor`` to load and persist the learnable in your own way.
-Moreover, NVFlare also allows for plugins like an encryptor to add in homomorphic encryption for model security in the FL study.
+This guide introduces key objects and components you should know to implement your own components.
 
-This guide introduces key objects and components you should know before implementing your own components.
+NVIDIA FLARE is designed with a componentized architecture which allows users to bring customized components into the
+framework.
+
+Different components can be built on top of the APIs(:mod:`nvflare.apis`) in NVIDIA FLARE core, and you can now
+implement your own custom workflows. The concepts of aggregator, learnable, persistors, and shareable_generator which
+were fixed in the workflow have been decoupled from the core of NVIDIA FLARE and moved to :mod:`nvflare.app_common`.
+This is also the package containing the reference implementation of the :ref:`scatter_and_gather_workflow`, and all of
+this can be used in your own workflow.
+
 If you want to use your components in an FL application, you will need to change the config in the application folder.
-Please refer to :ref:`user_guide/application:NVFlare Application` for more details.
-
-.. contents::
-    :local:
-
-*******************************************************************
-Key Objects
-*******************************************************************
-
-Learnable
-=========
-
-``Learnable`` is the result of an FL application.
-For example, in the deep learning scenario, it can be the model weights.
-In the AutoML case, it can be the network architecture.
-
-A ``LearnablePersistor`` defines how to load and save a ``Learnable``.
-
-Shareable
-=========
-
-``Shareable`` is an object containing data to be shared between the FL server and the FL clients.
-The ``Shareable`` object needs to be self-contained.
-In the deep learning scenario, the ``Shareable`` object contains the model weights type, model weights,
-meta data, etc. It should hold enough information for the FL clients to know how to process the data.
-
-The difference between ``Learnable`` and ``Shareable`` is that ``Learnable`` is a concept that only
-exists on the FL server side.
-By doing this, NVFlare decouples the FL server and client side training.
-
-For example, in the deep learning scenario, let's assume we have a model consists of two neural networks.
-Then the ``Learnable`` would be all the weights and biases in this model.
-We could learn weights for the first neural network in client1 and client2,
-and learn weights for the second neural network in client3 and client4.
-So the ``Shareable`` that client1 and client2 receives and sends out are the weights and/or network architecture
-of the first neural network.
-
-You can always define your own ``Learnable`` and ``Shareable`` structure.
-Then you can write your ``ShareableGenerator`` to implements ``learnable_to_shareable()`` and ``shareable_to_learnable()``
-functions to do custom conversion between ``Learnable`` and ``Shareable``.
-If you want to see the default schema, please check `Data available in the Shareable`_.
-
-FLContext
-=========
-
-``FLContext`` is used to hold the processing data and pass along the data between the FL components.
-FL components can set the data into the ``FLContext`` and later the data can be retrieved by other components.
-Each FL component has access to the ``FLContext`` within their method calls.
-
-API Specification
------------------
-
-Property Access
-
-.. code-block:: python
-
-    def set_prop(self, key: str, value, private=True, sticky=True)
-    def get_prop(self, key, default=None)
-
-With ``set_prop``, you can set any object to the context by providing a key and the value of the object.
-
-When ``private`` is set to True, this property can only be used locally.
-When ``private`` is set to False, this property can be shared to its peer during the FL communication.
-In other words, when an FL client is communicating with other clients, the non-private properties in the FLContext
-will be sent to those clients.
-
-
-There are many predefined keys used by different ``FLComponent`` functions.
-If you want to use the components that NVFlare provided, please refer to `Data available in the shared FLContext`_
-and ``nvflare.apis.fl_constant`` for details.
-Otherwise, you can write your own components by extending the following class:
-
-FLComponent
-===========
-This is the base class of all the FL components.
-
-.. literalinclude:: ../nvflare/apis/fl_component.py
-    :language: python
-    :lines: 7-21
-
-Each ``FLComponent`` is automatically added as an event handler in the system when a new instance is created.
-You can implement the ``handle_event`` method to plugin additional customized actions to the FL workflows.
-NVFlare has defined some events as below.
-Your components can do custom logic with each event.
-
-Event types
------------
-
-.. csv-table::
-   :header: Event, Description
-
-    START_RUN, Start of the current "run"
-    END_RUN, End of the current "run"
-    START_ROUND, Start of the "round"
-    END_ROUND, End of the "round"
-    CLIENT_REGISTER, When the client register to the server
-    GET_GLOBAL_SHAREABLE, When server get the request to fetch global shareable
-    CLIENT_QUIT, When the client quit from the server.
-    AFTER_SEND_CLIENT_SHAREABLE, After the client sends the update to the server.
-    RECEIVE_CONTRIBUTION, When the server receives the update from the client.
-    BEFORE_AGGREGATION, Before the aggregation call on the server.
-    END_AGGREGATION, After the aggregation call on the server.
-    RECEIVE_GLOBAL_SHAREABLE, After the client receives the global shareable from the server.
-    BEFORE_PULL_GLOBAL_SHAREABLE, Before the client starts to pull the global shareable from the server.
-    AFTER_PULL_GLOBAL_SHAREABLE, After the client pull the global shareable from the server.
-    BEFORE_TRAIN, Before the client trainer starts the local train.
-    AFTER_TRAIN, After the client trainer starts the local train.
-    BEFORE_SEND_CLIENT_SHAREABLE, Before the client starts to send the update to the server.
-    BEFORE_ACCEPT, Before the server calls the aggregator ``accept()``.
-    AFTER_ACCEPT, After the server calls the aggregator ``accept()``.
-    BEFORE_SHAREABLE_TO_LEARNABLE, Before the shareable_generator call ``shareable_to_learnable()``.
-    AFTER_SHAREABLE_TO_LEARNABLE, After the shareable_generator call ``shareable_to_learnable()``.
-    BEFORE_LEARNABLE_PERSIST, Before the LearnablePersistor call ``save()``.
-    AFTER_LEARNABLE_PERSIST, After the LearnablePersistor call ``save()``.
-
-
-*******************************************************************
-FL Components
-*******************************************************************
-
-Filters
-=======
-
-``Filter`` is used to transform the ``Shareable`` object between the communicating parties.
-``Filter`` can be used to provide additional shareable data processing before sending or after receiving from the peer.
-
-``Filter`` can be applied before sending the ``Shareable`` or after receiving the ``Shareable``.
-NVFlare defined the former one to be "outbound_filters" and the latter one to be "inbound_filters".
-Please refer to :ref:`user_guide/application:NVFlare Application` for how to write the configuration to include your filters.
-
-The ``FLContext`` is available for the ``Filter`` to use.
-
-.. literalinclude:: ../nvflare/apis/filter.py
-    :language: python
-    :lines: 6-19
-
-Aggregator
-==========
-
-Aggregators define the aggregation algorithm to aggregate the ``Shareable``.
-For example, a simple aggregator would be just average all the ``Shareable`` of the same round.
-
-Below is the signature for an aggregator.
-
-.. literalinclude:: ../nvflare/apis/aggregator.py
-    :language: python
-    :lines: 9-37
-
-Trainer
-=======
-
-You need to implement the ``train()`` method for your ``Trainer``.
-
-FL client gets the global ``Shareable`` from the FL server for each round and then the ``train()`` method will be called.
-
-The ``train()`` method needs to get the required information from the global ``Shareable``,
-use that in its training process, then returning the local training result as a ``Shareable``.
-
-You will need to configure your own ``Trainer`` in config_fed_client.json.
-Example FL configurations can be found in :ref:`user_guide/application:NVFlare Application`.
-
-.. literalinclude:: ../nvflare/apis/trainer.py
-    :language: python
-    :lines: 10-25
-
-*****************************************
-Default data in the built-in FLComponents
-*****************************************
-
-For the built-in FLComponents provided by NVFlare, we assure the following data is set in the ``Shareable`` and ``FLContext``.
-
-You can also define the structure of ``Sharable`` objects that fits your needs and
-add your training associated data into ``FLContext``.
-
-Data available in the Shareable
-===============================
-
-A pre-defined set of ``ShareableKey`` and ``ShareableValue`` is as follows:
-
-.. literalinclude:: ../nvflare/apis/fl_constant.py
-    :language: python
-    :lines: 63-89
-
-The ``Shareable`` contains the following data:
-
-.. csv-table::
-   :header: Shareable key, Value, Notes
-
-    ShareableKey.TYPE, ``TYPE_WEIGHT`` or ``TYPE_WEIGHT_DIFF`` or ``TYPE_NONE``, Indicates the shareable type is model weights or model weights difference or anything else
-    ShareableKey.DATA_TYPE, ``DATA_TYPE_ENCRYPTED`` or ``DATA_TYPE_UNENCRYPTED`` or ``DATA_TYPE_MIXED``, Indicates the shareable data type is encrypted or unencrypted or mixed of both
-    ShareableKey.MODEL_WEIGHTS, A dictionary of model weights, Local trained model weights
-    ShareableKey.META, A dictionary of meta data, Meta data of the model
-
-.. note::
-
-    ``MODEL_NAME``, ``DATA``, ``METRICS`` in ``ShareableKey`` and ``TYPE_ML_MODEL``, ``TYPE_METRICS``,
-    ``DATA_TYPE_BYTES``, ``DATA_TYPE_FILES`` in ``ShareableValue`` are for cross-site validation, so
-    they are not required for training
-
-The meta data dictionary contains the following content:
-
-.. csv-table::
-    :header: Key, Notes
-
-    NUM_TOTAL_STEPS, Number of total steps since start
-    INITIAL_LEARNING_RATE, Initial learning rate
-    NUMBER_OF_GPUS, Number of GPUs for the training
-    LOCAL_EPOCHS, Number of epochs for each round
-    CURRENT_LEARNING_RATE, Current learning rate
-    INITIAL_METRICS, Initial validation metrics for the global model
-    NUM_STEPS_CURRENT_ROUND, Number of steps executed for the current round
-    NUM_EPOCHS_CURRENT_ROUND, Number of epochs for the current round
-
-Data available in the shared FLContext
-======================================
-
-The public ``FLContext`` data is sent to other parties along with the ``Shareable`` object.
-It contains the following content:
-
-.. csv-table::
-    :header: Key, Value, Notes
-
-    FLConstants.PEER_CONTEXT, A dictionary, Its peer's ``FLContext``
-
-.. note::
-
-    For an FL server, its peer is an FL client.
-    For an FL client, its peer is an FL server.
-
-If the role is FL server, the peer context contains the following content:
-
-.. csv-table::
-    :header: Key, Notes
-
-    FLConstants.CLIENT_NAME, FL client's name
-    FLConstants.CURRENT_ROUND, current training round
-    FLConstants.NUM_STEPS_CURRENT_ROUND, number of steps advanced in the current round
-
-To retrieve the shared ``FLContext`` data:
-
-.. code-block:: python
-
-    shared_context = fl_ctx.get_prop(FLConstants.PEER_CONTEXT)
-    client_name = shared_context.get_prop(FLConstants.CLIENT_NAME)
-    current_round = shared_context.get_prop(FLConstants.CURRENT_ROUND)
-    number_steps = shared_context.get_prop(FLConstants.NUM_STEPS_CURRENT_ROUND)
+Please refer to :ref:`user_guide/application:NVIDIA FLARE Application` for more details.
+
+.. toctree::
+   :maxdepth: 1
+
+   programming_guide/fl_context
+   programming_guide/fl_component
+   programming_guide/controllers
+   programming_guide/filters
+   programming_guide/executor
+   programming_guide/event_system
+   programming_guide/shareable
+   programming_guide/data_exchange_object
+   programming_guide/best_practices

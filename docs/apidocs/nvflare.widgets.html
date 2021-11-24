@@ -1,0 +1,660 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.widgets package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Appendix" href="../appendix.html" />
+    <link rel="prev" title="nvflare.security package" href="nvflare.security.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">nvflare.widgets package</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.widgets.comp_caller">nvflare.widgets.comp_caller module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.widgets.fed_event">nvflare.widgets.fed_event module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.widgets.info_collector">nvflare.widgets.info_collector module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.widgets.widget">nvflare.widgets.widget module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.widgets">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+      <li>nvflare.widgets package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.widgets.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-widgets-package">
+<h1>nvflare.widgets package<a class="headerlink" href="#nvflare-widgets-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.widgets.comp_caller">
+<span id="nvflare-widgets-comp-caller-module"></span><h2>nvflare.widgets.comp_caller module<a class="headerlink" href="#module-nvflare.widgets.comp_caller" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.comp_caller.CallInfo">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">CallInfo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/comp_caller.html#CallInfo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.comp_caller.CallInfo" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.comp_caller.CallInfo.report_result">
+<span class="sig-name descname"><span class="pre">report_result</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">'OK'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/comp_caller.html#CallInfo.report_result"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.comp_caller.CallInfo.report_result" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.comp_caller.ComponentCaller">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ComponentCaller</span></span><a class="reference internal" href="../_modules/nvflare/widgets/comp_caller.html#ComponentCaller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.comp_caller.ComponentCaller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.widgets.widget.Widget" title="nvflare.widgets.widget.Widget"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.widgets.widget.Widget</span></code></a></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.comp_caller.ComponentCaller.CTX_KEY_CALL_INFO">
+<span class="sig-name descname"><span class="pre">CTX_KEY_CALL_INFO</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'comp_caller.call_info'</span></em><a class="headerlink" href="#nvflare.widgets.comp_caller.ComponentCaller.CTX_KEY_CALL_INFO" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.comp_caller.ComponentCaller.EVENT_TYPE_CALL_COMPONENT">
+<span class="sig-name descname"><span class="pre">EVENT_TYPE_CALL_COMPONENT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'comp_caller.call'</span></em><a class="headerlink" href="#nvflare.widgets.comp_caller.ComponentCaller.EVENT_TYPE_CALL_COMPONENT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.comp_caller.ComponentCaller.call_components">
+<span class="sig-name descname"><span class="pre">call_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/comp_caller.html#ComponentCaller.call_components"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.comp_caller.ComponentCaller.call_components" title="Permalink to this definition">¶</a></dt>
+<dd><p>Make a call to component(s).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> – the target spec of the component(s) to be called.</p></li>
+<li><p><strong>action</strong> – action of the call</p></li>
+<li><p><strong>params</strong> – parameters for the call</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: None or dict of result: comp name =&gt; result string</p>
+<p>NOTE: each component that wants to participate the call mechanism must:</p>
+<ul class="simple">
+<li><p>Listen to the event EVENT_TYPE_CALL_COMPONENT</p></li>
+<li><p>In the event handler, decide whether the call is applicable to it by comparing itself to</p></li>
+</ul>
+<p>the ‘target’. The target could be a specific component ID, or a type of components</p>
+<ul class="simple">
+<li><p>decide further whether the call is applicable to it by looking at the ‘action’.</p></li>
+</ul>
+<p>Conceptually, the action is like a function to be called on the component.
+If the component doesn’t support the action, simply ignore the call.</p>
+<ul class="simple">
+<li><p>if the call is applicable, always report the execution status to the call.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.comp_caller.ComponentCaller.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/comp_caller.html#ComponentCaller.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.comp_caller.ComponentCaller.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>perform the handler process based on the event_type.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> – event type fired by workflow</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.widgets.fed_event">
+<span id="nvflare-widgets-fed-event-module"></span><h2>nvflare.widgets.fed_event module<a class="headerlink" href="#module-nvflare.widgets.fed_event" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.fed_event.ClientFedEventRunner">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ClientFedEventRunner</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">topic</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'fed.event'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/fed_event.html#ClientFedEventRunner"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.fed_event.ClientFedEventRunner" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.widgets.fed_event.FedEventRunner" title="nvflare.widgets.fed_event.FedEventRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.widgets.fed_event.FedEventRunner</span></code></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>topic</strong> – </p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.fed_event.ClientFedEventRunner.fire_and_forget_request">
+<span class="sig-name descname"><span class="pre">fire_and_forget_request</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/fed_event.html#ClientFedEventRunner.fire_and_forget_request"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.fed_event.ClientFedEventRunner.fire_and_forget_request" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.fed_event.FedEventRunner">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">FedEventRunner</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">topic</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'fed.event'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/fed_event.html#FedEventRunner"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.fed_event.FedEventRunner" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.widgets.widget.Widget" title="nvflare.widgets.widget.Widget"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.widgets.widget.Widget</span></code></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>topic</strong> – </p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.fed_event.FedEventRunner.fire_and_forget_request">
+<span class="sig-name descname"><span class="pre">fire_and_forget_request</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/fed_event.html#FedEventRunner.fire_and_forget_request"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.fed_event.FedEventRunner.fire_and_forget_request" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.fed_event.FedEventRunner.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/fed_event.html#FedEventRunner.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.fed_event.FedEventRunner.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>perform the handler process based on the event_type.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> – event type fired by workflow</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.fed_event.ServerFedEventRunner">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ServerFedEventRunner</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">topic</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'fed.event'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/fed_event.html#ServerFedEventRunner"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.fed_event.ServerFedEventRunner" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.widgets.fed_event.FedEventRunner" title="nvflare.widgets.fed_event.FedEventRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.widgets.fed_event.FedEventRunner</span></code></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>topic</strong> – </p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.fed_event.ServerFedEventRunner.fire_and_forget_request">
+<span class="sig-name descname"><span class="pre">fire_and_forget_request</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/fed_event.html#ServerFedEventRunner.fire_and_forget_request"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.fed_event.ServerFedEventRunner.fire_and_forget_request" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.widgets.info_collector">
+<span id="nvflare-widgets-info-collector-module"></span><h2>nvflare.widgets.info_collector module<a class="headerlink" href="#module-nvflare.widgets.info_collector" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.GroupInfoCollector">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">GroupInfoCollector</span></span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#GroupInfoCollector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.GroupInfoCollector" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.GroupInfoCollector.add_info">
+<span class="sig-name descname"><span class="pre">add_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">group_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">info</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#GroupInfoCollector.add_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.GroupInfoCollector.add_info" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.GroupInfoCollector.set_info">
+<span class="sig-name descname"><span class="pre">set_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">group_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">info</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#GroupInfoCollector.set_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.GroupInfoCollector.set_info" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">InfoCollector</span></span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.widgets.widget.Widget" title="nvflare.widgets.widget.Widget"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.widgets.widget.Widget</span></code></a></p>
+<p>Info Structure:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>category (dict)</dt><dd><dl class="simple">
+<dt>group (dict)</dt><dd><p>key/value (dict)</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</div></blockquote>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.CATEGORY_ERROR">
+<span class="sig-name descname"><span class="pre">CATEGORY_ERROR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'error'</span></em><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.CATEGORY_ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.CATEGORY_STATS">
+<span class="sig-name descname"><span class="pre">CATEGORY_STATS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'stats'</span></em><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.CATEGORY_STATS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.CTX_KEY_STATS_COLLECTOR">
+<span class="sig-name descname"><span class="pre">CTX_KEY_STATS_COLLECTOR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'info_collector.stats_collector'</span></em><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.CTX_KEY_STATS_COLLECTOR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.EVENT_TYPE_GET_STATS">
+<span class="sig-name descname"><span class="pre">EVENT_TYPE_GET_STATS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'info_collector.get_stats'</span></em><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.EVENT_TYPE_GET_STATS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.add_error">
+<span class="sig-name descname"><span class="pre">add_error</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">group_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">err</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.add_error"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.add_error" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.add_info">
+<span class="sig-name descname"><span class="pre">add_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">category</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.add_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.add_info" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.get_category">
+<span class="sig-name descname"><span class="pre">get_category</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">category</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.get_category"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.get_category" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.get_errors">
+<span class="sig-name descname"><span class="pre">get_errors</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.get_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.get_errors" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.get_group">
+<span class="sig-name descname"><span class="pre">get_group</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">category</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.get_group"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.get_group" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.get_run_stats">
+<span class="sig-name descname"><span class="pre">get_run_stats</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.get_run_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.get_run_stats" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>perform the handler process based on the event_type.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> – event type fired by workflow</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.reset_all">
+<span class="sig-name descname"><span class="pre">reset_all</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.reset_all"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.reset_all" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.reset_category">
+<span class="sig-name descname"><span class="pre">reset_category</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">category</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.reset_category"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.reset_category" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.reset_errors">
+<span class="sig-name descname"><span class="pre">reset_errors</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.reset_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.reset_errors" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.reset_group">
+<span class="sig-name descname"><span class="pre">reset_group</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">category</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.reset_group"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.reset_group" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.widgets.info_collector.InfoCollector.set_info">
+<span class="sig-name descname"><span class="pre">set_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">category</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">info</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/widgets/info_collector.html#InfoCollector.set_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.info_collector.InfoCollector.set_info" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.widgets.widget">
+<span id="nvflare-widgets-widget-module"></span><h2>nvflare.widgets.widget module<a class="headerlink" href="#module-nvflare.widgets.widget" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.widget.Widget">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Widget</span></span><a class="reference internal" href="../_modules/nvflare/widgets/widget.html#Widget"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.widget.Widget" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.fl_component.FLComponent</span></code></a></p>
+<p>A widget is used to address cross-cutting needs of all FL components.
+Some examples of such needs:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>report current status</p></li>
+<li><p>dynamically change its tunable parameters</p></li>
+<li><p>record processing errors</p></li>
+<li><p>stats recording</p></li>
+</ul>
+</div></blockquote>
+<p>Each widget is a singleton object that is registered with the Engine with a
+unique ID.</p>
+<p>All widget IDs are documented in the WidgetID class.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.widgets.widget.WidgetID">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">WidgetID</span></span><a class="reference internal" href="../_modules/nvflare/widgets/widget.html#WidgetID"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.widgets.widget.WidgetID" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.widget.WidgetID.COMPONENT_CALLER">
+<span class="sig-name descname"><span class="pre">COMPONENT_CALLER</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'component_caller'</span></em><a class="headerlink" href="#nvflare.widgets.widget.WidgetID.COMPONENT_CALLER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.widget.WidgetID.FED_EVENT_RUNNER">
+<span class="sig-name descname"><span class="pre">FED_EVENT_RUNNER</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'fed_event_runner'</span></em><a class="headerlink" href="#nvflare.widgets.widget.WidgetID.FED_EVENT_RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.widgets.widget.WidgetID.INFO_COLLECTOR">
+<span class="sig-name descname"><span class="pre">INFO_COLLECTOR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'info_collector'</span></em><a class="headerlink" href="#nvflare.widgets.widget.WidgetID.INFO_COLLECTOR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.widgets">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.widgets" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="../appendix.html" class="btn btn-neutral float-right" title="Appendix" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.security.html" class="btn btn-neutral float-left" title="nvflare.security package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

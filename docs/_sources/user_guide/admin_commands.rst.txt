@@ -1,6 +1,17 @@
-######################
-Administrator commands
-######################
+.. _admin_commands:
+
+##################################
+Admin Client, Commands, FLAdminAPI
+##################################
+
+The FL system is operated by the packages of type admin configured at provisioning. The admin packages contain key and
+certificate files to connect and authenticate with the server, and the administration can be done through an included
+command prompt with ``fl_admin.sh`` or programmatically through the FLAdminAPI.
+
+Admin command prompt
+====================
+After running ``fl_admin.sh``, log in by following the prompt and entering the name of the participant that the admin
+package was provisioned for (or for poc mode, "admin" as the name and password).
 
 Typing "help" or "?" will display a list of the commands and a brief description for each. Typing "? " before a command
 like "? check_status" or "?ls" will provide additional details for the usage of a command. Provided below is a list of
@@ -23,7 +34,6 @@ commands shown as examples of how they may be run with a description.
     ,``deploy_app applicationname client``,Deploys the application specified by *applicationname* to each client. This can also be done per client by specifying a specific client name for this command. Please note that the deployed applications are also in their own workspace named after the run number set by set_run_number above.
     start_app,``start_app server``,Starts the server training.
     ,``start_app client``,Starts all of the clients. Individual clients can be started by specifying the client instance name after the start client command.
-    start_mgpu,``start_mgpu client 2 clientname``,Starts training with multiple GPUs. The number of GPUs to be used must be specified in the command.
     abort,``abort client``,Aborts all of the clients. Individual clients can be aborted by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
     ,``abort server``,Aborts the server training
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
@@ -45,12 +55,10 @@ commands shown as examples of how they may be run with a description.
     ,``validate all``, Gets the performance metrics for cross-site validation of all models
 
 
-.. note::
-
-    For multi-GPU training please refer to :ref:`multi-gpu training <multi gpu training>`.
-
 .. tip::
 
    Outputs of any command can be redirected into a file by using the greater-than symbol ">", however there must be no
    whitespace before the filename. For example, you may run ``sys_info server >serverinfo.txt``. To only save the
    file output without printing it, use two greater-than symbols ">>" instead: ``sys_info server >>serverinfo.txt``.
+
+.. include:: FLAdminAPI.rst

@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>Installation &mdash; NVFlare 1.1 documentation</title>
+  <title>Installation &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -72,7 +72,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Quickstart" href="quickstart.html" />
-    <link rel="prev" title="NVFlare" href="index.html" /> 
+    <link rel="prev" title="NVIDIA FLARE" href="index.html" /> 
 </head>
 
 <body class="wy-body-for-nav">
@@ -86,7 +86,7 @@
            
 
           
-            <a href="index.html" class="icon icon-home"> NVFlare
+            <a href="index.html" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -96,7 +96,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -164,17 +164,18 @@
               <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#python-version">Python Version</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#install-nvflare-in-virtual-environments">Install NVFlare in virtual environments</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#install-nvidia-flare-in-virtual-environments">Install NVIDIA FLARE in virtual environments</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#virtual-environments-and-packages">Virtual Environments and Packages</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#install-stable-release">Install Stable Release</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#install-nightly-release">Install Nightly Release</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#clone-repository-and-examples">Clone Repository and Examples</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
@@ -193,7 +194,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">NVFlare</a>
+          <a href="index.html">NVIDIA FLARE</a>
         
       </nav>
 
@@ -232,6 +233,8 @@
       <li class="wy-breadcrumbs-aside">
         
           
+            <a href="_sources/installation.rst.txt" rel="nofollow"> View page source</a>
+          
         
       </li>
     
@@ -244,20 +247,20 @@
            <div itemprop="articleBody">
             
   <div class="section" id="installation">
-<h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
+<span id="id1"></span><h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="python-version">
 <h2>Python Version<a class="headerlink" href="#python-version" title="Permalink to this headline">¶</a></h2>
-<p>NVFlare requires <a class="reference external" href="https://www.python.org/downloads/release/python-3810/">Python 3.8.10</a>.</p>
+<p>NVIDIA FLARE requires <a class="reference external" href="https://www.python.org/downloads/release/python-3810/">Python 3.8.10</a>.</p>
 </div>
-<div class="section" id="install-nvflare-in-virtual-environments">
-<h2>Install NVFlare in virtual environments<a class="headerlink" href="#install-nvflare-in-virtual-environments" title="Permalink to this headline">¶</a></h2>
-<p>It is highly recommended to install NVFlare in a virtual environment.
+<div class="section" id="install-nvidia-flare-in-virtual-environments">
+<h2>Install NVIDIA FLARE in virtual environments<a class="headerlink" href="#install-nvidia-flare-in-virtual-environments" title="Permalink to this headline">¶</a></h2>
+<p>It is highly recommended to install NVIDIA FLARE in a virtual environment.
 This guide briefly describes how to create a virtual environment with venv.</p>
 <div class="section" id="virtual-environments-and-packages">
 <h3>Virtual Environments and Packages<a class="headerlink" href="#virtual-environments-and-packages" title="Permalink to this headline">¶</a></h3>
 <p>Python’s official document explains the main idea about virtual environments.
 The module used to create and manage virtual environments is called <a class="reference external" href="https://docs.python.org/3.8/library/venv.html#module-venv">venv</a>.
-You can find more information there.  We only describe a few necessary steps for a virtual environment for NVFlare.</p>
+You can find more information there.  We only describe a few necessary steps for a virtual environment for NVIDIA FLARE.</p>
 <p>Depending on your OS and the Python distribution, you may need to install the Python’s venv package separately.  For example, in ubuntu
 20.04, you need to run the following commands to continue creating a virtual environment with venv.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ sudo apt update
@@ -284,16 +287,24 @@ the standard library, and various supporting files.</p>
 </div>
 <div class="section" id="install-stable-release">
 <h2>Install Stable Release<a class="headerlink" href="#install-stable-release" title="Permalink to this headline">¶</a></h2>
-<p>Stable releases are available on <a class="reference external" href="https://pypi.org/project/nvflare">PyPI NVFlare</a>:</p>
+<p>Stable releases are available on <a class="reference external" href="https://pypi.org/project/nvflare">NVIDIA FLARE PyPI</a>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ python3 -m pip install nvflare
 </pre></div>
 </div>
 </div>
 <div class="section" id="install-nightly-release">
 <h2>Install Nightly Release<a class="headerlink" href="#install-nightly-release" title="Permalink to this headline">¶</a></h2>
-<p>NVFlare also has nightly build at <a class="reference external" href="https://pypi.org/project/nvflare-nightly/">NVFlare night build</a>.
+<p>NVIDIA FLARE also has a nightly build at <a class="reference external" href="https://pypi.org/project/nvflare-nightly/">NVFlare nightly build</a>.
 You can install the package with the following command:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ python3 -m pip install nvflare-nightly
+</pre></div>
+</div>
+</div>
+<div class="section" id="clone-repository-and-examples">
+<h2>Clone Repository and Examples<a class="headerlink" href="#clone-repository-and-examples" title="Permalink to this headline">¶</a></h2>
+<p>The next sections in the <a class="reference internal" href="quickstart.html#quickstart"><span class="std std-ref">Quickstart</span></a> will guide you through the examples included in the repository. To clone the
+repo and get the source code:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/nvidia/nvflare.git
 </pre></div>
 </div>
 </div>
@@ -306,7 +317,7 @@ You can install the package with the following command:</p>
           <footer>
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
         <a href="quickstart.html" class="btn btn-neutral float-right" title="Quickstart" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-        <a href="index.html" class="btn btn-neutral float-left" title="NVFlare" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="index.html" class="btn btn-neutral float-left" title="NVIDIA FLARE" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

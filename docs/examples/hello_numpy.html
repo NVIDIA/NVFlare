@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>Quickstart (Numpy) &mdash; NVFlare 1.1 documentation</title>
+  <title>Quickstart (Numpy) &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -86,7 +86,7 @@
            
 
           
-            <a href="../index.html" class="icon icon-home"> NVFlare
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
           
 
           
@@ -96,7 +96,7 @@
             
             
               <div class="version">
-                1.1
+                2.0
               </div>
             
           
@@ -168,16 +168,15 @@
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Quickstart (Numpy)</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#before-you-start">Before You Start</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#introduction">Introduction</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nvflare-client">NVFlare Client</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nvflare-server-application">NVFlare Server &amp; Application</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nvidia-flare-client">NVIDIA FLARE Client</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nvidia-flare-server-application">NVIDIA FLARE Server &amp; Application</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#model-persistor">Model Persistor</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#application-configuration">Application Configuration</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#federated-numpy-fibonacci">Federated Numpy Fibonacci!</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#federated-numpy-with-scatter-and-gather-workflow">Federated Numpy with Scatter and Gather Workflow!</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#setting-up-the-application-environment">Setting Up the Application Environment</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#running-the-fl">Running the FL</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#understanding-the-output">Understanding the Output</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#running-the-fl-system">Running the FL System</a></li>
 </ul>
 </li>
 </ul>
@@ -185,8 +184,8 @@
 <li class="toctree-l2"><a class="reference internal" href="hello_tf2.html">Quickstart (TensorFlow 2)</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
@@ -205,7 +204,7 @@
       <nav class="wy-nav-top" aria-label="top navigation">
         
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../index.html">NVFlare</a>
+          <a href="../index.html">NVIDIA FLARE</a>
         
       </nav>
 
@@ -246,6 +245,8 @@
       <li class="wy-breadcrumbs-aside">
         
           
+            <a href="../_sources/examples/hello_numpy.rst.txt" rel="nofollow"> View page source</a>
+          
         
       </li>
     
@@ -261,29 +262,31 @@
 <h1>Quickstart (Numpy)<a class="headerlink" href="#quickstart-numpy" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="before-you-start">
 <h2>Before You Start<a class="headerlink" href="#before-you-start" title="Permalink to this headline">¶</a></h2>
-<p>Before jumping into this QuickStart guide, make sure you have an environment with <a class="reference external" href="https://pypi.org/project/nvflare/">NVFlare</a> installed.  You can follow
-<a class="reference internal" href="../installation.html"><span class="doc">installation</span></a> on the general concept of Python virtual environment (the recommended environment) and how to
-install NVFlare.</p>
+<p>Before jumping into this QuickStart guide, make sure you have an environment with <a class="reference external" href="https://pypi.org/project/nvflare/">NVIDIA FLARE</a>
+installed. You can follow <a class="reference internal" href="../installation.html"><span class="doc">installation</span></a> on the general concept of setting up a Python virtual
+environment (the recommended environment) and how to install NVIDIA FLARE.</p>
 </div>
 <div class="section" id="introduction">
 <h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
-<p>This tutorial is meant to solely demonstrate how the NVFlare system works, without introducing any actual deep learning concepts.
-Through this exercise, you will learn how to use NVFlare with numpy to perform basic computations across two clients.
-Due to the simplified weights, you will be able to clearly see and understand the results of the FL aggregation and the model persistor process.</p>
-<p>The design of this exercise consists of one <strong>server</strong> and two <strong>clients</strong>, starting with weights <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">1]</span></code>.
+<p>This tutorial is meant to solely demonstrate how the NVIDIA FLARE system works, without introducing any actual deep
+learning concepts. Through this exercise, you will learn how to use NVIDIA FLARE with numpy to perform basic
+computations across two clients with the included Scatter and Gather workflow, which broadcasts the training tasks then
+aggregates the results that come back. Due to the simplified weights, you will be able to clearly see and understand
+the results of the FL aggregation and the model persistor process.</p>
+<p>The design of this exercise consists of one <strong>server</strong> and two <strong>clients</strong>, starting with weights <code class="docutils literal notranslate"><span class="pre">[[1,</span> <span class="pre">2,</span> <span class="pre">3],</span> <span class="pre">[4,</span> <span class="pre">5,</span> <span class="pre">6],</span> <span class="pre">[7,</span> <span class="pre">8,</span> <span class="pre">9]]</span></code>.
 The following steps compose one cycle of weight updates, called a <strong>round</strong>:</p>
 <blockquote>
 <div><ol class="arabic simple">
-<li><p>Clients are responsible for adding (with some slight errors) the two weights together to calculate a Fibonacci number for the model.</p></li>
-<li><p>These updates are then sent to the server which will aggregate them (averaging out the errors) to produce a model with new weights.</p></li>
-<li><p>Finally, the server sends this updated version of the model back to each client, so the clients can continue to calculate the next Fibonacci number in future rounds.</p></li>
+<li><p>Clients are responsible for adding a delta to the weights to calculate new weights for the model.</p></li>
+<li><p>These updates are then sent to the server which will aggregate them to produce a model with new weights.</p></li>
+<li><p>Finally, the server sends this updated version of the model back to each client, so the clients can continue to calculate the next model weights in future rounds.</p></li>
 </ol>
 </div></blockquote>
-<p>For this exercise, we will be working with the <code class="docutils literal notranslate"><span class="pre">hello-numpy</span></code> application in the examples folder.
+<p>For this exercise, we will be working with the <code class="docutils literal notranslate"><span class="pre">hello-numpy-sag</span></code> application in the examples folder.
 Every custom FL application must contain three folders:</p>
 <blockquote>
 <div><ol class="arabic simple">
-<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">trainer.py</span></code>, <code class="docutils literal notranslate"><span class="pre">model_persistor.py</span></code>)</p></li>
+<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">np_trainer.py</span></code>, <code class="docutils literal notranslate"><span class="pre">np_model_persistor.py</span></code>)</p></li>
 <li><p><strong>config</strong>: contains client and server configurations (<code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>, <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>)</p></li>
 <li><p><strong>resources</strong>: contains the logger config (<code class="docutils literal notranslate"><span class="pre">log.config</span></code>)</p></li>
 </ol>
@@ -292,239 +295,205 @@ Every custom FL application must contain three folders:</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/nvidia/nvflare.git
 </pre></div>
 </div>
-<p>Remember to activate your NVFlare Python virtual environment from the installation guide. Ensure numpy is installed.</p>
+<p>Remember to activate your NVIDIA FLARE Python virtual environment from the installation guide. Ensure numpy is installed.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>nvflare-env<span class="o">)</span> $ python3 -m pip install numpy
 </pre></div>
 </div>
-<p>Now that you have all your dependencies installed, let’s implement the Federated Learning system.</p>
+<p>Now that you have all your dependencies installed, let’s implement the federated learning system.</p>
 </div>
-<div class="section" id="nvflare-client">
-<h2>NVFlare Client<a class="headerlink" href="#nvflare-client" title="Permalink to this headline">¶</a></h2>
-<p>In a file called <code class="docutils literal notranslate"><span class="pre">trainer.py</span></code>, import nvflare and numpy.
-Now we will implement the train function to enable the clients to perform
-a simple addition of two numbers to represent one calculation in the Fibonacci Sequence.</p>
-<div class="literal-block-wrapper docutils container" id="id1">
-<div class="code-block-caption"><span class="caption-text">trainer.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="linenos"> 2</span>
-<span class="linenos"> 3</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLConstants</span>
-<span class="linenos"> 4</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
-<span class="linenos"> 5</span><span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">ShareableKey</span><span class="p">,</span> <span class="n">ShareableValue</span>
-<span class="linenos"> 6</span><span class="kn">from</span> <span class="nn">nvflare.apis.trainer</span> <span class="kn">import</span> <span class="n">Trainer</span>
-<span class="linenos"> 7</span>
-<span class="linenos"> 8</span><span class="k">class</span> <span class="nc">SimpleTrainer</span><span class="p">(</span><span class="n">Trainer</span><span class="p">):</span>
-<span class="linenos"> 9</span>
-<span class="linenos">10</span>    <span class="k">def</span> <span class="nf">train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
-<span class="linenos">11</span>        <span class="sd">&quot;&quot;&quot;</span>
-<span class="linenos">12</span><span class="sd">        This function is an extended function from the super class.</span>
-<span class="linenos">13</span><span class="sd">        As a supervised learning based trainer, the train function will run</span>
-<span class="linenos">14</span><span class="sd">        evaluate and train engines based on model weights from `shareable`.</span>
-<span class="linenos">15</span><span class="sd">        After the training is done, a new `Shareable` object will be submitted</span>
-<span class="linenos">16</span><span class="sd">        to server for aggregation.</span>
-<span class="linenos">17</span>
-<span class="linenos">18</span><span class="sd">        Args:</span>
-<span class="linenos">19</span><span class="sd">            shareable: the `Shareable` object received from server.</span>
-<span class="linenos">20</span><span class="sd">            fl_ctx: the `FLContext` object achieved from server.</span>
-<span class="linenos">21</span><span class="sd">            abort_signal: if triggered, the training will be aborted.</span>
-<span class="linenos">22</span>
-<span class="linenos">23</span><span class="sd">        Returns:</span>
-<span class="linenos">24</span><span class="sd">            a new `Shareable` object to be submitted to server for aggregation.</span>
-<span class="linenos">25</span><span class="sd">        &quot;&quot;&quot;</span>
-<span class="linenos">26</span>
-<span class="linenos">27</span>        <span class="c1"># retrieve model weights download from server&#39;s shareable</span>
-<span class="linenos">28</span>        <span class="n">fib</span> <span class="o">=</span> <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">MODEL_WEIGHTS</span><span class="p">]</span>
-<span class="linenos">29</span>        <span class="n">terms</span> <span class="o">=</span> <span class="n">fib</span><span class="p">[</span><span class="s2">&quot;sequence&quot;</span><span class="p">]</span>
-<span class="linenos">30</span>
-<span class="linenos">31</span>        <span class="c1"># perform one step of Fibonacci </span>
-<span class="linenos">32</span>        <span class="n">new_fib</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;sequence&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">terms</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">terms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">terms</span><span class="p">[</span><span class="mi">1</span><span class="p">]])}</span>
-<span class="linenos">33</span>
-<span class="linenos">34</span>        <span class="c1"># add -1 and +1 bias for site-1 and site-2 respectively</span>
-<span class="linenos">35</span>        <span class="n">client_name</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLConstants</span><span class="o">.</span><span class="n">CLIENT_NAME</span><span class="p">)</span>
-<span class="linenos">36</span>        <span class="k">if</span> <span class="n">client_name</span> <span class="o">==</span> <span class="s2">&quot;site-1&quot;</span><span class="p">:</span>
-<span class="linenos">37</span>            <span class="n">new_fib</span><span class="p">[</span><span class="s2">&quot;sequence&quot;</span><span class="p">]</span> <span class="o">-=</span> <span class="mi">1</span>
-<span class="linenos">38</span>        <span class="k">elif</span> <span class="n">client_name</span> <span class="o">==</span> <span class="s2">&quot;site-2&quot;</span><span class="p">:</span>
-<span class="linenos">39</span>            <span class="n">new_fib</span><span class="p">[</span><span class="s2">&quot;sequence&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
-<span class="linenos">40</span>
-<span class="linenos">41</span>        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2"> Shareable from server: </span><span class="si">{</span><span class="n">fib</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="linenos">42</span>        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2"> New Shareable to server: </span><span class="si">{</span><span class="n">new_fib</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="linenos">43</span>
-<span class="linenos">44</span>        <span class="c1"># send updated weights back to server through new shareable</span>
-<span class="linenos">45</span>        <span class="n">shareable</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
-<span class="linenos">46</span>        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">META</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">FLConstants</span><span class="o">.</span><span class="n">NUM_STEPS_CURRENT_ROUND</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
-<span class="linenos">47</span>        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="n">ShareableValue</span><span class="o">.</span><span class="n">TYPE_WEIGHTS</span>
-<span class="linenos">48</span>        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">DATA_TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="n">ShareableValue</span><span class="o">.</span><span class="n">DATA_TYPE_UNENCRYPTED</span>
-<span class="linenos">49</span>        <span class="n">shareable</span><span class="p">[</span><span class="n">ShareableKey</span><span class="o">.</span><span class="n">MODEL_WEIGHTS</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_fib</span>
-<span class="linenos">50</span>
-<span class="linenos">51</span>        <span class="k">return</span> <span class="n">shareable</span>
-</pre></div>
-</div>
-</div>
-<p>The server sends either the initial weights of [0, 1] or any stored weights to each of the clients
-through the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> object passed into <code class="docutils literal notranslate"><span class="pre">train()</span></code>. Each client adds the
-two numbers together, and creates a new <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> to include the sum of the two
-numbers as well as the second number of original shareable.
-This represents the calculation of one term in the Fibonacci Sequence:</p>
-<p><code class="docutils literal notranslate"><span class="pre">[a,</span> <span class="pre">b]</span> <span class="pre">=&gt;</span> <span class="pre">[b,</span> <span class="pre">a</span> <span class="pre">+</span> <span class="pre">b]</span></code>
-wherein <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code> are two consecutive Fibonacci numbers, with <code class="docutils literal notranslate"><span class="pre">b</span> <span class="pre">&gt;</span> <span class="pre">a</span></code>.</p>
+<div class="section" id="nvidia-flare-client">
+<h2>NVIDIA FLARE Client<a class="headerlink" href="#nvidia-flare-client" title="Permalink to this headline">¶</a></h2>
+<p>In a file called <code class="docutils literal notranslate"><span class="pre">np_trainer.py</span></code>, import nvflare and numpy.
+Now we will implement the <code class="docutils literal notranslate"><span class="pre">execute</span></code> function to enable the clients to perform
+a simple addition of a diff to represent one calculation of training a round.</p>
+<p>See <a class="reference internal" href="hello_numpy_np_trainer.html#hello-numpy-np-trainer"><span class="std std-ref">Code of np_trainer</span></a> or find the full code of <code class="docutils literal notranslate"><span class="pre">np_trainer.py</span></code> at
+<code class="docutils literal notranslate"><span class="pre">examples/hello-numpy-sag/custom/np_trainer.py</span></code> to follow along.</p>
+<p>The server sends either the initial weights or any stored weights to each of the clients
+through the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> object passed into <code class="docutils literal notranslate"><span class="pre">execute()</span></code>. Each client adds the
+diff to the model data after retrieving it from the DXO (see <a class="reference internal" href="../programming_guide/data_exchange_object.html#data-exchange-object"><span class="std std-ref">Data Exchange Object (DXO)</span></a>)
+obtained from the Shareable, and creates a new <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> to include the new weights also contained
+within a DXO.</p>
 <p>In a real federated learning training scenario, each client does its training independently on its own dataset.
-As such, the weights returned to the server will likely be different for each of the clients.
-Because this exercise is simply doing an addition operation rather than a training on a dataset, we
-<strong>hard-code</strong> a slight variation in the clients’ addition to demonstrate how the server aggregation works.
-We define that client-1 always <strong>subtracts</strong> one extra from every element, while client-2 always
-<strong>adds</strong> one extra to every element.</p>
-<p>Fortunately, because this is a FL system with two clients, the server can <code class="docutils literal notranslate"><span class="pre">aggregrate</span></code>
-(in this case average) the clients’ results to produce the correct Fibonacci number.</p>
-<p>You can learn more about <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> and <code class="docutils literal notranslate"><span class="pre">FLContext</span></code> in the <a class="reference internal" href="hello_pt.html"><span class="doc">Quickstart (PyTorch)</span></a> exercise or in the <a class="reference internal" href="../programming_guide.html#key-objects"><span class="std std-ref">documentation</span></a>.</p>
+As such, the weights returned to the server will likely be different for each of the clients.</p>
+<p>The FL server can <code class="docutils literal notranslate"><span class="pre">aggregrate</span></code> (in this case average) the clients’ results to produce the aggregated model.</p>
+<p>You can learn more about <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> and <code class="docutils literal notranslate"><span class="pre">FLContext</span></code> in the <a class="reference internal" href="../programming_guide.html#programming-guide"><span class="std std-ref">documentation</span></a>.</p>
 </div>
-<div class="section" id="nvflare-server-application">
-<h2>NVFlare Server &amp; Application<a class="headerlink" href="#nvflare-server-application" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="nvidia-flare-server-application">
+<h2>NVIDIA FLARE Server &amp; Application<a class="headerlink" href="#nvidia-flare-server-application" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="model-persistor">
 <h3>Model Persistor<a class="headerlink" href="#model-persistor" title="Permalink to this headline">¶</a></h3>
-<div class="literal-block-wrapper docutils container" id="id2">
-<div class="code-block-caption"><span class="caption-text">model_persistor.py</span><a class="headerlink" href="#id2" title="Permalink to this code">¶</a></div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span> <span class="nn">os</span>
-<span class="linenos"> 2</span><span class="kn">import</span> <span class="nn">pickle</span>
-<span class="linenos"> 3</span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="linenos"> 4</span>
-<span class="linenos"> 5</span><span class="kn">from</span> <span class="nn">nvflare.apis</span> <span class="kn">import</span> <span class="n">Model</span><span class="p">,</span> <span class="n">ModelPersistor</span>
-<span class="linenos"> 6</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
-<span class="linenos"> 7</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLConstants</span>
-<span class="linenos"> 8</span>
-<span class="linenos"> 9</span>
-<span class="linenos">10</span><span class="k">class</span> <span class="nc">NumpyModelPersistor</span><span class="p">(</span><span class="n">ModelPersistor</span><span class="p">):</span>
-<span class="linenos">11</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">save_name</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="linenos">12</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-<span class="linenos">13</span>        <span class="bp">self</span><span class="o">.</span><span class="n">save_name</span> <span class="o">=</span> <span class="n">save_name</span>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">np_model_persistor.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="linenos"> 2</span><span class="c1">#</span>
+<span class="linenos"> 3</span><span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="linenos"> 4</span><span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="linenos"> 5</span><span class="c1"># You may obtain a copy of the License at</span>
+<span class="linenos"> 6</span><span class="c1">#</span>
+<span class="linenos"> 7</span><span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="linenos"> 8</span><span class="c1">#</span>
+<span class="linenos"> 9</span><span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="linenos">10</span><span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="linenos">11</span><span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="linenos">12</span><span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="linenos">13</span><span class="c1"># limitations under the License.</span>
 <span class="linenos">14</span>
-<span class="linenos">15</span>    <span class="k">def</span> <span class="nf">_initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
-<span class="linenos">16</span>        <span class="c1"># get save path from FLContext</span>
-<span class="linenos">17</span>        <span class="n">train_root</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLConstants</span><span class="o">.</span><span class="n">TRAIN_ROOT</span><span class="p">)</span>
-<span class="linenos">18</span>        <span class="n">log_dir</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLConstants</span><span class="o">.</span><span class="n">LOG_DIR</span><span class="p">)</span>
-<span class="linenos">19</span>        <span class="k">if</span> <span class="n">log_dir</span><span class="p">:</span>
-<span class="linenos">20</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">train_root</span><span class="p">,</span> <span class="n">log_dir</span><span class="p">)</span>
-<span class="linenos">21</span>        <span class="k">else</span><span class="p">:</span>
-<span class="linenos">22</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span> <span class="o">=</span> <span class="n">train_root</span>
-<span class="linenos">23</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_name</span><span class="p">)</span>
-<span class="linenos">24</span>        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span><span class="p">):</span>
-<span class="linenos">25</span>            <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span><span class="p">)</span>
+<span class="linenos">15</span><span class="kn">import</span> <span class="nn">os</span>
+<span class="linenos">16</span>
+<span class="linenos">17</span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="linenos">18</span>
+<span class="linenos">19</span><span class="kn">from</span> <span class="nn">constants</span> <span class="kn">import</span> <span class="n">NPConstants</span>
+<span class="linenos">20</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span>
+<span class="linenos">21</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="linenos">22</span><span class="kn">from</span> <span class="nn">nvflare.app_common.abstract.model</span> <span class="kn">import</span> <span class="n">ModelLearnable</span><span class="p">,</span> <span class="n">make_model_learnable</span><span class="p">,</span> <span class="n">ModelLearnableKey</span>
+<span class="linenos">23</span><span class="kn">from</span> <span class="nn">nvflare.app_common.abstract.model_persistor</span> <span class="kn">import</span> <span class="n">ModelPersistor</span>
+<span class="linenos">24</span><span class="kn">from</span> <span class="nn">nvflare.app_common.app_constant</span> <span class="kn">import</span> <span class="n">AppConstants</span>
+<span class="linenos">25</span>
 <span class="linenos">26</span>
-<span class="linenos">27</span>    <span class="k">def</span> <span class="nf">load_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Model</span><span class="p">:</span>
-<span class="linenos">28</span>        <span class="sd">&quot;&quot;&quot;</span>
-<span class="linenos">29</span><span class="sd">            initialize and load the Model.</span>
+<span class="linenos">27</span><span class="k">class</span> <span class="nc">NPModelPersistor</span><span class="p">(</span><span class="n">ModelPersistor</span><span class="p">):</span>
+<span class="linenos">28</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_dir</span><span class="o">=</span><span class="s2">&quot;models&quot;</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;server.npy&quot;</span><span class="p">):</span>
+<span class="linenos">29</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 <span class="linenos">30</span>
-<span class="linenos">31</span><span class="sd">        Args:</span>
-<span class="linenos">32</span><span class="sd">            fl_ctx: FLContext</span>
+<span class="linenos">31</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model_dir</span> <span class="o">=</span> <span class="n">model_dir</span>
+<span class="linenos">32</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model_name</span> <span class="o">=</span> <span class="n">model_name</span>
 <span class="linenos">33</span>
-<span class="linenos">34</span><span class="sd">        Returns:</span>
-<span class="linenos">35</span><span class="sd">            Model object</span>
-<span class="linenos">36</span><span class="sd">        &quot;&quot;&quot;</span>
-<span class="linenos">37</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+<span class="linenos">34</span>        <span class="c1"># This is default model that will be used if not local model is provided.</span>
+<span class="linenos">35</span>        <span class="bp">self</span><span class="o">.</span><span class="n">default_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+<span class="linenos">36</span>            <span class="p">[[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">],</span> <span class="p">[</span><span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">9</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+<span class="linenos">37</span>        <span class="p">)</span>
 <span class="linenos">38</span>
-<span class="linenos">39</span>        <span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
-<span class="linenos">40</span>        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span><span class="p">):</span>
-<span class="linenos">41</span>            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-<span class="linenos">42</span>                <span class="n">d</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
-<span class="linenos">43</span>                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loading server weights: </span><span class="si">{</span><span class="n">d</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="linenos">44</span>            <span class="n">model</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
-<span class="linenos">45</span>        <span class="k">else</span><span class="p">:</span>
-<span class="linenos">46</span>            <span class="n">model</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;sequence&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])}</span>
-<span class="linenos">47</span>        <span class="k">return</span> <span class="n">model</span>
-<span class="linenos">48</span>
-<span class="linenos">49</span>    <span class="k">def</span> <span class="nf">save_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">Model</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
-<span class="linenos">50</span>        <span class="sd">&quot;&quot;&quot;</span>
-<span class="linenos">51</span><span class="sd">            persist the Model object</span>
-<span class="linenos">52</span>
-<span class="linenos">53</span><span class="sd">        Args:</span>
-<span class="linenos">54</span><span class="sd">            model: Model object</span>
-<span class="linenos">55</span><span class="sd">            fl_ctx: FLContext</span>
-<span class="linenos">56</span><span class="sd">        &quot;&quot;&quot;</span>
-<span class="linenos">57</span>        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Saving aggregated server weights: </span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="linenos">58</span>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-<span class="linenos">59</span>            <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+<span class="linenos">39</span>    <span class="k">def</span> <span class="nf">load_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ModelLearnable</span><span class="p">:</span>
+<span class="linenos">40</span>        <span class="c1"># Get start round from FLContext. If start_round &gt; 0, we will try loading model from disk.</span>
+<span class="linenos">41</span>        <span class="n">start_round</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">START_ROUND</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+<span class="linenos">42</span>        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+<span class="linenos">43</span>        <span class="n">run_number</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_RUN</span><span class="p">)</span>
+<span class="linenos">44</span>        <span class="n">run_dir</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_workspace</span><span class="p">()</span><span class="o">.</span><span class="n">get_run_dir</span><span class="p">(</span><span class="n">run_number</span><span class="p">)</span>
+<span class="linenos">45</span>        <span class="n">model_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">run_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_name</span><span class="p">)</span>
+<span class="linenos">46</span>
+<span class="linenos">47</span>        <span class="c1"># Create a new numpy model</span>
+<span class="linenos">48</span>        <span class="k">if</span> <span class="n">start_round</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+<span class="linenos">49</span>            <span class="k">try</span><span class="p">:</span>
+<span class="linenos">50</span>                <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+<span class="linenos">51</span>            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<span class="linenos">52</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span>
+<span class="linenos">53</span>                    <span class="n">fl_ctx</span><span class="p">,</span>
+<span class="linenos">54</span>                    <span class="sa">f</span><span class="s2">&quot;Unable to load model from </span><span class="si">{</span><span class="n">model_path</span><span class="si">}</span><span class="s2">. Using default data instead.&quot;</span><span class="p">,</span>
+<span class="linenos">55</span>                    <span class="n">fire_event</span><span class="o">=</span><span class="kc">False</span>
+<span class="linenos">56</span>                <span class="p">)</span>
+<span class="linenos">57</span>                <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="linenos">58</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos">59</span>            <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="linenos">60</span>
+<span class="linenos">61</span>        <span class="c1"># Generate model dictionary and create model_learnable.</span>
+<span class="linenos">62</span>        <span class="n">weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">NPConstants</span><span class="o">.</span><span class="n">NUMPY_KEY</span><span class="p">:</span> <span class="n">data</span><span class="p">}</span>
+<span class="linenos">63</span>        <span class="n">model_learnable</span> <span class="o">=</span> <span class="n">make_model_learnable</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="p">{})</span>
+<span class="linenos">64</span>
+<span class="linenos">65</span>        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loaded initial model: </span><span class="si">{</span><span class="n">model_learnable</span><span class="p">[</span><span class="n">ModelLearnableKey</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">66</span>        <span class="k">return</span> <span class="n">model_learnable</span>
+<span class="linenos">67</span>
+<span class="linenos">68</span>    <span class="k">def</span> <span class="nf">save_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">ModelLearnable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+<span class="linenos">69</span>        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+<span class="linenos">70</span>        <span class="n">run_number</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_RUN</span><span class="p">)</span>
+<span class="linenos">71</span>        <span class="n">run_dir</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_workspace</span><span class="p">()</span><span class="o">.</span><span class="n">get_run_dir</span><span class="p">(</span><span class="n">run_number</span><span class="p">)</span>
+<span class="linenos">72</span>        <span class="n">model_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">run_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_dir</span><span class="p">)</span>
+<span class="linenos">73</span>        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">model_path</span><span class="p">):</span>
+<span class="linenos">74</span>            <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+<span class="linenos">75</span>
+<span class="linenos">76</span>        <span class="n">model_save_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">model_path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_name</span><span class="p">)</span>
+<span class="linenos">77</span>        <span class="k">if</span> <span class="n">model_save_path</span><span class="p">:</span>
+<span class="linenos">78</span>            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">model_save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="linenos">79</span>                <span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">model</span><span class="p">[</span><span class="n">ModelLearnableKey</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">][</span><span class="n">NPConstants</span><span class="o">.</span><span class="n">NUMPY_KEY</span><span class="p">])</span>
+<span class="linenos">80</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Saved numpy model to: </span><span class="si">{</span><span class="n">model_save_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<p>The model persistor is used to load and save models on the server. Here, the model is a <code class="docutils literal notranslate"><span class="pre">Model</span></code> object containing two calculated Fibonacci numbers.</p>
-<p>The expected format of the <code class="docutils literal notranslate"><span class="pre">Model</span></code> object is a dictionary with keys of type <code class="docutils literal notranslate"><span class="pre">str</span></code> and values of type <code class="docutils literal notranslate"><span class="pre">numpy.array</span></code>.
-This can be easily changed as long as all of the FL components agree on the format.</p>
-<p>In this exercise, we can simply serialize the model dictionary using pickle and save it to weights.pickle
-inside the <code class="docutils literal notranslate"><span class="pre">server/run_1/mmar_server/models/</span></code> directory (weights file name specified in <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>).
+<p>The model persistor is used to load and save models on the server. Here, the model is weights packaged into a <code class="docutils literal notranslate"><span class="pre">ModelLearnable</span></code> object.</p>
+<p>Internally, DXO is used to manage data after <a class="reference internal" href="../apidocs/nvflare.app_common.shareablegenerators.html#nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator" title="nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">FullModelShareableGenerator</span></code></a>
+converts Learnable to Shareable on the FL server. The DXO helps all of the FL components agree on the format.</p>
+<p>In this exercise, we can simply save the model as a binary “.npy” file.
 Depending on the frameworks and tools, the methods of saving the model may vary.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Note that in our hello-examples, we are demonstrating Federated Learning using the familiar deep learning model concept.</p>
-<p>However, Federated Learning is not restricted to just deep learning and may not always involve models. Thus,
-we define a <a class="reference internal" href="../programming_guide.html#learnable"><span class="std std-ref">Learnable</span></a> object (subclasses <code class="docutils literal notranslate"><span class="pre">dict</span></code>) as the most general form of data object generated through Federated Learning.
-The <code class="docutils literal notranslate"><span class="pre">Model</span></code> class we are using here is simply a subclass of <code class="docutils literal notranslate"><span class="pre">Learnable</span></code>.</p>
-</div>
 </div>
 <div class="section" id="application-configuration">
 <h3>Application Configuration<a class="headerlink" href="#application-configuration" title="Permalink to this headline">¶</a></h3>
 <p>Inside the config folder there are two files, <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code> and <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>.
 For now, the default configurations are sufficient.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">config_fed_server.json</span><a class="headerlink" href="#id2" title="Permalink to this code">¶</a></div>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
+<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos"> 3</span>  <span class="nt">&quot;server&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos"> 4</span>    <span class="nt">&quot;heart_beat_timeout&quot;</span><span class="p">:</span> <span class="mi">600</span>
+<span class="linenos"> 5</span>  <span class="p">},</span>
+<span class="linenos"> 6</span>  <span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos"> 7</span>  <span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos"> 8</span>  <span class="nt">&quot;components&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos"> 9</span>    <span class="p">{</span>
+<span class="linenos">10</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;persistor&quot;</span><span class="p">,</span>
+<span class="linenos">11</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;np_model_persistor.NPModelPersistor&quot;</span><span class="p">,</span>
+<span class="linenos">12</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">13</span>    <span class="p">},</span>
+<span class="linenos">14</span>    <span class="p">{</span>
+<span class="linenos">15</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span>
+<span class="linenos">16</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator&quot;</span><span class="p">,</span>
+<span class="linenos">17</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">18</span>    <span class="p">},</span>
+<span class="linenos">19</span>    <span class="p">{</span>
+<span class="linenos">20</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;aggregator&quot;</span><span class="p">,</span>
+<span class="linenos">21</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator&quot;</span><span class="p">,</span>
+<span class="linenos">22</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">23</span>        <span class="nt">&quot;expected_data_kind&quot;</span><span class="p">:</span> <span class="s2">&quot;WEIGHTS&quot;</span>
+<span class="linenos">24</span>      <span class="p">}</span>
+<span class="linenos">25</span>    <span class="p">}</span>
+<span class="linenos">26</span>  <span class="p">],</span>
+<span class="linenos">27</span>  <span class="nt">&quot;workflows&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">28</span>    <span class="p">{</span>
+<span class="linenos">29</span>      <span class="nt">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;scatter_and_gather&quot;</span><span class="p">,</span>
+<span class="linenos">30</span>      <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather&quot;</span><span class="p">,</span>
+<span class="linenos">31</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">32</span>        <span class="nt">&quot;min_clients&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos">33</span>        <span class="nt">&quot;num_rounds&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+<span class="linenos">34</span>        <span class="nt">&quot;start_round&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+<span class="linenos">35</span>        <span class="nt">&quot;wait_time_after_min_received&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+<span class="linenos">36</span>        <span class="nt">&quot;aggregator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;aggregator&quot;</span><span class="p">,</span>
+<span class="linenos">37</span>        <span class="nt">&quot;persistor_id&quot;</span><span class="p">:</span> <span class="s2">&quot;persistor&quot;</span><span class="p">,</span>
+<span class="linenos">38</span>        <span class="nt">&quot;shareable_generator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span>
+<span class="linenos">39</span>        <span class="nt">&quot;train_task_name&quot;</span><span class="p">:</span> <span class="s2">&quot;train&quot;</span><span class="p">,</span>
+<span class="linenos">40</span>        <span class="nt">&quot;train_timeout&quot;</span><span class="p">:</span> <span class="mi">6000</span>
+<span class="linenos">41</span>      <span class="p">}</span>
+<span class="linenos">42</span>    <span class="p">}</span>
+<span class="linenos">43</span>  <span class="p">]</span>
+<span class="linenos">44</span><span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<p>Note that the component with id <code class="docutils literal notranslate"><span class="pre">persistor</span></code> points to the custom <code class="docutils literal notranslate"><span class="pre">NPModelPersistor</span></code> with full Python module path.</p>
 <div class="literal-block-wrapper docutils container" id="id3">
-<div class="code-block-caption"><span class="caption-text">config_fed_server.json</span><a class="headerlink" href="#id3" title="Permalink to this code">¶</a></div>
+<div class="code-block-caption"><span class="caption-text">config_fed_client.json</span><a class="headerlink" href="#id3" title="Permalink to this code">¶</a></div>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
-<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos"> 3</span>  <span class="nt">&quot;servers&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos"> 3</span>  <span class="nt">&quot;executors&quot;</span><span class="p">:</span> <span class="p">[</span>
 <span class="linenos"> 4</span>    <span class="p">{</span>
-<span class="linenos"> 5</span>      <span class="nt">&quot;min_num_clients&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos"> 6</span>      <span class="nt">&quot;max_num_clients&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
-<span class="linenos"> 7</span>      <span class="nt">&quot;wait_after_min_clients&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
-<span class="linenos"> 8</span>      <span class="nt">&quot;heart_beat_timeout&quot;</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span>
-<span class="linenos"> 9</span>      <span class="nt">&quot;start_round&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-<span class="linenos">10</span>      <span class="nt">&quot;num_rounds&quot;</span><span class="p">:</span> <span class="mi">10</span>
-<span class="linenos">11</span>    <span class="p">}</span>
-<span class="linenos">12</span>  <span class="p">],</span>
-<span class="linenos">13</span>  <span class="nt">&quot;aggregator&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">14</span>    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;AccumulateWeightedAggregator&quot;</span><span class="p">,</span>
-<span class="linenos">15</span>    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">16</span>      <span class="nt">&quot;aggregation_weights&quot;</span><span class="p">:</span>
-<span class="linenos">17</span>        <span class="p">{</span>
-<span class="linenos">18</span>          <span class="nt">&quot;site-1&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos">19</span>          <span class="nt">&quot;site-2&quot;</span><span class="p">:</span> <span class="mi">1</span>
-<span class="linenos">20</span>        <span class="p">}</span>
-<span class="linenos">21</span>    <span class="p">}</span>
-<span class="linenos">22</span>  <span class="p">},</span>
-<span class="linenos">23</span>  <span class="nt">&quot;outbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
-<span class="linenos">24</span>  <span class="nt">&quot;inbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
-<span class="linenos">25</span>  <span class="nt">&quot;persistor&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">26</span>    <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;model_persistor.NumpyModelPersistor&quot;</span><span class="p">,</span>
-<span class="linenos">27</span>    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">28</span>      <span class="nt">&quot;save_name&quot;</span><span class="p">:</span> <span class="s2">&quot;weight.pickle&quot;</span>
-<span class="linenos">29</span>    <span class="p">}</span>
-<span class="linenos">30</span>  <span class="p">},</span>
-<span class="linenos">31</span>  <span class="nt">&quot;shareable_generator&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">32</span>    <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;FullModelShareableGenerator&quot;</span>
-<span class="linenos">33</span>  <span class="p">}</span>
-<span class="linenos">34</span><span class="p">}</span>
+<span class="linenos"> 5</span>      <span class="nt">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos"> 6</span>        <span class="s2">&quot;train&quot;</span>
+<span class="linenos"> 7</span>      <span class="p">],</span>
+<span class="linenos"> 8</span>      <span class="nt">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos"> 9</span>        <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;np_trainer.NPTrainer&quot;</span><span class="p">,</span>
+<span class="linenos">10</span>        <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">11</span>      <span class="p">}</span>
+<span class="linenos">12</span>    <span class="p">}</span>
+<span class="linenos">13</span>  <span class="p">],</span>
+<span class="linenos">14</span>  <span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos">15</span>  <span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos">16</span>  <span class="nt">&quot;components&quot;</span><span class="p">:</span> <span class="p">[]</span>
+<span class="linenos">17</span><span class="p">}</span>
 </pre></div>
 </div>
 </div>
-<p>Note that the <code class="docutils literal notranslate"><span class="pre">persistor</span></code> points to the custom <code class="docutils literal notranslate"><span class="pre">NumpyModelPersistor</span></code> with full Python module path.</p>
-<div class="literal-block-wrapper docutils container" id="id4">
-<div class="code-block-caption"><span class="caption-text">config_fed_client.json</span><a class="headerlink" href="#id4" title="Permalink to this code">¶</a></div>
-<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
-<span class="linenos"> 2</span>  <span class="nt">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-<span class="linenos"> 3</span>  <span class="nt">&quot;platform&quot;</span><span class="p">:</span> <span class="s2">&quot;numpy&quot;</span><span class="p">,</span>
-<span class="linenos"> 4</span>  <span class="nt">&quot;client&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos"> 5</span>    <span class="nt">&quot;outbound_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
-<span class="linenos"> 6</span>    <span class="nt">&quot;inbound_filters&quot;</span><span class="p">:</span> <span class="p">[]</span>
-<span class="linenos"> 7</span>  <span class="p">},</span>
-<span class="linenos"> 8</span>  <span class="nt">&quot;client_trainer&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos"> 9</span>    <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;trainer.SimpleTrainer&quot;</span><span class="p">,</span>
-<span class="linenos">10</span>    <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
-<span class="linenos">11</span>  <span class="p">},</span>
-<span class="linenos">12</span>  <span class="nt">&quot;handlers&quot;</span><span class="p">:</span> <span class="p">[]</span>
-<span class="linenos">13</span><span class="p">}</span>
-</pre></div>
+<p>Here, in <code class="docutils literal notranslate"><span class="pre">executors</span></code>, the Trainer implementation <code class="docutils literal notranslate"><span class="pre">NPTrainer</span></code> is configured for the task “train”.</p>
 </div>
 </div>
-<p>Here, the <code class="docutils literal notranslate"><span class="pre">client_trainer</span></code> points to the Trainer implementation <code class="docutils literal notranslate"><span class="pre">SimpleTrainer</span></code>.</p>
-</div>
-</div>
-<div class="section" id="federated-numpy-fibonacci">
-<h2>Federated Numpy Fibonacci!<a class="headerlink" href="#federated-numpy-fibonacci" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="federated-numpy-with-scatter-and-gather-workflow">
+<h2>Federated Numpy with Scatter and Gather Workflow!<a class="headerlink" href="#federated-numpy-with-scatter-and-gather-workflow" title="Permalink to this headline">¶</a></h2>
 <p>Now you must set up a local environment and generate packages to simulate the server, clients, and admin.</p>
 <div class="section" id="setting-up-the-application-environment">
 <h3>Setting Up the Application Environment<a class="headerlink" href="#setting-up-the-application-environment" title="Permalink to this headline">¶</a></h3>
@@ -537,7 +506,7 @@ For now, the default configurations are sufficient.</p>
 $ cp -r poc/client poc/site-2
 </pre></div>
 </div>
-<p>Finally, we copy necessary files (the exercise codes) to a working folder:</p>
+<p>Finally, we copy necessary files (the exercise code) to a working folder:</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ mkdir -p poc/admin/transfer
 $ cp -rf examples/* poc/admin/transfer
 </pre></div>
@@ -564,86 +533,47 @@ Open a new terminal and start the first client:</p>
 <p>This will launch a command prompt, where you can input commands to control and monitor many aspects of
 the FL process. Log in by entering <code class="docutils literal notranslate"><span class="pre">admin</span></code> for both the username and password.</p>
 </div>
-<div class="section" id="running-the-fl">
-<h3>Running the FL<a class="headerlink" href="#running-the-fl" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="running-the-fl-system">
+<h3>Running the FL System<a class="headerlink" href="#running-the-fl-system" title="Permalink to this headline">¶</a></h3>
 <p>Enter the commands below in order.  Pay close attention to what happens in each of four terminals.  You
-can see the admin controls server and clients with each command.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; upload_app hello-numpy
+can see how the admin controls the server and clients with each command.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; upload_app hello-numpy-sag
 </pre></div>
 </div>
-<p>Uploads an application in the server’s registry.  This creates the application entry, populates the configuration and links the name
-<code class="docutils literal notranslate"><span class="pre">hello-numpy</span></code> with such application configuration.  Later, you can control this application via this name.</p>
+<p>Uploads the application from the admin client to the server’s staging area.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; set_run_number <span class="m">1</span>
 </pre></div>
 </div>
-<p>Creates a workspace with the run_number on the server and all clients.  The purpose of this workspace is to isolate different runs so
-the information in one particular run does not interfere with other runs.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; deploy_app hello-numpy all
+<p>Creates a run directory in the workspace for the run_number on the server and all clients. The run directory allows for
+the isolation of different runs so the information in one particular run does not interfere with other runs.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; deploy_app hello-numpy-sag all
 </pre></div>
 </div>
-<p>This will make the hello-numpy application the active one in the run_number workspace.  After the above two commands, the
-server and all the clients know the hello-numpy application will reside in the <code class="docutils literal notranslate"><span class="pre">run_1</span></code> workspace.</p>
+<p>This will make the hello-numpy-sag application the active one in the run_number workspace.  After the above two commands, the
+server and all the clients know the hello-numpy-sag application will reside in the <code class="docutils literal notranslate"><span class="pre">run_1</span></code> workspace.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; start_app all
 </pre></div>
 </div>
-<p>This <code class="docutils literal notranslate"><span class="pre">start_app</span></code> command instructs the NVFlare server and clients to start training with the hello-numpy application in that <code class="docutils literal notranslate"><span class="pre">run_1</span></code> workspace.</p>
+<p>This <code class="docutils literal notranslate"><span class="pre">start_app</span></code> command instructs the NVIDIA FLARE server and clients to start training with the hello-numpy-sag
+application in the <code class="docutils literal notranslate"><span class="pre">run_1</span></code> workspace.</p>
 <p>From time to time, you can issue <code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code> in the admin client to check the entire training progress.</p>
-<p>You should now see how the training does in the very first terminal (the one that started the server):</p>
-</div>
-<div class="section" id="understanding-the-output">
-<h3>Understanding the Output<a class="headerlink" href="#understanding-the-output" title="Permalink to this headline">¶</a></h3>
+<p>You should now see how the training does in the very first terminal (the one that started the server).</p>
 <p>After starting the server and clients, you should begin to see
-some outputs in each terminal tracking the progress of the fl run. If everything went as
-planned, you should see that through 10 rounds, the FL system has calculated the correct
-numbers in the Fibonacci Sequence: <code class="docutils literal notranslate"><span class="pre">0,</span> <span class="pre">1,</span> <span class="pre">1,</span> <span class="pre">2,</span> <span class="pre">3,</span> <span class="pre">5,</span> <span class="pre">8,</span> <span class="pre">13,</span> <span class="pre">21,</span> <span class="pre">34,</span> <span class="pre">55,</span> <span class="pre">89</span></code></p>
-<p>Here are some snippets of the output that you can follow along with.</p>
-<div class="literal-block-wrapper docutils container" id="id5">
-<div class="code-block-caption"><span class="caption-text">site-1</span><a class="headerlink" href="#id5" title="Permalink to this code">¶</a></div>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>Get global model <span class="k">for</span> round: <span class="m">6</span>
-pull_models completed. Status:True rank:0
-site-1 Shareable from server:  <span class="o">{</span><span class="s1">&#39;sequence&#39;</span>: array<span class="o">([</span> <span class="m">8</span>., <span class="m">13</span>.<span class="o">])}</span>
-site-1 Updated Shareable to server:  <span class="o">{</span><span class="s1">&#39;sequence&#39;</span>: array<span class="o">([</span><span class="m">12</span>., <span class="m">20</span>.<span class="o">])}</span>
-
-Send model to server.
-<span class="m">2021</span>-07-01 <span class="m">16</span>:22:28,431 - FederatedClient - INFO - Starting to push model.
-<span class="m">2021</span>-07-01 <span class="m">16</span>:22:28,432 - Communicator - INFO - Send example_project at round <span class="m">6</span>
-</pre></div>
-</div>
-</div>
-<div class="literal-block-wrapper docutils container" id="id6">
-<div class="code-block-caption"><span class="caption-text">site-2</span><a class="headerlink" href="#id6" title="Permalink to this code">¶</a></div>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>Get global model <span class="k">for</span> round: <span class="m">6</span>
-pull_models completed. Status:True rank:0
-site-2 Shareable from server:  <span class="o">{</span><span class="s1">&#39;sequence&#39;</span>: array<span class="o">([</span> <span class="m">8</span>., <span class="m">13</span>.<span class="o">])}</span>
-site-2 Updated Shareable to server:  <span class="o">{</span><span class="s1">&#39;sequence&#39;</span>: array<span class="o">([</span><span class="m">14</span>., <span class="m">22</span>.<span class="o">])}</span>
-
-Send model to server.
-<span class="m">2021</span>-07-01 <span class="m">16</span>:22:31,462 - FederatedClient - INFO - Starting to push model.
-<span class="m">2021</span>-07-01 <span class="m">16</span>:22:31,463 - Communicator - INFO - Send example_project at round <span class="m">6</span>
-</pre></div>
-</div>
-</div>
-<div class="literal-block-wrapper docutils container" id="id7">
-<div class="code-block-caption"><span class="caption-text">server</span><a class="headerlink" href="#id7" title="Permalink to this code">¶</a></div>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="m">2021</span>-07-01 <span class="m">16</span>:22:38,453 - FederatedServer - INFO - &gt; aggregating: <span class="m">6</span>
-<span class="m">2021</span>-07-01 <span class="m">16</span>:22:38,453 - AccumulateWeightedAggregator - INFO - aggregating <span class="m">2</span> updates at round <span class="m">6</span>
-Saving aggregated server weights:  <span class="o">{</span><span class="s1">&#39;sequence&#39;</span>: array<span class="o">([</span><span class="m">13</span>., <span class="m">21</span>.<span class="o">])}</span>
-</pre></div>
-</div>
-</div>
-<p>As you can see, on round 6 both of the clients receive <code class="docutils literal notranslate"><span class="pre">[8,</span> <span class="pre">13]</span></code> from the server. However, instead of sending back <code class="docutils literal notranslate"><span class="pre">[13,</span> <span class="pre">8</span> <span class="pre">+</span> <span class="pre">13]</span> <span class="pre">=</span> <span class="pre">[13,</span> <span class="pre">21]</span></code>, due to the built in biases, site-1 sends back <code class="docutils literal notranslate"><span class="pre">[12,</span> <span class="pre">20]</span></code> and site-2 sends back <code class="docutils literal notranslate"><span class="pre">[14,</span> <span class="pre">22]</span></code> to the server.</p>
-<p>Finally, through aggregating the clients’ results, the server saves the weights for round 6 with the correct sequence of <code class="docutils literal notranslate"><span class="pre">[13,</span> <span class="pre">21]</span></code>.</p>
-<p>Once the fl run is complete and the server has successfully aggregrated the client’s results after all the rounds, run the following commands in the fl_admin to shutdown the system (while inputting <code class="docutils literal notranslate"><span class="pre">admin</span></code> when prompted with password):</p>
+some outputs in each terminal tracking the progress of the FL run. If everything went as
+planned, you should see that through 10 rounds, the FL system has aggregated new models on the server
+with the results produced by the clients.</p>
+<p>Once the fl run is complete and the server has successfully aggregated the client’s results after all the rounds, run
+the following commands in the fl_admin to shutdown the system (while inputting <code class="docutils literal notranslate"><span class="pre">admin</span></code> when prompted with password):</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; shutdown client
 &gt; shutdown server
 &gt; bye
 </pre></div>
 </div>
 <p>In order to stop all processes, run <code class="docutils literal notranslate"><span class="pre">./stop_fl.sh</span></code>.</p>
-<p>If you want to reset the saved server weights to start from <code class="docutils literal notranslate"><span class="pre">[0,1]</span></code> again, delete <code class="docutils literal notranslate"><span class="pre">weights.pickle</span></code> in the <code class="docutils literal notranslate"><span class="pre">server/run_1/mmar_server/models/</span></code> directory.</p>
 <p>Congratulations!
 You’ve successfully built and run your first numpy federated learning system.
-You now have a decent grasp of the main FL concepts, and are ready to start exploring how NVFlare can be applied to many other tasks.</p>
+You now have a decent grasp of the main FL concepts, and are ready to start exploring how NVIDIA FLARE can be applied to many other tasks.</p>
+<p>The full <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag">source code</a> for this exercise can be found in <code class="docutils literal notranslate"><span class="pre">examples/hello-numpy-sag</span></code>.</p>
 </div>
 </div>
 </div>

@@ -3,7 +3,7 @@ How to create the self-signed SSL Certificate Authority and server-clients certi
 #######################################################################################
 
 If you are using the automatically generated startup kits created by the provisioning tool as described in the
-:ref:`user_guide/provisioning_tool:Provisioning tool`, the following would have already been taken care of at the
+:ref:`user_guide/provisioning_tool:Provisioning in NVIDIA FLARE`, the following would have already been taken care of at the
 creation of the startup kits. The code that generates the startup kits automatically creates certificates for the server
 and clients and puts them all in their default expected locations.
 

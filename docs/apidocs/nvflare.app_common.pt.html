@@ -1,0 +1,720 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.app_common.pt package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.app_common.shareablegenerators package" href="nvflare.app_common.shareablegenerators.html" />
+    <link rel="prev" title="nvflare.app_common.homomorphic_encryption package" href="nvflare.app_common.homomorphic_encryption.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.app_common.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common.app_constant">nvflare.app_common.app_constant module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common.app_event_type">nvflare.app_common.app_event_type module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.app_common.html#module-nvflare.app_common">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+          <li><a href="nvflare.app_common.html">nvflare.app_common package</a> &raquo;</li>
+        
+      <li>nvflare.app_common.pt package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.app_common.pt.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-app-common-pt-package">
+<h1>nvflare.app_common.pt package<a class="headerlink" href="#nvflare-app-common-pt-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.app_common.pt.pt_fed_utils">
+<span id="nvflare-app-common-pt-pt-fed-utils-module"></span><h2>nvflare.app_common.pt.pt_fed_utils module<a class="headerlink" href="#module-nvflare.app_common.pt.pt_fed_utils" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PTModelPersistenceFormatManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default_train_conf</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fed_utils.html#PTModelPersistenceFormatManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.PERSISTENCE_KEY_META_PROPS">
+<span class="sig-name descname"><span class="pre">PERSISTENCE_KEY_META_PROPS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'meta_props'</span></em><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.PERSISTENCE_KEY_META_PROPS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL">
+<span class="sig-name descname"><span class="pre">PERSISTENCE_KEY_MODEL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'model'</span></em><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.PERSISTENCE_KEY_TRAIN_CONF">
+<span class="sig-name descname"><span class="pre">PERSISTENCE_KEY_TRAIN_CONF</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train_conf'</span></em><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.PERSISTENCE_KEY_TRAIN_CONF" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.to_model_learnable">
+<span class="sig-name descname"><span class="pre">to_model_learnable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exclude_vars</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.app_common.abstract.html#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fed_utils.html#PTModelPersistenceFormatManager.to_model_learnable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.to_model_learnable" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.to_persistence_dict">
+<span class="sig-name descname"><span class="pre">to_persistence_dict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fed_utils.html#PTModelPersistenceFormatManager.to_persistence_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.to_persistence_dict" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ml</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.app_common.abstract.html#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fed_utils.html#PTModelPersistenceFormatManager.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.PTModelPersistenceFormatManager.update" title="Permalink to this definition">¶</a></dt>
+<dd><p>Update the persistence data with the learned values</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ml</strong> – </p>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fed_utils.feed_vars">
+<span class="sig-name descname"><span class="pre">feed_vars</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">torch.nn.modules.module.Module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_params</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fed_utils.html#feed_vars"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fed_utils.feed_vars" title="Permalink to this definition">¶</a></dt>
+<dd><p>feed variable values from model_params to pytorch state_dict.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> (<em>nn.Module</em>) – the local pytorch model</p></li>
+<li><p><strong>model_params</strong> – a ModelData message</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a list of params and a dictionary of vars to params</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.pt.pt_fedopt">
+<span id="nvflare-app-common-pt-pt-fedopt-module"></span><h2>nvflare.app_common.pt.pt_fedopt module<a class="headerlink" href="#module-nvflare.app_common.pt.pt_fedopt" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PTFedOptModelShareableGenerator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">optimizer_args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lr_scheduler_args</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'model'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fedopt.html#PTFedOptModelShareableGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.app_common.shareablegenerators.html#nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator" title="nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator</span></code></a></p>
+<p>ShareableGenerator to implement the FedOpt algorithm proposed in
+Reddi, Sashank, et al. “Adaptive federated optimization.” arXiv preprint arXiv:2003.00295 (2020).
+This SharableGenerator will update the global model using the specified
+PyTorch optimizer and learning rate scheduler.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>optimizer_args</strong> – dictionary of optimizer arguments, e.g.
+{‘path’: ‘torch.optim.SGD’, ‘args’: {‘lr’: 1.0}} (default).</p></li>
+<li><p><strong>lr_scheduler_args</strong> – dictionary of server-side learning rate scheduler arguments, e.g.
+{‘path’: ‘torch.optim.lr_scheduler.CosineAnnealingLR’, ‘args’: {‘T_max’: 100}} (default: None).</p></li>
+<li><p><strong>source_model</strong> – either a valid torch model object or a component ID of a torch model object</p></li>
+<li><p><strong>device</strong> – specify the device to run server-side optimization, e.g. “cpu” or “cuda:0”
+(will default to cuda if available and no device is specified).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fedopt.html#PTFedOptModelShareableGenerator.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>perform the handler process based on the event_type.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> – event type fired by workflow</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator.server_update">
+<span class="sig-name descname"><span class="pre">server_update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_diff</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fedopt.html#PTFedOptModelShareableGenerator.server_update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator.server_update" title="Permalink to this definition">¶</a></dt>
+<dd><p>Updates the global model using the specified optimizer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>model_diff</strong> – the aggregated model differences from clients.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The updated PyTorch model state dictionary.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator.shareable_to_learnable">
+<span class="sig-name descname"><span class="pre">shareable_to_learnable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.app_common.abstract.html#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fedopt.html#PTFedOptModelShareableGenerator.shareable_to_learnable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator.shareable_to_learnable" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert Shareable to Learnable while doing a FedOpt update step</p>
+<p>Supporting data_kind == DataKind.WEIGHT_DIFF</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>shareable</strong> (<em>Shareable</em>) – Shareable to be converted</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FL context</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Updated global ModelLearnable.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Model</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.pt.pt_fedproxloss">
+<span id="nvflare-app-common-pt-pt-fedproxloss-module"></span><h2>nvflare.app_common.pt.pt_fedproxloss module<a class="headerlink" href="#module-nvflare.app_common.pt.pt_fedproxloss" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PTFedProxLoss</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mu</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0.01</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fedproxloss.html#PTFedProxLoss"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">torch.nn.modules.loss._Loss</span></code></p>
+<p>Compute FedProx loss: a loss penalizing the deviation from global model</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mu</strong> – weighting parameter</p></li>
+<li><p><strong>input</strong> (<em>nn.Module</em>) – the local pytorch model</p></li>
+<li><p><strong>target</strong> (<em>nn.Module</em>) – the copy of global pytorch model when local clients received it
+at the beginning of each local round</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>FedProx loss term</p>
+</dd>
+</dl>
+<p>Initializes internal Module state, shared by both nn.Module and ScriptModule.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">torch.Tensor</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_fedproxloss.html#PTFedProxLoss.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss.forward" title="Permalink to this definition">¶</a></dt>
+<dd><p>Defines the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss.reduction">
+<span class="sig-name descname"><span class="pre">reduction</span></span><em class="property"><span class="pre">:</span> <span class="pre">str</span></em><a class="headerlink" href="#nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss.reduction" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.pt.pt_file_model_persistor">
+<span id="nvflare-app-common-pt-pt-file-model-persistor-module"></span><h2>nvflare.app_common.pt.pt_file_model_persistor module<a class="headerlink" href="#module-nvflare.app_common.pt.pt_file_model_persistor" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PTFileModelPersistor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exclude_vars</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">global_model_file_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'FL_global_model.pt'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">best_global_model_file_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'best_FL_global_model.pt'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_ckpt_file_full_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_file_model_persistor.html#PTFileModelPersistor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.app_common.abstract.html#nvflare.app_common.abstract.model_persistor.ModelPersistor" title="nvflare.app_common.abstract.model_persistor.ModelPersistor"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.abstract.model_persistor.ModelPersistor</span></code></a></p>
+<p>This Model Persistor tries to load PT model data in following three ways:</p>
+<ol class="arabic simple">
+<li><p>Load from a specified source checkpoint file</p></li>
+<li><p>Load from a location from the app folder</p></li>
+<li><p>Load from a torch model object</p></li>
+</ol>
+<p>The Persistor tries method 1 first if the source_ckpt_file_full_name is specified;
+If source_ckpt_file_full_name is not specified, it tries the method 2;
+If no checkpoint location is specified in the app folder, it tries method 3.</p>
+<p>Method 2 - Load from a location from the app folder
+It is assumed that the app folder must contain the environments.json file. Among other things, this
+JSON file must specify where to find the checkpoint file. It does so with two JSON elements:</p>
+<blockquote>
+<div><p>APP_CKPT_DIR - this element specifies the folder (within the app) where the checkpoint file resides.
+APP_CKPT - this element specified the base file name of the checkpoint</p>
+</div></blockquote>
+<p>Here is an example of the environments.json content:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>{</dt><dd><p>“APP_CKPT_DIR”: “model”,
+“APP_CKPT”: “pretrained_model.pt”</p>
+</dd>
+</dl>
+<p>}</p>
+</div></blockquote>
+<p>In this example, the checkpoint file is located in the “model” folder within the app and is named
+pretrained_model.pt.</p>
+<p>Method 3 - Load from a torch model object. In this case, the ‘model’ arg must be a valid torch
+model, or the component ID of a valid torch model included in the “components” section of
+your config_fed_server.json.</p>
+<p>If all 3 methods fail, system_panic() is called.</p>
+<p>If checkpoint folder name is specified, then global model and best global model will be saved to it;
+Otherwise they will be saved directly in the app folder.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>exclude_vars</strong> – regex expression specifying weight vars to be excluded from training; optional</p></li>
+<li><p><strong>model</strong> – torch model object or component id of the model object; optional</p></li>
+<li><p><strong>global_model_file_name</strong> – file name for saving global model</p></li>
+<li><p><strong>best_global_model_file_name</strong> – file name for saving best global model</p></li>
+<li><p><strong>source_ckpt_file_full_name</strong> – full file name for source model checkpoint file</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_file_model_persistor.html#PTFileModelPersistor.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>perform the handler process based on the event_type.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> – event type fired by workflow</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.load_model">
+<span class="sig-name descname"><span class="pre">load_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.app_common.abstract.html#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_file_model_persistor.html#PTFileModelPersistor.load_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.load_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert initialised model into Learnable/Model format.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FL Context delivered by workflow</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a Learnable/Model object</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Model</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.save_model">
+<span class="sig-name descname"><span class="pre">save_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ml</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.app_common.abstract.html#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><span class="pre">nvflare.app_common.abstract.learnable.Learnable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_file_model_persistor.html#PTFileModelPersistor.save_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.save_model" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>persist the model object</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> – Model object to be saved</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.save_model_file">
+<span class="sig-name descname"><span class="pre">save_model_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">save_path</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_file_model_persistor.html#PTFileModelPersistor.save_model_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor.save_model_file" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.pt.pt_model_reader_writer">
+<span id="nvflare-app-common-pt-pt-model-reader-writer-module"></span><h2>nvflare.app_common.pt.pt_model_reader_writer module<a class="headerlink" href="#module-nvflare.app_common.pt.pt_model_reader_writer" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PTModelReaderWriter</span></span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_model_reader_writer.html#PTModelReaderWriter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.app_common.abstract.html#nvflare.app_common.abstract.model_processor.ModelProcessor" title="nvflare.app_common.abstract.model_processor.ModelProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.abstract.model_processor.ModelProcessor</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.apply_model">
+<span class="sig-name descname"><span class="pre">apply_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_model_reader_writer.html#PTModelReaderWriter.apply_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.apply_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the local model according to model_data</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model_params</strong> – model data information</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FL Context delivered by workflow</p></li>
+<li><p><strong>options</strong> – . Defaults to None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><strong>RuntimeError</strong> – Raised when being unable to apply model_params to the network</p>
+</dd>
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>a list of ops applied to model</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.extract_model">
+<span class="sig-name descname"><span class="pre">extract_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_vars</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_model_reader_writer.html#PTModelReaderWriter.extract_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.extract_model" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.get_local_models">
+<span class="sig-name descname"><span class="pre">get_local_models</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_model_reader_writer.html#PTModelReaderWriter.get_local_models"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.get_local_models" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the local models</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>model_params</strong> – model data information</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a dictionary from filename to bytes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.initialize">
+<span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_model_reader_writer.html#PTModelReaderWriter.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_model_reader_writer.PTModelReaderWriter.initialize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.app_common.pt.pt_multi_process_executor">
+<span id="nvflare-app-common-pt-pt-multi-process-executor-module"></span><h2>nvflare.app_common.pt.pt_multi_process_executor module<a class="headerlink" href="#module-nvflare.app_common.pt.pt_multi_process_executor" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PTMultiProcessExecutor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">executor_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_of_processes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">components</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_multi_process_executor.html#PTMultiProcessExecutor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.app_common.executors.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor" title="nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor</span></code></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>executor_id</strong> – executor component ID</p></li>
+<li><p><strong>num_of_processes</strong> – number of processes to create</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor.get_multi_process_command">
+<span class="sig-name descname"><span class="pre">get_multi_process_command</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/pt/pt_multi_process_executor.html#PTMultiProcessExecutor.get_multi_process_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor.get_multi_process_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Provide the command for starting multi-process execution.
+Returns: multi-process starting command</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="nvflare-app-common-pt-tb-receiver-module">
+<h2>nvflare.app_common.pt.tb_receiver module<a class="headerlink" href="#nvflare-app-common-pt-tb-receiver-module" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.app_common.pt">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.app_common.pt" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.app_common.shareablegenerators.html" class="btn btn-neutral float-right" title="nvflare.app_common.shareablegenerators package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.app_common.homomorphic_encryption.html" class="btn btn-neutral float-left" title="nvflare.app_common.homomorphic_encryption package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

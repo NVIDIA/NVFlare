@@ -1,0 +1,668 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.fuel.hci.client.fl_admin_api_spec &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../../../" src="../../../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.fuel.hci.client.fl_admin_api_spec</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.fuel.hci.client.fl_admin_api_spec</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.client.api_status</span> <span class="kn">import</span> <span class="n">APIStatus</span>
+
+
+<div class="viewcode-block" id="FLAdminAPIResponse"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse">[docs]</a><span class="k">class</span> <span class="nc">FLAdminAPIResponse</span><span class="p">(</span><span class="nb">dict</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Structure containing the response of calls to the api as key value pairs. The status key is the primary indicator of</span>
+<span class="sd">    the success of a call and can contain APIStatus.SUCCESS or another APIStatus. Most calls will return additional</span>
+<span class="sd">    information in the details key, which is also a dictionary of key value pairs. The raw key can optionally have</span>
+<span class="sd">    the underlying response from AdminAPI when relevant, particularly when data is received from the server and the</span>
+<span class="sd">    status of a call is APIStatus.ERROR_RUNTIME to provide additional information.</span>
+
+<span class="sd">    Note that the status in this response primarily indicates that the command submitted successfully. Depending on the</span>
+<span class="sd">    command and especially for calls to multiple clients, the contents of details or the raw response should be examined</span>
+<span class="sd">    to determine if the execution of the command was successful for each specific client.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">status</span><span class="p">:</span> <span class="n">APIStatus</span><span class="p">,</span> <span class="n">details</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">status</span>
+        <span class="k">if</span> <span class="n">details</span><span class="p">:</span>
+            <span class="bp">self</span><span class="p">[</span><span class="s2">&quot;details&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">details</span>
+        <span class="k">if</span> <span class="n">raw</span><span class="p">:</span>
+            <span class="bp">self</span><span class="p">[</span><span class="s2">&quot;raw&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">raw</span></div>
+
+
+<div class="viewcode-block" id="APISyntaxError"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.APISyntaxError">[docs]</a><span class="k">class</span> <span class="nc">APISyntaxError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="TargetType"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType">[docs]</a><span class="k">class</span> <span class="nc">TargetType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">ALL</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+    <span class="n">SERVER</span> <span class="o">=</span> <span class="s2">&quot;server&quot;</span>
+    <span class="n">CLIENT</span> <span class="o">=</span> <span class="s2">&quot;client&quot;</span></div>
+
+
+<div class="viewcode-block" id="FLAdminAPISpec"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec">[docs]</a><span class="k">class</span> <span class="nc">FLAdminAPISpec</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<div class="viewcode-block" id="FLAdminAPISpec.check_status"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.check_status">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">check_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Checks and returns the FL status. If target_type is server, the call does not wait for the server to retrieve</span>
+<span class="sd">        information on the clients but returns the last information the server had at the time this call is made.</span>
+
+<span class="sd">        If target_type is client, specific clients can be specified in targets, and this call generally takes longer</span>
+<span class="sd">        than the function to just check the FL server status because this one waits for communication from the server to</span>
+<span class="sd">        client then back.</span>
+
+<span class="sd">        Note that this is still the previous training check_status, and there will be a new call to get status through</span>
+<span class="sd">        InfoCollector, which will be able to get information from components.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.set_run_number"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.set_run_number">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">set_run_number</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets a current run number.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            run_number: run number in order to set for the current experiment, must be integer greater than 0</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.delete_run_number"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.delete_run_number">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">delete_run_number</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Deletes a specified run number. This deletes the run folder corresponding to the run number on the server and</span>
+<span class="sd">        all connected clients. This is not reversible.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            run_number: run number for the run folder to delete</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.upload_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.upload_app">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">upload_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Uploads specified app to the upload directory of FL server. Currently assumes app is in the upload_dir set in</span>
+<span class="sd">        API init.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            app: name of the folder in upload_dir to upload</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.deploy_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.deploy_app">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">deploy_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Issues a command to deploy the specified app to the specified target for the current run number. The app must</span>
+<span class="sd">        be already uploaded and available on the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            app: name of app to deploy</span>
+<span class="sd">            target_type: server | client | all</span>
+<span class="sd">            targets: if target_type is client, targets can optionally be a list of client names</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.start_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.start_app">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">start_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Issue a command to start the deployed app for the current run number at the specified target.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target_type: server | client | all</span>
+<span class="sd">            targets: if target_type is client, targets can optionally be a list of client names</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.abort"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.abort">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">abort</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Issue a command to abort training.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target_type: server | client</span>
+<span class="sd">            targets: if target_type is client, targets can optionally be a list of client names</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.restart"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.restart">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">restart</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Issue a command to restart the specified target. If the target is server, all FL clients will be restarted</span>
+<span class="sd">        as well.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target_type: server | client</span>
+<span class="sd">            targets: if target_type is client, targets can optionally be a list of client names</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.shutdown"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.shutdown">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_type</span><span class="p">:</span> <span class="n">TargetType</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Issue a command to stop FL entirely for a specific FL client or specific FL clients. Note that the targets</span>
+<span class="sd">        will not be able to start with an API command after shutting down.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target_type: server | client</span>
+<span class="sd">            targets: if target_type is client, targets can optionally be a list of client names</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.remove_client"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.remove_client">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">remove_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Issue a command to remove a specific FL client or FL clients. Note that the targets</span>
+<span class="sd">        will not be able to start with an API command after shutting down.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            targets: a list of client names</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.set_timeout"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.set_timeout">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">set_timeout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the timeout for admin commands on the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            timeout: timeout of admin commands to set on the server</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.get_available_apps_to_upload"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_available_apps_to_upload">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_available_apps_to_upload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.ls_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.ls_target">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">ls_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sends the shell command to get the directory listing of the target allowing for options that the ls command</span>
+<span class="sd">        of admin client allows.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target:  either server or single client&#39;s client name.</span>
+<span class="sd">            options: the options string as provided to the ls command for admin client.</span>
+<span class="sd">            path:    optionally, the path to specify</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.cat_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.cat_target">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">cat_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sends the shell command to get the contents of the target&#39;s specified file allowing for options that the cat</span>
+<span class="sd">        command of admin client allows.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target:  either server or single client&#39;s client name.</span>
+<span class="sd">            options: the options string as provided to the ls command for admin client.</span>
+<span class="sd">            file:    the path to the file to return the contents of</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.tail_target_log"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.tail_target_log">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">tail_target_log</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the end of target&#39;s log allowing for options that the tail of admin client allows.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target:  either server or single client&#39;s client name.</span>
+<span class="sd">            options: the options string as provided to the tail command for admin client. For this command, &quot;-n&quot; can be</span>
+<span class="sd">                     used to specify the number of lines for example &quot;-n 100&quot;, or &quot;-c&quot; can specify the number of bytes.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.env_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.env_target">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">env_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Get the environment variables of the specified target.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target:  either server or single client&#39;s client name.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.get_working_directory"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_working_directory">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_working_directory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Gets the workspace root directory of the specified target.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target:  either server or single client&#39;s client name.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.grep_target"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.grep_target">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">grep_target</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sends the shell command to grep the contents of the target&#39;s specified file allowing for options that the grep</span>
+<span class="sd">        command of admin client allows.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            target:  either server or single client&#39;s client name.</span>
+<span class="sd">            options: the options string as provided to the grep command for admin client.</span>
+<span class="sd">            pattern: the pattern to search for</span>
+<span class="sd">            file:    the path to the file to grep</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.show_stats"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.show_stats">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">show_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Gets and shows stats from the Info Collector.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.show_errors"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.show_errors">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">show_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Gets and shows errors from the Info Collector.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.reset_errors"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.reset_errors">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">reset_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Resets the collector errors.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.get_connected_client_list"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_connected_client_list">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_connected_client_list</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;A convenience function to get a list of the clients currently connected to the FL server through the check</span>
+<span class="sd">        status server call. Note that this returns the client list based on the last known statuses on the server, so it</span>
+<span class="sd">        can be possible for a client to be disconnected and not yet removed from the list of connected clients.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="FLAdminAPISpec.wait_until_server_status"><a class="viewcode-back" href="../../../../../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.wait_until_server_status">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">wait_until_server_status</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">FLAdminAPIResponse</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">fail_attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLAdminAPIResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Wait until provided callback returns True, with the option to specify a timeout and interval to</span>
+<span class="sd">        check the server status. If no callback function is provided, the default callback returns True when the server</span>
+<span class="sd">        status is &quot;training stopped&quot;. A custom callback can be provided to add logic to handle checking for other</span>
+<span class="sd">        conditions. A timeout should be set in case there are any error conditions that result in the system being stuck</span>
+<span class="sd">        in a state where the callback never returns True.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            interval: in seconds, the time between consecutive checks of the server</span>
+<span class="sd">            timeout: if set, the amount of time this function will run until before returning a response message</span>
+<span class="sd">            callback: the reply from check_status_server() will be passed to the callback, along with any additional kwargs</span>
+<span class="sd">            which can go on to perform additional logic.</span>
+<span class="sd">            fail_attempts: number of consecutive failed attempts of getting the server status before returning with ERROR_RUNTIME.</span>
+
+<span class="sd">        Returns: FLAdminAPIResponse</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

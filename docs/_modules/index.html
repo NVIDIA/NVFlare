@@ -1,0 +1,430 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>Overview: module code &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+      <li>Overview: module code</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>All modules for which code is available</h1>
+<ul><li><a href="nvflare/apis/analytix.html">nvflare.apis.analytix</a></li>
+<li><a href="nvflare/apis/app_validation.html">nvflare.apis.app_validation</a></li>
+<li><a href="nvflare/apis/aux.html">nvflare.apis.aux</a></li>
+<li><a href="nvflare/apis/client.html">nvflare.apis.client</a></li>
+<li><a href="nvflare/apis/client_engine_spec.html">nvflare.apis.client_engine_spec</a></li>
+<li><a href="nvflare/apis/controller_spec.html">nvflare.apis.controller_spec</a></li>
+<li><a href="nvflare/apis/dxo.html">nvflare.apis.dxo</a></li>
+<li><a href="nvflare/apis/event_type.html">nvflare.apis.event_type</a></li>
+<li><a href="nvflare/apis/executor.html">nvflare.apis.executor</a></li>
+<li><a href="nvflare/apis/filter.html">nvflare.apis.filter</a></li>
+<li><a href="nvflare/apis/fl_component.html">nvflare.apis.fl_component</a></li>
+<li><a href="nvflare/apis/fl_constant.html">nvflare.apis.fl_constant</a></li>
+<li><a href="nvflare/apis/fl_context.html">nvflare.apis.fl_context</a></li>
+<li><a href="nvflare/apis/fl_exception.html">nvflare.apis.fl_exception</a></li>
+<li><a href="nvflare/apis/impl/any_relay_manager.html">nvflare.apis.impl.any_relay_manager</a></li>
+<li><a href="nvflare/apis/impl/bcast_manager.html">nvflare.apis.impl.bcast_manager</a></li>
+<li><a href="nvflare/apis/impl/controller.html">nvflare.apis.impl.controller</a></li>
+<li><a href="nvflare/apis/impl/send_manager.html">nvflare.apis.impl.send_manager</a></li>
+<li><a href="nvflare/apis/impl/seq_relay_manager.html">nvflare.apis.impl.seq_relay_manager</a></li>
+<li><a href="nvflare/apis/impl/task_manager.html">nvflare.apis.impl.task_manager</a></li>
+<li><a href="nvflare/apis/responder.html">nvflare.apis.responder</a></li>
+<li><a href="nvflare/apis/server_engine_spec.html">nvflare.apis.server_engine_spec</a></li>
+<li><a href="nvflare/apis/shareable.html">nvflare.apis.shareable</a></li>
+<li><a href="nvflare/apis/signal.html">nvflare.apis.signal</a></li>
+<li><a href="nvflare/apis/utils/fl_context_utils.html">nvflare.apis.utils.fl_context_utils</a></li>
+<li><a href="nvflare/apis/utils/format_check.html">nvflare.apis.utils.format_check</a></li>
+<li><a href="nvflare/apis/workspace.html">nvflare.apis.workspace</a></li>
+<li><a href="nvflare/app_common/abstract/aggregator.html">nvflare.app_common.abstract.aggregator</a></li>
+<li><a href="nvflare/app_common/abstract/formatter.html">nvflare.app_common.abstract.formatter</a></li>
+<li><a href="nvflare/app_common/abstract/learnable.html">nvflare.app_common.abstract.learnable</a></li>
+<li><a href="nvflare/app_common/abstract/learnable_persistor.html">nvflare.app_common.abstract.learnable_persistor</a></li>
+<li><a href="nvflare/app_common/abstract/model.html">nvflare.app_common.abstract.model</a></li>
+<li><a href="nvflare/app_common/abstract/model_locator.html">nvflare.app_common.abstract.model_locator</a></li>
+<li><a href="nvflare/app_common/abstract/model_persistor.html">nvflare.app_common.abstract.model_persistor</a></li>
+<li><a href="nvflare/app_common/abstract/model_processor.html">nvflare.app_common.abstract.model_processor</a></li>
+<li><a href="nvflare/app_common/abstract/shareable_generator.html">nvflare.app_common.abstract.shareable_generator</a></li>
+<li><a href="nvflare/app_common/aggregators/accumulate_model_aggregator.html">nvflare.app_common.aggregators.accumulate_model_aggregator</a></li>
+<li><a href="nvflare/app_common/aggregators/intime_accumulate_model_aggregator.html">nvflare.app_common.aggregators.intime_accumulate_model_aggregator</a></li>
+<li><a href="nvflare/app_common/app_constant.html">nvflare.app_common.app_constant</a></li>
+<li><a href="nvflare/app_common/app_event_type.html">nvflare.app_common.app_event_type</a></li>
+<li><a href="nvflare/app_common/executors/multi_process_executor.html">nvflare.app_common.executors.multi_process_executor</a></li>
+<li><a href="nvflare/app_common/filters/convert_weights.html">nvflare.app_common.filters.convert_weights</a></li>
+<li><a href="nvflare/app_common/filters/exclude_vars.html">nvflare.app_common.filters.exclude_vars</a></li>
+<li><a href="nvflare/app_common/filters/percentile_privacy.html">nvflare.app_common.filters.percentile_privacy</a></li>
+<li><a href="nvflare/app_common/filters/svt_privacy.html">nvflare.app_common.filters.svt_privacy</a></li>
+<li><a href="nvflare/app_common/handlers/event_recorder.html">nvflare.app_common.handlers.event_recorder</a></li>
+<li><a href="nvflare/app_common/handlers/intime_model_selection_handler.html">nvflare.app_common.handlers.intime_model_selection_handler</a></li>
+<li><a href="nvflare/app_common/homomorphic_encryption/he_intime_accumulate_model_aggregator.html">nvflare.app_common.homomorphic_encryption.he_intime_accumulate_model_aggregator</a></li>
+<li><a href="nvflare/app_common/homomorphic_encryption/he_model_decryptor.html">nvflare.app_common.homomorphic_encryption.he_model_decryptor</a></li>
+<li><a href="nvflare/app_common/homomorphic_encryption/he_model_encryptor.html">nvflare.app_common.homomorphic_encryption.he_model_encryptor</a></li>
+<li><a href="nvflare/app_common/homomorphic_encryption/he_model_shareable_generator.html">nvflare.app_common.homomorphic_encryption.he_model_shareable_generator</a></li>
+<li><a href="nvflare/app_common/homomorphic_encryption/he_pt_model_reader_writer.html">nvflare.app_common.homomorphic_encryption.he_pt_model_reader_writer</a></li>
+<li><a href="nvflare/app_common/homomorphic_encryption/homomorphic_encrypt.html">nvflare.app_common.homomorphic_encryption.homomorphic_encrypt</a></li>
+<li><a href="nvflare/app_common/pt/pt_fed_utils.html">nvflare.app_common.pt.pt_fed_utils</a></li>
+<li><a href="nvflare/app_common/pt/pt_fedopt.html">nvflare.app_common.pt.pt_fedopt</a></li>
+<li><a href="nvflare/app_common/pt/pt_fedproxloss.html">nvflare.app_common.pt.pt_fedproxloss</a></li>
+<li><a href="nvflare/app_common/pt/pt_file_model_persistor.html">nvflare.app_common.pt.pt_file_model_persistor</a></li>
+<li><a href="nvflare/app_common/pt/pt_model_reader_writer.html">nvflare.app_common.pt.pt_model_reader_writer</a></li>
+<li><a href="nvflare/app_common/pt/pt_multi_process_executor.html">nvflare.app_common.pt.pt_multi_process_executor</a></li>
+<li><a href="nvflare/app_common/shareablegenerators/full_model_shareable_generator.html">nvflare.app_common.shareablegenerators.full_model_shareable_generator</a></li>
+<li><a href="nvflare/app_common/widgets/convert_to_fed_event.html">nvflare.app_common.widgets.convert_to_fed_event</a></li>
+<li><a href="nvflare/app_common/widgets/streaming.html">nvflare.app_common.widgets.streaming</a></li>
+<li><a href="nvflare/app_common/workflows/cross_site_model_eval.html">nvflare.app_common.workflows.cross_site_model_eval</a></li>
+<li><a href="nvflare/app_common/workflows/cyclic_ctl.html">nvflare.app_common.workflows.cyclic_ctl</a></li>
+<li><a href="nvflare/app_common/workflows/global_model_eval.html">nvflare.app_common.workflows.global_model_eval</a></li>
+<li><a href="nvflare/app_common/workflows/scatter_and_gather.html">nvflare.app_common.workflows.scatter_and_gather</a></li>
+<li><a href="nvflare/fuel/common/ctx.html">nvflare.fuel.common.ctx</a></li>
+<li><a href="nvflare/fuel/common/excepts.html">nvflare.fuel.common.excepts</a></li>
+<li><a href="nvflare/fuel/common/multi_process_executor_constants.html">nvflare.fuel.common.multi_process_executor_constants</a></li>
+<li><a href="nvflare/fuel/hci/base64_utils.html">nvflare.fuel.hci.base64_utils</a></li>
+<li><a href="nvflare/fuel/hci/client/api.html">nvflare.fuel.hci.client.api</a></li>
+<li><a href="nvflare/fuel/hci/client/api_status.html">nvflare.fuel.hci.client.api_status</a></li>
+<li><a href="nvflare/fuel/hci/client/file_transfer.html">nvflare.fuel.hci.client.file_transfer</a></li>
+<li><a href="nvflare/fuel/hci/client/fl_admin_api.html">nvflare.fuel.hci.client.fl_admin_api</a></li>
+<li><a href="nvflare/fuel/hci/client/fl_admin_api_constants.html">nvflare.fuel.hci.client.fl_admin_api_constants</a></li>
+<li><a href="nvflare/fuel/hci/client/fl_admin_api_runner.html">nvflare.fuel.hci.client.fl_admin_api_runner</a></li>
+<li><a href="nvflare/fuel/hci/client/fl_admin_api_spec.html">nvflare.fuel.hci.client.fl_admin_api_spec</a></li>
+<li><a href="nvflare/fuel/hci/client/lib.html">nvflare.fuel.hci.client.lib</a></li>
+<li><a href="nvflare/fuel/hci/cmd_arg_utils.html">nvflare.fuel.hci.cmd_arg_utils</a></li>
+<li><a href="nvflare/fuel/hci/conn.html">nvflare.fuel.hci.conn</a></li>
+<li><a href="nvflare/fuel/hci/proto.html">nvflare.fuel.hci.proto</a></li>
+<li><a href="nvflare/fuel/hci/reg.html">nvflare.fuel.hci.reg</a></li>
+<li><a href="nvflare/fuel/hci/security.html">nvflare.fuel.hci.security</a></li>
+<li><a href="nvflare/fuel/hci/server/audit.html">nvflare.fuel.hci.server.audit</a></li>
+<li><a href="nvflare/fuel/hci/server/authz.html">nvflare.fuel.hci.server.authz</a></li>
+<li><a href="nvflare/fuel/hci/server/builtin.html">nvflare.fuel.hci.server.builtin</a></li>
+<li><a href="nvflare/fuel/hci/server/constants.html">nvflare.fuel.hci.server.constants</a></li>
+<li><a href="nvflare/fuel/hci/server/file_transfer.html">nvflare.fuel.hci.server.file_transfer</a></li>
+<li><a href="nvflare/fuel/hci/server/hci.html">nvflare.fuel.hci.server.hci</a></li>
+<li><a href="nvflare/fuel/hci/server/login.html">nvflare.fuel.hci.server.login</a></li>
+<li><a href="nvflare/fuel/hci/server/reg.html">nvflare.fuel.hci.server.reg</a></li>
+<li><a href="nvflare/fuel/hci/server/sess.html">nvflare.fuel.hci.server.sess</a></li>
+<li><a href="nvflare/fuel/hci/shell_cmd_val.html">nvflare.fuel.hci.shell_cmd_val</a></li>
+<li><a href="nvflare/fuel/hci/table.html">nvflare.fuel.hci.table</a></li>
+<li><a href="nvflare/fuel/hci/tools/admin.html">nvflare.fuel.hci.tools.admin</a></li>
+<li><a href="nvflare/fuel/hci/tools/authz_preview.html">nvflare.fuel.hci.tools.authz_preview</a></li>
+<li><a href="nvflare/fuel/hci/tools/make_pwd.html">nvflare.fuel.hci.tools.make_pwd</a></li>
+<li><a href="nvflare/fuel/hci/zip_utils.html">nvflare.fuel.hci.zip_utils</a></li>
+<li><a href="nvflare/fuel/sec/audit.html">nvflare.fuel.sec.audit</a></li>
+<li><a href="nvflare/fuel/sec/authz.html">nvflare.fuel.sec.authz</a></li>
+<li><a href="nvflare/fuel/sec/security_content_service.html">nvflare.fuel.sec.security_content_service</a></li>
+<li><a href="nvflare/fuel/utils/argument_utils.html">nvflare.fuel.utils.argument_utils</a></li>
+<li><a href="nvflare/fuel/utils/class_utils.html">nvflare.fuel.utils.class_utils</a></li>
+<li><a href="nvflare/fuel/utils/comm.html">nvflare.fuel.utils.comm</a></li>
+<li><a href="nvflare/fuel/utils/component_builder.html">nvflare.fuel.utils.component_builder</a></li>
+<li><a href="nvflare/fuel/utils/dict_utils.html">nvflare.fuel.utils.dict_utils</a></li>
+<li><a href="nvflare/fuel/utils/json_scanner.html">nvflare.fuel.utils.json_scanner</a></li>
+<li><a href="nvflare/fuel/utils/pipe/file_pipe.html">nvflare.fuel.utils.pipe.file_pipe</a></li>
+<li><a href="nvflare/fuel/utils/pipe/pipe.html">nvflare.fuel.utils.pipe.pipe</a></li>
+<li><a href="nvflare/fuel/utils/time_utils.html">nvflare.fuel.utils.time_utils</a></li>
+<li><a href="nvflare/fuel/utils/wfconf.html">nvflare.fuel.utils.wfconf</a></li>
+<li><a href="nvflare/lighter/impl/auth_policy.html">nvflare.lighter.impl.auth_policy</a></li>
+<li><a href="nvflare/lighter/impl/cert.html">nvflare.lighter.impl.cert</a></li>
+<li><a href="nvflare/lighter/impl/he.html">nvflare.lighter.impl.he</a></li>
+<li><a href="nvflare/lighter/impl/signature.html">nvflare.lighter.impl.signature</a></li>
+<li><a href="nvflare/lighter/impl/static_file.html">nvflare.lighter.impl.static_file</a></li>
+<li><a href="nvflare/lighter/impl/template.html">nvflare.lighter.impl.template</a></li>
+<li><a href="nvflare/lighter/impl/workspace.html">nvflare.lighter.impl.workspace</a></li>
+<li><a href="nvflare/lighter/poc.html">nvflare.lighter.poc</a></li>
+<li><a href="nvflare/lighter/provision.html">nvflare.lighter.provision</a></li>
+<li><a href="nvflare/lighter/spec.html">nvflare.lighter.spec</a></li>
+<li><a href="nvflare/lighter/utils.html">nvflare.lighter.utils</a></li>
+<li><a href="nvflare/security/security.html">nvflare.security.security</a></li>
+<li><a href="nvflare/widgets/comp_caller.html">nvflare.widgets.comp_caller</a></li>
+<li><a href="nvflare/widgets/fed_event.html">nvflare.widgets.fed_event</a></li>
+<li><a href="nvflare/widgets/info_collector.html">nvflare.widgets.info_collector</a></li>
+<li><a href="nvflare/widgets/widget.html">nvflare.widgets.widget</a></li>
+</ul>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -2,12 +2,13 @@
 Authorization
 #############
 
-NVFlare implements a role-based authorization framework that determines what a user can or cannot do based on the user’s assigned roles.
+NVIDIA FLARE implements a role-based authorization framework that determines what a user can or cannot do based on the user’s
+assigned roles configured through AuthPolicyBuilder at provisioning.
 
 ********************************
 Terminology for FL authorization
 ********************************
-The following concepts are used in defining an authorization policy for NVFlare.
+The following concepts are used in defining an authorization policy for NVIDIA FLARE.
 
 Rights
 ======

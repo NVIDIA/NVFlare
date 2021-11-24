@@ -1,0 +1,1551 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>FLAdminAPI &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+      <li>FLAdminAPI</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/user_guide/FLAdminAPI.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="fladminapi">
+<h1>FLAdminAPI<a class="headerlink" href="#fladminapi" title="Permalink to this headline">¶</a></h1>
+<p><a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI" title="nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPI</span></code></a> is a wrapper for admin commands that can be issued
+by an admin client to the FL server. You can use a provisioned admin client’s certs and keys to initialize an instance
+of FLAdminAPI to programmatically submit commands to the FL server.</p>
+<div class="section" id="initialization">
+<h2>Initialization<a class="headerlink" href="#initialization" title="Permalink to this headline">¶</a></h2>
+<p>Initialize the API with actual values for the FL setup: host, port, paths to files and directories.</p>
+<p>A provisioned admin package should have ca_cert, client_cert, and client_key in the startup folder, and transfer can be
+created at the same level as startup.</p>
+<p>Log in with the admin name that corresponds to the provisioned package.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">nvflare.fuel.hci.client.fl_admin_api</span> <span class="kn">import</span> <span class="n">FLAdminAPI</span>
+<span class="n">api</span> <span class="o">=</span> <span class="n">FLAdminAPI</span><span class="p">(</span>
+    <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
+    <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span>
+    <span class="n">ca_cert</span><span class="o">=</span><span class="n">ca_cert</span><span class="p">,</span>
+    <span class="n">client_cert</span><span class="o">=</span><span class="n">client_cert</span><span class="p">,</span>
+    <span class="n">client_key</span><span class="o">=</span><span class="n">client_key</span><span class="p">,</span>
+    <span class="n">upload_dir</span><span class="o">=</span><span class="n">upload_dir</span><span class="p">,</span>
+    <span class="n">download_dir</span><span class="o">=</span><span class="n">download_dir</span>
+<span class="p">)</span>
+<span class="n">api</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s2">&quot;admin@nvidia.com&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>After using FLAdminAPI, the <code class="docutils literal notranslate"><span class="pre">logout()</span></code> function can be called to log out. Both <code class="docutils literal notranslate"><span class="pre">login()</span></code> and <code class="docutils literal notranslate"><span class="pre">logout()</span></code> are
+inherited from AdminAPI.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">api</span><span class="o">.</span><span class="n">logout</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h2>
+<p>Simplest sequence to upload, deploy, and start training with the “hello-pt” example app:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">api</span><span class="o">.</span><span class="n">upload_app</span><span class="p">(</span><span class="s2">&quot;hello-pt&quot;</span><span class="p">)</span>
+<span class="n">api</span><span class="o">.</span><span class="n">set_run_number</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">api</span><span class="o">.</span><span class="n">deploy_app</span><span class="p">(</span><span class="s2">&quot;hello-pt&quot;</span><span class="p">,</span> <span class="s2">&quot;all&quot;</span><span class="p">)</span>
+<span class="n">api</span><span class="o">.</span><span class="n">start_app</span><span class="p">(</span><span class="s2">&quot;all&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Contents of the returned FLAdminAPIResponse can be accessed:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">reply</span> <span class="o">=</span> <span class="n">api</span><span class="o">.</span><span class="n">upload_app</span><span class="p">(</span><span class="s2">&quot;hello-pt&quot;</span><span class="p">)</span>
+<span class="n">response_text</span> <span class="o">=</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;details&quot;</span><span class="p">][</span><span class="s2">&quot;message&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="arguments-and-targets">
+<h2>Arguments and targets<a class="headerlink" href="#arguments-and-targets" title="Permalink to this headline">¶</a></h2>
+<p>The arguments required for each FLAdminAPI call are specified in the functions section below.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">app</span></code> is the name of the directory to upload and deploy containing configurations and custom code.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">target</span></code> when needed is where the action should take place. An argument of <code class="docutils literal notranslate"><span class="pre">target</span></code> as a string can be a
+singular target of “server” or a specific client name. Where <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is required and <code class="docutils literal notranslate"><span class="pre">targets</span></code> can
+be an optional list, the call can be submitted to multiple targets:</p>
+<ul class="simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “server”, the command target is just the server and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is ignored</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “client” and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is empty, the command target is all clients</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “client” and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is a list of strings, each a client name, the command target is all clients in the list <code class="docutils literal notranslate"><span class="pre">targets</span></code></p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “all” and the command supports it, the command target is the server and all clients</p></li>
+</ul>
+</div>
+<div class="section" id="return-structure">
+<h2>Return Structure<a class="headerlink" href="#return-structure" title="Permalink to this headline">¶</a></h2>
+<p>FLAdminAPI calls return an FLAdminAPIResponse dictionary object of key value pairs consisting of a status of type APIStatus, a
+dictionary with details, and in some cases a raw response from the underlying call to AdminAPI (mainly useful for
+debugging). The possible statuses and contents of the details returned are outlined in each of the function calls below.</p>
+<p>Note that FLAdminAPI uses the underlying AdminAPI’s <code class="docutils literal notranslate"><span class="pre">do_command()</span></code> function to submit commands to the server, and you
+can also use this function directly for functions that are not wrapped in an FLAdminAPI function. Returns from AdminAPI
+are included in the FLAdminAPI reply under the “raw” key for some calls and error conditions.</p>
+</div>
+<div class="section" id="basic-functions">
+<h2>Basic Functions<a class="headerlink" href="#basic-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="upload-app-app">
+<h3><code class="docutils literal notranslate"><span class="pre">upload_app(app)</span></code><a class="headerlink" href="#upload-app-app" title="Permalink to this headline">¶</a></h3>
+<p>Uploads app to upload directory of FL server.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+<col style="width: 14%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>app</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>name of the folder in upload_dir to upload</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful upload of app to server</p></li>
+<li><p>Status ERROR_RUNTIME - app directory may not be located, or other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="set-run-number-run-number">
+<h3><code class="docutils literal notranslate"><span class="pre">set_run_number(run_number)</span></code><a class="headerlink" href="#set-run-number-run-number" title="Permalink to this headline">¶</a></h3>
+<p>Sets a run number in order to keep track of the current experiment to deploy and start an app.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 14%" />
+<col style="width: 13%" />
+<col style="width: 14%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>run_number</p></td>
+<td><p>integer</p></td>
+<td><p>yes</p></td>
+<td><p>run number to set for the current experiment</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful creation of new run number</p></li>
+<li><p>Status PARTIAL_SUCCESS - run number already exists but is now set</p></li>
+<li><p>Status ERROR_SYNTAX - run number must be an integer</p></li>
+<li><p>Status ERROR_RUNTIME - run number may not be changed during training, or other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="deploy-app-app-target-type-targets">
+<h3><code class="docutils literal notranslate"><span class="pre">deploy_app(app,</span> <span class="pre">target_type,</span> <span class="pre">targets)</span></code><a class="headerlink" href="#deploy-app-app-target-type-targets" title="Permalink to this headline">¶</a></h3>
+<p>Deploys specified app to run number specific instance on specified targets. Target of “all” deploys to server then
+clients. Run number must be set and app must be uploaded to server already.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 6%" />
+<col style="width: 12%" />
+<col style="width: 10%" />
+<col style="width: 11%" />
+<col style="width: 61%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>app</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>name of app to deploy</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>target_type</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server, client, or all</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>targets</p></td>
+<td><p>list</p></td>
+<td><p>no</p></td>
+<td><p>list of client names each type str, if target_type is client</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful deployment of app (partial success of deployment to some but not all targets is included)</p></li>
+<li><p>Status ERROR_SYNTAX - app and target must be type string</p></li>
+<li><p>Status ERROR_INVALID_CLIENT - server replies that the specified target is invalid</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="start-app-target-type-targets">
+<h3><code class="docutils literal notranslate"><span class="pre">start_app(target_type,</span> <span class="pre">targets)</span></code><a class="headerlink" href="#start-app-target-type-targets" title="Permalink to this headline">¶</a></h3>
+<p>Starts the currently deployed app at the specified target.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 7%" />
+<col style="width: 13%" />
+<col style="width: 10%" />
+<col style="width: 11%" />
+<col style="width: 59%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target_type</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server, client, or all</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>targets</p></td>
+<td><p>list</p></td>
+<td><p>no</p></td>
+<td><p>list of client names each type str, if target_type is client</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful start of app (partial success of some but not all targets is included if server is in targets)</p></li>
+<li><p>Status PARTIAL_SUCCESS - at least one target is already started</p></li>
+<li><p>Status ERROR_SYNTAX - target must be type string</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="abort-target-type-targets">
+<h3><code class="docutils literal notranslate"><span class="pre">abort(target_type,</span> <span class="pre">targets)</span></code><a class="headerlink" href="#abort-target-type-targets" title="Permalink to this headline">¶</a></h3>
+<p>Stops the app at the specified targets. If the target is server and the clients are not stopped, the server will try to
+abort clients first, and the clients may enter cross validation from a status of in training. More functions involving
+abort in the advanced functions section below address some of this.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 7%" />
+<col style="width: 13%" />
+<col style="width: 10%" />
+<col style="width: 11%" />
+<col style="width: 59%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target_type</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server or client</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>targets</p></td>
+<td><p>list</p></td>
+<td><p>no</p></td>
+<td><p>list of client names each type str, if target_type is client</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful abort of app (partial success of some but not all targets is included; abort server may try to abort clients first, and clients may enter cross validation from training and not stop immediately)</p></li>
+<li><p>Status PARTIAL_SUCCESS - training not started</p></li>
+<li><p>Status ERROR_SYNTAX - target must be type string</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="shutdown-target-type-targets">
+<h3><code class="docutils literal notranslate"><span class="pre">shutdown(target_type,</span> <span class="pre">targets)</span></code><a class="headerlink" href="#shutdown-target-type-targets" title="Permalink to this headline">¶</a></h3>
+<p>Shuts down the specified targets to stop running FL. The server must be shut down after the clients.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 7%" />
+<col style="width: 13%" />
+<col style="width: 10%" />
+<col style="width: 11%" />
+<col style="width: 59%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target_type</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server, client, or all</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>targets</p></td>
+<td><p>list</p></td>
+<td><p>no</p></td>
+<td><p>list of client names each type str, if target_type is client</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful shutdown of app (partial success of some but not all targets is included)</p></li>
+<li><p>Status ERROR_SYNTAX - target must be type string</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="section" id="convenience-functions">
+<h2>Convenience Functions<a class="headerlink" href="#convenience-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="check-status-target-type-targets">
+<h3><code class="docutils literal notranslate"><span class="pre">check_status(target_type,</span> <span class="pre">targets)</span></code><a class="headerlink" href="#check-status-target-type-targets" title="Permalink to this headline">¶</a></h3>
+<p>Checks and returns the FL status. If target_type is server, the call does not wait for the server to retrieve
+information on the clients but returns the last information the server had at the time this call is made.</p>
+<p>If target_type is client, specific clients can be specified in targets, and this call generally takes longer than the
+function to just check the FL server status because this one waits for communication from the server to client then
+back.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 7%" />
+<col style="width: 13%" />
+<col style="width: 10%" />
+<col style="width: 11%" />
+<col style="width: 59%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target_type</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server or client</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>targets</p></td>
+<td><p>list</p></td>
+<td><p>no</p></td>
+<td><p>list of client names each type str, if target_type is client</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful status check (the structure of the details returned depends on what is relevant for the status)</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>With following details structure for target_type server and server statuses training not started and training stopped:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 10%" />
+<col style="width: 69%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>run_number</p></td>
+<td><p>str</p></td>
+<td><p>current set run number, or has not been set</p></td>
+</tr>
+<tr class="row-odd"><td><p>server_status</p></td>
+<td><p>str</p></td>
+<td><p>status of the server</p></td>
+</tr>
+<tr class="row-even"><td><p>registered_clients</p></td>
+<td><p>int</p></td>
+<td><p>number of clients that connected and registered on the server</p></td>
+</tr>
+<tr class="row-odd"><td><p>status_table</p></td>
+<td><p>list</p></td>
+<td><p>table of server’s last client statuses</p></td>
+</tr>
+</tbody>
+</table>
+<p>With target_type server and server status training started, the details structure is:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 10%" />
+<col style="width: 69%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>run_number</p></td>
+<td><p>str</p></td>
+<td><p>current set run number</p></td>
+</tr>
+<tr class="row-odd"><td><p>server_status</p></td>
+<td><p>str</p></td>
+<td><p>status of the server</p></td>
+</tr>
+<tr class="row-even"><td><p>start_round</p></td>
+<td><p>str</p></td>
+<td><p>the round for the server to start FL at</p></td>
+</tr>
+<tr class="row-odd"><td><p>max_round</p></td>
+<td><p>str</p></td>
+<td><p>the round after which the server will stop FL</p></td>
+</tr>
+<tr class="row-even"><td><p>min_num_clients</p></td>
+<td><p>int</p></td>
+<td><p>minimum number of clients for the server to start aggregation</p></td>
+</tr>
+<tr class="row-odd"><td><p>max_num_clients</p></td>
+<td><p>int</p></td>
+<td><p>maximum number of clients that can connect to the server</p></td>
+</tr>
+<tr class="row-even"><td><p>registered_clients</p></td>
+<td><p>int</p></td>
+<td><p>number of clients that connected and registered on the server</p></td>
+</tr>
+<tr class="row-odd"><td><p>submitted_models</p></td>
+<td><p>int</p></td>
+<td><p>number of clients that submitted models for the current round</p></td>
+</tr>
+<tr class="row-even"><td><p>status_table</p></td>
+<td><p>list</p></td>
+<td><p>table of server’s last client statuses</p></td>
+</tr>
+</tbody>
+</table>
+<p>With target_type client, the details structure is:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 10%" />
+<col style="width: 69%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>fl_run_number</p></td>
+<td><p>str</p></td>
+<td><p>current set run number, or has not been set</p></td>
+</tr>
+<tr class="row-odd"><td><p>server_status</p></td>
+<td><p>str</p></td>
+<td><p>status of the server</p></td>
+</tr>
+<tr class="row-even"><td><p>registered_clients</p></td>
+<td><p>int</p></td>
+<td><p>number of clients that connected and registered on the server</p></td>
+</tr>
+<tr class="row-odd"><td><p>status_table</p></td>
+<td><p>list</p></td>
+<td><p>table of server’s last client statuses</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="get-validation-results-target">
+<h3><code class="docutils literal notranslate"><span class="pre">get_validation_results(target)</span></code><a class="headerlink" href="#get-validation-results-target" title="Permalink to this headline">¶</a></h3>
+<p>Gets the validation results for the current run number from the server. This is only relevant if cross validation had
+been configured in the app and has been allowed to run, otherwise the results will be empty. If the target is not
+included, it will default to all and this will return the full validation results on the server. The target can also be
+two client names to get just the result of the first client’s model on the second client’s data.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 13%" />
+<col style="width: 53%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target</p></td>
+<td><p>str</p></td>
+<td><p>no</p></td>
+<td><p>can be all, or &lt;client-name1&gt; &lt;client-name2&gt;</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful return of validation results</p></li>
+<li><p>Status ERROR_SYNTAX - target must be type string if included</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="restart-target-type-targets">
+<h3><code class="docutils literal notranslate"><span class="pre">restart(target_type,</span> <span class="pre">targets)</span></code><a class="headerlink" href="#restart-target-type-targets" title="Permalink to this headline">¶</a></h3>
+<p>Restarts the specified targets. Restarting the server will restart all of the clients too. After restarting the server,
+you will need to log in again in order to issue commands.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 7%" />
+<col style="width: 13%" />
+<col style="width: 10%" />
+<col style="width: 11%" />
+<col style="width: 59%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target_type</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server, client, or all</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>targets</p></td>
+<td><p>list</p></td>
+<td><p>no</p></td>
+<td><p>list of client names each type str, if target_type is client</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful submission of restart command</p></li>
+<li><p>Status ERROR_SYNTAX - target must be type string</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="remove-client-target">
+<h3><code class="docutils literal notranslate"><span class="pre">remove_client(target)</span></code><a class="headerlink" href="#remove-client-target" title="Permalink to this headline">¶</a></h3>
+<p>Removes the specified targets.
+Note that if a client is removed, you will not be able to issue admin commands through the server to that client
+until the client is restarted (this includes being able to issue the restart command through the API).</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 16%" />
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 51%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>targets</p></td>
+<td><p>list</p></td>
+<td><p>yes</p></td>
+<td><p>list of client names each type str</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful submission of restart command</p></li>
+<li><p>Status ERROR_SYNTAX - target must be type string</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="delete-run-number-run-number">
+<h3><code class="docutils literal notranslate"><span class="pre">delete_run_number(run_number)</span></code><a class="headerlink" href="#delete-run-number-run-number" title="Permalink to this headline">¶</a></h3>
+<p>Deletes the run folder corresponding to the run number on the server and all connected clients. This is not reversible.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 14%" />
+<col style="width: 13%" />
+<col style="width: 14%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>run_number</p></td>
+<td><p>int</p></td>
+<td><p>yes</p></td>
+<td><p>run number for the run to delete</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful creation of new run number</p></li>
+<li><p>Status ERROR_SYNTAX - run number must be an integer</p></li>
+<li><p>Status ERROR_RUNTIME - run number may not be changed during training, or other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="set-timeout-timeout">
+<h3><code class="docutils literal notranslate"><span class="pre">set_timeout(timeout)</span></code><a class="headerlink" href="#set-timeout-timeout" title="Permalink to this headline">¶</a></h3>
+<p>Sets the timeout for admin commands in seconds. This timeout is the maximum amount of time the server will wait for
+replies from clients. If the timeout is too short, the server may not receive a response because clients may not have a
+chance to reply.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 14%" />
+<col style="width: 13%" />
+<col style="width: 14%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>timeout</p></td>
+<td><p>float</p></td>
+<td><p>yes</p></td>
+<td><p>timeout to set in seconds</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful setting of timeout</p></li>
+<li><p>Status ERROR_SYNTAX - timeout must be type float</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>All with following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="ls-target-target-options-path">
+<h3><code class="docutils literal notranslate"><span class="pre">ls_target(target,</span> <span class="pre">options,</span> <span class="pre">path)</span></code><a class="headerlink" href="#ls-target-target-options-path" title="Permalink to this headline">¶</a></h3>
+<p>Retrieves the contents of the path (relative to the working directory of the specified target). If no path is specified,
+the contents of the working directory are returned. The target can be “server” or a specific client name for example
+“org2”. The allowed options are: “-a” for all, “-l” to use a long listing format, “-t” to sort by modification time
+newest first, “-S” to sort by file size largest first, “-R” to list subdirectories recursively, “-u” with -l to show
+access time otherwise sort by access time.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 14%" />
+<col style="width: 13%" />
+<col style="width: 14%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server or &lt;client-name&gt;</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>options</p></td>
+<td><p>str</p></td>
+<td><p>no</p></td>
+<td><p>see allowed options above</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>path</p></td>
+<td><p>str</p></td>
+<td><p>no</p></td>
+<td><p>optional path to a directory</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful return from server</p></li>
+<li><p>Status ERROR_SYNTAX - target must be included and type str</p></li>
+<li><p>Status ERROR_INVALID_CLIENT - server replies that the specified target is invalid</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>With following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="cat-target-target-options-file">
+<h3><code class="docutils literal notranslate"><span class="pre">cat_target(target,</span> <span class="pre">options,</span> <span class="pre">file)</span></code><a class="headerlink" href="#cat-target-target-options-file" title="Permalink to this headline">¶</a></h3>
+<p>Sends the shell command to get the contents of the target’s specified file. The target can be “server” or a specific
+client name for example “org2”. The file is required and should contain the relative path to the file from the working
+directory of the target. The allowed options are “-n” to number all output lines, “-b” to number nonempty output lines,
+“-s” to suppress repeated empty output lines, and “-T” to display TAB characters as ^I.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 14%" />
+<col style="width: 13%" />
+<col style="width: 14%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server or &lt;client-name&gt;</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>options</p></td>
+<td><p>str</p></td>
+<td><p>no</p></td>
+<td><p>see allowed options above</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>file</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>path to the file to return the contents of</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful return from server</p></li>
+<li><p>Status ERROR_SYNTAX - target and file must be included and type str</p></li>
+<li><p>Status ERROR_INVALID_CLIENT - server replies that the specified target is invalid</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>With following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="tail-target-log-target-options">
+<h3><code class="docutils literal notranslate"><span class="pre">tail_target_log(target,</span> <span class="pre">options)</span></code><a class="headerlink" href="#tail-target-log-target-options" title="Permalink to this headline">¶</a></h3>
+<p>Returns end of target’s log allowing for options that the admin client allows: “-n” can be used to specify the
+number of lines for example “-n 100”, or “-c” can specify the number of bytes.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 14%" />
+<col style="width: 13%" />
+<col style="width: 14%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server or &lt;client-name&gt;</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>options</p></td>
+<td><p>str</p></td>
+<td><p>no</p></td>
+<td><p>“-n” for number of lines and “-c” for bytes</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful log return</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>With following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="grep-target-target-options-pattern-file">
+<h3><code class="docutils literal notranslate"><span class="pre">grep_target(target,</span> <span class="pre">options,</span> <span class="pre">pattern,</span> <span class="pre">file)</span></code><a class="headerlink" href="#grep-target-target-options-pattern-file" title="Permalink to this headline">¶</a></h3>
+<p>Sends the grep shell command to search the contents of the target’s specified file. The target can be “server” or a
+specific client name for example “org2”. The file is required and should contain the relative path to the file from the
+working directory of the target. The pattern is also required. The allowed options are “-n” to print line number with
+output lines, “-i” to ignore case distinctions, and “-b” to print the byte offset with output lines.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 14%" />
+<col style="width: 13%" />
+<col style="width: 14%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>target</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>can be server or &lt;client-name&gt;</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>options</p></td>
+<td><p>str</p></td>
+<td><p>no</p></td>
+<td><p>see allowed options above</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>pattern</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>the pattern to search for</p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p>file</p></td>
+<td><p>str</p></td>
+<td><p>yes</p></td>
+<td><p>path to the file to return the contents of</p></td>
+</tr>
+</tbody>
+</table>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Status SUCCESS - successful return from server</p></li>
+<li><p>Status ERROR_SYNTAX - target, pattern, and file must be included and type str</p></li>
+<li><p>Status ERROR_RUNTIME - other runtime error</p></li>
+</ul>
+<p>With following details structure:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>message</p></td>
+<td><p>str</p></td>
+<td><p>reply string from server</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="wait-until-interval-timeout-callback-fail-attempts-kwargs">
+<h3><code class="docutils literal notranslate"><span class="pre">wait_until_(interval,</span> <span class="pre">timeout,</span> <span class="pre">callback,</span> <span class="pre">fail_attempts,</span> <span class="pre">**kwargs)</span></code><a class="headerlink" href="#wait-until-interval-timeout-callback-fail-attempts-kwargs" title="Permalink to this headline">¶</a></h3>
+<p>The functions <code class="docutils literal notranslate"><span class="pre">wait_until_server_status()</span></code>, <code class="docutils literal notranslate"><span class="pre">wait_until_client_status()</span></code>, and <code class="docutils literal notranslate"><span class="pre">wait_until_server_stats()</span></code> are
+included with the FLAdminAPI in NVIDIA FLARE as examples of useful functions that can be built with other calls in a
+loop with logic. These examples wait until the provided callback returns True, with the option to specify a timeout and
+interval to check the status or stats. There is a default callback to evaluate the reply in the included functions, and
+additional kwargs passed in will be available to the callback. Custom callbacks can be provided to add logic to handle
+checking for other conditions. For these example functions, a timeout should be set in case there are any error
+conditions that result in the system being stuck in a state where the callback never returns True.</p>
+<p>You can use the source code of these function as inspiration to create your own functions or logic that makes use of
+other FLAdminAPI calls.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 6%" />
+<col style="width: 13%" />
+<col style="width: 10%" />
+<col style="width: 11%" />
+<col style="width: 61%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Required</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>interval</p></td>
+<td><p>int</p></td>
+<td><p>no</p></td>
+<td><p>interval in seconds between checks of status to provide to callback</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>timeout</p></td>
+<td><p>int</p></td>
+<td><p>no</p></td>
+<td><p>time in seconds to run before returning with timeout message</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>callback</p></td>
+<td><p>Callable</p></td>
+<td><p>no</p></td>
+<td><p>callback to determine condition to end this call and return</p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p>fail_attempts</p></td>
+<td><p>int</p></td>
+<td><p>no</p></td>
+<td><p>number of consecutive failed attempts of getting the status</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="section" id="questions">
+<h2>Questions<a class="headerlink" href="#questions" title="Permalink to this headline">¶</a></h2>
+<ol class="arabic">
+<li><p>Why do I get an error of “Command ___ not found in server or client cmds” even though I did not try any unspecified
+command?</p>
+<p>The underlying AdminAPI may have not have successfully logged in and obtained a list of available commands to register
+from the server. Please make sure that the server is accessible and the login is working.</p>
+</li>
+<li><p>Why does the AdminAPI return status APIStatus.SUCCESS even though an error occurred after issuing the command?</p>
+<p>If you send a raw command to the underlying AdminAPI with <code class="docutils literal notranslate"><span class="pre">do_command()</span></code>, AdminAPI returns APIStatus.SUCCESS if the
+command was successfully sent to the server and a reply obtained. FLAdminAPI’s calls make sense of the underlying
+server reply and returns a suitable status based on the reply.</p>
+</li>
+<li><p>After a while with the same command, why do I get a SUCCESS from FLAdminAPI but the raw reply contains an error of
+“not authenticated - no user”?</p>
+<p>The server has a timeout after which <code class="docutils literal notranslate"><span class="pre">login()</span></code> must be called again in order for the underlying AdminAPI to be
+authenticated.</p>
+</li>
+</ol>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -1,0 +1,523 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.security package &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.widgets package" href="nvflare.widgets.html" />
+    <link rel="prev" title="nvflare.lighter.impl package" href="nvflare.lighter.impl.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">nvflare.security package</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.security.security">nvflare.security.security module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.security">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+        
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+        
+      <li>nvflare.security package</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/apidocs/nvflare.security.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="nvflare-security-package">
+<h1>nvflare.security package<a class="headerlink" href="#nvflare-security-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-nvflare.security.security">
+<span id="nvflare-security-security-module"></span><h2>nvflare.security.security module<a class="headerlink" href="#module-nvflare.security.security" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.security.security.Action">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Action</span></span><a class="reference internal" href="../_modules/nvflare/security/security.html#Action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.Action" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Action.BYOC">
+<span class="sig-name descname"><span class="pre">BYOC</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'byoc'</span></em><a class="headerlink" href="#nvflare.security.security.Action.BYOC" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Action.CUSTOM_DATALIST">
+<span class="sig-name descname"><span class="pre">CUSTOM_DATALIST</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'custom_datalist'</span></em><a class="headerlink" href="#nvflare.security.security.Action.CUSTOM_DATALIST" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Action.DEPLOY">
+<span class="sig-name descname"><span class="pre">DEPLOY</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'deploy'</span></em><a class="headerlink" href="#nvflare.security.security.Action.DEPLOY" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Action.OPERATE">
+<span class="sig-name descname"><span class="pre">OPERATE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'operate'</span></em><a class="headerlink" href="#nvflare.security.security.Action.OPERATE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Action.TRAIN">
+<span class="sig-name descname"><span class="pre">TRAIN</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train'</span></em><a class="headerlink" href="#nvflare.security.security.Action.TRAIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Action.UPLOAD">
+<span class="sig-name descname"><span class="pre">UPLOAD</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'upload'</span></em><a class="headerlink" href="#nvflare.security.security.Action.UPLOAD" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Action.VIEW">
+<span class="sig-name descname"><span class="pre">VIEW</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'view'</span></em><a class="headerlink" href="#nvflare.security.security.Action.VIEW" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.security.security.EmptyAuthorizer">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">EmptyAuthorizer</span></span><a class="reference internal" href="../_modules/nvflare/security/security.html#EmptyAuthorizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.EmptyAuthorizer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer" title="nvflare.fuel.sec.authz.Authorizer"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.sec.authz.Authorizer</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.security.security.EmptyAuthorizer.authorize">
+<span class="sig-name descname"><span class="pre">authorize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">ctx:</span> <span class="pre">nvflare.fuel.sec.authz.AuthzContext)</span> <span class="pre">-&gt;</span> <span class="pre">(&lt;class</span> <span class="pre">'object'&gt;</span></em>, <em class="sig-param"><span class="pre">&lt;class</span> <span class="pre">'str'&gt;</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/security/security.html#EmptyAuthorizer.authorize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.EmptyAuthorizer.authorize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.security.security.EmptyAuthorizer.evaluate_user_right_on_site">
+<span class="sig-name descname"><span class="pre">evaluate_user_right_on_site</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">right_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">site_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/security/security.html#EmptyAuthorizer.evaluate_user_right_on_site"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.EmptyAuthorizer.evaluate_user_right_on_site" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.security.security.FLAuthorizer">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">FLAuthorizer</span></span><a class="reference internal" href="../_modules/nvflare/security/security.html#FLAuthorizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.FLAuthorizer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.authz.Authorizer" title="nvflare.fuel.sec.authz.Authorizer"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.sec.authz.Authorizer</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.security.security.FLAuthorizer.authorize">
+<span class="sig-name descname"><span class="pre">authorize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.security.security.FLAuthzContext" title="nvflare.security.security.FLAuthzContext"><span class="pre">nvflare.security.security.FLAuthzContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/security/security.html#FLAuthorizer.authorize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.FLAuthorizer.authorize" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.security.security.FLAuthorizer.evaluate_user_right_on_site">
+<span class="sig-name descname"><span class="pre">evaluate_user_right_on_site</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">right_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">site_name</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/security/security.html#FLAuthorizer.evaluate_user_right_on_site"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.FLAuthorizer.evaluate_user_right_on_site" title="Permalink to this definition">¶</a></dt>
+<dd><p>Check whether a user has a right in an org.
+Super user has all rights in all orgs.
+:param right_name: right to be evaluated
+:param user_name: user to be evaluated against
+:param site_name: the org</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>True/False for bool type right;</dt><dd><p>Int number for int rule;
+None if error occurred during evaluation</p>
+</dd>
+</dl>
+<p>Error: error string error occurred during evaluation</p>
+</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>Result</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.security.security.FLAuthzContext">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">FLAuthzContext</span></span><a class="reference internal" href="../_modules/nvflare/security/security.html#FLAuthzContext"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.FLAuthzContext" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.fuel.sec.html#nvflare.fuel.sec.authz.AuthzContext" title="nvflare.fuel.sec.authz.AuthzContext"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.fuel.sec.authz.AuthzContext</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.security.security.FLAuthzContext.new_authz_context">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">new_authz_context</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/security/security.html#FLAuthzContext.new_authz_context"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.FLAuthzContext.new_authz_context" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.security.security.Right">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Right</span></span><a class="reference internal" href="../_modules/nvflare/security/security.html#Right"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.Right" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.DEPLOY_ALL">
+<span class="sig-name descname"><span class="pre">DEPLOY_ALL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'deploy_all'</span></em><a class="headerlink" href="#nvflare.security.security.Right.DEPLOY_ALL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.DEPLOY_SELF">
+<span class="sig-name descname"><span class="pre">DEPLOY_SELF</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'deploy_self'</span></em><a class="headerlink" href="#nvflare.security.security.Right.DEPLOY_SELF" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.OPERATE_ALL">
+<span class="sig-name descname"><span class="pre">OPERATE_ALL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'operate_all'</span></em><a class="headerlink" href="#nvflare.security.security.Right.OPERATE_ALL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.OPERATE_SELF">
+<span class="sig-name descname"><span class="pre">OPERATE_SELF</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'operate_self'</span></em><a class="headerlink" href="#nvflare.security.security.Right.OPERATE_SELF" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.TRAIN_ALL">
+<span class="sig-name descname"><span class="pre">TRAIN_ALL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train_all'</span></em><a class="headerlink" href="#nvflare.security.security.Right.TRAIN_ALL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.TRAIN_SELF">
+<span class="sig-name descname"><span class="pre">TRAIN_SELF</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'train_self'</span></em><a class="headerlink" href="#nvflare.security.security.Right.TRAIN_SELF" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.UPLOAD_APP">
+<span class="sig-name descname"><span class="pre">UPLOAD_APP</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'upload_app'</span></em><a class="headerlink" href="#nvflare.security.security.Right.UPLOAD_APP" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.VIEW_ALL">
+<span class="sig-name descname"><span class="pre">VIEW_ALL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'view_all'</span></em><a class="headerlink" href="#nvflare.security.security.Right.VIEW_ALL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Right.VIEW_SELF">
+<span class="sig-name descname"><span class="pre">VIEW_SELF</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'view_self'</span></em><a class="headerlink" href="#nvflare.security.security.Right.VIEW_SELF" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.security.security.Rule">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Rule</span></span><a class="reference internal" href="../_modules/nvflare/security/security.html#Rule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.Rule" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Rule.ALLOW_BYOC">
+<span class="sig-name descname"><span class="pre">ALLOW_BYOC</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'allow_byoc'</span></em><a class="headerlink" href="#nvflare.security.security.Rule.ALLOW_BYOC" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.security.security.Rule.ALLOW_CUSTOM_DATALIST">
+<span class="sig-name descname"><span class="pre">ALLOW_CUSTOM_DATALIST</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'allow_custom_datalist'</span></em><a class="headerlink" href="#nvflare.security.security.Rule.ALLOW_CUSTOM_DATALIST" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.security.security.action_checker_signature">
+<span class="sig-name descname"><span class="pre">action_checker_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">site_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/security/security.html#action_checker_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.security.security.action_checker_signature" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</div>
+<div class="section" id="module-nvflare.security">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.security" title="Permalink to this headline">¶</a></h2>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="nvflare.widgets.html" class="btn btn-neutral float-right" title="nvflare.widgets package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="nvflare.lighter.impl.html" class="btn btn-neutral float-left" title="nvflare.lighter.impl package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -1,0 +1,1165 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>nvflare.apis.impl.controller &mdash; NVIDIA FLARE 2.0 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../../_static/css/additions.css" type="text/css" />
+
+  
+  
+    <link rel="shortcut icon" href="../../../../_static/favicon.ico"/>
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../../" src="../../../../_static/documentation_options.js"></script>
+        <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+        <script src="../../../../_static/jquery.js"></script>
+        <script src="../../../../_static/underscore.js"></script>
+        <script src="../../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+           
+
+          
+            <a href="../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                2.0
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../appendix.html">Appendix</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">NVIDIA FLARE</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvflare.apis.impl.controller</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvflare.apis.impl.controller</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span>
+<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span class="n">Lock</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.client</span> <span class="kn">import</span> <span class="n">Client</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.controller_spec</span> <span class="kn">import</span> <span class="n">ClientTask</span><span class="p">,</span> <span class="n">ControllerSpec</span><span class="p">,</span> <span class="n">SendOrder</span><span class="p">,</span> <span class="n">Task</span><span class="p">,</span> <span class="n">TaskCompletionStatus</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span><span class="p">,</span> <span class="n">ReservedTopic</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_exception</span> <span class="kn">import</span> <span class="n">WorkflowError</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.responder</span> <span class="kn">import</span> <span class="n">Responder</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.server_engine_spec</span> <span class="kn">import</span> <span class="n">ServerEngineSpec</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.signal</span> <span class="kn">import</span> <span class="n">Signal</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.info_collector</span> <span class="kn">import</span> <span class="n">GroupInfoCollector</span><span class="p">,</span> <span class="n">InfoCollector</span>
+
+<span class="kn">from</span> <span class="nn">.any_relay_manager</span> <span class="kn">import</span> <span class="n">AnyRelayTaskManager</span>
+<span class="kn">from</span> <span class="nn">.bcast_manager</span> <span class="kn">import</span> <span class="n">BcastForeverTaskManager</span><span class="p">,</span> <span class="n">BcastTaskManager</span>
+<span class="kn">from</span> <span class="nn">.send_manager</span> <span class="kn">import</span> <span class="n">SendTaskManager</span>
+<span class="kn">from</span> <span class="nn">.seq_relay_manager</span> <span class="kn">import</span> <span class="n">SequentialRelayTaskManager</span>
+<span class="kn">from</span> <span class="nn">.task_manager</span> <span class="kn">import</span> <span class="n">TaskCheckStatus</span><span class="p">,</span> <span class="n">TaskManager</span>
+
+<span class="n">_TASK_KEY_ENGINE</span> <span class="o">=</span> <span class="s2">&quot;___engine&quot;</span>
+<span class="n">_TASK_KEY_MANAGER</span> <span class="o">=</span> <span class="s2">&quot;___mgr&quot;</span>
+<span class="n">_TASK_KEY_DONE</span> <span class="o">=</span> <span class="s2">&quot;___done&quot;</span>
+
+
+<span class="k">def</span> <span class="nf">_check_positive_int</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be an instance of int.&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must &gt;= 0.&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_check_inputs</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">Task</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;task must be an instance of Task.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;fl_ctx must be an instance of FLContext.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">targets</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;targets must be a list of Client or string.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">([</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="nb">str</span><span class="p">))</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">targets</span><span class="p">]):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;targets must be a list of Client or string.&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="Controller"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller">[docs]</a><span class="k">class</span> <span class="nc">Controller</span><span class="p">(</span><span class="n">Responder</span><span class="p">,</span> <span class="n">ControllerSpec</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_check_period</span><span class="o">=</span><span class="mf">0.5</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Manage life cycles of tasks and their destinations</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">Responder</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_engine</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># list of standing tasks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_client_task_map</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># client_task_id =&gt; client_task</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_all_done</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_task_lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_task_monitor</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_monitor_tasks</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_task_check_period</span> <span class="o">=</span> <span class="n">task_check_period</span>
+
+<div class="viewcode-block" id="Controller.initialize_run"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.initialize_run">[docs]</a>    <span class="k">def</span> <span class="nf">initialize_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called by runners to initailze controller with information in fl_ctx</span>
+
+<span class="sd">        Note: Controller subclasses must not overwrite this method.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): FLContext information</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_controller</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_task_monitor</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">_try_again</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">]:</span>
+        <span class="c1"># TODO: how to tell client no shareable available now?</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_set_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to set stats into InfoCollector</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): info collector is retrieved from fl_ctx with InfoCollector.CTX_KEY_STATS_COLLECTOR key</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">collector</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">InfoCollector</span><span class="o">.</span><span class="n">CTX_KEY_STATS_COLLECTOR</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">collector</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">collector</span><span class="p">,</span> <span class="n">GroupInfoCollector</span><span class="p">)</span>
+            <span class="n">collector</span><span class="o">.</span><span class="n">set_info</span><span class="p">(</span>
+                <span class="n">group_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_name</span><span class="p">,</span>
+                <span class="n">info</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="p">[</span><span class="n">ct</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">ct</span> <span class="ow">in</span> <span class="n">t</span><span class="o">.</span><span class="n">client_tasks</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="p">},</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+
+<div class="viewcode-block" id="Controller.handle_event"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.handle_event">[docs]</a>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called when events are fired</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            event_type (str): all event types, including AppEventType and EventType</span>
+<span class="sd">            fl_ctx (FLContext): FLContext information with current event type</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">InfoCollector</span><span class="o">.</span><span class="n">EVENT_TYPE_GET_STATS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_stats</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.process_task_request"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.process_task_request">[docs]</a>    <span class="k">def</span> <span class="nf">process_task_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">Client</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Called by runner when a client asks for a task</span>
+
+<span class="sd">        Note: this is called in a separate thread.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client (Client): The record of one client requesting tasks</span>
+<span class="sd">            fl_ctx (FLContext): The FLContext associated with this request</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            TypeError: when client is not an instance of Client</span>
+<span class="sd">            TypeError: when fl_ctx is not an instance of FLContext</span>
+<span class="sd">            TypeError: when any standing task containing an invalid client_task</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this requst</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">Client</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;client must be an instance of Client.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">FLContext</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;fl_ctx must be an instance of FLContext.&quot;</span><span class="p">)</span>
+
+        <span class="n">client_task_to_send</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_task_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">Task</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># this task is finished (and waiting for the monitor to exit it)</span>
+                    <span class="k">continue</span>
+
+                <span class="c1"># do we need to send this task to this client?</span>
+                <span class="c1"># note: the task could be sent to a client multiple times (e.g. in relay)</span>
+                <span class="c1"># we only check the last ClientTask sent to the client!</span>
+                <span class="n">client_task_to_check</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">last_client_task_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;task to check </span><span class="si">{</span><span class="n">client_task_to_check</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">resend_task</span> <span class="o">=</span> <span class="kc">False</span>
+
+                <span class="k">if</span> <span class="n">client_task_to_check</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># this client has been sent the task already.</span>
+                    <span class="c1"># do we need to send again?</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">client_task_to_check</span><span class="p">,</span> <span class="n">ClientTask</span><span class="p">):</span>
+                        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">client_task_to_check</span><span class="si">=}</span><span class="s2"> must be an instance of ClientTask.&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">client_task_to_check</span><span class="o">.</span><span class="n">result_received_time</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="c1"># we have not received result</span>
+                        <span class="c1"># the client must be working on this task, but apparently something is wrong</span>
+                        <span class="c1"># we resend the task!</span>
+                        <span class="n">resend_task</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="n">client_task_to_send</span> <span class="o">=</span> <span class="n">client_task_to_check</span>
+                        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">IS_CLIENT_TASK_RESEND</span><span class="p">,</span> <span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">resend_task</span><span class="p">:</span>
+                    <span class="c1"># check with the task manager whether to send</span>
+                    <span class="n">manager</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_MANAGER</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">client_task_to_check</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">client_task_to_check</span> <span class="o">=</span> <span class="n">ClientTask</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">client</span><span class="o">=</span><span class="n">client</span><span class="p">)</span>
+                    <span class="n">check_status</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">check_task_send</span><span class="p">(</span><span class="n">client_task_to_check</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;checking client task </span><span class="si">{</span><span class="n">client_task_to_check</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">client_task_to_check</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Check task send get </span><span class="si">{</span><span class="n">check_status</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">check_status</span> <span class="o">==</span> <span class="n">TaskCheckStatus</span><span class="o">.</span><span class="n">BLOCK</span><span class="p">:</span>
+                        <span class="c1"># TODO: make sure engine understand the return value</span>
+                        <span class="c1"># do not send this task, and do not check other tasks</span>
+                        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_again</span><span class="p">()</span>
+                    <span class="k">elif</span> <span class="n">check_status</span> <span class="o">==</span> <span class="n">TaskCheckStatus</span><span class="o">.</span><span class="n">NO_BLOCK</span><span class="p">:</span>
+                        <span class="c1"># do not send this task, but continue to check next task</span>
+                        <span class="k">continue</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="c1"># go ahead to send the task!</span>
+                        <span class="c1"># only need to remember the client_task if task is sent to it!</span>
+                        <span class="n">client_task_to_send</span> <span class="o">=</span> <span class="n">ClientTask</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">task</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mapping </span><span class="si">{</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">client_task_to_send</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                        <span class="n">task</span><span class="o">.</span><span class="n">last_client_task_map</span><span class="p">[</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">client_task_to_send</span>
+                        <span class="n">task</span><span class="o">.</span><span class="n">client_tasks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">client_task_to_send</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">task</span><span class="o">.</span><span class="n">client_tasks</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Adding </span><span class="si">{</span><span class="n">client_task_to_send</span><span class="o">.</span><span class="n">id</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_client_task_map</span><span class="p">[</span><span class="n">client_task_to_send</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">client_task_to_send</span>
+                        <span class="k">break</span>
+
+        <span class="c1"># NOTE: move task sending process outside of the lock</span>
+        <span class="c1"># This is to minimize the locking time.</span>
+        <span class="c1"># Also to avoid potential dead lock - the CB could schedule another task, which requires lock</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Determining based on </span><span class="si">{</span><span class="n">client_task_to_send</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client_task_to_send</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># no task available for this client</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_again</span><span class="p">()</span>
+
+        <span class="c1"># now try to send</span>
+        <span class="n">can_send_task</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">task</span> <span class="o">=</span> <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">task</span>
+        <span class="k">with</span> <span class="n">task</span><span class="o">.</span><span class="n">cb_lock</span><span class="p">:</span>
+            <span class="c1"># Note: must guarantee the after_task_sent_cb is always called</span>
+            <span class="c1"># regardless whether the task is sent successfully!</span>
+            <span class="c1"># This is so that the app could clear up things in after_task_sent_cb.</span>
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">before_task_sent_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">before_task_sent_cb</span><span class="p">(</span><span class="n">client_task</span><span class="o">=</span><span class="n">client_task_to_send</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">WorkflowError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_engine</span><span class="o">.</span><span class="n">ask_to_stop</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span>
+                        <span class="s2">&quot;processing error in before_task_sent_cb on task </span><span class="si">{}</span><span class="s2">:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                            <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">id</span>
+                        <span class="p">),</span>
+                    <span class="p">)</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+                <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                    <span class="c1"># this task cannot proceed any more</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;before_task_sent_cb done on </span><span class="si">{</span><span class="n">client_task_to_send</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">can_send_task</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="c1"># remember the task name and data to be sent to the client</span>
+            <span class="c1"># since task.data could be reset by the after_task_sent_cb!</span>
+            <span class="n">task_name</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">name</span>
+            <span class="n">task_data</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">data</span>
+
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">after_task_sent_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">after_task_sent_cb</span><span class="p">(</span><span class="n">client_task</span><span class="o">=</span><span class="n">client_task_to_send</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">WorkflowError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_engine</span><span class="o">.</span><span class="n">ask_to_stop</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span>
+                        <span class="s2">&quot;processing error in after_task_sent_cb on task </span><span class="si">{}</span><span class="s2">:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                            <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">id</span>
+                        <span class="p">),</span>
+                    <span class="p">)</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+                <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                    <span class="c1"># this task cannot proceed any more</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># NOTE: the CB could cancel the task!</span>
+                <span class="c1"># tell the client to try again</span>
+                <span class="n">can_send_task</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">can_send_task</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_again</span><span class="p">()</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;after_task_sent_cb done on </span><span class="si">{</span><span class="n">client_task_to_send</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">task_sent_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">task_send_count</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">return</span> <span class="n">task_name</span><span class="p">,</span> <span class="n">client_task_to_send</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">task_data</span></div>
+
+<div class="viewcode-block" id="Controller.handle_exception"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.handle_exception">[docs]</a>    <span class="k">def</span> <span class="nf">handle_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called to cancel one task as its client_task is causing exception at upper level.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_id (str): an id to the failing client_task</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this client_task</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_task_lock</span><span class="p">:</span>
+            <span class="c1"># task_id is the uuid associated with the client_task</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Handle exception on </span><span class="si">{</span><span class="n">task_id</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">client_task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_task_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">client_task</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client_task</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># cannot find a standing task on the exception</span>
+            <span class="k">return</span>
+
+        <span class="n">task</span> <span class="o">=</span> <span class="n">client_task</span><span class="o">.</span><span class="n">task</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cancel_task</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;task </span><span class="si">{}</span><span class="s2"> is cancelled due to exception&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="Controller.process_submission"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.process_submission">[docs]</a>    <span class="k">def</span> <span class="nf">process_submission</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">Client</span><span class="p">,</span> <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process a submission from one client.</span>
+
+<span class="sd">        Note: this method is called by a separate thread.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client (Client): the client that submitted this task</span>
+<span class="sd">            task_name (str): the task name associated this submission</span>
+<span class="sd">            task_id (str): the id associated with the client_task</span>
+<span class="sd">            result (Shareable): the actual submitted data from the client</span>
+<span class="sd">            fl_ctx (FLContext): the FLContext associated with this submission</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            TypeError: when client is not an instance of Client</span>
+<span class="sd">            TypeError: when fl_ctx is not an instance of FLContext</span>
+<span class="sd">            TypeError: when result is not an instance of Shareable</span>
+<span class="sd">            ValueError: task_name is not found in the client_task</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">Client</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;client must be an instance of Client.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">FLContext</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;fl_ctx must be an instance of FLContext.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;result must be an instance of Shareable.&quot;</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_task_lock</span><span class="p">:</span>
+            <span class="c1"># task_id is the uuid associated with the client_task</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Submission </span><span class="si">{</span><span class="n">task_id</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">client_task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_task_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">client_task</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client_task</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># cannot find a standing task for the submission</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;no standing task found for </span><span class="si">{}</span><span class="s2">:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_name</span><span class="p">,</span> <span class="n">task_id</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_result_of_unknown_task</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">task_name</span><span class="p">,</span> <span class="n">task_id</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">client_task</span><span class="p">,</span> <span class="n">ClientTask</span><span class="p">)</span>
+        <span class="n">task</span> <span class="o">=</span> <span class="n">client_task</span><span class="o">.</span><span class="n">task</span>
+        <span class="k">with</span> <span class="n">task</span><span class="o">.</span><span class="n">cb_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">name</span> <span class="o">!=</span> <span class="n">task_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;client specified task name </span><span class="si">{}</span><span class="s2"> doesn&#39;t match </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_name</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># the task is already finished - drop the result</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;task is already finished - submission dropped&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+
+            <span class="c1"># do client task CB processing outside of the lock!</span>
+            <span class="c1"># this is because the CB could schedule another task, which requires the lock!</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Submission </span><span class="si">{</span><span class="n">result</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">client_task</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">client_task</span><span class="o">.</span><span class="n">result</span> <span class="o">=</span> <span class="n">result</span>
+            <span class="n">client_task</span><span class="o">.</span><span class="n">result_received_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+            <span class="n">manager</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_MANAGER</span><span class="p">]</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span> <span class="n">TaskManager</span><span class="p">)</span>
+            <span class="n">manager</span><span class="o">.</span><span class="n">check_task_result</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">client_task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">result_received_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;invoking result_received_cb ...&quot;</span><span class="p">)</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">result_received_cb</span><span class="p">(</span><span class="n">client_task</span><span class="o">=</span><span class="n">client_task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">WorkflowError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_engine</span><span class="o">.</span><span class="n">ask_to_stop</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span>
+                        <span class="s2">&quot;processing error in result_received_cb on task </span><span class="si">{}</span><span class="s2">:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_name</span><span class="p">,</span> <span class="n">task_id</span><span class="p">),</span>
+                    <span class="p">)</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+                    <span class="k">return</span>
+                <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                    <span class="c1"># this task cannot proceed any more</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span>
+                        <span class="s2">&quot;processing error in result_received_cb on task </span><span class="si">{}</span><span class="s2">:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_name</span><span class="p">,</span> <span class="n">task_id</span><span class="p">),</span>
+                    <span class="p">)</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+                    <span class="k">return</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;no result_received_cb&quot;</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_schedule_task</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">manager</span><span class="p">:</span> <span class="n">TaskManager</span><span class="p">,</span>
+        <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
+        <span class="n">allow_dup_targets</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">schedule_time</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># this task was scheduled before</span>
+            <span class="c1"># we do not allow a task object to be reused!</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">task</span><span class="o">.</span><span class="n">schedule_time</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Task was already used. Please create a new task object.&quot;</span><span class="p">)</span>
+
+        <span class="n">task</span><span class="o">.</span><span class="n">targets</span> <span class="o">=</span> <span class="n">targets</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">target_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">targets</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;task targets must be a list.&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                    <span class="n">name</span> <span class="o">=</span> <span class="n">t</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">Client</span><span class="p">):</span>
+                    <span class="n">name</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">name</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;element in targets must be string or Client type.&quot;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">allow_dup_targets</span> <span class="ow">or</span> <span class="p">(</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">target_names</span><span class="p">):</span>
+                    <span class="n">target_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">task</span><span class="o">.</span><span class="n">targets</span> <span class="o">=</span> <span class="n">target_names</span>
+
+        <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_MANAGER</span><span class="p">]</span> <span class="o">=</span> <span class="n">manager</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_ENGINE</span><span class="p">]</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">is_standing</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">schedule_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_task_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">task</span><span class="si">=}</span><span class="s2"> added&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;scheduled task </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<div class="viewcode-block" id="Controller.broadcast"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.broadcast">[docs]</a>    <span class="k">def</span> <span class="nf">broadcast</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">min_responses</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">wait_time_after_min_received</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Schedule a broadcast task.  This is a non-blocking call.</span>
+
+<span class="sd">        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be scheduled</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this task</span>
+<span class="sd">            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.</span>
+<span class="sd">            min_responses (int, optional): the condition to mark this task as completed because enough clients respond with submission. Defaults to 1.</span>
+<span class="sd">            wait_time_after_min_received (int, optional): a grace period for late clients to contribute their submission.  0 means no grace period.</span>
+<span class="sd">            Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: min_responses is greater than the length of targets since this condition will make the task, if allowed to be scheduled, never exit.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_check_inputs</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">)</span>
+        <span class="n">_check_positive_int</span><span class="p">(</span><span class="s2">&quot;min_responses&quot;</span><span class="p">,</span> <span class="n">min_responses</span><span class="p">)</span>
+        <span class="n">_check_positive_int</span><span class="p">(</span><span class="s2">&quot;wait_time_after_min_received&quot;</span><span class="p">,</span> <span class="n">wait_time_after_min_received</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">and</span> <span class="n">min_responses</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">targets</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;min_responses must be less than length of targets.&quot;</span><span class="p">)</span>
+
+        <span class="n">manager</span> <span class="o">=</span> <span class="n">BcastTaskManager</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">min_responses</span><span class="o">=</span><span class="n">min_responses</span><span class="p">,</span> <span class="n">wait_time_after_min_received</span><span class="o">=</span><span class="n">wait_time_after_min_received</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_schedule_task</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">manager</span><span class="o">=</span><span class="n">manager</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.broadcast_and_wait"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.broadcast_and_wait">[docs]</a>    <span class="k">def</span> <span class="nf">broadcast_and_wait</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">min_responses</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">wait_time_after_min_received</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Signal</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Schedule a broadcast task.  This is a blocking call.</span>
+
+<span class="sd">        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be scheduled</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this task</span>
+<span class="sd">            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.</span>
+<span class="sd">            min_responses (int, optional): the condition to mark this task as completed because enough clients respond with submission. Defaults to 1.</span>
+<span class="sd">            wait_time_after_min_received (int, optional): a grace period for late clients to contribute their submission.  0 means no grace period.</span>
+<span class="sd">            Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.</span>
+<span class="sd">            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs this method to return. Defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">broadcast</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span>
+            <span class="n">min_responses</span><span class="o">=</span><span class="n">min_responses</span><span class="p">,</span>
+            <span class="n">wait_time_after_min_received</span><span class="o">=</span><span class="n">wait_time_after_min_received</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_task</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.broadcast_forever"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.broadcast_forever">[docs]</a>    <span class="k">def</span> <span class="nf">broadcast_forever</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Schedule a broadcast task.  This is a non-blocking call.</span>
+
+<span class="sd">        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.</span>
+<span class="sd">        This broadcast will not end.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be scheduled</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this task</span>
+<span class="sd">            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_check_inputs</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">)</span>
+        <span class="n">manager</span> <span class="o">=</span> <span class="n">BcastForeverTaskManager</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_schedule_task</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">manager</span><span class="o">=</span><span class="n">manager</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.send"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.send">[docs]</a>    <span class="k">def</span> <span class="nf">send</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">send_order</span><span class="p">:</span> <span class="n">SendOrder</span> <span class="o">=</span> <span class="n">SendOrder</span><span class="o">.</span><span class="n">SEQUENTIAL</span><span class="p">,</span>
+        <span class="n">task_assignment_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Schedule a single task to targets.  This is a non-blocking call.</span>
+
+<span class="sd">        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be scheduled</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this task</span>
+<span class="sd">            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.</span>
+<span class="sd">            send_order (SendOrder, optional): the order for clients to become eligible.  SEQUENTIAL means the order in targets is enforced.  ANY means</span>
+<span class="sd">            clients in targets and haven&#39;t received task are eligible for task. Defaults to SendOrder.SEQUENTIAL.</span>
+<span class="sd">            task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: when task_assignment_timeout is greater than task&#39;s timeout.</span>
+<span class="sd">            TypeError: send_order is not defined in SendOrder</span>
+<span class="sd">            ValueError: targets is None or an empty list</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_check_inputs</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">_check_positive_int</span><span class="p">(</span><span class="s2">&quot;task_assignment_timeout&quot;</span><span class="p">,</span> <span class="n">task_assignment_timeout</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span> <span class="ow">and</span> <span class="n">task_assignment_timeout</span> <span class="ow">and</span> <span class="n">task_assignment_timeout</span> <span class="o">&gt;</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;task_assignment_timeout need to be less than or equal to task.timeout.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">send_order</span><span class="p">,</span> <span class="n">SendOrder</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;send_order must be in Enum SendOrder.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># targets must be provided!</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Targets must be provided for send.&quot;</span><span class="p">)</span>
+
+        <span class="n">manager</span> <span class="o">=</span> <span class="n">SendTaskManager</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">send_order</span><span class="p">,</span> <span class="n">task_assignment_timeout</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_schedule_task</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">manager</span><span class="o">=</span><span class="n">manager</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.send_and_wait"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.send_and_wait">[docs]</a>    <span class="k">def</span> <span class="nf">send_and_wait</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">send_order</span><span class="p">:</span> <span class="n">SendOrder</span> <span class="o">=</span> <span class="n">SendOrder</span><span class="o">.</span><span class="n">SEQUENTIAL</span><span class="p">,</span>
+        <span class="n">task_assignment_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Schedule a single task to targets.  This is a blocking call.</span>
+
+<span class="sd">        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be scheduled</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this task</span>
+<span class="sd">            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.</span>
+<span class="sd">            send_order (SendOrder, optional): the order for clients to become eligible.  SEQUENTIAL means the order in targets is enforced.  ANY means</span>
+<span class="sd">            clients in targets and haven&#39;t received task are eligible for task. Defaults to SendOrder.SEQUENTIAL.</span>
+<span class="sd">            task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.</span>
+<span class="sd">            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs this method to return. Defaults to None.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span>
+            <span class="n">send_order</span><span class="o">=</span><span class="n">send_order</span><span class="p">,</span>
+            <span class="n">task_assignment_timeout</span><span class="o">=</span><span class="n">task_assignment_timeout</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_task</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.get_num_standing_tasks"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.get_num_standing_tasks">[docs]</a>    <span class="k">def</span> <span class="nf">get_num_standing_tasks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Get the number of tasks that are currently standing.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            int: length of the list of standing tasks</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.cancel_task"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.cancel_task">[docs]</a>    <span class="k">def</span> <span class="nf">cancel_task</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span> <span class="n">completion_status</span><span class="o">=</span><span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">CANCELLED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">FLContext</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Cancel the specified task.</span>
+
+<span class="sd">        Change the task completion_status, which will inform task monitor to clean up this task</span>
+<span class="sd">        NOTE: we only mark the task as completed and leave it to the task monitor to clean up</span>
+<span class="sd">        This is to avoid potential dead lock of task_lock</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be cancelled</span>
+<span class="sd">            completion_status ([type], optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.</span>
+<span class="sd">            fl_ctx (Optional[FLContext], optional): FLContext associated with this cancellation. Defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">completion_status</span></div>
+
+<div class="viewcode-block" id="Controller.cancel_all_tasks"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.cancel_all_tasks">[docs]</a>    <span class="k">def</span> <span class="nf">cancel_all_tasks</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">completion_status</span><span class="o">=</span><span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">CANCELLED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">FLContext</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Cancel all standing tasks in this controller.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            completion_status ([type], optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.</span>
+<span class="sd">            fl_ctx (Optional[FLContext], optional): FLContext associated with this cancellation. Defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_task_lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="p">:</span>
+                <span class="n">t</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">completion_status</span></div>
+
+<div class="viewcode-block" id="Controller.abort_task"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.abort_task">[docs]</a>    <span class="k">def</span> <span class="nf">abort_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Ask all clients to abort the execution of the specified task.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task ([type]): the task to be aborted</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this action</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;asked all clients to abort task </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_end_task</span><span class="p">([</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">],</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_end_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_names</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineSpec</span><span class="p">)</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
+        <span class="n">request</span><span class="p">[</span><span class="s2">&quot;task_names&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">task_names</span>
+        <span class="n">engine</span><span class="o">.</span><span class="n">send_aux_request</span><span class="p">(</span><span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">ReservedTopic</span><span class="o">.</span><span class="n">ABORT_ASK</span><span class="p">,</span> <span class="n">request</span><span class="o">=</span><span class="n">request</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Controller.abort_all_tasks"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.abort_all_tasks">[docs]</a>    <span class="k">def</span> <span class="nf">abort_all_tasks</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Ask clients to abort the execution of all tasks.</span>
+<span class="sd">        NOTE: the server should send a notification to all clients, regardless of whether the server</span>
+<span class="sd">        has any standing tasks.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this action</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_end_task</span><span class="p">([],</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.finalize_run"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.finalize_run">[docs]</a>    <span class="k">def</span> <span class="nf">finalize_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Do cleanup of the coordinator implementation.</span>
+<span class="sd">        NOTE: subclass controllers should not overwrite finalize_run.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this action</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cancel_all_tasks</span><span class="p">()</span>  <span class="c1"># unconditionally cancel all tasks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_all_done</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_task_monitor</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_task_monitor</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;unable to join monitor thread (not started?)&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stop_controller</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.relay"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.relay">[docs]</a>    <span class="k">def</span> <span class="nf">relay</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">send_order</span><span class="p">:</span> <span class="n">SendOrder</span> <span class="o">=</span> <span class="n">SendOrder</span><span class="o">.</span><span class="n">SEQUENTIAL</span><span class="p">,</span>
+        <span class="n">task_assignment_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">task_result_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">dynamic_targets</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Schedule a single task to targets in one-after-another style.  This is a non-blocking call.</span>
+
+<span class="sd">        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be scheduled</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this task</span>
+<span class="sd">            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.</span>
+<span class="sd">            send_order (SendOrder, optional): the order for clients to become eligible.</span>
+<span class="sd">              SEQUENTIAL means the order in targets is enforced.</span>
+<span class="sd">              ANY means any clients that are inside the targets and haven&#39;t received the task are eligible. Defaults to SendOrder.SEQUENTIAL.</span>
+<span class="sd">            task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.</span>
+<span class="sd">            task_result_timeout (int, optional): how long to wait for current working client to reply its result. Defaults to 0.</span>
+<span class="sd">            dynamic_targets (bool, optional): allow clients not in targets to join at the end of targets list. Defaults to True.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: when task_assignment_timeout is greater than task&#39;s timeout</span>
+<span class="sd">            ValueError: when task_result_timeout is greater than task&#39;s timeout</span>
+<span class="sd">            TypeError: send_order is not defined in SendOrder</span>
+<span class="sd">            TypeError: when dynamic_targets is not a boolean variable</span>
+<span class="sd">            ValueError: targets is None or an empty list but dynamic_targets is False</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_check_inputs</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">_check_positive_int</span><span class="p">(</span><span class="s2">&quot;task_assignment_timeout&quot;</span><span class="p">,</span> <span class="n">task_assignment_timeout</span><span class="p">)</span>
+        <span class="n">_check_positive_int</span><span class="p">(</span><span class="s2">&quot;task_result_timeout&quot;</span><span class="p">,</span> <span class="n">task_result_timeout</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span> <span class="ow">and</span> <span class="n">task_assignment_timeout</span> <span class="ow">and</span> <span class="n">task_assignment_timeout</span> <span class="o">&gt;</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;task_assignment_timeout need to be less than or equal to task.timeout.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span> <span class="ow">and</span> <span class="n">task_result_timeout</span> <span class="ow">and</span> <span class="n">task_result_timeout</span> <span class="o">&gt;</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;task_result_timeout need to be less than or equal to task.timeout.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">send_order</span><span class="p">,</span> <span class="n">SendOrder</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;send_order must be in Enum SendOrder.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dynamic_targets</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;dynamic_targets must be an instance of bool.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dynamic_targets</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Need to provide targets when dynamic_targets is set to False.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">send_order</span> <span class="o">==</span> <span class="n">SendOrder</span><span class="o">.</span><span class="n">SEQUENTIAL</span><span class="p">:</span>
+            <span class="n">manager</span> <span class="o">=</span> <span class="n">SequentialRelayTaskManager</span><span class="p">(</span>
+                <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+                <span class="n">task_assignment_timeout</span><span class="o">=</span><span class="n">task_assignment_timeout</span><span class="p">,</span>
+                <span class="n">task_result_timeout</span><span class="o">=</span><span class="n">task_result_timeout</span><span class="p">,</span>
+                <span class="n">dynamic_targets</span><span class="o">=</span><span class="n">dynamic_targets</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">manager</span> <span class="o">=</span> <span class="n">AnyRelayTaskManager</span><span class="p">(</span>
+                <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">task_result_timeout</span><span class="o">=</span><span class="n">task_result_timeout</span><span class="p">,</span> <span class="n">dynamic_targets</span><span class="o">=</span><span class="n">dynamic_targets</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_schedule_task</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">manager</span><span class="o">=</span><span class="n">manager</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span>
+            <span class="n">allow_dup_targets</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="Controller.relay_and_wait"><a class="viewcode-back" href="../../../../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller.relay_and_wait">[docs]</a>    <span class="k">def</span> <span class="nf">relay_and_wait</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">targets</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">send_order</span><span class="o">=</span><span class="n">SendOrder</span><span class="o">.</span><span class="n">SEQUENTIAL</span><span class="p">,</span>
+        <span class="n">task_assignment_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">task_result_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">dynamic_targets</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Signal</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Schedule a single task to targets in one-after-another style.  This is a blocking call.</span>
+
+<span class="sd">        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task (Task): the task to be scheduled</span>
+<span class="sd">            fl_ctx (FLContext): FLContext associated with this task</span>
+<span class="sd">            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.</span>
+<span class="sd">            send_order (SendOrder, optional): the order for clients to become eligible.  SEQUENTIAL means the order in targets is enforced.  ANY means</span>
+<span class="sd">            clients in targets and haven&#39;t received task are eligible for task. Defaults to SendOrder.SEQUENTIAL.</span>
+<span class="sd">            task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.</span>
+<span class="sd">            task_result_timeout (int, optional): how long to wait for current working client to reply its result. Defaults to 0.</span>
+<span class="sd">            dynamic_targets (bool, optional): allow clients not in targets to join at the end of targets list. Defaults to True.</span>
+<span class="sd">            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs this method to return. Defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relay</span><span class="p">(</span>
+            <span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span>
+            <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span>
+            <span class="n">send_order</span><span class="o">=</span><span class="n">send_order</span><span class="p">,</span>
+            <span class="n">task_assignment_timeout</span><span class="o">=</span><span class="n">task_assignment_timeout</span><span class="p">,</span>
+            <span class="n">task_result_timeout</span><span class="o">=</span><span class="n">task_result_timeout</span><span class="p">,</span>
+            <span class="n">dynamic_targets</span><span class="o">=</span><span class="n">dynamic_targets</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_task</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_monitor_tasks</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_all_done</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_check_tasks</span><span class="p">()</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_task_check_period</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_check_tasks</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">exit_tasks</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_task_lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">exit_tasks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+                    <span class="k">continue</span>
+
+                <span class="c1"># check the task-specific exit condition</span>
+                <span class="n">manager</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_MANAGER</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">manager</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span> <span class="n">TaskManager</span><span class="p">):</span>
+                        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;manager in task must be an instance of TaskManager.&quot;</span><span class="p">)</span>
+                    <span class="n">should_exit</span><span class="p">,</span> <span class="n">exit_status</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">check_task_exit</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">should_exit</span><span class="si">=}</span><span class="s2">, </span><span class="si">{</span><span class="n">exit_status</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">should_exit</span><span class="p">:</span>
+                        <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">exit_status</span>
+                        <span class="n">exit_tasks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+                        <span class="k">continue</span>
+
+                <span class="c1"># check if task timeout</span>
+                <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span> <span class="ow">and</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">task</span><span class="o">.</span><span class="n">schedule_time</span> <span class="o">&gt;=</span> <span class="n">task</span><span class="o">.</span><span class="n">timeout</span><span class="p">:</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">TIMEOUT</span>
+                    <span class="n">exit_tasks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+                    <span class="k">continue</span>
+
+            <span class="k">for</span> <span class="n">exit_task</span> <span class="ow">in</span> <span class="n">exit_tasks</span><span class="p">:</span>
+                <span class="n">exit_task</span><span class="o">.</span><span class="n">is_standing</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Removing </span><span class="si">{</span><span class="n">exit_task</span><span class="si">=}</span><span class="s2"> for </span><span class="si">{</span><span class="n">exit_task</span><span class="o">.</span><span class="n">completion_status</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">exit_task</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">client_task</span> <span class="ow">in</span> <span class="n">exit_task</span><span class="o">.</span><span class="n">client_tasks</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Removing </span><span class="si">{</span><span class="n">client_task</span><span class="o">.</span><span class="n">id</span><span class="si">=}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_client_task_map</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_task</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+
+        <span class="c1"># do the task exit processing outside of the lock to minimize the locking time!</span>
+        <span class="c1"># also to avoid potential dead lock since the CB could schedule another task</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">exit_tasks</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">exit_task</span> <span class="ow">in</span> <span class="n">exit_tasks</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exit_task</span><span class="p">,</span> <span class="n">Task</span><span class="p">)</span>
+                <span class="k">with</span> <span class="n">exit_task</span><span class="o">.</span><span class="n">cb_lock</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;task </span><span class="si">{}</span><span class="s2"> exit with status </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">exit_task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">exit_task</span><span class="o">.</span><span class="n">completion_status</span><span class="p">)</span>
+                    <span class="p">)</span>
+
+                    <span class="k">if</span> <span class="n">exit_task</span><span class="o">.</span><span class="n">task_done_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">exit_task</span><span class="o">.</span><span class="n">task_done_cb</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">exit_task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+                        <span class="k">except</span> <span class="n">WorkflowError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">_engine</span><span class="o">.</span><span class="n">ask_to_stop</span><span class="p">()</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span>
+                                <span class="n">fl_ctx</span><span class="p">,</span>
+                                <span class="s2">&quot;processing task_done_cb() error on task </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">exit_task</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                            <span class="p">)</span>
+                            <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                            <span class="n">task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+                        <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Exception </span><span class="si">{</span><span class="n">ex</span><span class="si">}</span><span class="s2"> raised in task_done_cb on task=</span><span class="si">{</span><span class="n">exit_task</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="n">exit_task</span><span class="o">.</span><span class="n">completion_status</span> <span class="o">=</span> <span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ERROR</span>
+                            <span class="n">exit_task</span><span class="o">.</span><span class="n">exception</span> <span class="o">=</span> <span class="n">ex</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_process_finished_task</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">func</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">wrap</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">func</span><span class="p">:</span>
+                <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_DONE</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">return</span> <span class="n">wrap</span>
+
+    <span class="k">def</span> <span class="nf">_wait_for_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">:</span> <span class="n">Task</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">):</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_DONE</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">task_done_cb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_finished_task</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">task_done_cb</span><span class="p">)</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">completion_status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="k">if</span> <span class="n">abort_signal</span> <span class="ow">and</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cancel_task</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">completion_status</span><span class="o">=</span><span class="n">TaskCompletionStatus</span><span class="o">.</span><span class="n">ABORTED</span><span class="p">)</span>
+                <span class="k">break</span>
+
+            <span class="n">task_done</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">_TASK_KEY_DONE</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">task_done</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_task_check_period</span><span class="p">)</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+    
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

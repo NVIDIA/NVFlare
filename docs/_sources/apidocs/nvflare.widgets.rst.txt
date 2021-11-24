@@ -1,0 +1,45 @@
+nvflare.widgets package
+=======================
+
+Submodules
+----------
+
+nvflare.widgets.comp\_caller module
+-----------------------------------
+
+.. automodule:: nvflare.widgets.comp_caller
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.widgets.fed\_event module
+---------------------------------
+
+.. automodule:: nvflare.widgets.fed_event
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.widgets.info\_collector module
+--------------------------------------
+
+.. automodule:: nvflare.widgets.info_collector
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+nvflare.widgets.widget module
+-----------------------------
+
+.. automodule:: nvflare.widgets.widget
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: nvflare.widgets
+   :members:
+   :undoc-members:
+   :show-inheritance:
