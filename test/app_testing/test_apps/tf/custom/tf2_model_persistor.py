@@ -35,15 +35,23 @@ class TF2ModelPersistor(ModelPersistor):
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
-        env_config = os.path.join(app_root, fl_ctx.get_prop(FLContextKey.ARGS).env)
-        with open(os.path.join(app_root, env_config)) as file:
-            env = json.load(file)
+        env = None
+        run_args = fl_ctx.get_prop(FLContextKey.ARGS)
+        if run_args:
+            env_config_file_name = os.path.join(app_root, run_args.env)
+            if os.path.exists(env_config_file_name):
+                try:
+                    with open(env_config_file_name) as file:
+                        env = json.load(file)
+                except:
+                    self.system_panic(
+                        reason="error opening env config file {}".format(env_config_file_name), fl_ctx=fl_ctx
+                    )
+                    return
 
         if env is not None:
             if env.get("APP_CKPT_DIR", None):
-                fl_ctx.set_prop(
-                    AppConstants.LOG_DIR, env["APP_CKPT_DIR"], private=True, sticky=True
-                )
+                fl_ctx.set_prop(AppConstants.LOG_DIR, env["APP_CKPT_DIR"], private=True, sticky=True)
             if env.get("APP_CKPT") is not None:
                 fl_ctx.set_prop(
                     AppConstants.CKPT_PRELOAD_PATH,
@@ -60,6 +68,8 @@ class TF2ModelPersistor(ModelPersistor):
         self._pkl_save_path = os.path.join(self.log_dir, self.save_name)
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
+
+        fl_ctx.sync_sticky()
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """
@@ -82,10 +92,7 @@ class TF2ModelPersistor(ModelPersistor):
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             network.compile(optimizer="adam", loss=loss_fn, metrics=["accuracy"])
             _ = network(tf.keras.Input(shape=(28, 28)))
-            var_dict = {
-                network.get_layer(index=key).name: value
-                for key, value in enumerate(network.get_weights())
-            }
+            var_dict = {network.get_layer(index=key).name: value for key, value in enumerate(network.get_weights())}
             model_learnable = make_model_learnable(var_dict, dict())
         return model_learnable
 
