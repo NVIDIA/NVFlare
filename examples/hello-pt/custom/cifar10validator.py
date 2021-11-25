@@ -21,7 +21,7 @@ from nvflare.apis.dxo import from_shareable, DataKind, DXO
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 
@@ -49,20 +49,19 @@ class Cifar10Validator(Executor):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         out_shareable = Shareable()
         if task_name == self._validate_task_name:
+            model_owner = "?"
             try:
                 dxo = from_shareable(shareable)
 
                 # Check if dxo is valid.
                 if not dxo:
                     self.log_exception(fl_ctx, "DXO invalid")
-                    out_shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                    return out_shareable
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Ensure data_kind is weights.
                 if not dxo.data_kind == DataKind.WEIGHTS:
                     self.log_exception(fl_ctx, f"DXO is of type {dxo.data_kind} but expected type WEIGHTS.")
-                    out_shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                    return out_shareable
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Extract weights and ensure they are tensor.
                 model_owner = shareable.get_header(AppConstants.MODEL_OWNER, "?")
@@ -71,6 +70,9 @@ class Cifar10Validator(Executor):
 
                 # Get validation accuracy
                 val_accuracy = self.do_validation(weights)
+                if abort_signal.triggered:
+                    return make_reply(ReturnCode.TASK_ABORTED)
+
                 self.log_info(fl_ctx, f"Accuracy when validating {model_owner}'s model on"
                                       f" {fl_ctx.get_identity_name()}"f's data: {val_accuracy}')
 
@@ -78,13 +80,11 @@ class Cifar10Validator(Executor):
                 return dxo.to_shareable()
             except:
                 self.log_exception(fl_ctx, f"Exception in validating model from {model_owner}")
-                out_shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                return out_shareable
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         else:
-            out_shareable.set_return_code(ReturnCode.TASK_UNKNOWN)
-            return out_shareable
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
-    def do_validation(self, weights):
+    def do_validation(self, weights, abort_signal):
         self.model.load_state_dict(weights)
 
         self.model.eval()
@@ -93,6 +93,9 @@ class Cifar10Validator(Executor):
         total = 0
         with torch.no_grad():
             for i, (images, labels) in enumerate(self.test_loader):
+                if abort_signal.triggered:
+                    return 0
+
                 images, labels = images.to(self.device), labels.to(self.device)
                 output = self.model(images)
 

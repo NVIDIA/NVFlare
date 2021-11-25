@@ -24,7 +24,7 @@ from nvflare.apis.dxo import from_shareable, DXO, DataKind, MetaKey
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode, ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import make_model_learnable, model_learnable_to_dxo
 from nvflare.app_common.app_constant import AppConstants
@@ -68,7 +68,7 @@ class Cifar10Trainer(Executor):
         self.persistence_manager = PTModelPersistenceFormatManager(data=self.model.state_dict(),
                                                                    default_train_conf=self.default_train_conf)
 
-    def local_train(self, fl_ctx, weights):
+    def local_train(self, fl_ctx, weights, abort_signal):
         # Set the model weights
         self.model.load_state_dict(state_dict=weights)
 
@@ -77,6 +77,11 @@ class Cifar10Trainer(Executor):
         for epoch in range(self.epochs):
             running_loss = 0
             for i, batch in enumerate(self.train_loader):
+                if abort_signal.triggered:
+                    # If abort_signal is triggered, we simply return.
+                    # The outside function will check it again and decide steps to take.
+                    return
+
                 images, labels = batch[0].to(self.device), batch[1].to(self.device)
                 self.optimizer.zero_grad()
 
@@ -95,23 +100,27 @@ class Cifar10Trainer(Executor):
         try:
             if task_name == self._train_task_name:
                 # Get model weights
-                dxo = from_shareable(shareable)
+                try:
+                    dxo = from_shareable(shareable)
+                except:
+                    self.log_error(fl_ctx, "Unable to extract dxo from shareable.")
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Check if dxo is valid.
                 if not isinstance(dxo, DXO):
                     self.log_exception(fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead.")
-                    shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                    return shareable
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Ensure data kind is weights.
                 if not dxo.data_kind == DataKind.WEIGHTS:
                     self.log_exception(fl_ctx, f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.")
-                    shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                    return shareable
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Convert weights to tensor. Run training
                 torch_weights = {k: torch.as_tensor(v) for k, v in dxo.data.items()}
-                self.local_train(fl_ctx, torch_weights)
+                self.local_train(fl_ctx, torch_weights, abort_signal)
+                if abort_signal.triggered:
+                    return make_reply(ReturnCode.TASK_ABORTED)
 
                 self.save_local_model(fl_ctx)
 
@@ -130,14 +139,10 @@ class Cifar10Trainer(Executor):
                 dxo = model_learnable_to_dxo(ml)
                 return dxo.to_shareable()
             else:
-                shareable = Shareable()
-                shareable.set_return_code(ReturnCode.TASK_UNKNOWN)
-                return shareable
+                return make_reply(ReturnCode.TASK_UNKNOWN)
         except:
             self.log_exception(fl_ctx, f"Exception in simple trainer.")
-            shareable = Shareable()
-            shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-            return shareable
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def save_local_model(self, fl_ctx: FLContext):
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
