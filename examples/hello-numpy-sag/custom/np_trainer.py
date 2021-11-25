@@ -22,7 +22,7 @@ from nvflare.apis.dxo import DXO, from_shareable, DataKind
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
@@ -72,7 +72,7 @@ class NPTrainer(Executor):
         count, interval = 0, 0.5
         while count < self._sleep_time:
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return make_reply(ReturnCode.TASK_ABORTED)
             time.sleep(interval)
             count += interval
 
@@ -82,7 +82,7 @@ class NPTrainer(Executor):
                 incoming_dxo = from_shareable(shareable)
             except BaseException as e:
                 self.system_panic(f"Unable to convert shareable to model definition. Exception {e.__str__()}", fl_ctx)
-                return self._get_exception_shareable()
+                return make_reply(ReturnCode.BAD_TASK_DATA)
 
             # Information about workflow is retrieved from the shareable header.
             current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
@@ -91,7 +91,7 @@ class NPTrainer(Executor):
             # Ensure that data is of type weights. Extract model data.
             if incoming_dxo.data_kind != DataKind.WEIGHTS:
                 self.system_panic("Model dex should be of kind DataKind.WEIGHTS.", fl_ctx)
-                return self._get_exception_shareable()
+                return make_reply(ReturnCode.BAD_TASK_DATA)
             np_data = incoming_dxo.data
 
             # Display properties.
@@ -104,7 +104,7 @@ class NPTrainer(Executor):
 
             # Check abort signal
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return make_reply(ReturnCode.TASK_ABORTED)
 
             # Doing some dummy training.
             if np_data:
@@ -112,16 +112,14 @@ class NPTrainer(Executor):
                     np_data[NPConstants.NUMPY_KEY] += self._delta
                 else:
                     self.log_error(fl_ctx, "numpy_key not found in model.")
-                    shareable.set_return_code(ReturnCode.EXECUTION_RESULT_ERROR)
-                    return shareable
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
             else:
                 self.log_error(fl_ctx, "No model weights found in shareable.")
-                shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                return shareable
+                return make_reply(ReturnCode.BAD_TASK_DATA)
 
             # We check abort_signal regularly to make sure
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return make_reply(ReturnCode.TASK_ABORTED)
 
             # Save local numpy model
             try:
@@ -136,16 +134,14 @@ class NPTrainer(Executor):
 
             # Checking abort signal again.
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return make_reply(ReturnCode.TASK_ABORTED)
 
             # Prepare a DXO for our updated model. Create shareable and return
             outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={})
             return outgoing_dxo.to_shareable()
         else:
             # If unknown task name, set RC accordingly.
-            shareable = Shareable()
-            shareable.set_return_code(ReturnCode.TASK_UNKNOWN)
-            return shareable
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def _load_local_model(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -179,14 +175,3 @@ class NPTrainer(Executor):
             with open(model_save_path, "wb") as f:
                 np.save(f, model[NPConstants.NUMPY_KEY])
             self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")
-
-    def _get_exception_shareable(self) -> Shareable:
-        """Abort execution. This is used if abort_signal is triggered. Users should
-        make sure they abort any running processes here.
-
-        Returns:
-            Shareable: Shareable with return_code.
-        """
-        shareable = Shareable()
-        shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        return shareable
