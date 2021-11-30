@@ -12,7 +12,7 @@
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "net.SimpleNetwork"
+          "path": "simple_network.SimpleNetwork"
         }
       }
     },

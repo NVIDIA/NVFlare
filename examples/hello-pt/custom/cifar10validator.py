@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import torch
-import torchvision.datasets
-from torchvision import transforms
+from torch.utils.data import DataLoader
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import Compose, ToTensor, Normalize
 
-from net import SimpleNetwork
 from nvflare.apis.dxo import from_shareable, DataKind, DXO
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from simple_network import SimpleNetwork
 
 
 class Cifar10Validator(Executor):
@@ -35,27 +36,25 @@ class Cifar10Validator(Executor):
 
         # Setup the model
         self.model = SimpleNetwork()
-        self.transforms = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ])
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.model.to(self.device)
 
         # Preparing the dataset for testing.
-        self.test_data = torchvision.datasets.CIFAR10(root='~/data', train=False, transform=self.transforms)
-        self.test_loader = torch.utils.data.DataLoader(self.test_data, batch_size=4, shuffle=False)
+        transforms = Compose([
+            ToTensor(),
+            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ])
+        self.test_data = CIFAR10(root='~/data', train=False, transform=transforms)
+        self.test_loader = DataLoader(self.test_data, batch_size=4, shuffle=False)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        out_shareable = Shareable()
         if task_name == self._validate_task_name:
             model_owner = "?"
             try:
-                dxo = from_shareable(shareable)
-
-                # Check if dxo is valid.
-                if not dxo:
-                    self.log_exception(fl_ctx, "DXO invalid")
+                try:
+                    dxo = from_shareable(shareable)
+                except:
+                    self.log_error(fl_ctx, "Error in extracting dxo from shareable.")
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Ensure data_kind is weights.
@@ -65,11 +64,10 @@ class Cifar10Validator(Executor):
 
                 # Extract weights and ensure they are tensor.
                 model_owner = shareable.get_header(AppConstants.MODEL_OWNER, "?")
-                weights = dxo.data
-                weights = {k: torch.as_tensor(v, device=self.device) for k, v in weights.items()}
+                weights = {k: torch.as_tensor(v, device=self.device) for k, v in dxo.data.items()}
 
                 # Get validation accuracy
-                val_accuracy = self.do_validation(weights)
+                val_accuracy = self.do_validation(weights, abort_signal)
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
 

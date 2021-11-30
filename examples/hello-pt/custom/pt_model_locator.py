@@ -13,17 +13,17 @@
 # limitations under the License.
 
 import os
-from typing import List
+from typing import List, Union
 
 import torch.cuda
 
-from net import SimpleNetwork
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
 from pt_constants import PTConstants
+from simple_network import SimpleNetwork
 
 
 class PTModelLocator(ModelLocator):
@@ -37,29 +37,33 @@ class PTModelLocator(ModelLocator):
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         return [PTConstants.PTServerName]
 
-    def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
+    def locate_model(self, model_name, fl_ctx: FLContext) -> Union[DXO, None]:
         if model_name == PTConstants.PTServerName:
-            server_run_dir = fl_ctx.get_engine().get_workspace().get_app_dir(fl_ctx.get_run_number())
-            model_path = os.path.join(server_run_dir, PTConstants.PTFileModelName)
-            if not os.path.exists(model_path):
+            try:
+                server_run_dir = fl_ctx.get_engine().get_workspace().get_app_dir(fl_ctx.get_run_number())
+                model_path = os.path.join(server_run_dir, PTConstants.PTFileModelName)
+                if not os.path.exists(model_path):
+                    return None
+
+                # Load the torch model
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                data = torch.load(model_path, map_location=device)
+
+                # Setup the persistence manager.
+                if self.model:
+                    default_train_conf = {"train": {"model": type(self.model).__name__}}
+                else:
+                    default_train_conf = None
+
+                # Use persistence manager to get learnable
+                persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=default_train_conf)
+                ml = persistence_manager.to_model_learnable(exclude_vars=None)
+
+                # Create dxo and return
+                return model_learnable_to_dxo(ml)
+            except:
+                self.log_error(fl_ctx, "Error in retrieving {model_name}.", fire_event=False)
                 return None
-
-            # Load the torch model
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            data = torch.load(model_path, map_location=device)
-
-            # Setup the persistence manager.
-            if self.model:
-                default_train_conf = {"train": {"model": type(self.model).__name__}}
-            else:
-                default_train_conf = None
-
-            # Use persistence manager to get learnable
-            persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=default_train_conf)
-            ml = persistence_manager.to_model_learnable(exclude_vars=None)
-
-            # Create dxo and return
-            return model_learnable_to_dxo(ml)
         else:
-            self.log_exception(fl_ctx, f"PTModelLocator doesn't recognize name: {model_name}")
+            self.log_error(fl_ctx, f"PTModelLocator doesn't recognize name: {model_name}", fire_event=False)
             return None

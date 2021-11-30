@@ -15,11 +15,12 @@
 import os.path
 
 import torch
-import torchvision
 from torch import nn
-from torchvision import transforms
+from torch.optim import SGD
+from torch.utils.data.dataloader import DataLoader
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import ToTensor, Normalize, Compose
 
-from net import SimpleNetwork
 from nvflare.apis.dxo import from_shareable, DXO, DataKind, MetaKey
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode, ReservedKey
@@ -30,43 +31,55 @@ from nvflare.app_common.abstract.model import make_model_learnable, model_learna
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
 from pt_constants import PTConstants
+from simple_network import SimpleNetwork
 
 
 class Cifar10Trainer(Executor):
 
     def __init__(self, lr=0.01, epochs=5, train_task_name=AppConstants.TASK_TRAIN,
                  submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL, exclude_vars=None):
+        """Cifar10 Trainer handles train and submit_model tasks. During train_task, it trains a
+        simple network on CIFAR10 dataset. For submit_model task, it sends the locally trained model
+        (if present) to the server.
+
+        Args:
+            lr (float, optional): Learning rate. Defaults to 0.01
+            epochs (int, optional): Epochs. Defaults to 5
+            train_task_name (str, optional): Task name for train task. Defaults to "train".
+            submit_model_task_name (str, optional): Task name for submit model. Defaults to "submit_model".
+            exclude_vars (list): List of variables to exclude during model loading.
+        """
         super(Cifar10Trainer, self).__init__()
 
+        self._lr = lr
+        self._epochs = epochs
         self._train_task_name = train_task_name
         self._submit_model_task_name = submit_model_task_name
+        self._exclude_vars = exclude_vars
 
         # Training setup
         self.model = SimpleNetwork()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.loss = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
-        self.lr = lr
-        self.transforms = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        self.optimizer = SGD(self.model.parameters(), lr=lr, momentum=0.9)
+
+        # Create Cifar10 dataset for training.
+        transforms = Compose([
+            ToTensor(),
+            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ])
-        self.epochs = epochs
-        self.exclude_vars = exclude_vars
+        self._train_dataset = CIFAR10(root='~/data', transform=transforms,
+                                      download=True, train=True)
+        self._train_loader = DataLoader(self._train_dataset, batch_size=4, shuffle=True)
+        self._n_iterations = len(self._train_loader)
 
-        # Cifar10 dataset for training.
-        self.train_dataset = torchvision.datasets.CIFAR10(root='~/data', transform=self.transforms,
-                                                          download=True, train=True)
-        self.train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=4, shuffle=True
-        )
-        self.n_iterations = len(self.train_loader)
-
-        # # Setup the persistence manager to save PT model.
-        self.default_train_conf = {"train": {"model": type(self.model).__name__}}
-        self.persistence_manager = PTModelPersistenceFormatManager(data=self.model.state_dict(),
-                                                                   default_train_conf=self.default_train_conf)
+        # Setup the persistence manager to save PT model.
+        # The default training configuration is used by persistence manager
+        # in case no initial model is found.
+        self._default_train_conf = {"train": {"model": type(self.model).__name__}}
+        self.persistence_manager = PTModelPersistenceFormatManager(
+            data=self.model.state_dict(), default_train_conf=self._default_train_conf)
 
     def local_train(self, fl_ctx, weights, abort_signal):
         # Set the model weights
@@ -74,9 +87,9 @@ class Cifar10Trainer(Executor):
 
         # Basic training
         self.model.train()
-        for epoch in range(self.epochs):
-            running_loss = 0
-            for i, batch in enumerate(self.train_loader):
+        for epoch in range(self._epochs):
+            running_loss = 0.0
+            for i, batch in enumerate(self._train_loader):
                 if abort_signal.triggered:
                     # If abort_signal is triggered, we simply return.
                     # The outside function will check it again and decide steps to take.
@@ -92,7 +105,7 @@ class Cifar10Trainer(Executor):
 
                 running_loss += (cost.cpu().detach().numpy()/images.size()[0])
                 if i % 3000 == 0:
-                    self.log_info(fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, "
+                    self.log_info(fl_ctx, f"Epoch: {epoch}/{self._epochs}, Iteration: {i}, "
                                           f"Loss: {running_loss/3000}")
                     running_loss = 0.0
 
@@ -106,22 +119,21 @@ class Cifar10Trainer(Executor):
                     self.log_error(fl_ctx, "Unable to extract dxo from shareable.")
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
-                # Check if dxo is valid.
-                if not isinstance(dxo, DXO):
-                    self.log_exception(fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead.")
-                    return make_reply(ReturnCode.BAD_TASK_DATA)
-
                 # Ensure data kind is weights.
                 if not dxo.data_kind == DataKind.WEIGHTS:
-                    self.log_exception(fl_ctx, f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.")
+                    self.log_error(fl_ctx, f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.")
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Convert weights to tensor. Run training
                 torch_weights = {k: torch.as_tensor(v) for k, v in dxo.data.items()}
                 self.local_train(fl_ctx, torch_weights, abort_signal)
+
+                # Check the abort_signal after training.
+                # local_train returns early if abort_signal is triggered.
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
 
+                # Save the local model after training.
                 self.save_local_model(fl_ctx)
 
                 # Get the new state dict and send as weights
@@ -129,7 +141,7 @@ class Cifar10Trainer(Executor):
                 new_weights = {k: v.cpu().numpy() for k, v in new_weights.items()}
 
                 outgoing_dxo = DXO(data_kind=DataKind.WEIGHTS, data=new_weights,
-                                   meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self.n_iterations})
+                                   meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self._n_iterations})
                 return outgoing_dxo.to_shareable()
             elif task_name == self._submit_model_task_name:
                 # Load local model
@@ -146,7 +158,7 @@ class Cifar10Trainer(Executor):
 
     def save_local_model(self, fl_ctx: FLContext):
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
-        models_dir = os.path.join(run_dir, 'models')
+        models_dir = os.path.join(run_dir, PTConstants.PTModelsDir)
         if not os.path.exists(models_dir):
             os.makedirs(models_dir)
         model_path = os.path.join(models_dir, PTConstants.PTLocalModelName)
@@ -157,12 +169,12 @@ class Cifar10Trainer(Executor):
 
     def load_local_model(self, fl_ctx: FLContext):
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
-        models_dir = os.path.join(run_dir, 'models')
+        models_dir = os.path.join(run_dir, PTConstants.PTModelsDir)
         if not os.path.exists(models_dir):
             return None
         model_path = os.path.join(models_dir, PTConstants.PTLocalModelName)
 
         self.persistence_manager = PTModelPersistenceFormatManager(data=torch.load(model_path),
-                                                                   default_train_conf=self.default_train_conf)
-        ml = self.persistence_manager.to_model_learnable(exclude_vars=self.exclude_vars)
+                                                                   default_train_conf=self._default_train_conf)
+        ml = self.persistence_manager.to_model_learnable(exclude_vars=self._exclude_vars)
         return ml
