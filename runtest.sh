@@ -53,6 +53,8 @@ else
     echo "${green}passed!${noColor}"
 fi
 # set -e
+echo "Done with flake tests"
 
-pytest -q -n 24 test
-echo "Done with flake and unit test"
+echo "Running unit tests"
+pytest --numprocesses=auto test
+echo "Done with unit tests"
