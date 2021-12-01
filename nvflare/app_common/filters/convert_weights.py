@@ -21,14 +21,18 @@ from nvflare.apis.shareable import Shareable
 
 class ConvertWeights(Filter):
 
-    """
-    This filter converts from
-    """
-
     WEIGHTS_TO_DIFF = "weights_to_diff"
     DIFF_TO_WEIGHTS = "diff_to_weights"
 
     def __init__(self, direction: str):
+        """Convert WEIGHTS to WEIGHT_DIFF or vice versa
+
+        Args:
+            direction (str): control conversion direction.  Either weights_to_diff or diff_to_weights.
+
+        Raises:
+            ValueError: when the direction string is neither weights_to_diff nor diff_to_weights
+        """
         Filter.__init__(self)
         if direction not in (self.WEIGHTS_TO_DIFF, self.DIFF_TO_WEIGHTS):
             raise ValueError(
@@ -63,6 +67,19 @@ class ConvertWeights(Filter):
         return dxo.data
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Called by runners to perform weight conversion
+
+        When the return code of shareable is not ReturnCode.OK, this
+        function will not perform any process and returns the shareable back.
+
+        Args:
+            shareable (Shareable): shareable must conform to DXO format.
+            fl_ctx (FLContext): this context must include TASK_DATA, which is another shareable containing base weights.
+              If not, the input shareable will be returned.
+
+        Returns:
+            Shareable: a shareable with converted weights
+        """
         rc = shareable.get_return_code()
         if rc != ReturnCode.OK:
             # don't process if RC not OK

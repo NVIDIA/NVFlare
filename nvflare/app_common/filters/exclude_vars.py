@@ -23,19 +23,18 @@ from nvflare.apis.shareable import Shareable
 
 
 class ExcludeVars(Filter):
-    """Exclude/Remove variables from Sharable
-
-    Args:
-        exclude_vars (Union[List[str], str, None] , optional): variables/layer names to be excluded.
-
-    Notes:
-        Based on different types of exclude_vars, this filter has different behavior:
-            if a list of variable/layer names, only specified variables will be excluded.
-            if a string, it will be converted into a regular expression, only matched variables will be excluded.
-            if not provided or other formats the Shareable remains unchanged.
-    """
-
     def __init__(self, exclude_vars: Union[List[str], str, None] = None):
+        """Exclude/Remove variables from Shareable
+
+        Args:
+            exclude_vars (Union[List[str], str, None] , optional): variables/layer names to be excluded.
+
+        Notes:
+            Based on different types of exclude_vars, this filter has different behavior:
+                if a list of variable/layer names, only specified variables will be excluded.
+                if a string, it will be converted into a regular expression, only matched variables will be excluded.
+                if not provided or other formats the Shareable remains unchanged.
+        """
         super().__init__()
         self.exclude_vars = exclude_vars
         self.skip = False
@@ -62,6 +61,18 @@ class ExcludeVars(Filter):
             self.skip = True
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Called by upper layer to remove variables in weights/weight_diff dictionary
+
+        When the return code of shareable is not ReturnCode.OK, this
+        function will not perform any process and returns the shareable back.
+
+        Args:
+            shareable (Shareable): shareable must conform to DXO format.
+            fl_ctx (FLContext): only used for logging.
+
+        Returns:
+            Shareable: a shareable with excluded weights
+        """
         if self.skip:
             return shareable
 
