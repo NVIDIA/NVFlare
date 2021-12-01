@@ -1,3 +1,5 @@
+.. _quickstart:
+
 ##########
 Quickstart
 ##########
@@ -12,5 +14,6 @@ easily be integrated into the FL process.
 .. toctree::
    :maxdepth: 1
 
+   examples/hello_pt
    examples/hello_numpy
    examples/hello_tf2

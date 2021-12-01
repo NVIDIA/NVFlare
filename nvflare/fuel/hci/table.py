@@ -47,7 +47,7 @@ class Table(object):
     def set_rows(self, rows):
         self.rows = rows
 
-    def add_row(self, row: [str]):
+    def add_row(self, row: List[str]):
         self.rows.append(row)
 
     def write(self, writer):

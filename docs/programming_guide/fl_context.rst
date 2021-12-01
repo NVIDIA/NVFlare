@@ -1,6 +1,9 @@
+.. _fl_context:
+
 FLContext
 =========
 .. currentmodule:: nvflare.apis.fl_context.FLContext
+
 One of the most important features of NVIDIA FLARE is :mod:`nvflare.apis.fl_context` to pass data between the FL
 components. ``FLContext`` is available to every method of all FLComponent types (Controller, Aggregator, Filter,
 Executor, Widget).
@@ -17,6 +20,7 @@ Visibility
 ----------
 Determines whether the prop is only visible to local components that reside in the same process or remote components
 that reside in the peer endpoint:
+
     - Props only visible to local components are *private*
     - Props that are also visible to remote components are *public*.
 
@@ -24,6 +28,7 @@ Stickiness
 ----------
 Determines whether the prop is only to be scoped in the current FL Context or if it is to be made
 available to all future FL Contexts:
+
     - Props that will become available in all future FL Contexts are *sticky*. This is useful to share objects dynamically created by a component to other components.
     - Props that are only to be scoped in the current FL Context are *non-sticky*.
 
@@ -194,7 +199,7 @@ In each iteration:
 
 The following diagram shows the lifecycle of the FL context for each iteration.
 
-.. image:: resources/FL_Context.png
+.. image:: ../resources/FL_Context.png
     :height: 600px
 
 In the Peer Context, following props from the Server are available:

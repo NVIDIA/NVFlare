@@ -16,6 +16,7 @@ import copy
 import json
 import os
 import re
+from typing import List
 
 from nvflare.fuel.common.excepts import ConfigError
 
@@ -78,8 +79,8 @@ class Configurator(JsonObjectProcessor):
         cmd_vars: dict,
         env_config: dict,
         wf_config_file_name: str,
-        base_pkgs: [str],
-        module_names: [str],
+        base_pkgs: List[str],
+        module_names: List[str],
         exclude_libs=True,
         default_vars=None,
         num_passes=1,

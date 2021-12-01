@@ -25,7 +25,7 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. Finally, the server sends this updated version of the model back to each client.
 
 For this exercise, we will be working with the ``hello-tf2`` application in the examples folder. 
-Every custom FL application must contain three folders:
+Custom FL applications can contain the folders:
 
  #. **custom**: contains the custom components (``tf2_net.py``, ``trainer.py``, ``filter.py``, ``tf2_model_persistor.py``)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
@@ -59,7 +59,7 @@ This Net class is the convolutional neural network to train with MNIST dataset. 
 Dataset & Setup
 ^^^^^^^^^^^^^^^^
 
-Now you have to implement the class `Trainer``, which is a subclass of ``Executor`` in NVIDIA FLARE, in a file called ``trainer.py``.
+Now you have to implement the class ``Trainer``, which is a subclass of ``Executor`` in NVIDIA FLARE, in a file called ``trainer.py``.
 
 Before you can really start a training, you need to set up your dataset.
 In this exercise, you can download it from the Internet via ``tf.keras``'s datasets module, and split it in half to create a separate dataset for each client.
@@ -75,7 +75,7 @@ Since every step will be encapsulated in the ``SimpleTrainer`` class, let's put 
 
 
 How can you ensure this setup method is called before the client receives the model from the server?  The Trainer
-class is also a :ref:`FLComponent <programming_guide:FLComponent>`, which always receives ``Event`` whenever NVIDIA FLARE enters or leaves a certain stage.
+class is also a :ref:`FLComponent <fl_component>`, which always receives ``Event`` whenever NVIDIA FLARE enters or leaves a certain stage.
 In this case, there is an ``Event`` called ``EventType.START_RUN`` which perfectly matches these requirements. 
 Because our trainer is a subclass of ``FLComponent``, you can implement the handler to handle the event and call the setup method:
 
@@ -89,7 +89,7 @@ Because our trainer is a subclass of ``FLComponent``, you can implement the hand
 
   This is a new concept you haven't learned in previous two exercises.  The concepts of ``event`` and ``handler`` are very powerful because
   you are free to add your logic so it can run at different time and process various events.  The entire list of events fired by
-  NVIDIA FLARE is shown at :ref:`Event types <programming_guide/event_system>`.
+  NVIDIA FLARE is shown at :ref:`Event types <event_system>`.
 
 
 You have everything you need, now let's implement the last method called ``execute``, which is
@@ -107,7 +107,7 @@ Take a look at the following code:
    :lineno-start: 75
    :linenos:
 
-Every NVIDIA FLARE client receives the model weights from the server in the :ref:`shareable <programming_guide/shareable>`.
+Every NVIDIA FLARE client receives the model weights from the server in the :ref:`shareable <shareable>`.
 This exercise uses a simple ``exclude_var`` filter, so make sure to replace the missing layer with weights from the clients' previous training round:
 
 .. literalinclude:: ../../examples/hello-tf2/custom/trainer.py
@@ -142,7 +142,7 @@ NVIDIA FLARE Server & Application
 Filter
 ^^^^^^^ 
 
-:ref:`filter <programming_guide/filters>` can be used for additional data processing in the ``Shareable``, for both
+:ref:`filter <filters>` can be used for additional data processing in the ``Shareable``, for both
 inbound and outbound data from the client and/or server.
 
 For this exercise, we use a basic ``exclude_var`` filter to exclude the variable/layer ``flatten`` from the task result
@@ -163,7 +163,7 @@ The parameters for what is excluded and the inbound/outbound option are all set 
 Model Aggregator
 ^^^^^^^^^^^^^^^^
 
-The :ref:`model aggregator <programming_guide:Aggregator>` is used by the server to aggregate the clients' models into one model
+The :ref:`model aggregator <aggregator>` is used by the server to aggregate the clients' models into one model
 within the Scatter and Gather workflow.
 
 In this exercise, we perform a simple average over the two clients' weights with the :class:`AccumulateWeightedAggregator<nvflare.app_common.aggregators.accumulate_model_aggregator.AccumulateWeightedAggregator>`
@@ -186,7 +186,7 @@ in initialize. The file is saved on the FL server and the weights file name is d
 Depending on the frameworks and tools, the methods of saving the model may vary.
 
 FLContext is used throughout these functions to provide various useful FL-related information.
-You can find more details in the :ref:`documentation <programming_guide/fl_context>`.
+You can find more details in the :ref:`documentation <fl_context>`.
 
 Application Configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -228,16 +228,10 @@ This command generates a poc folder with server, one client and one admin:
 
 .. code-block:: shell
 
-    $ poc
+    $ poc -n 2
 
-Here we duplicate the client folder into two folders to create two clients, site-1 and site-2:
-
-.. code-block:: shell
-
-    $ cp -r poc/client poc/site-1
-    $ cp -r poc/client poc/site-2
-
-Finally, we copy necessary files (the exercise codes) to a working folder:
+Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
+folder for the admin):
 
 .. code-block:: shell
 
@@ -257,13 +251,13 @@ Open a new terminal and start the first client:
 
 .. code-block:: shell
 
-    $ ./poc/site-1/startup/start.sh site-1 localhost
+    $ ./poc/site-1/startup/start.sh
 
 Open another terminal and start the second client:
 
 .. code-block:: shell
 
-    $ ./poc/site-2/startup/start.sh site-2 localhost
+    $ ./poc/site-2/startup/start.sh
 
 In one last terminal, start the admin:
 
@@ -275,11 +269,11 @@ In one last terminal, start the admin:
 This will launch a command prompt, where you can input commands to control and monitor many aspects of
 the FL process. Log in by entering ``admin`` for both the username and password.
 
-Running the FL
-^^^^^^^^^^^^^^
+Running the FL System
+^^^^^^^^^^^^^^^^^^^^^
 
 Enter the commands below in order.  Pay close attention to what happens in each of four terminals.  You
-can see the admin controls server and clients with each command.
+can see how the admin controls the server and clients with each command.
 
 .. code-block:: shell
 

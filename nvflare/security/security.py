@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import List
+
 from nvflare.fuel.hci.server.authz import Authorizer, AuthzContext
 
 
@@ -57,12 +59,12 @@ ACTION_EXPLANATION = {
 
 
 class FLAuthzContext(AuthzContext):
-    def __init__(self, user_name: str, site_names: [str], actions: [str]):
+    def __init__(self, user_name: str, site_names: List[str], actions: List[str]):
         AuthzContext.__init__(self, user_name=user_name, site_names=site_names)
         self.actions = actions
 
     @staticmethod
-    def new_authz_context(site_names: [str], actions: [str]):
+    def new_authz_context(site_names: List[str], actions: List[str]):
         assert len(actions) > 0, "actions must be specified"
         for a in actions:
             assert a in [
@@ -124,7 +126,7 @@ class FLAuthorizer(Authorizer):
 
         return super(FLAuthorizer, self).evaluate_user_right_on_site(right_name, user_name, site_name)
 
-    def _any_bool_rights(self, right_names: [str], user_name: str, site_name: str):
+    def _any_bool_rights(self, right_names: List[str], user_name: str, site_name: str):
         """
         Check whether the user has any of the specified right
         Args:
@@ -156,7 +158,7 @@ class FLAuthorizer(Authorizer):
                 return True, ""
         return False, ""
 
-    def _any_bool_rules(self, rule_names: [str], site_name: str):
+    def _any_bool_rules(self, rule_names: List[str], site_name: str):
         if not self.policy:
             return None, "policy not defined"
 

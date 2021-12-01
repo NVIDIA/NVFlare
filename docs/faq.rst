@@ -4,29 +4,224 @@
 FAQ
 ###
 
+*******
+General
+*******
+
+#. What is NVIDIA FLARE?
+
+    NVIDIA FLARE 2.0 is a general-purpose framework designed for collaborative computing.  In this collaborative
+    computing framework, workflows are not limited to aggregation-based federated learning (usually called a Fed-Average workflow),
+    and applications are not limited to deep learning.  NVIDIA FLARE is fundamentally a messaging system running in a multithreaded
+    environment.
+
+#. What does NVIDIA FLARE stand for?
+
+    NVIDIA Federated Learning Application Runtime Environment.
+
+#. Does NVIDIA FLARE depend on Tensorflow or PyTorch?
+
+    No.  NVIDIA FLARE is a Python library that implements a general collaborative computing framework.  The :ref:`Controllers <controllers>`,
+    :ref:`Executors <executors>`, and :ref:`Tasks <tasks>` that one defines to execute the collaborative computing workflow
+    are entirely independent.
+
+#. Is NVIDIA FLARE designed for deep learning model training only?
+
+    No.  NVIDIA FLARE implements a communication framework that can support any collaborative computing workflow.  This
+    could be deep learning, machine learning, or even simple statistical workflows.
+
+#. Does NVIDIA FLARE require a GPU?
+
+    No.  Hardware requirements are dependent only on what is implemented in the :ref:`Controller <controllers>` workflow and client :ref:`Tasks <tasks>`.
+    Client training tasks will typically benefit from GPU acceleration.  Server :ref:`Controller <controllers>` workflows may or may not require a GPU.
+
+#. How does NVIDIA FLARE implement its collaborative computing framework?
+
+    NVIDIA FLARE collaborative computing is achieved through :ref:`Controller/Worker <controllers>` interaction.
+
+#. What is a Controller?
+
+    The :ref:`Controller <controllers>` is a python object that controls or coordinates Workers to perform tasks. The
+    Controller is run on the server.  The Controller defines the overall collaborative computing workflow.  In its
+    control logic, the Controller assigns tasks to Workers and processes task results from the workers.
+
+#. What is a Worker?
+
+    A Worker is capable of performing tasks (skills). Workers run on Clients.
+
+#. What is a Task?
+
+    A :ref:`Task <tasks>` is a piece of work (Python code) that is assigned by the :ref:`Controller <controllers>` to
+    client workers. Depending on how the Task is assigned (broadcast, send, or relay), the task will be performed by one
+    or more clients.  The logic to be performed in a Task is defined in an :ref:`Executor <executors>`.
+
+#. What is Learnable?
+
+    Learnable is the result of the Federated Learning application maintained by the server.  In DL workflows, the
+    Learnable is the aspect of the DL model to be learned.  For example, the model weights are commonly the Learnable
+    feature, not the model geometry.  Depending on the purpose of your study, the Learnable may be any component of interest.
+    Learnable is an abstract object that is aggregated from the client's Shareable object and is not DL-specific.  It
+    can be any model, or object.  The Learnable is managed in the Controller workflow.
+
+#. What is Shareable?
+
+    :ref:`Shareable <shareable>` is simply a communication between two peers (server and clients). In the task-based
+    interaction, the Shareable from server to clients carries the data of the task for the client to execute; and the
+    Shareable from the client to server carries the result of the task execution.  When this is applied to DL model
+    training, the task data typically contains model weights for the client to train on; and the task result contains
+    updated model weights from the client.  The concept of Shareable is very general - it can be whatever that makes
+    sense for the task.
+
+#. What is FLContext and what kind of information does it contain?
+
+    :ref:`FLContext <fl_context>` is one of the key features of NVIDIA FLARE and is available to every method of all :ref:`FLComponent <fl_component>`
+    types (Controller, Aggregator, Executor, Filter, Widget, ...). An FLContext object contains contextual information
+    of the FL environment: overall system settings (peer name, current run number, workspace location, etc.). FLContext
+    also contains an important object called Engine, through which you can access important services provided by the
+    system (e.g. fire events, get all available client names, send aux messages, etc.).
+
+#. What are events and how are they handled?
+
+    :ref:`Events <event_system>` allow for dynamic notifications to be sent to all objects that are a subclass of
+    :ref:`FLComponent <fl_component>`. Every FLComponent is an event handler.
+
+    The event mechanism is like a pub-sub mechanism that enables indirect communication between components for data
+    sharing. Typically, the data generator fires an event to publish the data, and other components handle the events
+    they are subscribed to and consume the data of the event. The fed event mechanism even allows the pub-sub go across
+    network boundaries.
+
+#. What additional components may be implemented with NVIDIA FLARE to support the Controller Workflow, and where do they run (server or client):
+
+    LearnablePersistor - Server
+        The LearnablePersistor is a method implemented for the server to save the state of the Learnable object, for
+        example writing a global model to disk for persistence.
+    ShareableGenerator - Server
+        The ShareableGenerator is an object that implements two methods: learnable_to_shareable converts a Learnable
+        object to a form of data to be shared to the client; shareable_to_learnable uses the shareable data (or
+        aggregated shareable data) from the clients to update the learnable object.
+    Aggregator - Server
+        The aggregator defines the algorithm used on the server to aggregate the data passed back to the server in the
+        clients' Shareable object.
+    Executor - Client
+        The Executor defines the algorithm the clients use to operate on data contained in the Shareable object.  For
+        example in DL training, the executor would implement the training loop. There can be multiple executors on the
+        client, designed to execute different tasks (training, validation/evaluation, data preparation, etc.).
+    Filter - Clients and Server
+        :ref:`Filters <filters>` are used to define transformations of the data in the Shareable object when transferred between server
+        and client and vice versa.  Filters can be applied when the data is sent or received by either the client or server.
+        See the diagram on the :ref:`Filters <filters>` page for details on when "task_data_filters" and "task_result_filters"
+        are applied on the client and server.
+    Any component of subclass of FLComponent
+        All component types discussed above are subclasses of :ref:`FLComponent <fl_component>`. You can create your own subclass of
+        FLComponent for various purposes. For example, you can create such a component to listen to certain events and
+        handle the data of the events (analysis, dump to disk or DB, etc.).
+
+***********
+Operational
+***********
+
+#. What is :ref:`Provisioning <provisioning>`?
+
+    NVIDIA FLARE includes an Open Provision API that allows you to generate mutual-trusted system-wide configurations,
+    or startup kits, that allow all participants to join the NVIDIA FLARE system from across different locations.  This
+    mutual-trust is a mandatory feature of Open Provision API as every participant authenticates others by the
+    information inside the configuration.  The configurations usually include, but are not limited to:
+        - network discovery, such as domain names, port numbers or IP addresses
+        - credentials for authentication, such as certificates of participants and root authority
+        - authorization policy, such as roles, rights and rules
+        - tamper-proof mechanism, such as signatures
+        - convenient commands, such as shell scripts with default command line options to easily start an individual participant
+
+#. What types of startup kits are generated by the Provision tool?
+
+    The Open Provision API allows flexibility in generating startup kits, but typically the provisioning tool is used to
+    generate secure startup kits for the server, FL clients, and Admin clients.
+
+#. What files does each type of startup kit contain? What are these files used for, and by whom?
+
+    Startup kits contain the configuration and certificates necessary to establish secure connections between the server,
+    FL clients, and Admin clients.  These files are used to establish identity and authorization policies between server
+    and clients.  Startup kits are distributed to the FL server, clients, and Admin clients depending on role.  For the
+    purpose of development, startup kits may be generated with limited security to allow simplified connection between
+    systems or between processes on a single host.  See the "poc" functionality of the Open Provision API for details.
+
+#. How would you distribute the startup kits to the right people?
+
+    Distribution of startup kits is inherently flexible and can be via email or shared storage.  The API allows the
+    addition of builder components to automation distribution.
+
+#. What happens after provisioning?
+
+    After provisioning, the Admin API is used to deploy an Application to the FL server and clients.
+
+#. What is an Application in NVIDIA FLARE?
+
+    An :ref:`Application <application>` is a named directory structure that defines the client and server configuration
+    and any custom code required to implement the Controller/Worker workflow.
+
+#. What is the basic directory structure of an NVIDIA FLARE Application?
+
+    Typically the Application configuration is defined in a ``config/``
+    subdirectory and defines paths to Controller and Worker executors.  Custom code can be defined in a ``custom/``
+    subdirectory and is subject to rules defined in the Authorization Policy.
+
+#. How do you deploy an application?
+
+    An Application is deployed using the ``upload_app`` and ``deploy_app`` methods of the :ref:`Admin API <admin_commands>`.
+
+#. Do all FL client have to use the same application configuration?
+
+    No, they do not have to use the same application configuration, even though they can that is frequently done. The
+    function of FL clients can be customized by the implementation of Tasks and Executors and the client's
+    response to Events.
+
+#. What is the difference between the Admin client and the FL client?
+
+    The :ref:`Admin client <admin_commands>` is used to control the state of the server's controller workflow and only interacts with the
+    server.  FL clients poll the server and perform tasks based on the state of the server.  The Admin client does not
+    interact directly with FL client.
+
+#. Where does the Admin client run?
+
+    The :ref:`Admin client <admin_commands>` runs as a standalone process, typically on a researcher's workstation or laptop.
+
+#. What can you do with the Admin client?
+
+    The :ref:`Admin client <admin_commands>` is used to orchestrate the FL study, including starting and stopping server
+    and clients, deploying applications, and managing FL experiments.
+
+********
+Security
+********
+
+#. What is the scope of security in NVIDIA FLARE?
+
+    Security is multi-faceted and cannot be completely controlled for or provided by the NVIDIA FLARE API.  The Open
+    Provision API provides examples of basic communication and identity security using GRPC via shared self-signed
+    certificates and authorization policies.  These security measures may be sufficient but can be extended with the
+    provided APIs.
+
+#. What about data privacy?
+
+    NVIDIA FLARE comes with a few techniques to help with data privacy during FL: differential privacy and homomorphic encryption
+    (see :ref:`Privacy filters<filters_for_privacy>`).
+
 ************************
 Client related questions
 ************************
 
 #. What happens if an FL client joins during the FL training?
 
-    An FL client can join the FL training any time. As long as the participating FL clients are still within the maximum
-    number of clients, the client can join. The newly joined client will get the current round of global model for training
-    and will contribute to the current global model.
+    An FL client can join the FL training any time. It is up to the workflow logic to manage FL clients.
 
 #. Do federated learning clients need to open any ports for the FL server to reach the FL client?
 
     No, federated learning training does not require for FL clients to open their network for inbound traffic. The server
     never sends uninvited requests to clients but only responds to client requests.
 
-.. _multi gpu training:
-
 #. Can a client train with multiple GPUs?
 
-    Yes, the administrator command ``start_mgpu client <gpu number> <client name>`` can be used to start training
-    on FL clients with different numbers of GPUs when starting training. But you will need to install ``torch`` for
-    PyTorch based Trainer, and ``mpi4py`` for all other trainers. It is possible for different clients to be
-    training with different numbers of GPUs.
+    You do multiple-gpu training by putting your training executor within the a :ref:`MultiProcessExecutor <multi_process_executor>`.
 
 #. How do FL clients get identified?
 
@@ -61,14 +256,14 @@ Client related questions
     "heart_beat_timeout" configured on the server. If using an admin tool, it is recommended to use the "abort" and
     "shutdown" commands to gracefully stop the clients.
 
-#. What if the number of participating FL clients is below the minimum number of clients required?
+#. For the Scatter and Gather workflow, what if the number of participating FL clients is below the minimum number of clients required?
 
     When an FL client passes authentication, it can request the current round of the global model and starts the FL training right away.
     There is no need to wait for other clients. Once the client finishes its own training, it will send the update to the server
     for aggregation. However, if the server does not receive enough updates from other clients, the FL server will not start
     the next round of FL training. The finished FL client will be waiting for the next round's model.
 
-#. What happens if more than the minimum numbers of FL clients submit an updated model?
+#. For the Scatter and Gather workflow, what happens if more than the minimum numbers of FL clients submit an updated model?
 
     The FL server begins model aggregation after accepting updates from the minimum number of FL clients required and
     waiting for "wait_after_min_clients" configured on the server. The updates that are received after this will be
@@ -76,10 +271,7 @@ Client related questions
 
 #. How does a client decide to quit federated learning training?
 
-    The FL client always asks the server for the current round of training. If the server is not ready, the FL client will wait.
-    The client will only stop if the server becomes unreachable. The FL client can also be killed with the admin tool
-    issuing a "shutdown" command or by ctrl-C on the client itself, although this is not recommended because the server
-    will wait for the duration of "heart_beat_timeout" before knowing that the client has stopped.
+    The FL client always asks the server for the next task to do. See how :ref:`controllers <controllers>` assign tasks to clients.
 
 ************************
 Server related questions
@@ -117,8 +309,9 @@ Overall training flow related questions
 
 #. How does the federated learning server decide when to stop FL?
 
-    The FL server always runs from the "start_round" to "num_rounds". The FL server will stop the training when the
-    current round meets "num_rounds".
+    For the Scatter and Gather workflow, the FL server runs from the "start_round" to "num_rounds". The FL server will
+    stop the training when the current round meets "num_rounds". For other workflows, the logic within the workflow can
+    make that decision.
 
 #. Can I run the FL server on AWS while running the FL client within my institution?
 
@@ -132,7 +325,8 @@ Overall training flow related questions
 #. Can I use the same "run_number" as previously used?
 
     Yes, you can re-use the same "run_number" as previously used. The "run_number" serves as an FL training workspace. The
-    FL training logs, such as tensorboard, training stats, etc, are stored within the same "run_number" workspace.
+    FL training logs, such as tensorboard, training stats, etc, are stored within the same "run_number" workspace. Note
+    that the app folder from the previous run will be replaced by the new run's folder.
 
 #. What should I do if the admin notices one client's training is behaving erroneously or unexpectedly?
 
@@ -148,15 +342,16 @@ Overall training flow related questions
     default timeout is 10 seconds. You can use the “set_timeout” command to adjust the command timeout. If this timeout
     value is set too low, the admin command may not reach the client to execute the command.
 
-#. Once the FL training has started, can I use the same server / client set up to train different models?
+#. Can I use the same server / client set up to train different models?
 
     Yes, you can upload different applications to the server and clients to train different models. Make sure to use the
     "run_number" to keep your trained models in different run spaces without confusing the models. The FL system only
     completes when the admin issues the “shutdown” command or ctrl-C is used to end the process.
 
-#. Why if my custom components not updating between runs?
+#. Why is it that my custom components are not updating between runs?
 
-    If you want to change the code you have already loaded in a custom component, it is recommended that you add a
+    If you want to change the code you have already loaded in a custom component, it is recommended that you restart the
+    server and clients before the next run, that way, the Python code will be reloaded. Another method is to add a
     version number or change the class name slightly. Python does not load new code definitions with the same class name
     and by default Python does not allow the loaded modules to be removed. With a version or altered name, Python will
     be able to treat the code as new and load it from the sys.path.
@@ -165,33 +360,6 @@ Overall training flow related questions
 
     Sometimes if you are trying to check status of the client and the server is already busy transferring the model and
     does not have extra bandwidth for the command, the command may time out. In that case, please wait and try again.
-
-*********************
-Cross Site Validation
-*********************
-
-#. I don't want to share my local model. Can I opt out of cross site validation?
-
-    Cross site validation is opt-out be default. To opt in, you must set "cross_site_validate" to true in config_fed_client.json.
-
-#. Cross site validation has finished. How can I see the results? 
-
-    Use the admin commands "validate all" or "validate <client_1> <client2>" to retrieve the results.
-
-#. Cross site validation ran but my results are empty. Why?
-
-    If some client is not participating in cross_site_validation OR an error occurs during validation, you will see empty results 
-    for that section. Please use the logs to retrieve the error.
-
-#. My client is stuck in endless loop of asking for models, then waiting and repeat. What do I do?
-
-    In some cases, cross site validation may get stuck. This is because the server sometimes doesn't know when (or if ever) a model 
-    will become available. In these cases, please use the "abort <client>" to stop cross site validation manually.
-
-#. I called "abort client" during training and it started cross site validation. Why?
-
-    This is the intended behavior. If a client is aborted, it will transition to cross site validation phase (if participating). To
-    completely abort, call "abort client" command again.
 
 ************
 Known issues
@@ -203,5 +371,5 @@ Known issues
 #. Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models
    folder inside, a mysterious error may occur when running the deploy_app command because the application folder is too
    large to be uploaded and that causes timeout.
-#. Please don't start a new training run or start a new app before the previous application is fully stopped. Or users
+#. Please don't start a new training run or start a new app before the previous application is fully stopped. Users
    can do ``abort client`` and ``abort server`` before ``start_app`` for the new run.

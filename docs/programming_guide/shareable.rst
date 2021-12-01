@@ -1,3 +1,5 @@
+.. _shareable:
+
 Shareable
 =========
 A :class:`Shareable<nvflare.apis.shareable.Shareable>` object represents a communication between server and client.

@@ -41,7 +41,7 @@ After :ref:`installation`, the provisioning tool is available via ``provision`` 
 
 Provisioning a federated learning project
 =========================================
-The :ref:`user_guide/provisioning_tool:Provisioning tool` page has details on the contents of the
+The :ref:`provisioning` page has details on the contents of the
 provisioning tool. Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
 project requirements, then run the startup kit with (here we assume your project.yml is in current working directory)::
 
@@ -200,7 +200,7 @@ started successfully as described in the preceding section, `Federated learning 
 admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
 issue commands to operate the system so it can be run with a script.
 
-For a complete list of admin commands, see :ref:`user_guide/admin_commands:Administrator commands`.
+For a complete list of admin commands, see :ref:`admin_commands`.
 
 For examples of using the commands to operate a FL system, see the examples in the :ref:`quickstart` section.
 

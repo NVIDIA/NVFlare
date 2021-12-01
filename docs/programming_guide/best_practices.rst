@@ -1,6 +1,7 @@
 NVIDIA FLARE Programming Best Practices
 =======================================
 .. currentmodule:: nvflare.apis.fl_component.FLComponent
+
 Define your logic in a subclass of FLComponent
 ----------------------------------------------
 NVIDIA FLARE has a componentized architecture - business logic is implemented by components that interact with each
@@ -163,6 +164,7 @@ connection; otherwise the whole system could become frozen when all connections 
 Task props usage
 ^^^^^^^^^^^^^^^^
 .. currentmodule:: nvflare.apis.controller_spec.Task
+
 Once a task is created, do not modify the task.props dict directly (e.g. task.props = {"key": "value"}) since this dict
 is carefully managed by the framework.
 
@@ -210,6 +212,7 @@ Do not terminate your resources before EventType.END_RUN.
 Promote Decoupled Component Interactions
 ----------------------------------------
 .. currentmodule:: nvflare.apis.fl_component.FLComponent
+
 Throughout the FL execution, many pieces of data are generated. What if you want to do something about that data? You
 may have the urge to modify the code that generated the data and insert your logic there to manipulate the data. Don't!
 Use event handling instead.
@@ -280,6 +283,7 @@ The panic methods are effective regardless of component types and which thread i
 Logging
 -------
 .. currentmodule:: nvflare.apis.fl_component.FLComponent
+
 Instead of directly using self.logger to log messages, always use the methods :meth:`self.log_debug<log_debug>`,
 :meth:`self.log_info<log_info>`, :meth:`self.log_warning<log_warning>`, :meth:`self.log_error<log_error>` instead.
 These methods provide many benefits:

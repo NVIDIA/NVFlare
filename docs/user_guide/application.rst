@@ -1,3 +1,5 @@
+.. _application:
+
 ########################
 NVIDIA FLARE Application
 ########################
@@ -37,10 +39,10 @@ Example:
 
     format_version, The NVIDIA FLARE version for this config
     server, Specify server-specific attributes like heart_beat_timeout for seconds before the heart beat times out
-    task_data_filters, "What filters to apply to data leaving server, see :ref:`NVIDIA FLARE Filters`"
-    task_result_filters, "What filters to apply to data arriving to server, see :ref:`NVIDIA FLARE Filters`"
+    task_data_filters, "What filters to apply to data leaving server, see :ref:`filters`"
+    task_result_filters, "What filters to apply to data arriving to server, see :ref:`filters`"
     components, All of the Components to use
-    workflows, "What Workflows to use, see :ref:`Controllers and Controller API`
+    workflows, "What Workflows to use, see :ref:`controllers`"
 
 ***********************
 FL client configuration
@@ -58,15 +60,15 @@ Example:
 
     format_version, The NVIDIA FLARE version for this config
     executors, The configuration for Tasks and Executors which now includes Trainers
-    task_data_filters, "What filters to apply to data arriving at client, see :ref:`NVIDIA FLARE Filters`"
-    task_result_filters, "What filters to apply to data leaving client, :ref:`NVIDIA FLARE Filters`"
+    task_data_filters, "What filters to apply to data arriving at client, see :ref:`filters`"
+    task_result_filters, "What filters to apply to data leaving client, :ref:`filters`"
     components, All of the Components to use
 
 ***********
 Custom Code
 ***********
 
-You can write your own components following the :ref:`programming_guide:Programming Guide`.
+You can write your own components following the :ref:`programming_guide`.
 
 To use it in your application, put the code inside the "custom" folder of the application folder.
 

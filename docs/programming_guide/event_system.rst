@@ -1,3 +1,5 @@
+.. _event_system:
+
 NVIDIA FLARE Event Mechanism
 ============================
 NVIDIA FLARE comes with a powerful event mechanism that allows dynamic notifications sent to all objects that are of a
@@ -85,30 +87,50 @@ Built-in Event Types
 --------------------
 NVIDIA FLARE's system-defined event types are specified in :class:`nvflare.apis.event_type.EventType`:
 
-todo: go over these
-
 .. csv-table::
-   :header: Event, Description
+   :header: Event, Description, Data Key, Data Type, Server, Client
 
-    START_RUN, Start of the current "run"
-    END_RUN, End of the current "run"
-    CLIENT_REGISTER, When the client register to the server
-    CLIENT_QUIT, When the client quit from the server.
-    GET_PULL_REQUEST, .
-    GET_SUBMIT_RESULT, .
-    BEFORE_PULL_TASK, Before the .
-    AFTER_PULL_TASK, After the .
-    COLLECT_STATUS, .
-    BEFORE_PROCESS_SUBMISSION, Before the .
-    AFTER_PROCESS_SUBMISSION, After the .
-    BEFORE_TASK_DATA_FILTER, Before the .
-    AFTER_TASK_DATA_FILTER, After the .
-    BEFORE_TASK_RESULT_FILTER, Before the .
-    AFTER_TASK_RESULT_FILTER, After the .
-    BEFORE_TASK_EXECUTION, Before the .
-    AFTER_TASK_EXECUTION, After the .
-    BEFORE_SEND_TASK_RESULT, Before the .
-    AFTER_SEND_TASK_RESULT, After the .
+    START_RUN,A new RUN is about to start,fl_ctx.get_run_number(),int,X,X
+    END_RUN,The current RUN is about to end,fl_ctx.get_run_number(),int,X,X
+    START_WORKFLOW,Workflow is about start,FLContextKey.WORKFLOW,int,X,
+    END_WORKFLOW,Workflow is about to end,FLContextKey.WORKFLOW,int,X,
+    BEFORE_PROCESS_SUBMISSION,Task result submission is about to be processed,FLContextKey.TASK_NAME,str,X,
+    ,,FLContextKey.TASK_RESULT,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    AFTER_PROCESS_SUBMISSION,Task result processing is done,FLContextKey.TASK_NAME,str,X,
+    ,,FLContextKey.TASK_RESULT,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    BEFORE_TASK_DATA_FILTER,task data is about to be filtered,FLContextKey.TASK_NAME,str,X,X
+    ,,FLContextKey.TASK_DATA,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    AFTER_TASK_DATA_FILTER,task data has been filtered,FLContextKey.TASK_NAME,str,X,X
+    ,,FLContextKey.TASK_DATA,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    BEFORE_TASK_RESULT_FILTER,task result is about to be filtered,FLContextKey.TASK_NAME,str,X,X
+    ,,FLContextKey.TASK_RESULT,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    AFTER_TASK_RESULT_FILTER,task result has been filtered,FLContextKey.TASK_NAME,str,X,X
+    ,,FLContextKey.TASK_RESULT,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    BEFORE_TASK_EXECUTION,task execution is about to start,FLContextKey.TASK_NAME,str,,X
+    ,,FLContextKey.TASK_DATA,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    AFTER_TASK_EXECUTION,task execution is has finished,FLContextKey.TASK_NAME,str,,X
+    ,,FLContextKey.TASK_DATA,Shareable,,
+    ,,FLContextKey.TASK_RESULT,Shareable,,
+    ,,FLContextKey.TASK_ID,str,,
+    BEFORE_SEND_TASK_RESULT,task result is about to be sent to the Server,FLContextKey.TASK_NAME,,,X
+    ,,FLContextKey.TASK_DATA,,,
+    ,,FLContextKey.TASK_RESULT,,,
+    ,,FLContextKey.TASK_ID,,,
+    AFTER_SEND_TASK_RESULT,task result has been sent to the Server,FLContextKey.TASK_NAME,,,X
+    ,,FLContextKey.TASK_RESULT,,,
+    ,,FLContextKey.TASK_DATA,,,
+    ,,FLContextKey.TASK_ID,,,
+    FATAL_SYSTEM_ERROR,fatal error occurred; the RUN is to be aborted,FLContextKey.EVENT_DATA,str; the error text,X,X
+    FATAL_TASK_ERROR,fatal error in task execution; the task is to be aborted,FLContextKey.EVENT_DATA,str; the error text,,X
+    ERROR_LOG_AVAILABLE,error log message available,FLContextKey.EVENT_DATA,str; the log message,X,X
+    EXCEPTION_LOG_AVAILABLE,exception log message available,FLContextKey.EVENT_DATA,str; the log message,X,X
 
 RUN Lifecycle Events
 --------------------

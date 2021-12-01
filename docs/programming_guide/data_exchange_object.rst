@@ -1,3 +1,5 @@
+.. _data_exchange_object:
+
 Data Exchange Object (DXO)
 ==========================
 .. currentmodule:: nvflare.apis.dxo.DXO

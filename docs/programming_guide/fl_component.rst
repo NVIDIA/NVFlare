@@ -1,3 +1,5 @@
+.. _fl_component:
+
 FLComponent
 ===========
 .. currentmodule:: nvflare.apis.fl_component.FLComponent
@@ -5,7 +7,7 @@ FLComponent
 :class:`nvflare.apis.fl_component.FLComponent` is the base class of all the FL components. Executors, controllers, filters, aggregators, and their subtypes for
 example trainer are all FLComponents now.
 
-.. literalinclude:: ../nvflare/apis/fl_component.py
+.. literalinclude:: ../../nvflare/apis/fl_component.py
     :language: python
     :lines: 7-21
 
