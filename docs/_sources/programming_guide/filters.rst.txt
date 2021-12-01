@@ -19,6 +19,8 @@ highlighted in the image below:
 .. image:: ../resources/Filters.png
     :height: 350px
 
+.. _filters_for_privacy:
+
 Filters can convert data formats and a lot more. You can apply any type of massaging to the data for the
 purpose of security. In fact, privacy and homomorphic encryption techniques are all implemented as filters:
 

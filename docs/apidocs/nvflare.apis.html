@@ -175,7 +175,7 @@
 <li class="toctree-l5"><a class="reference internal" href="#submodules">Submodules</a></li>
 <li class="toctree-l5"><a class="reference internal" href="#module-nvflare.apis.analytix">nvflare.apis.analytix module</a></li>
 <li class="toctree-l5"><a class="reference internal" href="#module-nvflare.apis.app_validation">nvflare.apis.app_validation module</a></li>
-<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.apis.aux">nvflare.apis.aux module</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#module-nvflare.apis.aux_spec">nvflare.apis.aux_spec module</a></li>
 <li class="toctree-l5"><a class="reference internal" href="#module-nvflare.apis.client">nvflare.apis.client module</a></li>
 <li class="toctree-l5"><a class="reference internal" href="#module-nvflare.apis.client_engine_spec">nvflare.apis.client_engine_spec module</a></li>
 <li class="toctree-l5"><a class="reference internal" href="#module-nvflare.apis.controller_spec">nvflare.apis.controller_spec module</a></li>
@@ -400,38 +400,38 @@ authorization_context is the context needed by authorization.</p>
 </dd></dl>
 
 </div>
-<div class="section" id="module-nvflare.apis.aux">
-<span id="nvflare-apis-aux-module"></span><h2>nvflare.apis.aux module<a class="headerlink" href="#module-nvflare.apis.aux" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="module-nvflare.apis.aux_spec">
+<span id="nvflare-apis-aux-spec-module"></span><h2>nvflare.apis.aux_spec module<a class="headerlink" href="#module-nvflare.apis.aux_spec" title="Permalink to this headline">¶</a></h2>
 <dl class="py class">
-<dt class="sig sig-object py" id="nvflare.apis.aux.MessageSendStatus">
-<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">MessageSendStatus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/aux.html#MessageSendStatus"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.aux.MessageSendStatus" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.aux_spec.MessageSendStatus">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">MessageSendStatus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/aux_spec.html#MessageSendStatus"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.aux_spec.MessageSendStatus" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">enum.Enum</span></code></p>
 <p>An enumeration.</p>
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.aux.MessageSendStatus.FAILURE">
-<span class="sig-name descname"><span class="pre">FAILURE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'failure'</span></em><a class="headerlink" href="#nvflare.apis.aux.MessageSendStatus.FAILURE" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.aux_spec.MessageSendStatus.FAILURE">
+<span class="sig-name descname"><span class="pre">FAILURE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'failure'</span></em><a class="headerlink" href="#nvflare.apis.aux_spec.MessageSendStatus.FAILURE" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.aux.MessageSendStatus.OK">
-<span class="sig-name descname"><span class="pre">OK</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'ok'</span></em><a class="headerlink" href="#nvflare.apis.aux.MessageSendStatus.OK" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.aux_spec.MessageSendStatus.OK">
+<span class="sig-name descname"><span class="pre">OK</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'ok'</span></em><a class="headerlink" href="#nvflare.apis.aux_spec.MessageSendStatus.OK" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.aux.MessageSendStatus.REPLY_ERROR">
-<span class="sig-name descname"><span class="pre">REPLY_ERROR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'reply_error'</span></em><a class="headerlink" href="#nvflare.apis.aux.MessageSendStatus.REPLY_ERROR" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.aux_spec.MessageSendStatus.REPLY_ERROR">
+<span class="sig-name descname"><span class="pre">REPLY_ERROR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'reply_error'</span></em><a class="headerlink" href="#nvflare.apis.aux_spec.MessageSendStatus.REPLY_ERROR" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.aux.MessageSendStatus.TIMEOUT">
-<span class="sig-name descname"><span class="pre">TIMEOUT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'timeout'</span></em><a class="headerlink" href="#nvflare.apis.aux.MessageSendStatus.TIMEOUT" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.aux_spec.MessageSendStatus.TIMEOUT">
+<span class="sig-name descname"><span class="pre">TIMEOUT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'timeout'</span></em><a class="headerlink" href="#nvflare.apis.aux_spec.MessageSendStatus.TIMEOUT" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
 
 <dl class="py function">
-<dt class="sig sig-object py" id="nvflare.apis.aux.aux_request_handle_func_signature">
-<span class="sig-name descname"><span class="pre">aux_request_handle_func_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">topic</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/apis/aux.html#aux_request_handle_func_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.aux.aux_request_handle_func_signature" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.aux_spec.aux_request_handle_func_signature">
+<span class="sig-name descname"><span class="pre">aux_request_handle_func_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">topic</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/apis/aux_spec.html#aux_request_handle_func_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.aux_spec.aux_request_handle_func_signature" title="Permalink to this definition">¶</a></dt>
 <dd><p>This is the signature of the message_handle_func.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -1960,7 +1960,7 @@ You can also use this CB to alter the data of the task to be sent.</p>
 
 <dl class="py attribute">
 <dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.BAD_REQUEST_DATA">
-<span class="sig-name descname"><span class="pre">BAD_REQUEST_DATA</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'BAD_TASK_DATA'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.BAD_REQUEST_DATA" title="Permalink to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">BAD_REQUEST_DATA</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'BAD_REQUEST_DATA'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.BAD_REQUEST_DATA" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
@@ -2006,6 +2006,11 @@ You can also use this CB to alter the data of the task to be sent.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.RUN_MISMATCH">
 <span class="sig-name descname"><span class="pre">RUN_MISMATCH</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'RUN_MISMATCH'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.RUN_MISMATCH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.TASK_ABORTED">
+<span class="sig-name descname"><span class="pre">TASK_ABORTED</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'TASK_ABORTED'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.TASK_ABORTED" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">

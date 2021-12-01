@@ -256,14 +256,18 @@
 
 <div class="viewcode-block" id="ConvertWeights"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.filters.html#nvflare.app_common.filters.convert_weights.ConvertWeights">[docs]</a><span class="k">class</span> <span class="nc">ConvertWeights</span><span class="p">(</span><span class="n">Filter</span><span class="p">):</span>
 
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    This filter converts from</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
     <span class="n">WEIGHTS_TO_DIFF</span> <span class="o">=</span> <span class="s2">&quot;weights_to_diff&quot;</span>
     <span class="n">DIFF_TO_WEIGHTS</span> <span class="o">=</span> <span class="s2">&quot;diff_to_weights&quot;</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">direction</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Convert WEIGHTS to WEIGHT_DIFF or vice versa</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            direction (str): control conversion direction.  Either weights_to_diff or diff_to_weights.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: when the direction string is neither weights_to_diff nor diff_to_weights</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">Filter</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">direction</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">WEIGHTS_TO_DIFF</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">DIFF_TO_WEIGHTS</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -298,6 +302,19 @@
         <span class="k">return</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span>
 
 <div class="viewcode-block" id="ConvertWeights.process"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.filters.html#nvflare.app_common.filters.convert_weights.ConvertWeights.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called by runners to perform weight conversion</span>
+
+<span class="sd">        When the return code of shareable is not ReturnCode.OK, this</span>
+<span class="sd">        function will not perform any process and returns the shareable back.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            shareable (Shareable): shareable must conform to DXO format.</span>
+<span class="sd">            fl_ctx (FLContext): this context must include TASK_DATA, which is another shareable containing base weights.</span>
+<span class="sd">              If not, the input shareable will be returned.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Shareable: a shareable with converted weights</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">rc</span> <span class="o">=</span> <span class="n">shareable</span><span class="o">.</span><span class="n">get_return_code</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">rc</span> <span class="o">!=</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">:</span>
             <span class="c1"># don&#39;t process if RC not OK</span>

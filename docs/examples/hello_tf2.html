@@ -289,7 +289,7 @@ The following steps compose one cycle of weight updates, called a <strong>round<
 </ol>
 </div></blockquote>
 <p>For this exercise, we will be working with the <code class="docutils literal notranslate"><span class="pre">hello-tf2</span></code> application in the examples folder.
-Every custom FL application must contain three folders:</p>
+Custom FL applications can contain the folders:</p>
 <blockquote>
 <div><ol class="arabic simple">
 <li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">tf2_net.py</span></code>, <code class="docutils literal notranslate"><span class="pre">trainer.py</span></code>, <code class="docutils literal notranslate"><span class="pre">filter.py</span></code>, <code class="docutils literal notranslate"><span class="pre">tf2_model_persistor.py</span></code>)</p></li>
@@ -367,11 +367,11 @@ Additionally, you must setup the optimizer, loss function and transform to proce
 <span class="linenos">66</span>        <span class="n">loss_fn</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">losses</span><span class="o">.</span><span class="n">SparseCategoricalCrossentropy</span><span class="p">(</span><span class="n">from_logits</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="linenos">67</span>        <span class="n">model</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">optimizer</span><span class="o">=</span><span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="n">loss</span><span class="o">=</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">metrics</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;accuracy&quot;</span><span class="p">])</span>
 <span class="linenos">68</span>        <span class="n">_</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">Input</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">28</span><span class="p">,</span> <span class="mi">28</span><span class="p">)))</span>
-<span class="linenos">69</span>        <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span> <span class="o">=</span> <span class="p">[</span>
-<span class="linenos">70</span>            <span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">name</span>
-<span class="linenos">71</span>            <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">()))</span>
-<span class="linenos">72</span>        <span class="p">]</span>
-<span class="linenos">73</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
+<span class="linenos">69</span>        <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">()))]</span>
+<span class="linenos">70</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
+<span class="linenos">71</span>
+<span class="linenos">72</span>    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span>
+<span class="linenos">73</span>        <span class="bp">self</span><span class="p">,</span>
 </pre></div>
 </div>
 <p>How can you ensure this setup method is called before the client receives the model from the server?  The Trainer
@@ -395,96 +395,89 @@ called every time the client receives an updated model from the server with the 
 <div class="section" id="link-nvidia-flare-with-local-train">
 <h3>Link NVIDIA FLARE with Local Train<a class="headerlink" href="#link-nvidia-flare-with-local-train" title="Permalink to this headline">¶</a></h3>
 <p>Take a look at the following code:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 75</span>    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span>
-<span class="linenos"> 76</span>        <span class="bp">self</span><span class="p">,</span>
-<span class="linenos"> 77</span>        <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<span class="linenos"> 78</span>        <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span>
-<span class="linenos"> 79</span>        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
-<span class="linenos"> 80</span>        <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">,</span>
-<span class="linenos"> 81</span>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
-<span class="linenos"> 82</span>        <span class="sd">&quot;&quot;&quot;</span>
-<span class="linenos"> 83</span><span class="sd">        This function is an extended function from the super class.</span>
-<span class="linenos"> 84</span><span class="sd">        As a supervised learning based trainer, the train function will run</span>
-<span class="linenos"> 85</span><span class="sd">        evaluate and train engines based on model weights from `shareable`.</span>
-<span class="linenos"> 86</span><span class="sd">        After finishing training, a new `Shareable` object will be submitted</span>
-<span class="linenos"> 87</span><span class="sd">        to server for aggregation.</span>
-<span class="linenos"> 88</span>
-<span class="linenos"> 89</span><span class="sd">        Args:</span>
-<span class="linenos"> 90</span><span class="sd">            task_name: dispatched task</span>
-<span class="linenos"> 91</span><span class="sd">            shareable: the `Shareable` object acheived from server.</span>
-<span class="linenos"> 92</span><span class="sd">            fl_ctx: the `FLContext` object achieved from server.</span>
-<span class="linenos"> 93</span><span class="sd">            abort_signal: if triggered, the training will be aborted.</span>
-<span class="linenos"> 94</span>
-<span class="linenos"> 95</span><span class="sd">        Returns:</span>
-<span class="linenos"> 96</span><span class="sd">            a new `Shareable` object to be submitted to server for aggregation.</span>
-<span class="linenos"> 97</span><span class="sd">        &quot;&quot;&quot;</span>
-<span class="linenos"> 98</span>
-<span class="linenos"> 99</span>        <span class="c1"># retrieve model weights download from server&#39;s shareable</span>
-<span class="linenos">100</span>        <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
-<span class="linenos">101</span>            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 75</span>        <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span>
+<span class="linenos"> 76</span>        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+<span class="linenos"> 77</span>        <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">,</span>
+<span class="linenos"> 78</span>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+<span class="linenos"> 79</span>        <span class="sd">&quot;&quot;&quot;</span>
+<span class="linenos"> 80</span><span class="sd">        This function is an extended function from the super class.</span>
+<span class="linenos"> 81</span><span class="sd">        As a supervised learning based trainer, the train function will run</span>
+<span class="linenos"> 82</span><span class="sd">        evaluate and train engines based on model weights from `shareable`.</span>
+<span class="linenos"> 83</span><span class="sd">        After finishing training, a new `Shareable` object will be submitted</span>
+<span class="linenos"> 84</span><span class="sd">        to server for aggregation.</span>
+<span class="linenos"> 85</span>
+<span class="linenos"> 86</span><span class="sd">        Args:</span>
+<span class="linenos"> 87</span><span class="sd">            task_name: dispatched task</span>
+<span class="linenos"> 88</span><span class="sd">            shareable: the `Shareable` object acheived from server.</span>
+<span class="linenos"> 89</span><span class="sd">            fl_ctx: the `FLContext` object achieved from server.</span>
+<span class="linenos"> 90</span><span class="sd">            abort_signal: if triggered, the training will be aborted.</span>
+<span class="linenos"> 91</span>
+<span class="linenos"> 92</span><span class="sd">        Returns:</span>
+<span class="linenos"> 93</span><span class="sd">            a new `Shareable` object to be submitted to server for aggregation.</span>
+<span class="linenos"> 94</span><span class="sd">        &quot;&quot;&quot;</span>
+<span class="linenos"> 95</span>
+<span class="linenos"> 96</span>        <span class="c1"># retrieve model weights download from server&#39;s shareable</span>
+<span class="linenos"> 97</span>        <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+<span class="linenos"> 98</span>            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+<span class="linenos"> 99</span>
+<span class="linenos">100</span>        <span class="k">if</span> <span class="n">task_name</span> <span class="o">!=</span> <span class="s2">&quot;train&quot;</span><span class="p">:</span>
+<span class="linenos">101</span>            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">)</span>
 <span class="linenos">102</span>
-<span class="linenos">103</span>        <span class="k">if</span> <span class="n">task_name</span> <span class="o">!=</span> <span class="s2">&quot;train&quot;</span><span class="p">:</span>
-<span class="linenos">104</span>            <span class="k">return</span> <span class="n">shareable</span>
+<span class="linenos">103</span>        <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
+<span class="linenos">104</span>        <span class="n">model_weights</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span>
 <span class="linenos">105</span>
-<span class="linenos">106</span>        <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
-<span class="linenos">107</span>        <span class="n">model_weights</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span>
-<span class="linenos">108</span>
-<span class="linenos">109</span>        <span class="c1"># use previous round&#39;s client weights to replace excluded layers from server</span>
-<span class="linenos">110</span>        <span class="n">prev_weights</span> <span class="o">=</span> <span class="p">{</span>
-<span class="linenos">111</span>            <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span>
-<span class="linenos">112</span>            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())</span>
-<span class="linenos">113</span>        <span class="p">}</span>
-<span class="linenos">114</span>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;dxo&quot;</span><span class="p">)</span>
-<span class="linenos">115</span>        <span class="n">ordered_model_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">prev_weights</span><span class="p">}</span>
-<span class="linenos">116</span>        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span><span class="p">:</span>
-<span class="linenos">117</span>            <span class="n">value</span> <span class="o">=</span> <span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-<span class="linenos">118</span>            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
-<span class="linenos">119</span>                <span class="n">ordered_model_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">prev_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
-<span class="linenos">120</span>
-<span class="linenos">121</span>        <span class="c1"># update local model weights with received weights</span>
-<span class="linenos">122</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">set_weights</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
-<span class="linenos">123</span>
-<span class="linenos">124</span>        <span class="c1"># adjust LR or other training time info as needed</span>
-<span class="linenos">125</span>        <span class="c1"># such as callback in the fit function</span>
-<span class="linenos">126</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
-<span class="linenos">127</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">,</span>
-<span class="linenos">128</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">,</span>
-<span class="linenos">129</span>            <span class="n">epochs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs_per_round</span><span class="p">,</span>
-<span class="linenos">130</span>            <span class="n">validation_data</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">),</span>
-<span class="linenos">131</span>        <span class="p">)</span>
+<span class="linenos">106</span>        <span class="c1"># use previous round&#39;s client weights to replace excluded layers from server</span>
+<span class="linenos">107</span>        <span class="n">prev_weights</span> <span class="o">=</span> <span class="p">{</span>
+<span class="linenos">108</span>            <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())</span>
+<span class="linenos">109</span>        <span class="p">}</span>
+<span class="linenos">110</span>
+<span class="linenos">111</span>        <span class="n">ordered_model_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">prev_weights</span><span class="p">}</span>
+<span class="linenos">112</span>        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span><span class="p">:</span>
+<span class="linenos">113</span>            <span class="n">value</span> <span class="o">=</span> <span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+<span class="linenos">114</span>            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+<span class="linenos">115</span>                <span class="n">ordered_model_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">prev_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+<span class="linenos">116</span>
+<span class="linenos">117</span>        <span class="c1"># update local model weights with received weights</span>
+<span class="linenos">118</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">set_weights</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+<span class="linenos">119</span>
+<span class="linenos">120</span>        <span class="c1"># adjust LR or other training time info as needed</span>
+<span class="linenos">121</span>        <span class="c1"># such as callback in the fit function</span>
+<span class="linenos">122</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+<span class="linenos">123</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">,</span>
+<span class="linenos">124</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">,</span>
+<span class="linenos">125</span>            <span class="n">epochs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs_per_round</span><span class="p">,</span>
+<span class="linenos">126</span>            <span class="n">validation_data</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">),</span>
+<span class="linenos">127</span>        <span class="p">)</span>
+<span class="linenos">128</span>
+<span class="linenos">129</span>        <span class="c1"># report updated weights in shareable</span>
+<span class="linenos">130</span>        <span class="n">weights</span> <span class="o">=</span> <span class="p">{</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())}</span>
+<span class="linenos">131</span>        <span class="n">dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
 <span class="linenos">132</span>
-<span class="linenos">133</span>        <span class="c1"># report updated weights in shareable</span>
-<span class="linenos">134</span>        <span class="n">weights</span> <span class="o">=</span> <span class="p">{</span>
-<span class="linenos">135</span>            <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span>
-<span class="linenos">136</span>            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())</span>
-<span class="linenos">137</span>        <span class="p">}</span>
-<span class="linenos">138</span>        <span class="n">dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
-<span class="linenos">139</span>
-<span class="linenos">140</span>        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Local epochs finished. Returning shareable&quot;</span><span class="p">)</span>
-<span class="linenos">141</span>
-<span class="linenos">142</span>        <span class="k">return</span> <span class="n">dxo</span><span class="o">.</span><span class="n">update_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
+<span class="linenos">133</span>        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Local epochs finished. Returning shareable&quot;</span><span class="p">)</span>
+<span class="linenos">134</span>        <span class="n">new_shareable</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
+<span class="linenos">135</span>        <span class="k">return</span> <span class="n">new_shareable</span>
 </pre></div>
 </div>
 <p>Every NVIDIA FLARE client receives the model weights from the server in the <a class="reference internal" href="../programming_guide/shareable.html#shareable"><span class="std std-ref">shareable</span></a>.
 This exercise uses a simple <code class="docutils literal notranslate"><span class="pre">exclude_var</span></code> filter, so make sure to replace the missing layer with weights from the clients’ previous training round:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">115</span>        <span class="n">ordered_model_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">prev_weights</span><span class="p">}</span>
-<span class="linenos">116</span>        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span><span class="p">:</span>
-<span class="linenos">117</span>            <span class="n">value</span> <span class="o">=</span> <span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-<span class="linenos">118</span>            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
-<span class="linenos">119</span>                <span class="n">ordered_model_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">prev_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">115</span>                <span class="n">ordered_model_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">prev_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+<span class="linenos">116</span>
+<span class="linenos">117</span>        <span class="c1"># update local model weights with received weights</span>
+<span class="linenos">118</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">set_weights</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+<span class="linenos">119</span>
 </pre></div>
 </div>
 <p>Now update the local model with those received weights:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">122</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">set_weights</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">122</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
 </pre></div>
 </div>
 <p>Then perform a simple <code class="code docutils literal notranslate"><span class="pre">self.model.fit</span></code> so the client’s model is trained with its own dataset:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">126</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
-<span class="linenos">127</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">,</span>
-<span class="linenos">128</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">,</span>
-<span class="linenos">129</span>            <span class="n">epochs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs_per_round</span><span class="p">,</span>
-<span class="linenos">130</span>            <span class="n">validation_data</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">),</span>
-<span class="linenos">131</span>        <span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">126</span>            <span class="n">validation_data</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">),</span>
+<span class="linenos">127</span>        <span class="p">)</span>
+<span class="linenos">128</span>
+<span class="linenos">129</span>        <span class="c1"># report updated weights in shareable</span>
+<span class="linenos">130</span>        <span class="n">weights</span> <span class="o">=</span> <span class="p">{</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())}</span>
+<span class="linenos">131</span>        <span class="n">dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>After finishing the local train, the train method uses the newly-trained weights to build a new <code class="docutils literal notranslate"><span class="pre">DXO</span></code> to update the
@@ -849,15 +842,11 @@ Both of these are configured for the only Task that will be broadcast in the Sca
 <div class="section" id="setting-up-the-application-environment">
 <h3>Setting Up the Application Environment<a class="headerlink" href="#setting-up-the-application-environment" title="Permalink to this headline">¶</a></h3>
 <p>This command generates a poc folder with server, one client and one admin:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ poc
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ poc -n <span class="m">2</span>
 </pre></div>
 </div>
-<p>Here we duplicate the client folder into two folders to create two clients, site-1 and site-2:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ cp -r poc/client poc/site-1
-$ cp -r poc/client poc/site-2
-</pre></div>
-</div>
-<p>Finally, we copy necessary files (the exercise code) to a working folder:</p>
+<p>Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
+folder for the admin):</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ mkdir -p poc/admin/transfer
 $ cp -rf examples/* poc/admin/transfer
 </pre></div>
@@ -870,11 +859,11 @@ therefore have to start the server first:</p>
 </div>
 <p>Once the server is running you can start the clients in different terminals.
 Open a new terminal and start the first client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-1/startup/start.sh site-1 localhost
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-1/startup/start.sh
 </pre></div>
 </div>
 <p>Open another terminal and start the second client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-2/startup/start.sh site-2 localhost
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-2/startup/start.sh
 </pre></div>
 </div>
 <p>In one last terminal, start the admin:</p>

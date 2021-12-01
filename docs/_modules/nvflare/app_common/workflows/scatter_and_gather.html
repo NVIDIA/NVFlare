@@ -274,7 +274,7 @@
         <span class="n">shareable_generator_id</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">DEFAULT_SHAREABLE_GENERATOR_ID</span><span class="p">,</span>
         <span class="n">train_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_TRAIN</span><span class="p">,</span>
         <span class="n">train_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
-        <span class="n">ignore_result_error</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">ignore_result_error</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;FederatedAveraging Workflow. The ScatterAndGather workflow defines Federated training on all clients.</span>
 <span class="sd">        The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.</span>
@@ -504,7 +504,7 @@
         <span class="c1"># Raise errors if bad peer context or execution exception.</span>
         <span class="k">if</span> <span class="n">rc</span> <span class="ow">and</span> <span class="n">rc</span> <span class="o">!=</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ignore_result_error</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Ignore the client train result. Train result error code: </span><span class="si">{</span><span class="n">rc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Ignore the client train result. Train result error code: </span><span class="si">{</span><span class="n">rc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
                 <span class="k">return</span> <span class="kc">False</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">if</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">MISSING_PEER_CONTEXT</span><span class="p">,</span> <span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_PEER_CONTEXT</span><span class="p">]:</span>

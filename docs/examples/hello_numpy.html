@@ -273,7 +273,7 @@ learning concepts. Through this exercise, you will learn how to use NVIDIA FLARE
 computations across two clients with the included Scatter and Gather workflow, which broadcasts the training tasks then
 aggregates the results that come back. Due to the simplified weights, you will be able to clearly see and understand
 the results of the FL aggregation and the model persistor process.</p>
-<p>The design of this exercise consists of one <strong>server</strong> and two <strong>clients</strong>, starting with weights <code class="docutils literal notranslate"><span class="pre">[[1,</span> <span class="pre">2,</span> <span class="pre">3],</span> <span class="pre">[4,</span> <span class="pre">5,</span> <span class="pre">6],</span> <span class="pre">[7,</span> <span class="pre">8,</span> <span class="pre">9]]</span></code>.
+<p>The design of this exercise consists of one <strong>server</strong> and two <strong>clients</strong> starting with weights <code class="docutils literal notranslate"><span class="pre">[[1,</span> <span class="pre">2,</span> <span class="pre">3],</span> <span class="pre">[4,</span> <span class="pre">5,</span> <span class="pre">6],</span> <span class="pre">[7,</span> <span class="pre">8,</span> <span class="pre">9]]</span></code>.
 The following steps compose one cycle of weight updates, called a <strong>round</strong>:</p>
 <blockquote>
 <div><ol class="arabic simple">
@@ -283,7 +283,7 @@ The following steps compose one cycle of weight updates, called a <strong>round<
 </ol>
 </div></blockquote>
 <p>For this exercise, we will be working with the <code class="docutils literal notranslate"><span class="pre">hello-numpy-sag</span></code> application in the examples folder.
-Every custom FL application must contain three folders:</p>
+Custom FL applications can contain the folders:</p>
 <blockquote>
 <div><ol class="arabic simple">
 <li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">np_trainer.py</span></code>, <code class="docutils literal notranslate"><span class="pre">np_model_persistor.py</span></code>)</p></li>
@@ -292,7 +292,7 @@ Every custom FL application must contain three folders:</p>
 </ol>
 </div></blockquote>
 <p>Let’s get started. First clone the repo, if you haven’t already:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/nvidia/nvflare.git
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/NVIDIA/NVFlare.git
 </pre></div>
 </div>
 <p>Remember to activate your NVIDIA FLARE Python virtual environment from the installation guide. Ensure numpy is installed.</p>
@@ -497,16 +497,12 @@ For now, the default configurations are sufficient.</p>
 <p>Now you must set up a local environment and generate packages to simulate the server, clients, and admin.</p>
 <div class="section" id="setting-up-the-application-environment">
 <h3>Setting Up the Application Environment<a class="headerlink" href="#setting-up-the-application-environment" title="Permalink to this headline">¶</a></h3>
-<p>This command generates a poc folder with server, one client and one admin:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ poc
+<p>This command generates a poc folder with server, two clients, and one admin:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ poc -n <span class="m">2</span>
 </pre></div>
 </div>
-<p>Here we duplicate the client folder into two folders to create two clients, site-1 and site-2:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ cp -r poc/client poc/site-1
-$ cp -r poc/client poc/site-2
-</pre></div>
-</div>
-<p>Finally, we copy necessary files (the exercise code) to a working folder:</p>
+<p>Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
+folder for the admin):</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ mkdir -p poc/admin/transfer
 $ cp -rf examples/* poc/admin/transfer
 </pre></div>
@@ -519,11 +515,11 @@ therefore have to start the server first:</p>
 </div>
 <p>Once the server is running you can start the clients in different terminals.
 Open a new terminal and start the first client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-1/startup/start.sh site-1 localhost
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-1/startup/start.sh
 </pre></div>
 </div>
 <p>Open another terminal and start the second client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-2/startup/start.sh site-2 localhost
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-2/startup/start.sh
 </pre></div>
 </div>
 <p>In one last terminal, start the admin:</p>

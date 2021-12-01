@@ -25,7 +25,7 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. Finally, the server sends this updated version of the model back to each client.
 
 For this exercise, we will be working with the ``hello-tf2`` application in the examples folder. 
-Every custom FL application must contain three folders:
+Custom FL applications can contain the folders:
 
  #. **custom**: contains the custom components (``tf2_net.py``, ``trainer.py``, ``filter.py``, ``tf2_model_persistor.py``)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
@@ -228,16 +228,10 @@ This command generates a poc folder with server, one client and one admin:
 
 .. code-block:: shell
 
-    $ poc
+    $ poc -n 2
 
-Here we duplicate the client folder into two folders to create two clients, site-1 and site-2:
-
-.. code-block:: shell
-
-    $ cp -r poc/client poc/site-1
-    $ cp -r poc/client poc/site-2
-
-Finally, we copy necessary files (the exercise code) to a working folder:
+Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
+folder for the admin):
 
 .. code-block:: shell
 
@@ -257,13 +251,13 @@ Open a new terminal and start the first client:
 
 .. code-block:: shell
 
-    $ ./poc/site-1/startup/start.sh site-1 localhost
+    $ ./poc/site-1/startup/start.sh
 
 Open another terminal and start the second client:
 
 .. code-block:: shell
 
-    $ ./poc/site-2/startup/start.sh site-2 localhost
+    $ ./poc/site-2/startup/start.sh
 
 In one last terminal, start the admin:
 

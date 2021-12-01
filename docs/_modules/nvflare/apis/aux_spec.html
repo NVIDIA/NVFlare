@@ -34,7 +34,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>nvflare.apis.aux &mdash; NVIDIA FLARE 2.0 documentation</title>
+  <title>nvflare.apis.aux_spec &mdash; NVIDIA FLARE 2.0 documentation</title>
   
 
   
@@ -217,7 +217,7 @@
         
           <li><a href="../../index.html">Module code</a> &raquo;</li>
         
-      <li>nvflare.apis.aux</li>
+      <li>nvflare.apis.aux_spec</li>
     
     
       <li class="wy-breadcrumbs-aside">
@@ -232,7 +232,7 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
             
-  <h1>Source code for nvflare.apis.aux</h1><div class="highlight"><pre>
+  <h1>Source code for nvflare.apis.aux_spec</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
 <span class="c1">#</span>
 <span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
@@ -253,7 +253,7 @@
 <span class="kn">from</span> <span class="nn">.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span>
 
 
-<div class="viewcode-block" id="MessageSendStatus"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.aux.MessageSendStatus">[docs]</a><span class="k">class</span> <span class="nc">MessageSendStatus</span><span class="p">(</span><span class="n">enum</span><span class="o">.</span><span class="n">Enum</span><span class="p">):</span>
+<div class="viewcode-block" id="MessageSendStatus"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.aux_spec.MessageSendStatus">[docs]</a><span class="k">class</span> <span class="nc">MessageSendStatus</span><span class="p">(</span><span class="n">enum</span><span class="o">.</span><span class="n">Enum</span><span class="p">):</span>
 
     <span class="n">OK</span> <span class="o">=</span> <span class="s2">&quot;ok&quot;</span>  <span class="c1"># message sent and response received</span>
     <span class="n">TIMEOUT</span> <span class="o">=</span> <span class="s2">&quot;timeout&quot;</span>  <span class="c1"># message sent but no response received</span>
@@ -261,7 +261,7 @@
     <span class="n">REPLY_ERROR</span> <span class="o">=</span> <span class="s2">&quot;reply_error&quot;</span>  <span class="c1"># error in reply</span></div>
 
 
-<div class="viewcode-block" id="aux_request_handle_func_signature"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.aux.aux_request_handle_func_signature">[docs]</a><span class="k">def</span> <span class="nf">aux_request_handle_func_signature</span><span class="p">(</span><span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+<div class="viewcode-block" id="aux_request_handle_func_signature"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.aux_spec.aux_request_handle_func_signature">[docs]</a><span class="k">def</span> <span class="nf">aux_request_handle_func_signature</span><span class="p">(</span><span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    This is the signature of the message_handle_func.</span>
 

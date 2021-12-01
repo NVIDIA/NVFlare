@@ -73,4 +73,4 @@ repo and get the source code:
 
 .. code-block:: shell
 
-  $ git clone https://github.com/nvidia/nvflare.git
+  $ git clone https://github.com/NVIDIA/NVFlare.git
