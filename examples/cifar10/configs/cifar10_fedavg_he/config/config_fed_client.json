@@ -1,0 +1,58 @@
+{
+  "format_version": 2,
+
+  "DATASET_ROOT": "/tmp/cifar10_data",
+
+  "executors": [
+    {
+      "tasks": ["train", "submit_model"],
+      "executor": {
+        "path": "pt.trainers.cifar10_trainer.CIFAR10Trainer",
+        "args": {
+          "dataset_root": "{DATASET_ROOT}",
+          "aggregation_epochs": 4,
+          "lr": 1e-2
+        }
+      }
+    },
+    {
+      "tasks": ["validate"],
+      "executor": {
+        "path": "pt.validators.cifar10_validator.CIFAR10Validator",
+        "args": {
+          "dataset_root": "{DATASET_ROOT}"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+    {
+      "tasks": ["train"],
+      "filters":[
+          {
+          "name": "HEModelEncryptor",
+          "args": {
+            "aggregation_weights": {
+              "site1":  1.0,
+              "site2":  1.0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "task_data_filters": [
+    {
+      "tasks": ["train", "validate"],
+      "filters":[
+          {
+          "name": "HEModelDecryptor",
+          "args": {
+          }
+        }
+      ]
+    }
+  ],
+  "components": [
+  ]
+}

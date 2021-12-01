@@ -1,0 +1,35 @@
+{
+  "format_version": 2,
+
+  "DATASET_ROOT": "/tmp/cifar10_data",
+
+  "executors": [
+    {
+      "tasks": ["train", "submit_model"],
+      "executor": {
+        "path": "pt.trainers.cifar10_trainer.CIFAR10Trainer",
+        "args": {
+          "dataset_root": "{DATASET_ROOT}",
+          "aggregation_epochs": 4,
+          "lr": 1e-2,
+          "fedproxloss_mu": 1e-5
+        }
+      }
+    },
+    {
+      "tasks": ["validate"],
+      "executor": {
+        "path": "pt.validators.cifar10_validator.CIFAR10Validator",
+        "args": {
+          "dataset_root": "{DATASET_ROOT}"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+  "components": [
+  ]
+}
