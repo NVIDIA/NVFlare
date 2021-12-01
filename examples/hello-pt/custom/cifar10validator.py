@@ -69,7 +69,7 @@ class Cifar10Validator(Executor):
                 weights = {k: torch.as_tensor(v, device=self.device) for k, v in weights.items()}
 
                 # Get validation accuracy
-                val_accuracy = self.do_validation(weights)
+                val_accuracy = self.do_validation(weights, abort_signal)
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
 
