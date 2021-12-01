@@ -26,9 +26,9 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. Finally, the server sends this updated version of the model back to each client.
 
 For this exercise, we will be working with the ``hello-pt`` application in the examples folder. 
-Every custom FL application must contain three folders:
+Custom FL applications can contain the folders:
 
- #. **custom**: contains the custom components (``net.py``, ``cifar10trainer.py``)
+ #. **custom**: contains the custom components (``simple_network.py``, ``cifar10trainer.py``)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
  #. **resources**: contains the logger config (``log.config``)
 
@@ -36,7 +36,7 @@ Now that you have a rough idea of what is going on, let's get started. First clo
 
 .. code-block:: shell
 
-  $ git clone https://github.com/nvidia/nvflare.git
+  $ git clone https://github.com/NVIDIA/NVFlare.git
 
 Now remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
 
@@ -72,15 +72,15 @@ architecture are modified from
 
 Let's see what an extremely simplified CIFAR10 training looks like:
 
-.. literalinclude:: ../../examples/hello-pt/custom/net.py
+.. literalinclude:: ../../examples/hello-pt/custom/simple_network.py
    :language: python
    :lines: 15-
    :lineno-start: 15
    :linenos:
-   :caption: net.py
+   :caption: simple_network.py
 
 This ``SimpleNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
-This is not related to NVIDIA FLARE, so we implement it in a file called ``net.py``.
+This is not related to NVIDIA FLARE, so we implement it in a file called ``simple_network.py``.
 
 Dataset & Setup
 ^^^^^^^^^^^^^^^^
@@ -97,8 +97,8 @@ Since you will encapsulate every training-related step in the ``Cifar10Trainer``
 
 .. literalinclude:: ../../examples/hello-pt/custom/cifar10trainer.py
    :language: python
-   :lines: 35-69
-   :lineno-start: 35
+   :lines: 37-82
+   :lineno-start: 37
    :linenos:
 
 
@@ -215,20 +215,14 @@ Now you must set up a local environment and generate packages to simulate the se
 Setting Up the Application Environment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This command generates a poc folder with server, one client and one admin:
+This command generates a poc folder with server, two clients, and one admin:
 
 .. code-block:: shell
 
-    $ poc
+    $ poc -n 2
 
-Here we duplicate the client folder into two folders to create two clients, site-1 and site-2:
-
-.. code-block:: shell
-
-    $ cp -r poc/client poc/site-1
-    $ cp -r poc/client poc/site-2
-
-Finally, we copy necessary files (the exercise code) to a working folder:
+Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
+folder for the admin):
 
 .. code-block:: shell
 
@@ -249,13 +243,13 @@ Open a new terminal and start the first client:
 
 .. code-block:: shell
 
-    $ ./poc/site-1/startup/start.sh site-1 localhost
+    $ ./poc/site-1/startup/start.sh
 
 Open another terminal and start the second client:
 
 .. code-block:: shell
 
-    $ ./poc/site-2/startup/start.sh site-2 localhost
+    $ ./poc/site-2/startup/start.sh
 
 In one last terminal, start the admin:
 

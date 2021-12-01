@@ -258,19 +258,18 @@
 
 
 <div class="viewcode-block" id="ExcludeVars"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.filters.html#nvflare.app_common.filters.exclude_vars.ExcludeVars">[docs]</a><span class="k">class</span> <span class="nc">ExcludeVars</span><span class="p">(</span><span class="n">Filter</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Exclude/Remove variables from Sharable</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        exclude_vars (Union[List[str], str, None] , optional): variables/layer names to be excluded.</span>
-
-<span class="sd">    Notes:</span>
-<span class="sd">        Based on different types of exclude_vars, this filter has different behavior:</span>
-<span class="sd">            if a list of variable/layer names, only specified variables will be excluded.</span>
-<span class="sd">            if a string, it will be converted into a regular expression, only matched variables will be excluded.</span>
-<span class="sd">            if not provided or other formats the Shareable remains unchanged.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exclude_vars</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Exclude/Remove variables from Shareable</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            exclude_vars (Union[List[str], str, None] , optional): variables/layer names to be excluded.</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">            Based on different types of exclude_vars, this filter has different behavior:</span>
+<span class="sd">                if a list of variable/layer names, only specified variables will be excluded.</span>
+<span class="sd">                if a string, it will be converted into a regular expression, only matched variables will be excluded.</span>
+<span class="sd">                if not provided or other formats the Shareable remains unchanged.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="o">=</span> <span class="n">exclude_vars</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="kc">False</span>
@@ -297,6 +296,18 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="ExcludeVars.process"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.filters.html#nvflare.app_common.filters.exclude_vars.ExcludeVars.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called by upper layer to remove variables in weights/weight_diff dictionary</span>
+
+<span class="sd">        When the return code of shareable is not ReturnCode.OK, this</span>
+<span class="sd">        function will not perform any process and returns the shareable back.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            shareable (Shareable): shareable must conform to DXO format.</span>
+<span class="sd">            fl_ctx (FLContext): only used for logging.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Shareable: a shareable with excluded weights</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">skip</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">shareable</span>
 

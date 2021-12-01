@@ -265,7 +265,7 @@
            <div itemprop="articleBody">
             
   <div class="section" id="controllers-and-controller-api">
-<span id="id1"></span><h1>Controllers and Controller API<a class="headerlink" href="#controllers-and-controller-api" title="Permalink to this headline">¶</a></h1>
+<span id="controllers"></span><h1>Controllers and Controller API<a class="headerlink" href="#controllers-and-controller-api" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="controller-worker-interactions">
 <h2>Controller/Worker Interactions<a class="headerlink" href="#controller-worker-interactions" title="Permalink to this headline">¶</a></h2>
 <p>NVIDIA FLARE 2.0’s collaborative computing is achieved through the Controller/Worker interactions.</p>
@@ -296,7 +296,7 @@ implementations of the following controller workflows: <a class="reference inter
 </div>
 </div>
 <div class="section" id="scatter-and-gather-workflow">
-<span id="id2"></span><h1>Scatter and Gather Workflow<a class="headerlink" href="#scatter-and-gather-workflow" title="Permalink to this headline">¶</a></h1>
+<span id="id1"></span><h1>Scatter and Gather Workflow<a class="headerlink" href="#scatter-and-gather-workflow" title="Permalink to this headline">¶</a></h1>
 <p>The Federated scatter and gather workflow is an included reference implementation of the default workflow of previous versions
 of NVIDIA FLARE with a Server aggregating results from Clients that have produced Shareable results from their Trainer.</p>
 <p>At the core, the control_flow of <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather</span></code></a> is a for loop:</p>
@@ -337,7 +337,7 @@ For example, a simple aggregator would be just average all the <code class="docu
 <p><a class="reference internal" href="../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cyclic_ctl.CyclicController" title="nvflare.app_common.workflows.cyclic_ctl.CyclicController"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.cyclic_ctl.CyclicController</span></code></a></p>
 <p>You can study the source code and use it as a starting point to write your own controller workflows.</p>
 <div class="section" id="task-lifecycle">
-<h2>Task Lifecycle<a class="headerlink" href="#task-lifecycle" title="Permalink to this headline">¶</a></h2>
+<span id="tasks"></span><h2>Task Lifecycle<a class="headerlink" href="#task-lifecycle" title="Permalink to this headline">¶</a></h2>
 <p>The central concept of the Controller API is <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><code class="xref py py-class docutils literal notranslate"><span class="pre">Task</span></code></a>.</p>
 <p>A <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><code class="xref py py-class docutils literal notranslate"><span class="pre">Task</span></code></a> is a piece of work that is assigned by the Controller to client workers. Depending on how the task is assigned (broadcast, send, or relay), the task will be performed by one or more clients.</p>
 <p>The Controller’s Task Manager manages the task’s lifecycle:</p>

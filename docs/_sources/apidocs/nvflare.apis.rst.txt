@@ -29,10 +29,10 @@ nvflare.apis.app\_validation module
    :undoc-members:
    :show-inheritance:
 
-nvflare.apis.aux module
------------------------
+nvflare.apis.aux\_spec module
+-----------------------------
 
-.. automodule:: nvflare.apis.aux
+.. automodule:: nvflare.apis.aux_spec
    :members:
    :undoc-members:
    :show-inheritance:

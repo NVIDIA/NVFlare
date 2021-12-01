@@ -288,16 +288,16 @@ The following steps compose one cycle of weight updates, called a <strong>round<
 </ol>
 </div></blockquote>
 <p>For this exercise, we will be working with the <code class="docutils literal notranslate"><span class="pre">hello-pt</span></code> application in the examples folder.
-Every custom FL application must contain three folders:</p>
+Custom FL applications can contain the folders:</p>
 <blockquote>
 <div><ol class="arabic simple">
-<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">net.py</span></code>, <code class="docutils literal notranslate"><span class="pre">cifar10trainer.py</span></code>)</p></li>
+<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">simple_network.py</span></code>, <code class="docutils literal notranslate"><span class="pre">cifar10trainer.py</span></code>)</p></li>
 <li><p><strong>config</strong>: contains client and server configurations (<code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>, <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>)</p></li>
 <li><p><strong>resources</strong>: contains the logger config (<code class="docutils literal notranslate"><span class="pre">log.config</span></code>)</p></li>
 </ol>
 </div></blockquote>
 <p>Now that you have a rough idea of what is going on, let’s get started. First clone the repo:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/nvidia/nvflare.git
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/NVIDIA/NVFlare.git
 </pre></div>
 </div>
 <p>Now remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.</p>
@@ -325,7 +325,7 @@ architecture are modified from
 <a class="reference external" href="https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html">Training a Classifier</a>.</p>
 <p>Let’s see what an extremely simplified CIFAR10 training looks like:</p>
 <div class="literal-block-wrapper docutils container" id="id1">
-<div class="code-block-caption"><span class="caption-text">net.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
+<div class="code-block-caption"><span class="caption-text">simple_network.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">15</span><span class="kn">import</span> <span class="nn">torch</span>
 <span class="linenos">16</span><span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
 <span class="linenos">17</span><span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">F</span>
@@ -354,7 +354,7 @@ architecture are modified from
 </div>
 </div>
 <p>This <code class="docutils literal notranslate"><span class="pre">SimpleNetwork</span></code> class is your convolutional neural network to train with the CIFAR10 dataset.
-This is not related to NVIDIA FLARE, so we implement it in a file called <code class="docutils literal notranslate"><span class="pre">net.py</span></code>.</p>
+This is not related to NVIDIA FLARE, so we implement it in a file called <code class="docutils literal notranslate"><span class="pre">simple_network.py</span></code>.</p>
 </div>
 <div class="section" id="dataset-setup">
 <h3>Dataset &amp; Setup<a class="headerlink" href="#dataset-setup" title="Permalink to this headline">¶</a></h3>
@@ -365,56 +365,72 @@ For simplicity’s sake, you can download the same CIFAR10 dataset from the Inte
 Additionally, you need to set up the optimizer, loss function and transform to process the data.
 You can think of all of this code as part of your local training loop, as every deep learning training has a similar setup.</p>
 <p>Since you will encapsulate every training-related step in the <code class="docutils literal notranslate"><span class="pre">Cifar10Trainer</span></code> class, let’s put this preparation stage into the <code class="docutils literal notranslate"><span class="pre">__init__</span></code> method:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">35</span><span class="k">class</span> <span class="nc">Cifar10Trainer</span><span class="p">(</span><span class="n">Executor</span><span class="p">):</span>
-<span class="linenos">36</span>
-<span class="linenos">37</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">train_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_TRAIN</span><span class="p">,</span>
-<span class="linenos">38</span>                 <span class="n">submit_model_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_SUBMIT_MODEL</span><span class="p">,</span> <span class="n">exclude_vars</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="linenos">39</span>        <span class="nb">super</span><span class="p">(</span><span class="n">Cifar10Trainer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-<span class="linenos">40</span>
-<span class="linenos">41</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_train_task_name</span> <span class="o">=</span> <span class="n">train_task_name</span>
-<span class="linenos">42</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span> <span class="o">=</span> <span class="n">submit_model_task_name</span>
-<span class="linenos">43</span>
-<span class="linenos">44</span>        <span class="c1"># Training setup</span>
-<span class="linenos">45</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">SimpleNetwork</span><span class="p">()</span>
-<span class="linenos">46</span>        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda:0&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-<span class="linenos">47</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-<span class="linenos">48</span>        <span class="bp">self</span><span class="o">.</span><span class="n">loss</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">CrossEntropyLoss</span><span class="p">()</span>
-<span class="linenos">49</span>        <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">SGD</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
-<span class="linenos">50</span>        <span class="bp">self</span><span class="o">.</span><span class="n">lr</span> <span class="o">=</span> <span class="n">lr</span>
-<span class="linenos">51</span>        <span class="bp">self</span><span class="o">.</span><span class="n">transforms</span> <span class="o">=</span> <span class="n">transforms</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span>
-<span class="linenos">52</span>            <span class="n">transforms</span><span class="o">.</span><span class="n">ToTensor</span><span class="p">(),</span>
-<span class="linenos">53</span>            <span class="n">transforms</span><span class="o">.</span><span class="n">Normalize</span><span class="p">((</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)),</span>
-<span class="linenos">54</span>        <span class="p">])</span>
-<span class="linenos">55</span>        <span class="bp">self</span><span class="o">.</span><span class="n">epochs</span> <span class="o">=</span> <span class="n">epochs</span>
-<span class="linenos">56</span>        <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="o">=</span> <span class="n">exclude_vars</span>
-<span class="linenos">57</span>
-<span class="linenos">58</span>        <span class="c1"># Cifar10 dataset for training.</span>
-<span class="linenos">59</span>        <span class="bp">self</span><span class="o">.</span><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">torchvision</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">CIFAR10</span><span class="p">(</span><span class="n">root</span><span class="o">=</span><span class="s1">&#39;~/data&#39;</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transforms</span><span class="p">,</span>
-<span class="linenos">60</span>                                                          <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="linenos">61</span>        <span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span>
-<span class="linenos">62</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span>
-<span class="linenos">63</span>        <span class="p">)</span>
-<span class="linenos">64</span>        <span class="bp">self</span><span class="o">.</span><span class="n">n_iterations</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span><span class="p">)</span>
-<span class="linenos">65</span>
-<span class="linenos">66</span>        <span class="c1"># # Setup the persistence manager to save PT model.</span>
-<span class="linenos">67</span>        <span class="bp">self</span><span class="o">.</span><span class="n">default_train_conf</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;train&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">}}</span>
-<span class="linenos">68</span>        <span class="bp">self</span><span class="o">.</span><span class="n">persistence_manager</span> <span class="o">=</span> <span class="n">PTModelPersistenceFormatManager</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
-<span class="linenos">69</span>                                                                   <span class="n">default_train_conf</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">default_train_conf</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">37</span><span class="k">class</span> <span class="nc">Cifar10Trainer</span><span class="p">(</span><span class="n">Executor</span><span class="p">):</span>
+<span class="linenos">38</span>
+<span class="linenos">39</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">train_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_TRAIN</span><span class="p">,</span>
+<span class="linenos">40</span>                 <span class="n">submit_model_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_SUBMIT_MODEL</span><span class="p">,</span> <span class="n">exclude_vars</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="linenos">41</span>        <span class="sd">&quot;&quot;&quot;Cifar10 Trainer handles train and submit_model tasks. During train_task, it trains a</span>
+<span class="linenos">42</span><span class="sd">        simple network on CIFAR10 dataset. For submit_model task, it sends the locally trained model</span>
+<span class="linenos">43</span><span class="sd">        (if present) to the server.</span>
+<span class="linenos">44</span>
+<span class="linenos">45</span><span class="sd">        Args:</span>
+<span class="linenos">46</span><span class="sd">            lr (float, optional): Learning rate. Defaults to 0.01</span>
+<span class="linenos">47</span><span class="sd">            epochs (int, optional): Epochs. Defaults to 5</span>
+<span class="linenos">48</span><span class="sd">            train_task_name (str, optional): Task name for train task. Defaults to &quot;train&quot;.</span>
+<span class="linenos">49</span><span class="sd">            submit_model_task_name (str, optional): Task name for submit model. Defaults to &quot;submit_model&quot;.</span>
+<span class="linenos">50</span><span class="sd">            exclude_vars (list): List of variables to exclude during model loading.</span>
+<span class="linenos">51</span><span class="sd">        &quot;&quot;&quot;</span>
+<span class="linenos">52</span>        <span class="nb">super</span><span class="p">(</span><span class="n">Cifar10Trainer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="linenos">53</span>
+<span class="linenos">54</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_lr</span> <span class="o">=</span> <span class="n">lr</span>
+<span class="linenos">55</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_epochs</span> <span class="o">=</span> <span class="n">epochs</span>
+<span class="linenos">56</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_train_task_name</span> <span class="o">=</span> <span class="n">train_task_name</span>
+<span class="linenos">57</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span> <span class="o">=</span> <span class="n">submit_model_task_name</span>
+<span class="linenos">58</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_exclude_vars</span> <span class="o">=</span> <span class="n">exclude_vars</span>
+<span class="linenos">59</span>
+<span class="linenos">60</span>        <span class="c1"># Training setup</span>
+<span class="linenos">61</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">SimpleNetwork</span><span class="p">()</span>
+<span class="linenos">62</span>        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda:0&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="linenos">63</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+<span class="linenos">64</span>        <span class="bp">self</span><span class="o">.</span><span class="n">loss</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">CrossEntropyLoss</span><span class="p">()</span>
+<span class="linenos">65</span>        <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="n">SGD</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
+<span class="linenos">66</span>
+<span class="linenos">67</span>        <span class="c1"># Create Cifar10 dataset for training.</span>
+<span class="linenos">68</span>        <span class="n">transforms</span> <span class="o">=</span> <span class="n">Compose</span><span class="p">([</span>
+<span class="linenos">69</span>            <span class="n">ToTensor</span><span class="p">(),</span>
+<span class="linenos">70</span>            <span class="n">Normalize</span><span class="p">((</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)),</span>
+<span class="linenos">71</span>        <span class="p">])</span>
+<span class="linenos">72</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_train_dataset</span> <span class="o">=</span> <span class="n">CIFAR10</span><span class="p">(</span><span class="n">root</span><span class="o">=</span><span class="s1">&#39;~/data&#39;</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transforms</span><span class="p">,</span>
+<span class="linenos">73</span>                                      <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">74</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_train_dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">75</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_n_iterations</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_train_loader</span><span class="p">)</span>
+<span class="linenos">76</span>
+<span class="linenos">77</span>        <span class="c1"># Setup the persistence manager to save PT model.</span>
+<span class="linenos">78</span>        <span class="c1"># The default training configuration is used by persistence manager</span>
+<span class="linenos">79</span>        <span class="c1"># in case no initial model is found.</span>
+<span class="linenos">80</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_default_train_conf</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;train&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">}}</span>
+<span class="linenos">81</span>        <span class="bp">self</span><span class="o">.</span><span class="n">persistence_manager</span> <span class="o">=</span> <span class="n">PTModelPersistenceFormatManager</span><span class="p">(</span>
+<span class="linenos">82</span>            <span class="n">data</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span> <span class="n">default_train_conf</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_default_train_conf</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="local-train">
 <h3>Local Train<a class="headerlink" href="#local-train" title="Permalink to this headline">¶</a></h3>
 <p>Now that you have your network and dataset setup, in the <code class="docutils literal notranslate"><span class="pre">Cifar10Trainer</span></code> class let’s also implement a local training loop in a method called <code class="docutils literal notranslate"><span class="pre">local_train</span></code>:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span> <span class="nf">local_train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span> <span class="nf">local_train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">):</span>
         <span class="c1"># Set the model weights</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state_dict</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
 
         <span class="c1"># Basic training</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs</span><span class="p">):</span>
-            <span class="n">running_loss</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_epochs</span><span class="p">):</span>
+            <span class="n">running_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_train_loader</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="c1"># If abort_signal is triggered, we simply return.</span>
+                    <span class="c1"># The outside function will check it again and decide steps to take.</span>
+                    <span class="k">return</span>
+
                 <span class="n">images</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">batch</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="n">batch</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
 
@@ -425,7 +441,7 @@ You can think of all of this code as part of your local training loop, as every 
 
                 <span class="n">running_loss</span> <span class="o">+=</span> <span class="p">(</span><span class="n">cost</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">/</span><span class="n">images</span><span class="o">.</span><span class="n">size</span><span class="p">()[</span><span class="mi">0</span><span class="p">])</span>
                 <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">3000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Epoch: </span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs</span><span class="si">}</span><span class="s2">, Iteration: </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">, &quot;</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Epoch: </span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_epochs</span><span class="si">}</span><span class="s2">, Iteration: </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">, &quot;</span>
                                           <span class="sa">f</span><span class="s2">&quot;Loss: </span><span class="si">{</span><span class="n">running_loss</span><span class="o">/</span><span class="mi">3000</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
                     <span class="n">running_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
 </pre></div>
@@ -454,24 +470,27 @@ The type of data passed between the server and the clients, and the computations
         <span class="k">try</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">task_name</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_train_task_name</span><span class="p">:</span>
                 <span class="c1"># Get model weights</span>
-                <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
-
-                <span class="c1"># Check if dxo is valid.</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dxo</span><span class="p">,</span> <span class="n">DXO</span><span class="p">):</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;dxo excepted type DXO. Got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">dxo</span><span class="p">)</span><span class="si">}</span><span class="s2"> instead.&quot;</span><span class="p">)</span>
-                    <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
-                    <span class="k">return</span> <span class="n">shareable</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
+                <span class="k">except</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Unable to extract dxo from shareable.&quot;</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_TASK_DATA</span><span class="p">)</span>
 
                 <span class="c1"># Ensure data kind is weights.</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data_kind</span> <span class="o">==</span> <span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;data_kind expected WEIGHTS but got </span><span class="si">{</span><span class="n">dxo</span><span class="o">.</span><span class="n">data_kind</span><span class="si">}</span><span class="s2"> instead.&quot;</span><span class="p">)</span>
-                    <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
-                    <span class="k">return</span> <span class="n">shareable</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;data_kind expected WEIGHTS but got </span><span class="si">{</span><span class="n">dxo</span><span class="o">.</span><span class="n">data_kind</span><span class="si">}</span><span class="s2"> instead.&quot;</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_TASK_DATA</span><span class="p">)</span>
 
                 <span class="c1"># Convert weights to tensor. Run training</span>
                 <span class="n">torch_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">local_train</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">torch_weights</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">local_train</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">torch_weights</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">)</span>
 
+                <span class="c1"># Check the abort_signal after training.</span>
+                <span class="c1"># local_train returns early if abort_signal is triggered.</span>
+                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+
+                <span class="c1"># Save the local model after training.</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">save_local_model</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
 
                 <span class="c1"># Get the new state dict and send as weights</span>
@@ -479,7 +498,7 @@ The type of data passed between the server and the clients, and the computations
                 <span class="n">new_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">new_weights</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
                 <span class="n">outgoing_dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">new_weights</span><span class="p">,</span>
-                                   <span class="n">meta</span><span class="o">=</span><span class="p">{</span><span class="n">MetaKey</span><span class="o">.</span><span class="n">NUM_STEPS_CURRENT_ROUND</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_iterations</span><span class="p">})</span>
+                                   <span class="n">meta</span><span class="o">=</span><span class="p">{</span><span class="n">MetaKey</span><span class="o">.</span><span class="n">NUM_STEPS_CURRENT_ROUND</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_n_iterations</span><span class="p">})</span>
                 <span class="k">return</span> <span class="n">outgoing_dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
             <span class="k">elif</span> <span class="n">task_name</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_submit_model_task_name</span><span class="p">:</span>
                 <span class="c1"># Load local model</span>
@@ -489,14 +508,10 @@ The type of data passed between the server and the clients, and the computations
                 <span class="n">dxo</span> <span class="o">=</span> <span class="n">model_learnable_to_dxo</span><span class="p">(</span><span class="n">ml</span><span class="p">)</span>
                 <span class="k">return</span> <span class="n">dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">shareable</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
-                <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">)</span>
-                <span class="k">return</span> <span class="n">shareable</span>
+                <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">)</span>
         <span class="k">except</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Exception in simple trainer.&quot;</span><span class="p">)</span>
-            <span class="n">shareable</span> <span class="o">=</span> <span class="n">Shareable</span><span class="p">()</span>
-            <span class="n">shareable</span><span class="o">.</span><span class="n">set_return_code</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">shareable</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>The concept of <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> is described in <a class="reference internal" href="../programming_guide/shareable.html#shareable"><span class="std std-ref">shareable</span></a>. Essentially, every
@@ -583,7 +598,7 @@ be addressing that in a later example.</p>
 <span class="linenos">12</span>      <span class="nt">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;PTFileModelPersistor&quot;</span><span class="p">,</span>
 <span class="linenos">13</span>      <span class="nt">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
 <span class="linenos">14</span>        <span class="nt">&quot;model&quot;</span><span class="p">:</span> <span class="p">{</span>
-<span class="linenos">15</span>          <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;net.SimpleNetwork&quot;</span>
+<span class="linenos">15</span>          <span class="nt">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;simple_network.SimpleNetwork&quot;</span>
 <span class="linenos">16</span>        <span class="p">}</span>
 <span class="linenos">17</span>      <span class="p">}</span>
 <span class="linenos">18</span>    <span class="p">},</span>
@@ -655,16 +670,12 @@ code is all open source now, so feel free to study and use it as inspiration to 
 <p>Now you must set up a local environment and generate packages to simulate the server, clients, and admin.</p>
 <div class="section" id="setting-up-the-application-environment">
 <h3>Setting Up the Application Environment<a class="headerlink" href="#setting-up-the-application-environment" title="Permalink to this headline">¶</a></h3>
-<p>This command generates a poc folder with server, one client and one admin:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ poc
+<p>This command generates a poc folder with server, two clients, and one admin:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ poc -n <span class="m">2</span>
 </pre></div>
 </div>
-<p>Here we duplicate the client folder into two folders to create two clients, site-1 and site-2:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ cp -r poc/client poc/site-1
-$ cp -r poc/client poc/site-2
-</pre></div>
-</div>
-<p>Finally, we copy necessary files (the exercise code) to a working folder:</p>
+<p>Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
+folder for the admin):</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ mkdir -p poc/admin/transfer
 $ cp -rf examples/* poc/admin/transfer
 </pre></div>
@@ -677,11 +688,11 @@ therefore have to start the server first:</p>
 </div>
 <p>Once the server is running you can start the clients in different terminals.
 Open a new terminal and start the first client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-1/startup/start.sh site-1 localhost
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-1/startup/start.sh
 </pre></div>
 </div>
 <p>Open another terminal and start the second client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-2/startup/start.sh site-2 localhost
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-2/startup/start.sh
 </pre></div>
 </div>
 <p>In one last terminal, start the admin:</p>

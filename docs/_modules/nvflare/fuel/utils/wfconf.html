@@ -251,6 +251,7 @@
 <span class="kn">import</span> <span class="nn">json</span>
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
 
 <span class="kn">from</span> <span class="nn">nvflare.fuel.common.excepts</span> <span class="kn">import</span> <span class="n">ConfigError</span>
 
@@ -313,8 +314,8 @@
         <span class="n">cmd_vars</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
         <span class="n">env_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
         <span class="n">wf_config_file_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-        <span class="n">base_pkgs</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span>
-        <span class="n">module_names</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">base_pkgs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">module_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
         <span class="n">exclude_libs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="n">default_vars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">num_passes</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>

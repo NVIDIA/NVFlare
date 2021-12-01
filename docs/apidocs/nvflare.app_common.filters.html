@@ -275,7 +275,15 @@
 <dt class="sig sig-object py" id="nvflare.app_common.filters.convert_weights.ConvertWeights">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ConvertWeights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">direction</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/filters/convert_weights.html#ConvertWeights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.convert_weights.ConvertWeights" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.filter.Filter" title="nvflare.apis.filter.Filter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.filter.Filter</span></code></a></p>
-<p>This filter converts from</p>
+<p>Convert WEIGHTS to WEIGHT_DIFF or vice versa</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>direction</strong> (<em>str</em>) – control conversion direction.  Either weights_to_diff or diff_to_weights.</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><strong>ValueError</strong> – when the direction string is neither weights_to_diff nor diff_to_weights</p>
+</dd>
+</dl>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.convert_weights.ConvertWeights.DIFF_TO_WEIGHTS">
 <span class="sig-name descname"><span class="pre">DIFF_TO_WEIGHTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'diff_to_weights'</span></em><a class="headerlink" href="#nvflare.app_common.filters.convert_weights.ConvertWeights.DIFF_TO_WEIGHTS" title="Permalink to this definition">¶</a></dt>
@@ -289,18 +297,22 @@
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.convert_weights.ConvertWeights.process">
 <span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/filters/convert_weights.html#ConvertWeights.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.convert_weights.ConvertWeights.process" title="Permalink to this definition">¶</a></dt>
-<dd><blockquote>
-<div><p>filter process apply to the Shareable object.</p>
-</div></blockquote>
+<dd><p>Called by runners to perform weight conversion</p>
+<p>When the return code of shareable is not ReturnCode.OK, this
+function will not perform any process and returns the shareable back.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>shareable</strong> – shareable</p></li>
-<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+<li><p><strong>shareable</strong> (<em>Shareable</em>) – shareable must conform to DXO format.</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – this context must include TASK_DATA, which is another shareable containing base weights.
+If not, the input shareable will be returned.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>a Shareable object</p>
+<dd class="field-even"><p>a shareable with converted weights</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Shareable</p>
 </dd>
 </dl>
 </dd></dl>
@@ -314,7 +326,7 @@
 <dt class="sig sig-object py" id="nvflare.app_common.filters.exclude_vars.ExcludeVars">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ExcludeVars</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exclude_vars</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/filters/exclude_vars.html#ExcludeVars"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.exclude_vars.ExcludeVars" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.filter.Filter" title="nvflare.apis.filter.Filter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.filter.Filter</span></code></a></p>
-<p>Exclude/Remove variables from Sharable</p>
+<p>Exclude/Remove variables from Shareable</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>exclude_vars</strong> (<em>Union</em><em>[</em><em>List</em><em>[</em><em>str</em><em>]</em><em>, </em><em>str</em><em>, </em><em>None</em><em>] </em><em>, </em><em>optional</em>) – variables/layer names to be excluded.</p>
@@ -330,18 +342,21 @@ if not provided or other formats the Shareable remains unchanged.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.exclude_vars.ExcludeVars.process">
 <span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/filters/exclude_vars.html#ExcludeVars.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.exclude_vars.ExcludeVars.process" title="Permalink to this definition">¶</a></dt>
-<dd><blockquote>
-<div><p>filter process apply to the Shareable object.</p>
-</div></blockquote>
+<dd><p>Called by upper layer to remove variables in weights/weight_diff dictionary</p>
+<p>When the return code of shareable is not ReturnCode.OK, this
+function will not perform any process and returns the shareable back.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>shareable</strong> – shareable</p></li>
-<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+<li><p><strong>shareable</strong> (<em>Shareable</em>) – shareable must conform to DXO format.</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – only used for logging.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>a Shareable object</p>
+<dd class="field-even"><p>a shareable with excluded weights</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Shareable</p>
 </dd>
 </dl>
 </dd></dl>
@@ -355,8 +370,17 @@ if not provided or other formats the Shareable remains unchanged.</p>
 <dt class="sig sig-object py" id="nvflare.app_common.filters.percentile_privacy.PercentilePrivacy">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PercentilePrivacy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">percentile</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/filters/percentile_privacy.html#PercentilePrivacy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.percentile_privacy.PercentilePrivacy" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.filter.Filter" title="nvflare.apis.filter.Filter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.filter.Filter</span></code></a></p>
-<p>implementation of “largest percentile to share” privacy preserving policy</p>
+<p>Implementation of “largest percentile to share” privacy preserving policy</p>
 <p>Shokri and Shmatikov, Privacy-preserving deep learning, CCS ‘15</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>percentile</strong> (<em>int</em><em>, </em><em>optional</em>) – Only abs diff greater than this percentile is updated.
+Allowed range 0..100.  Defaults to 10.</p></li>
+<li><p><strong>gamma</strong> (<em>float</em><em>, </em><em>optional</em>) – The upper limit to truncate abs values of weight diff. Defaults to 0.01.  Any weight diff with abs&lt;gamma will become 0.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.percentile_privacy.PercentilePrivacy.process">
 <span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/filters/percentile_privacy.html#PercentilePrivacy.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.percentile_privacy.PercentilePrivacy.process" title="Permalink to this definition">¶</a></dt>
@@ -371,7 +395,10 @@ the percentile value</p>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>Shareable</p>
+<dd class="field-even"><p>a shareable containing the truncated weight diff</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Shareable</p>
 </dd>
 </dl>
 </dd></dl>
@@ -385,7 +412,20 @@ the percentile value</p>
 <dt class="sig sig-object py" id="nvflare.app_common.filters.svt_privacy.SVTPrivacy">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">SVTPrivacy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fraction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epsilon</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noise_var</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/filters/svt_privacy.html#SVTPrivacy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.svt_privacy.SVTPrivacy" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.filter.Filter" title="nvflare.apis.filter.Filter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.filter.Filter</span></code></a></p>
-<p>implementation of the standard SVT differential privacy algorithm.</p>
+<p>implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.</p>
+<p>lambda_rho = gamma * 2.0 / epsilon
+threshold = tau + np.random.laplace(scale=lambda_rho)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fraction</strong> (<em>float</em><em>, </em><em>optional</em>) – used to determine dataset threshold. Defaults to 0.1.</p></li>
+<li><p><strong>epsilon</strong> (<em>float</em><em>, </em><em>optional</em>) – Defaults to 0.1.</p></li>
+<li><p><strong>noise_var</strong> (<em>float</em><em>, </em><em>optional</em>) – additive noise. Defaults to 0.1.</p></li>
+<li><p><strong>gamma</strong> (<em>float</em><em>, </em><em>optional</em>) – Defaults to 1e-5.</p></li>
+<li><p><strong>tau</strong> (<em>float</em><em>, </em><em>optional</em>) – Defaults to 1e-6.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.svt_privacy.SVTPrivacy.process">
 <span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/filters/svt_privacy.html#SVTPrivacy.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.svt_privacy.SVTPrivacy.process" title="Permalink to this definition">¶</a></dt>
@@ -398,7 +438,10 @@ the percentile value</p>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>Shareable</p>
+<dd class="field-even"><p>updated shareable</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Shareable</p>
 </dd>
 </dl>
 </dd></dl>
@@ -412,7 +455,7 @@ the percentile value</p>
 <dt class="sig sig-object py" id="nvflare.app_common.filters.ExcludeVars">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">ExcludeVars</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exclude_vars</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/filters/exclude_vars.html#ExcludeVars"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.ExcludeVars" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.filter.Filter" title="nvflare.apis.filter.Filter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.filter.Filter</span></code></a></p>
-<p>Exclude/Remove variables from Sharable</p>
+<p>Exclude/Remove variables from Shareable</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>exclude_vars</strong> (<em>Union</em><em>[</em><em>List</em><em>[</em><em>str</em><em>]</em><em>, </em><em>str</em><em>, </em><em>None</em><em>] </em><em>, </em><em>optional</em>) – variables/layer names to be excluded.</p>
@@ -428,18 +471,21 @@ if not provided or other formats the Shareable remains unchanged.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.ExcludeVars.process">
 <span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/filters/exclude_vars.html#ExcludeVars.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.ExcludeVars.process" title="Permalink to this definition">¶</a></dt>
-<dd><blockquote>
-<div><p>filter process apply to the Shareable object.</p>
-</div></blockquote>
+<dd><p>Called by upper layer to remove variables in weights/weight_diff dictionary</p>
+<p>When the return code of shareable is not ReturnCode.OK, this
+function will not perform any process and returns the shareable back.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>shareable</strong> – shareable</p></li>
-<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+<li><p><strong>shareable</strong> (<em>Shareable</em>) – shareable must conform to DXO format.</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – only used for logging.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>a Shareable object</p>
+<dd class="field-even"><p>a shareable with excluded weights</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Shareable</p>
 </dd>
 </dl>
 </dd></dl>
@@ -450,8 +496,17 @@ if not provided or other formats the Shareable remains unchanged.</p>
 <dt class="sig sig-object py" id="nvflare.app_common.filters.PercentilePrivacy">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">PercentilePrivacy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">percentile</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/filters/percentile_privacy.html#PercentilePrivacy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.PercentilePrivacy" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.filter.Filter" title="nvflare.apis.filter.Filter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.filter.Filter</span></code></a></p>
-<p>implementation of “largest percentile to share” privacy preserving policy</p>
+<p>Implementation of “largest percentile to share” privacy preserving policy</p>
 <p>Shokri and Shmatikov, Privacy-preserving deep learning, CCS ‘15</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>percentile</strong> (<em>int</em><em>, </em><em>optional</em>) – Only abs diff greater than this percentile is updated.
+Allowed range 0..100.  Defaults to 10.</p></li>
+<li><p><strong>gamma</strong> (<em>float</em><em>, </em><em>optional</em>) – The upper limit to truncate abs values of weight diff. Defaults to 0.01.  Any weight diff with abs&lt;gamma will become 0.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.PercentilePrivacy.process">
 <span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/filters/percentile_privacy.html#PercentilePrivacy.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.PercentilePrivacy.process" title="Permalink to this definition">¶</a></dt>
@@ -466,7 +521,10 @@ the percentile value</p>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>Shareable</p>
+<dd class="field-even"><p>a shareable containing the truncated weight diff</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Shareable</p>
 </dd>
 </dl>
 </dd></dl>
@@ -477,7 +535,20 @@ the percentile value</p>
 <dt class="sig sig-object py" id="nvflare.app_common.filters.SVTPrivacy">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">SVTPrivacy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fraction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epsilon</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noise_var</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/filters/svt_privacy.html#SVTPrivacy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.SVTPrivacy" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.apis.html#nvflare.apis.filter.Filter" title="nvflare.apis.filter.Filter"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.apis.filter.Filter</span></code></a></p>
-<p>implementation of the standard SVT differential privacy algorithm.</p>
+<p>implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.</p>
+<p>lambda_rho = gamma * 2.0 / epsilon
+threshold = tau + np.random.laplace(scale=lambda_rho)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fraction</strong> (<em>float</em><em>, </em><em>optional</em>) – used to determine dataset threshold. Defaults to 0.1.</p></li>
+<li><p><strong>epsilon</strong> (<em>float</em><em>, </em><em>optional</em>) – Defaults to 0.1.</p></li>
+<li><p><strong>noise_var</strong> (<em>float</em><em>, </em><em>optional</em>) – additive noise. Defaults to 0.1.</p></li>
+<li><p><strong>gamma</strong> (<em>float</em><em>, </em><em>optional</em>) – Defaults to 1e-5.</p></li>
+<li><p><strong>tau</strong> (<em>float</em><em>, </em><em>optional</em>) – Defaults to 1e-6.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.app_common.filters.SVTPrivacy.process">
 <span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shareable</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">nvflare.apis.shareable.Shareable</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/filters/svt_privacy.html#SVTPrivacy.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.filters.SVTPrivacy.process" title="Permalink to this definition">¶</a></dt>
@@ -490,7 +561,10 @@ the percentile value</p>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>Shareable</p>
+<dd class="field-even"><p>updated shareable</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Shareable</p>
 </dd>
 </dl>
 </dd></dl>

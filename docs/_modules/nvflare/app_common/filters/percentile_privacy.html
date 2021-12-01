@@ -257,13 +257,17 @@
 
 
 <div class="viewcode-block" id="PercentilePrivacy"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.filters.html#nvflare.app_common.filters.percentile_privacy.PercentilePrivacy">[docs]</a><span class="k">class</span> <span class="nc">PercentilePrivacy</span><span class="p">(</span><span class="n">Filter</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    implementation of &quot;largest percentile to share&quot; privacy preserving policy</span>
-
-<span class="sd">    Shokri and Shmatikov, Privacy-preserving deep learning, CCS &#39;15</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">percentile</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">0.01</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Implementation of &quot;largest percentile to share&quot; privacy preserving policy</span>
+
+<span class="sd">        Shokri and Shmatikov, Privacy-preserving deep learning, CCS &#39;15</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            percentile (int, optional): Only abs diff greater than this percentile is updated.</span>
+<span class="sd">              Allowed range 0..100.  Defaults to 10.</span>
+<span class="sd">            gamma (float, optional): The upper limit to truncate abs values of weight diff. Defaults to 0.01.  Any weight diff with abs&lt;gamma will become 0.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
         <span class="c1"># must be in 0..100, only update abs diff greater than percentile</span>
@@ -281,7 +285,7 @@
 <span class="sd">            fl_ctx: context provided by workflow</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            Shareable</span>
+<span class="sd">            Shareable: a shareable containing the truncated weight diff</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;inside filter&quot;</span><span class="p">)</span>

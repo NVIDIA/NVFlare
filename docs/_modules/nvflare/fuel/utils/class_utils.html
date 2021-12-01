@@ -250,6 +250,7 @@
 <span class="kn">import</span> <span class="nn">importlib</span>
 <span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">pkgutil</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
 
 
 <div class="viewcode-block" id="get_class"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.html#nvflare.fuel.utils.class_utils.get_class">[docs]</a><span class="k">def</span> <span class="nf">get_class</span><span class="p">(</span><span class="n">class_path</span><span class="p">):</span>
@@ -310,7 +311,7 @@
 
 
 <div class="viewcode-block" id="ModuleScanner"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.html#nvflare.fuel.utils.class_utils.ModuleScanner">[docs]</a><span class="k">class</span> <span class="nc">ModuleScanner</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_pkgs</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">module_names</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">exclude_libs</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_pkgs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">module_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">exclude_libs</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">base_pkgs</span> <span class="o">=</span> <span class="n">base_pkgs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">module_names</span> <span class="o">=</span> <span class="n">module_names</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exclude_libs</span> <span class="o">=</span> <span class="n">exclude_libs</span>

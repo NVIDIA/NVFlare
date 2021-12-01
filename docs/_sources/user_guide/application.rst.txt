@@ -42,7 +42,7 @@ Example:
     task_data_filters, "What filters to apply to data leaving server, see :ref:`filters`"
     task_result_filters, "What filters to apply to data arriving to server, see :ref:`filters`"
     components, All of the Components to use
-    workflows, "What Workflows to use, see :ref:`Controllers and Controller API`"
+    workflows, "What Workflows to use, see :ref:`controllers`"
 
 ***********************
 FL client configuration
