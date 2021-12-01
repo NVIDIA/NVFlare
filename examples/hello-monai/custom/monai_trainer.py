@@ -16,7 +16,7 @@ from typing import Dict
 
 import numpy as np
 import torch
-from nvflare.apis.dxo import DXO, DataKind, from_shareable, MetaKey
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -58,9 +58,12 @@ class MONAITrainer(Executor):
         """
         # Initialize train and evaluation engines.
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        dataset_root = workspace.get_root_dir()
         fl_args = fl_ctx.get_prop(FLContextKey.ARGS)
-        num_gpus = fl_ctx.get_prop(AppConstants.NUMBER_OF_GPUS, 1)
-        self.multi_gpu = num_gpus > 1
+        # will update multi-gpu supports later
+        # num_gpus = fl_ctx.get_prop(AppConstants.NUMBER_OF_GPUS, 1)
+        # self.multi_gpu = num_gpus > 1
         self.client_name = fl_ctx.get_identity_name()
         self.log_info(
             fl_ctx,
@@ -68,8 +71,8 @@ class MONAITrainer(Executor):
         )
         conf = TrainConfiger(
             app_root=app_root,
+            dataset_root=dataset_root,
             wf_config_file_name=fl_args.train_config,
-            local_rank=fl_args.local_rank,
         )
         conf.configure()
 
@@ -90,8 +93,6 @@ class MONAITrainer(Executor):
 
         """
         net = self.train_engine.network
-        # if self.multi_gpu:
-        #     net = net.module
 
         local_var_dict = net.state_dict()
         model_keys = model_weights.keys()
@@ -99,9 +100,15 @@ class MONAITrainer(Executor):
             if var_name in model_keys:
                 weights = model_weights[var_name]
                 try:
-                    local_var_dict[var_name] = torch.as_tensor(np.reshape(weights, local_var_dict[var_name].shape))
+                    local_var_dict[var_name] = torch.as_tensor(
+                        np.reshape(weights, local_var_dict[var_name].shape)
+                    )
                 except Exception as e:
-                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
+                    raise ValueError(
+                        "Convert weight from {} failed with error: {}".format(
+                            var_name, str(e)
+                        )
+                    )
 
         net.load_state_dict(local_var_dict)
 
@@ -111,15 +118,17 @@ class MONAITrainer(Executor):
         The extracted weights will be converted into a numpy array based dict.
         """
         net = self.train_engine.network
-        # if self.multi_gpu:
-        #     net = net.module
         local_state_dict = net.state_dict()
         local_model_dict = {}
         for var_name in local_state_dict:
             try:
                 local_model_dict[var_name] = local_state_dict[var_name].cpu().numpy()
             except Exception as e:
-                raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
+                raise ValueError(
+                    "Convert weight from {} failed with error: {}".format(
+                        var_name, str(e)
+                    )
+                )
 
         return local_model_dict
 
@@ -148,12 +157,8 @@ class MONAITrainer(Executor):
 
         1) `START_RUN`. At the start point of a FL experiment,
         necessary components should be initialized.
-        2) `ABORT_TASK`, when this event is fired, the running engines
-        should be terminated (this example uses MONAI engines to do train
-        and validation, and the engines can be terminated from another thread.
-        If the solution does not provide any way to interrupt/end the execution,
-        handle this event is not feasible).
-
+        2) `END_RUN`, when this event is fired, the running engines
+        should be terminated.
 
         Args:
             event_type: the type of event that will be fired. In MONAITrainer,
@@ -177,7 +182,13 @@ class MONAITrainer(Executor):
         shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
         return shareable
 
-    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def execute(
+        self,
+        task_name: str,
+        shareable: Shareable,
+        fl_ctx: FLContext,
+        abort_signal: Signal,
+    ) -> Shareable:
         """
         This function is an extended function from the super class.
         As a supervised learning based trainer, the execute function will run
@@ -200,13 +211,18 @@ class MONAITrainer(Executor):
             dxo = from_shareable(shareable)
             # check if dxo is valid.
             if not isinstance(dxo, DXO):
-                self.log_exception(fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead.")
+                self.log_exception(
+                    fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead."
+                )
                 shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
                 return shareable
 
             # ensure data kind is weights.
             if not dxo.data_kind == DataKind.WEIGHTS:
-                self.log_exception(fl_ctx, f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.")
+                self.log_exception(
+                    fl_ctx,
+                    f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.",
+                )
                 shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
                 return shareable
 
@@ -216,7 +232,9 @@ class MONAITrainer(Executor):
             self.achieved_meta = dxo.meta
 
             # set engine state max epochs.
-            self.train_engine.state.max_epochs = self.train_engine.state.epoch + self.aggregation_epochs
+            self.train_engine.state.max_epochs = (
+                self.train_engine.state.epoch + self.aggregation_epochs
+            )
             # get current iteration when a round starts
             iter_of_start_time = self.train_engine.state.iteration
 
