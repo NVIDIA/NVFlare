@@ -11,14 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from enum import Enum
 
 from nvflare.apis.fl_component import FLComponent
 
 
 class Widget(FLComponent):
+    """Pre-defined components that address specific needs.
 
-    """
-    A widget is used to address cross-cutting needs of all FL components.
     Some examples of such needs:
         - report current status
         - dynamically change its tunable parameters
@@ -28,7 +28,7 @@ class Widget(FLComponent):
     Each widget is a singleton object that is registered with the Engine with a
     unique ID.
 
-    All widget IDs are documented in the WidgetID class.
+    All built-in widget IDs are documented in the WidgetID class.
 
     """
 
@@ -36,7 +36,7 @@ class Widget(FLComponent):
         FLComponent.__init__(self)
 
 
-class WidgetID(object):
+class WidgetID(Enum, str):
 
     INFO_COLLECTOR = "info_collector"
     COMPONENT_CALLER = "component_caller"
