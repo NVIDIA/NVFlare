@@ -26,6 +26,11 @@ from .widget import Widget
 
 class GroupInfoCollector(object):
     def __init__(self):
+        """Records the information using a dict of dict.
+
+        Note:
+           Key is group name and value is the information dictionary.
+        """
         self.info = {}
 
     def set_info(self, group_name: str, info: dict):
@@ -39,17 +44,6 @@ class GroupInfoCollector(object):
 
 
 class InfoCollector(Widget):
-
-    """
-
-    Info Structure:
-
-        category (dict)
-            group (dict)
-                key/value (dict)
-
-    """
-
     CATEGORY_STATS = "stats"
     CATEGORY_ERROR = "error"
 
@@ -57,7 +51,16 @@ class InfoCollector(Widget):
     CTX_KEY_STATS_COLLECTOR = "info_collector.stats_collector"
 
     def __init__(self):
-        Widget.__init__(self)
+        """A widget for information collection.
+
+
+        Note:
+           self.categories structure:
+                category (dict)
+                    group (dict)
+                        key/value (dict)
+        """
+        super().__init__()
         self.categories = {}
         self.engine = None
 
@@ -110,8 +113,11 @@ class InfoCollector(Widget):
             self.add_error(group_name=group_name, key=key, err=analytic_data.value)
 
     def get_run_stats(self):
-        self.reset_category(self.CATEGORY_STATS)
+        """Gets status for this current run.
 
+        Returns:
+            A dictionary that contains the status for this run.
+        """
         # NOTE: it's important to assign self.engine to a new var!
         # This is because another thread may fire the END_RUN event, which will cause
         # self.engine to be set to None, just after checking it being None and before using it!
@@ -133,54 +139,109 @@ class InfoCollector(Widget):
             coll = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR)
             return coll.info
 
-    def add_info(self, category: str, group_name: str, key: str, value):
-        cat = self.categories.get(category, None)
-        if not cat:
-            cat = dict()
-            self.categories[category] = cat
-        group = cat.get(group_name, None)
+    def add_info(self, category_name: str, group_name: str, key: str, value):
+        """Adds information to the specified category / group.
+
+        Args:
+            category_name (str): The top level distinction is called category.
+            group_name (str): One level down category is called group
+            key (str): The key to be recorded inside the dict.
+            value (str): The value to be recorded inside the dict.
+        """
+        category = self.categories.get(category_name, None)
+        if not category:
+            category = dict()
+            self.categories[category_name] = category
+        group = category.get(group_name, None)
         if not group:
             group = dict()
-            cat[group_name] = group
+            category[group_name] = group
         group[key] = value
 
-    def set_info(self, category: str, group_name: str, info: dict):
-        cat = self.categories.get(category, None)
-        if not cat:
-            cat = dict()
-            self.categories[category] = cat
-        cat[group_name] = info
+    def set_info(self, category_name: str, group_name: str, info: dict):
+        """Sets information to the specified category / group.
 
-    def get_category(self, category: str):
-        return self.categories.get(category, None)
+        Args:
+            category_name (str): The top level distinction is called category.
+            group_name (str): One level down category is called group
+            info (dict): The dict to be recorded.
 
-    def get_group(self, category: str, group_name: str):
-        cat = self.categories.get(category, None)
+        Note:
+            This sets the entire dictionary vs add_info only add a key-value pair.
+        """
+        category = self.categories.get(category_name, None)
+        if not category:
+            category = dict()
+            self.categories[category_name] = category
+        category[group_name] = info
+
+    def get_category(self, category_name: str):
+        """Gets the category dict.
+
+        Args:
+            category_name (str): The name of the category.
+
+        Returns:
+            A dictionary of specified category.
+        """
+        return self.categories.get(category_name, None)
+
+    def get_group(self, category_name: str, group_name: str):
+        """Gets the group dict.
+
+        Args:
+            category_name (str): The name of the category.
+            group_name (str): The name of the group_name.
+
+        Returns:
+            A dictionary of specified category/group.
+        """
+        cat = self.categories.get(category_name, None)
         if not cat:
             return None
         return cat.get(group_name, None)
 
     def reset_all(self):
+        """Resets all information collected."""
         self.categories = {}
 
-    def reset_category(self, category: str):
-        self.categories[category] = {}
+    def reset_category(self, category_name: str):
+        """Resets the specified category information collected.
 
-    def reset_group(self, category: str, group_name: str):
-        cat = self.categories.get(category, None)
+        Args:
+            category_name (str): The name of the category.
+        """
+        self.categories[category_name] = {}
+
+    def reset_group(self, category_name: str, group_name: str):
+        """Resets the specified category/group information collected.
+
+        Args:
+            category_name (str): The name of the category.
+            group_name (str): The name of the group_name.
+        """
+        cat = self.categories.get(category_name, None)
         if not cat:
             return
         cat.get[group_name] = {}
 
-    # some convenience methods
     def add_error(self, group_name: str, key: str, err: str):
+        """Adds error information to error category.
+
+        Args:
+            group_name (str): One level down category is called group
+            key (str): The key to be recorded inside the dict.
+            err (str): The error value to be put in.
+        """
         now = datetime.datetime.now()
         value = "{}: {}".format(now.strftime("%Y-%m-%d %H:%M:%S"), err)
 
-        self.add_info(category=self.CATEGORY_ERROR, group_name=group_name, key=key, value=value)
+        self.add_info(category_name=self.CATEGORY_ERROR, group_name=group_name, key=key, value=value)
 
     def get_errors(self):
+        """Gets the error category information."""
         return self.get_category(self.CATEGORY_ERROR)
 
     def reset_errors(self):
+        """Resets the error category information."""
         self.reset_category(self.CATEGORY_ERROR)
