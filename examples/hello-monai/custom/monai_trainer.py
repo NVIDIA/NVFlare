@@ -157,12 +157,8 @@ class MONAITrainer(Executor):
 
         1) `START_RUN`. At the start point of a FL experiment,
         necessary components should be initialized.
-        2) `ABORT_TASK`, when this event is fired, the running engines
-        should be terminated (this example uses MONAI engines to do train
-        and validation, and the engines can be terminated from another thread.
-        If the solution does not provide any way to interrupt/end the execution,
-        handle this event is not feasible).
-
+        2) `END_RUN`, when this event is fired, the running engines
+        should be terminated.
 
         Args:
             event_type: the type of event that will be fired. In MONAITrainer,
