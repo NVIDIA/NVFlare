@@ -1,4 +1,5 @@
 import os
+from typing import List, Optional
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -18,24 +19,28 @@ FUNCTION_MAPPING = {
 
 
 class TBAnalyticsReceiver(AnalyticsReceiver):
-    """
-    Folder structure:
+    def __init__(self, tb_folder="tb_events", events: Optional[List[str]] = None):
+        """Receives analytic data and saved as TensorBoard.
 
-    #  inside run_XX folder
-    # - workspace
-    #    - run_01 (already created):
-    #        - output_dir (default: tb_events):
-    #           - peer_name_1:
-    #           - peer_name_2:
-    #
-    #    - run_02 (already created):
-    #        - output_dir (default: tb_events):
-    #           - peer_name_1:
-    #           - peer_name_2:
-    #
-    """
+        Args:
+            tb_folder (str): the folder to store tensorboard files.
+            events (optional, List[str]): A list of events to be handled by this receiver.
 
-    def __init__(self, tb_folder="tb_events", events=None):
+        Note:
+            Folder structure:
+
+                 inside run_XX folder
+                - workspace
+                   - run_01 (already created):
+                       - output_dir (default: tb_events):
+                          - peer_name_1:
+                          - peer_name_2:
+
+                   - run_02 (already created):
+                       - output_dir (default: tb_events):
+                          - peer_name_1:
+                          - peer_name_2:
+        """
         super().__init__(events=events)
         self.writer = {}
         self.tb_folder = tb_folder
