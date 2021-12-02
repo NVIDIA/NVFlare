@@ -36,7 +36,7 @@ class Widget(FLComponent):
         FLComponent.__init__(self)
 
 
-class WidgetID(Enum, str):
+class WidgetID(str, Enum):
 
     INFO_COLLECTOR = "info_collector"
     COMPONENT_CALLER = "component_caller"
