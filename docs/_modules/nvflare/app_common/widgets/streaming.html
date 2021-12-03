@@ -234,6 +234,7 @@
             
   <h1>Source code for nvflare.app_common.widgets.streaming</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
 
 <span class="kn">from</span> <span class="nn">nvflare.apis.analytix</span> <span class="kn">import</span> <span class="n">Data</span> <span class="k">as</span> <span class="n">AnalyticsData</span>
 <span class="kn">from</span> <span class="nn">nvflare.apis.analytix</span> <span class="kn">import</span> <span class="n">DataType</span> <span class="k">as</span> <span class="n">AnalyticsDataType</span>
@@ -248,23 +249,65 @@
 
 
 <div class="viewcode-block" id="AnalyticsSender"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender">[docs]</a><span class="k">class</span> <span class="nc">AnalyticsSender</span><span class="p">(</span><span class="n">Widget</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="o">=</span><span class="n">EVENT</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">EVENT</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sends analytic data.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            event (str): The event that corresponding to this send.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">event</span> <span class="o">=</span> <span class="n">event</span>
 
-<div class="viewcode-block" id="AnalyticsSender.write_scalar"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalar">[docs]</a>    <span class="k">def</span> <span class="nf">write_scalar</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">scalar</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<div class="viewcode-block" id="AnalyticsSender.write_scalar"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalar">[docs]</a>    <span class="k">def</span> <span class="nf">write_scalar</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">scalar</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes a scalar.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context info.</span>
+<span class="sd">            tag (str): the tag associated with this value.</span>
+<span class="sd">            scalar (float) : a scalar to write.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">scalar</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="n">AnalyticsDataType</span><span class="o">.</span><span class="n">SCALAR</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="AnalyticsSender.write_scalars"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalars">[docs]</a>    <span class="k">def</span> <span class="nf">write_scalars</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">tag_scalar_dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<div class="viewcode-block" id="AnalyticsSender.write_scalars"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalars">[docs]</a>    <span class="k">def</span> <span class="nf">write_scalars</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">tag_scalar_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes scalars.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context info.</span>
+<span class="sd">            tag (str): the tag associated with this dict.</span>
+<span class="sd">            tag_scalar_dict (dict): A dictionary that contains tag and scalars to write.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">tag_scalar_dict</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="n">AnalyticsDataType</span><span class="o">.</span><span class="n">SCALARS</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="AnalyticsSender.write_image"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_image">[docs]</a>    <span class="k">def</span> <span class="nf">write_image</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">image</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<div class="viewcode-block" id="AnalyticsSender.write_image"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_image">[docs]</a>    <span class="k">def</span> <span class="nf">write_image</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">image</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes an image.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context info.</span>
+<span class="sd">            tag (str): the tag associated with this value.</span>
+<span class="sd">            image: the image to write.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">image</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="n">AnalyticsDataType</span><span class="o">.</span><span class="n">IMAGE</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="AnalyticsSender.write_text"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_text">[docs]</a>    <span class="k">def</span> <span class="nf">write_text</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<div class="viewcode-block" id="AnalyticsSender.write_text"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write_text">[docs]</a>    <span class="k">def</span> <span class="nf">write_text</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes text.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context info.</span>
+<span class="sd">            tag (str): the tag associated with this value.</span>
+<span class="sd">            text: the text to write.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="n">AnalyticsDataType</span><span class="o">.</span><span class="n">TEXT</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="AnalyticsSender.write"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write">[docs]</a>    <span class="k">def</span> <span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">data_type</span><span class="p">:</span> <span class="n">AnalyticsDataType</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="AnalyticsSender.write"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsSender.write">[docs]</a>    <span class="k">def</span> <span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">data_type</span><span class="p">:</span> <span class="n">AnalyticsDataType</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes the analytic data.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context info.</span>
+<span class="sd">            tag (str): the tag associated with this value.</span>
+<span class="sd">            value: the analytic data.</span>
+<span class="sd">            data_type (AnalyticsDataType): analytic data type.</span>
+<span class="sd">            kwargs (dict): additional arguments to be passed into the receiver side&#39;s function.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">FLContext</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;expect fl_ctx to be FLContext, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)))</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">AnalyticsData</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="n">tag</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="n">data_type</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">)</span>
@@ -274,7 +317,12 @@
 
 
 <div class="viewcode-block" id="AnalyticsReceiver"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsReceiver">[docs]</a><span class="k">class</span> <span class="nc">AnalyticsReceiver</span><span class="p">(</span><span class="n">Widget</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">events</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">events</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Receives analytic data.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            events (optional, List[str]): A list of event that this receiver will handled.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">FLComponent</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">events</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">events</span> <span class="o">=</span> <span class="p">[</span><span class="n">EVENT</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;fed.</span><span class="si">{</span><span class="n">EVENT</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span>
@@ -282,14 +330,32 @@
 
 <div class="viewcode-block" id="AnalyticsReceiver.initialize"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsReceiver.initialize">[docs]</a>    <span class="nd">@abstractmethod</span>
     <span class="k">def</span> <span class="nf">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Initializes the receiver.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">pass</span></div>
 
 <div class="viewcode-block" id="AnalyticsReceiver.save"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsReceiver.save">[docs]</a>    <span class="nd">@abstractmethod</span>
     <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">record_origin</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Saves the received data.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context.</span>
+<span class="sd">            shareable (Shareable): the received message.</span>
+<span class="sd">            record_origin (str): the sender of this message / record.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">pass</span></div>
 
 <div class="viewcode-block" id="AnalyticsReceiver.finalize"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsReceiver.finalize">[docs]</a>    <span class="nd">@abstractmethod</span>
     <span class="k">def</span> <span class="nf">finalize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Finalizes the receiver.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx (FLContext): fl context.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">pass</span></div>
 
 <div class="viewcode-block" id="AnalyticsReceiver.handle_event"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.widgets.html#nvflare.app_common.widgets.streaming.AnalyticsReceiver.handle_event">[docs]</a>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
