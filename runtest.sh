@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bash 
 
 # output formatting
 separator=""
@@ -21,6 +21,21 @@ function print_style_fail_msg() {
     echo "Please run ${green}./runtest.sh${noColor} to check errors and fix them." 
 } 
 
+grep -V
+echo "set to +e"
+set +e
+grep -r --include "*.py" -L "# Copyright (c) 2021, NVIDIA CORPORATION." nvflare > no_license.lst
+if [ -s no_license.lst ]; then
+    # The file is not-empty.
+    cat no_license.lst
+    echo "License text not found on the above files."
+    echo "Please fix them."
+    rm -f no_license.lst
+    exit 1
+else
+    echo "All Python files in nvflare have license header"
+    rm -f no_license.lst
+fi
 
 export PWD=$(pwd) && echo $PWD
 export PYTHONPATH=$PWD:$PYTHONPATH && echo $PYTHONPATH
