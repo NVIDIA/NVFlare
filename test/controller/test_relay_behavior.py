@@ -20,8 +20,8 @@ import pytest
 
 from nvflare.apis.controller_spec import SendOrder, TaskCompletionStatus
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-
 from .controller_test import TestController, create_client, create_task, get_ready, launch_task
+from ..utils import skip_if_quick
 
 
 def _process_task_request_test_cases():
@@ -299,6 +299,7 @@ def _get_order_with_task_assignment_timeout_test_cases():
     ]
 
 
+@skip_if_quick
 @pytest.mark.parametrize("method", ["relay", "relay_and_wait"])
 class TestRelayBehavior(TestController):
     @pytest.mark.parametrize("send_order", [SendOrder.ANY, SendOrder.SEQUENTIAL])
@@ -613,6 +614,7 @@ class TestRelayBehavior(TestController):
         assert result.get_header(ReservedHeaderKey.REPLY_IS_LATE)
         controller._check_tasks()
         assert controller.get_num_standing_tasks() == 1
+        self.stop_controller(controller, fl_ctx)
 
     @pytest.mark.parametrize("send_order", [SendOrder.ANY, SendOrder.SEQUENTIAL])
     def test_process_submission_all_client_task_result_timeout(self, method, send_order):
