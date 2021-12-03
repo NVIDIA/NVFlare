@@ -268,7 +268,8 @@
 <span id="controllers"></span><h1>Controllers and Controller API<a class="headerlink" href="#controllers-and-controller-api" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="controller-worker-interactions">
 <h2>Controller/Worker Interactions<a class="headerlink" href="#controller-worker-interactions" title="Permalink to this headline">¶</a></h2>
-<p>NVIDIA FLARE 2.0’s collaborative computing is achieved through the Controller/Worker interactions.</p>
+<p>NVIDIA FLARE 2.0’s collaborative computing is achieved through the Controller/Worker interactions. The following diagram
+shows how the Controller and Worker interact.</p>
 <img alt="../_images/Controller_worker.png" src="../_images/Controller_worker.png" style="height: 300px;" />
 <p>The Controller is a python object that controls or coordinates the Workers to get a job done. The controller is run on
 the FL server (highlighted on the right).</p>
@@ -277,7 +278,6 @@ the FL server (highlighted on the right).</p>
 <p>In its control logic, the Controller assigns tasks to Workers and processes task results from the Workers.</p>
 <p>Workers keep asking for the next task to do, executes the task, and submits results to the Controller, until instructed
 to exit by the Controller (a special END_RUN task).</p>
-<p>The following diagram depicts how the Controller and Worker interact.</p>
 </div>
 <div class="section" id="controller-api">
 <h2>Controller API<a class="headerlink" href="#controller-api" title="Permalink to this headline">¶</a></h2>
@@ -300,7 +300,7 @@ implementations of the following controller workflows: <a class="reference inter
 <p>The Federated scatter and gather workflow is an included reference implementation of the default workflow of previous versions
 of NVIDIA FLARE with a Server aggregating results from Clients that have produced Shareable results from their Trainer.</p>
 <p>At the core, the control_flow of <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather</span></code></a> is a for loop:</p>
-<img alt="programming_guide/resources/fed_sag_round.png" src="programming_guide/resources/fed_sag_round.png" style="height: 400px;" />
+<img alt="../_images/fed_sag_round.png" src="../_images/fed_sag_round.png" style="height: 400px;" />
 <div class="section" id="trainer">
 <h2>Trainer<a class="headerlink" href="#trainer" title="Permalink to this headline">¶</a></h2>
 <p>You need to implement the <code class="docutils literal notranslate"><span class="pre">train()</span></code> method for your <code class="xref py py-class docutils literal notranslate"><span class="pre">Trainer</span></code>.</p>

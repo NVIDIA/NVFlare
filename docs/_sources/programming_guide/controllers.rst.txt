@@ -6,7 +6,8 @@ Controllers and Controller API
 Controller/Worker Interactions
 ------------------------------
 
-NVIDIA FLARE 2.0's collaborative computing is achieved through the Controller/Worker interactions.
+NVIDIA FLARE 2.0's collaborative computing is achieved through the Controller/Worker interactions. The following diagram
+shows how the Controller and Worker interact.
 
 .. image:: ../resources/Controller_worker.png
     :height: 300px
@@ -23,8 +24,6 @@ In its control logic, the Controller assigns tasks to Workers and processes task
 
 Workers keep asking for the next task to do, executes the task, and submits results to the Controller, until instructed
 to exit by the Controller (a special END_RUN task).
-
-The following diagram depicts how the Controller and Worker interact.
 
 Controller API
 --------------

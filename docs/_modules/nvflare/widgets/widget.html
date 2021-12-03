@@ -246,14 +246,14 @@
 <span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
 
 <span class="kn">from</span> <span class="nn">nvflare.apis.fl_component</span> <span class="kn">import</span> <span class="n">FLComponent</span>
 
 
 <div class="viewcode-block" id="Widget"><a class="viewcode-back" href="../../../apidocs/nvflare.widgets.html#nvflare.widgets.widget.Widget">[docs]</a><span class="k">class</span> <span class="nc">Widget</span><span class="p">(</span><span class="n">FLComponent</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Pre-defined components that address specific needs.</span>
 
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    A widget is used to address cross-cutting needs of all FL components.</span>
 <span class="sd">    Some examples of such needs:</span>
 <span class="sd">        - report current status</span>
 <span class="sd">        - dynamically change its tunable parameters</span>
@@ -263,7 +263,7 @@
 <span class="sd">    Each widget is a singleton object that is registered with the Engine with a</span>
 <span class="sd">    unique ID.</span>
 
-<span class="sd">    All widget IDs are documented in the WidgetID class.</span>
+<span class="sd">    All built-in widget IDs are documented in the WidgetID class.</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -271,7 +271,7 @@
         <span class="n">FLComponent</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="WidgetID"><a class="viewcode-back" href="../../../apidocs/nvflare.widgets.html#nvflare.widgets.widget.WidgetID">[docs]</a><span class="k">class</span> <span class="nc">WidgetID</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<div class="viewcode-block" id="WidgetID"><a class="viewcode-back" href="../../../apidocs/nvflare.widgets.html#nvflare.widgets.widget.WidgetID">[docs]</a><span class="k">class</span> <span class="nc">WidgetID</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
 
     <span class="n">INFO_COLLECTOR</span> <span class="o">=</span> <span class="s2">&quot;info_collector&quot;</span>
     <span class="n">COMPONENT_CALLER</span> <span class="o">=</span> <span class="s2">&quot;component_caller&quot;</span>
