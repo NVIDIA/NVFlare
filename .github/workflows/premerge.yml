@@ -2,14 +2,14 @@ name: pre-merge
 
 on:
   # quick tests for pull requests and the releasing branches
-  push:
-    branches:
-      - main
-  pull_request:
+  issue_comment:
+    types: [ created ]
 
 jobs:
   unit-tests:
     runs-on: self-hosted
+    if: |
+      github.event.comment.body == '/build'
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python 3.8
@@ -21,6 +21,8 @@ jobs:
 
   example-tests:
     runs-on: self-hosted
+    if: |
+      github.event.comment.body == '/build'
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python 3.8
@@ -35,6 +37,8 @@ jobs:
 
   app-tests:
     runs-on: self-hosted
+    if: |
+      github.event.comment.body == '/build'
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python 3.8
@@ -49,6 +53,8 @@ jobs:
 
   wheel-build:
     runs-on: self-hosted
+    if: |
+      github.event.comment.body == '/build'
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python 3.8
