@@ -1,5 +1,12 @@
 name: pre-merge
-on: [push]
+
+on:
+  # quick tests for pull requests and the releasing branches
+  push:
+    branches:
+      - main
+  pull_request:
+
 jobs:
   unit-tests:
     runs-on: self-hosted
