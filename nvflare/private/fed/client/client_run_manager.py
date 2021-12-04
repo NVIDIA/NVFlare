@@ -114,6 +114,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def get_component(self, component_id: str) -> object:
         return self.components.get(component_id)
 
+    def get_all_components(self) -> dict:
+        return self.components
+
     def get_widget(self, widget_id: str) -> Widget:
         return self.widgets.get(widget_id)
 
