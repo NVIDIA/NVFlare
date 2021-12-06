@@ -18,6 +18,8 @@ from nvflare.apis.shareable import Shareable
 
 
 class Learner(FLComponent):
+    BEST_MODEL = "best_model"
+    FINAL_MODEL = "final_model"
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         """

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
@@ -24,10 +23,17 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class LearnerExecutor(Executor):
-    def __init__(self, learner_id):
+
+    def __init__(self, learner_id,
+                 train_task=AppConstants.TASK_TRAIN,
+                 submit_model_task=AppConstants.TASK_SUBMIT_MODEL,
+                 validate_task=AppConstants.TASK_VALIDATION):
         super().__init__()
         self.learner_id = learner_id
         self.learner = None
+        self.train_task = train_task
+        self.submit_model_task = submit_model_task
+        self.validate_task = validate_task
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -48,11 +54,11 @@ class LearnerExecutor(Executor):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.logger.info(f"Client trainer got task: {task_name}")
 
-        if task_name == AppConstants.TASK_TRAIN:
+        if task_name == self.train_task:
             return self.train(shareable, fl_ctx, abort_signal)
-        elif task_name == AppConstants.TASK_SUBMIT_MODEL:
+        elif task_name == self.submit_model_task:
             return self.submit_model(shareable, fl_ctx)
-        elif task_name == AppConstants.TASK_VALIDATION:
+        elif task_name == self.validate_task:
             return self.validate(shareable, fl_ctx, abort_signal)
         else:
             self.logger.error(f"Could not handle task: {task_name}")
@@ -72,7 +78,7 @@ class LearnerExecutor(Executor):
         return train_result
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        return self.learner.get_model_for_validation("best_model", fl_ctx)
+        return self.learner.get_model_for_validation(Learner.BEST_MODEL, fl_ctx)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.logger.info(f"medl validate abort_signal {abort_signal.triggered}")
