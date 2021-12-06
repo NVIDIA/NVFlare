@@ -33,7 +33,7 @@ class Learner(FLComponent):
         """
         pass
 
-    def train(self, data: dict, fl_ctx: FLContext) -> dict:
+    def train(self, data: dict, fl_ctx: FLContext) -> (dict, dict):
         """
         Called to perform training. Can be called many times during the life time of the Learner.
 
@@ -41,7 +41,7 @@ class Learner(FLComponent):
             data: the training input data (e.g. model weights)
             fl_ctx: FLContext of the running environment
 
-        Returns: trained result
+        Returns: (trained_result, meta_data)
 
         """
         pass
