@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from nvflare.apis.analytix import Data as AnalyticsData
 from nvflare.apis.analytix import DataType as AnalyticsDataType
+from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FedEventHeader, FLContextKey, ReservedKey
@@ -13,77 +14,92 @@ from nvflare.widgets.widget import Widget
 EVENT = "log_analytics"
 
 
-class AnalyticsSender(Widget):
-    def __init__(self, event: str = EVENT):
-        """Sends analytic data.
+def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext):
+    """
+    Sends analytic dxo.
 
-        Args:
-            event (str): The event that corresponding to this send.
-        """
-        super().__init__()
-        self.event = event
+    Args:
+        comp (FLComponent):
+        dxo (DXO): analytic data in dxo.
+        fl_ctx (FLContext): fl context info.
+    """
+    if not isinstance(comp, FLComponent):
+        raise TypeError("expect comp to be FLComponent, but got {}".format(type(fl_ctx)))
+    if not isinstance(dxo, DXO):
+        raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
+    if not isinstance(fl_ctx, FLContext):
+        raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
 
-    def write_scalar(self, fl_ctx: FLContext, tag: str, scalar: float, **kwargs):
-        """Writes a scalar.
+    fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
+    comp.fire_event(event_type=EVENT, fl_ctx=fl_ctx)
 
-        Args:
-            fl_ctx (FLContext): fl context info.
-            tag (str): the tag associated with this value.
-            scalar (float) : a scalar to write.
-        """
-        self.write(fl_ctx, tag, scalar, data_type=AnalyticsDataType.SCALAR, kwargs=kwargs)
 
-    def write_scalars(self, fl_ctx: FLContext, tag: str, tag_scalar_dict: dict, **kwargs):
-        """Writes scalars.
+def write(tag: str, value, data_type: AnalyticsDataType, kwargs=None) -> DXO:
+    """
+    Writes the analytic data.
 
-        Args:
-            fl_ctx (FLContext): fl context info.
-            tag (str): the tag associated with this dict.
-            tag_scalar_dict (dict): A dictionary that contains tag and scalars to write.
-        """
-        self.write(fl_ctx, tag, tag_scalar_dict, data_type=AnalyticsDataType.SCALARS, kwargs=kwargs)
+    Args:
+        tag (str): the tag associated with this value.
+        value: the analytic data.
+        data_type (AnalyticsDataType): analytic data type.
+        kwargs (dict): additional arguments to be passed into the receiver side's function.
 
-    def write_image(self, fl_ctx: FLContext, tag: str, image, **kwargs):
-        """Writes an image.
+    Returns:
+        A DXO object that contains the analytic data.
+    """
+    data = AnalyticsData(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
+    dxo = data.to_dxo()
+    return dxo
 
-        Args:
-            fl_ctx (FLContext): fl context info.
-            tag (str): the tag associated with this value.
-            image: the image to write.
-        """
-        self.write(fl_ctx, tag, image, data_type=AnalyticsDataType.IMAGE, kwargs=kwargs)
 
-    def write_text(self, fl_ctx: FLContext, tag: str, text: str, **kwargs):
-        """Writes text.
+def write_scalar(tag: str, scalar: float, **kwargs) -> DXO:
+    """
+    Writes a scalar.
 
-        Args:
-            fl_ctx (FLContext): fl context info.
-            tag (str): the tag associated with this value.
-            text: the text to write.
-        """
-        self.write(fl_ctx, tag, text, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
+    Args:
+        tag (str): the tag associated with this value.
+        scalar (float): a scalar to write.
+    """
+    return write(tag, scalar, data_type=AnalyticsDataType.SCALAR, kwargs=kwargs)
 
-    def write(self, fl_ctx: FLContext, tag: str, value, data_type: AnalyticsDataType, kwargs=None):
-        """Writes the analytic data.
 
-        Args:
-            fl_ctx (FLContext): fl context info.
-            tag (str): the tag associated with this value.
-            value: the analytic data.
-            data_type (AnalyticsDataType): analytic data type.
-            kwargs (dict): additional arguments to be passed into the receiver side's function.
-        """
-        if not isinstance(fl_ctx, FLContext):
-            raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
-        data = AnalyticsData(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
-        dxo = data.to_dxo()
-        fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
-        self.fire_event(event_type=self.event, fl_ctx=fl_ctx)
+def write_scalars(tag: str, tag_scalar_dict: dict, **kwargs) -> DXO:
+    """
+    Writes scalars.
+
+    Args:
+        tag (str): the tag associated with this dict.
+        tag_scalar_dict (dict): A dictionary that contains tag and scalars to write.
+    """
+    return write(tag, tag_scalar_dict, data_type=AnalyticsDataType.SCALARS, kwargs=kwargs)
+
+
+def write_image(tag: str, image, **kwargs) -> DXO:
+    """
+    Writes an image.
+
+    Args:
+        tag (str): the tag associated with this value.
+        image: the image to write.
+    """
+    return write(tag, image, data_type=AnalyticsDataType.IMAGE, kwargs=kwargs)
+
+
+def write_text(tag: str, text: str, **kwargs) -> DXO:
+    """
+    Writes text.
+
+    Args:
+        tag (str): the tag associated with this value.
+        text (str): the text to write.
+    """
+    return write(tag, text, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
 
 
 class AnalyticsReceiver(Widget, ABC):
     def __init__(self, events: Optional[List[str]] = None):
-        """Receives analytic data.
+        """
+        Receives analytic data.
 
         Args:
             events (optional, List[str]): A list of event that this receiver will handled.
@@ -95,7 +111,8 @@ class AnalyticsReceiver(Widget, ABC):
 
     @abstractmethod
     def initialize(self, fl_ctx: FLContext):
-        """Initializes the receiver.
+        """
+        Initializes the receiver.
 
         Args:
             fl_ctx (FLContext): fl context.
@@ -104,7 +121,8 @@ class AnalyticsReceiver(Widget, ABC):
 
     @abstractmethod
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
-        """Saves the received data.
+        """
+        Saves the received data.
 
         Args:
             fl_ctx (FLContext): fl context.
@@ -115,7 +133,8 @@ class AnalyticsReceiver(Widget, ABC):
 
     @abstractmethod
     def finalize(self, fl_ctx: FLContext):
-        """Finalizes the receiver.
+        """
+        Finalizes the receiver.
 
         Args:
             fl_ctx (FLContext): fl context.
