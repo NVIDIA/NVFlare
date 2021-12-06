@@ -14,7 +14,7 @@
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.learnable import Learnable as ModelLearnable
+from nvflare.apis.shareable import Shareable
 
 
 class Learner(FLComponent):
@@ -33,40 +33,41 @@ class Learner(FLComponent):
         """
         pass
 
-    def train(self, data: dict, fl_ctx: FLContext) -> (dict, dict):
+    def train(self, data: Shareable, fl_ctx: FLContext) -> Shareable:
         """
-        Called to perform training. Can be called many times during the life time of the Learner.
+        Called to perform training. Can be called many times during the lifetime of the Learner.
 
         Args:
             data: the training input data (e.g. model weights)
             fl_ctx: FLContext of the running environment
 
-        Returns: (trained_result, meta_data)
+        Returns: train result in Shareable
 
         """
         pass
 
-    def get_best_model(self, fl_ctx: FLContext) -> ModelLearnable:
+    def get_model_for_validation(self, model_type: str, fl_ctx: FLContext) -> Shareable:
         """
         Called to return the best trained model from the Learner.
 
         Args:
+            model_type: type of the model for validation
             fl_ctx: FLContext of the running environment
 
-        Returns: best trained model
+        Returns: trained model for validation
 
         """
         pass
 
-    def validate(self, data: dict, fl_ctx: FLContext) -> dict:
+    def validate(self, data: Shareable, fl_ctx: FLContext) -> Shareable:
         """
-        Called to perform validation. Can be called many times during the life time of the Learner.
+        Called to perform validation. Can be called many times during the lifetime of the Learner.
 
         Args:
             data: the training input data (e.g. model weights)
             fl_ctx: FLContext of the running environment
 
-        Returns: validate result
+        Returns: validate result in Shareable
 
         """
         pass

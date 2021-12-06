@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import from_shareable, DXO, DataKind
+from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
@@ -20,7 +20,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
-from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.app_constant import AppConstants
 
 
@@ -66,25 +65,19 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
-        incoming_dxo = from_shareable(shareable)
 
-        local_model_dict, meta_data = self.learner.train(incoming_dxo.data, fl_ctx)
+        train_result = self.learner.train(shareable, fl_ctx)
 
         self.logger.info(f"Completed the training for   round: {current_round}")
-        return DXO(data_kind=DataKind.WEIGHTS, data=local_model_dict, meta=meta_data).to_shareable()
+        return train_result
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        best_model = self.learner.get_best_model(fl_ctx)
-        return model_learnable_to_dxo(best_model).to_shareable()
+        return self.learner.get_model_for_validation("best_model", fl_ctx)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.logger.info(f"medl validate abort_signal {abort_signal.triggered}")
 
-        incoming_dxo = from_shareable(shareable)
-        model_weights = incoming_dxo.data
-        metrics = self.learner.validate(model_weights, fl_ctx)
-
-        return DXO(data_kind=DataKind.METRICS, data=metrics, meta={}).to_shareable()
+        return self.learner.validate(shareable, fl_ctx)
 
     def finalize(self, fl_ctx: FLContext):
         if self.learner:
