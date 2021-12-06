@@ -22,7 +22,7 @@ General
 #. Does NVIDIA FLARE depend on Tensorflow or PyTorch?
 
     No.  NVIDIA FLARE is a Python library that implements a general collaborative computing framework.  The :ref:`Controllers <controllers>`,
-    :ref:`Executors <executors>`, and :ref:`Tasks <tasks>` that one defines to execute the collaborative computing workflow
+    :ref:`Executors <executor>`, and :ref:`Tasks <tasks>` that one defines to execute the collaborative computing workflow
     are entirely independent.
 
 #. Is NVIDIA FLARE designed for deep learning model training only?

@@ -36,6 +36,8 @@ commands shown as examples of how they may be run with a description.
     ,``start_app client``,Starts all of the clients. Individual clients can be started by specifying the client instance name after the start client command.
     abort,``abort client``,Aborts all of the clients. Individual clients can be aborted by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
     ,``abort server``,Aborts the server training
+    restart,``restart client``,Restarts all of the clients. Individual clients can be restarted by specifying *clientname*.
+    ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
     ,``shutdown server``,Shuts down the server. Clients must be shut down first before the server is shut down.
     cat,``cat server startup/fed_server.json -ns``,Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)
