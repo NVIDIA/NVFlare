@@ -103,33 +103,31 @@ Take a look at the following code:
 
 .. literalinclude:: ../../examples/hello-tf2/custom/trainer.py
    :language: python
-   :lines: 75-
-   :lineno-start: 75
-   :linenos:
+   :pyobject: SimpleTrainer.execute
 
 Every NVIDIA FLARE client receives the model weights from the server in the :ref:`shareable <shareable>`.
 This exercise uses a simple ``exclude_var`` filter, so make sure to replace the missing layer with weights from the clients' previous training round:
 
 .. literalinclude:: ../../examples/hello-tf2/custom/trainer.py
    :language: python
-   :lines: 115-119
-   :lineno-start: 115
+   :lines: 111-115
+   :lineno-start: 111
    :linenos:
 
 Now update the local model with those received weights:
 
 .. literalinclude:: ../../examples/hello-tf2/custom/trainer.py
    :language: python
-   :lines: 122
-   :lineno-start: 122
+   :lines: 118
+   :lineno-start: 118
    :linenos:
 
 Then perform a simple :code:`self.model.fit` so the client's model is trained with its own dataset:
 
 .. literalinclude:: ../../examples/hello-tf2/custom/trainer.py
    :language: python
-   :lines: 126-131
-   :lineno-start: 126
+   :lines: 122-127
+   :lineno-start: 122
    :linenos:
   
 After finishing the local train, the train method uses the newly-trained weights to build a new ``DXO`` to update the
