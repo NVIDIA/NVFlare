@@ -242,9 +242,8 @@ of NVIDIA FLARE with a Server aggregating results from Clients that have produce
 <img alt="programming_guide/controllers/resources/fed_sag_round.png" src="programming_guide/controllers/resources/fed_sag_round.png" style="height: 400px;" />
 <div class="section" id="trainer">
 <h2>Trainer<a class="headerlink" href="#trainer" title="Permalink to this headline">¶</a></h2>
-<p>You need to implement the <code class="docutils literal notranslate"><span class="pre">train()</span></code> method for your <code class="xref py py-class docutils literal notranslate"><span class="pre">Trainer</span></code>.</p>
-<p>FL client gets the global <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> from the FL server for each round and then the <code class="docutils literal notranslate"><span class="pre">train()</span></code> method will be called.</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">train()</span></code> method needs to get the required information from the global <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>,
+<p>A <code class="xref py py-class docutils literal notranslate"><span class="pre">Trainer</span></code> is a type of <a class="reference internal" href="../../apidocs/nvflare.apis.html#nvflare.apis.executor.Executor" title="nvflare.apis.executor.Executor"><code class="xref py py-class docutils literal notranslate"><span class="pre">Executor</span></code></a> in NVIDIA FLARE.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">execute()</span></code> method needs to get the required information from the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>,
 use that in its training process, then returning the local training result as a <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>.</p>
 <p>You will need to configure your own <code class="docutils literal notranslate"><span class="pre">Trainer</span></code> in config_fed_client.json.
 Example FL configurations can be found in <a class="reference internal" href="../../user_guide/application.html#application"><span class="std std-ref">NVIDIA FLARE Application</span></a>.</p>
@@ -263,36 +262,6 @@ which is to be learned, like the model weights.</p>
 <p><a class="reference internal" href="../../apidocs/nvflare.app_common.abstract.html#nvflare.app_common.abstract.aggregator.Aggregator" title="nvflare.app_common.abstract.aggregator.Aggregator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Aggregators</span></code></a> define the aggregation algorithm to aggregate the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>.
 For example, a simple aggregator would be just average all the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> of the same round.</p>
 <p>Below is the signature for an aggregator.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Aggregator</span><span class="p">(</span><span class="n">FLComponent</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
-    <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">accept</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">            accept the shareable submitted by the client.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            shareable: submitted Shareable object</span>
-<span class="sd">            fl_ctx: FLContext</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            first boolean to indicate if the contribution has been accepted.</span>
-
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">pass</span>
-
-    <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">            perform the aggregation for all the received Shareable from the clients.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            fl_ctx: FLContext</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            shareable</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">pass</span>
-</pre></div>
-</div>
 </div>
 </div>
 

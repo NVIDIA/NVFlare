@@ -187,6 +187,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -331,21 +332,7 @@ workflow submits the server model for evaluation after the client models.</p>
 workflow. These models could be from other clients or models generated on server.</p>
 <div class="literal-block-wrapper docutils container" id="id1">
 <div class="code-block-caption"><span class="caption-text">np_validator.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">  1</span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
-<span class="linenos">  2</span><span class="c1">#</span>
-<span class="linenos">  3</span><span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
-<span class="linenos">  4</span><span class="c1"># you may not use this file except in compliance with the License.</span>
-<span class="linenos">  5</span><span class="c1"># You may obtain a copy of the License at</span>
-<span class="linenos">  6</span><span class="c1">#</span>
-<span class="linenos">  7</span><span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
-<span class="linenos">  8</span><span class="c1">#</span>
-<span class="linenos">  9</span><span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="linenos"> 10</span><span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
-<span class="linenos"> 11</span><span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
-<span class="linenos"> 12</span><span class="c1"># See the License for the specific language governing permissions and</span>
-<span class="linenos"> 13</span><span class="c1"># limitations under the License.</span>
-<span class="linenos"> 14</span>
-<span class="linenos"> 15</span><span class="kn">import</span> <span class="nn">logging</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 15</span><span class="kn">import</span> <span class="nn">logging</span>
 <span class="linenos"> 16</span><span class="kn">import</span> <span class="nn">time</span>
 <span class="linenos"> 17</span>
 <span class="linenos"> 18</span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>

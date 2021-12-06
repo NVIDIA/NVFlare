@@ -1,7 +1,7 @@
 .. _scatter_and_gather_workflow:
 
 Scatter and Gather Workflow
-============================
+---------------------------
 The Federated scatter and gather workflow is an included reference implementation of the default workflow of previous versions
 of NVIDIA FLARE with a Server aggregating results from Clients that have produced Shareable results from their Trainer.
 
@@ -11,19 +11,17 @@ At the core, the control_flow of :class:`nvflare.app_common.workflows.scatter_an
     :height: 400px
 
 Trainer
--------
-You need to implement the ``train()`` method for your :class:`Trainer<nvflare.app_common.executors.trainer.Trainer>`.
+^^^^^^^
+A :class:`Trainer<nvflare.app_common.executors.trainer.Trainer>` is a type of :class:`Executor<nvflare.apis.executor.Executor>` in NVIDIA FLARE.
 
-FL client gets the global ``Shareable`` from the FL server for each round and then the ``train()`` method will be called.
-
-The ``train()`` method needs to get the required information from the global ``Shareable``,
+The ``execute()`` method needs to get the required information from the ``Shareable``,
 use that in its training process, then returning the local training result as a ``Shareable``.
 
 You will need to configure your own ``Trainer`` in config_fed_client.json.
 Example FL configurations can be found in :ref:`application`.
 
 Learnable
----------
+^^^^^^^^^
 :class:`Learnable<nvflare.app_common.abstract.learnable.Learnable>` is the result of an FL application.
 For example, in the deep learning scenario, it can be the model weights.
 In the AutoML case, it can be the network architecture.
@@ -33,12 +31,12 @@ and save a ``Learnable``. ``Learnable`` is a subset of the model file (which can
 which is to be learned, like the model weights.
 
 Aggregator
-----------
+^^^^^^^^^^
 :class:`Aggregators<nvflare.app_common.abstract.aggregator.Aggregator>` define the aggregation algorithm to aggregate the ``Shareable``.
 For example, a simple aggregator would be just average all the ``Shareable`` of the same round.
 
 Below is the signature for an aggregator.
 
-.. literalinclude:: ../../../nvflare/app_common/abstract/aggregator.py
+.. literalinclude:: ../../nvflare/app_common/abstract/aggregator.py
     :language: python
     :lines: 22-
