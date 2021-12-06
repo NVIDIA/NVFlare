@@ -68,49 +68,20 @@ class LearnerExecutor(Executor):
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         incoming_dxo = from_shareable(shareable)
 
-        # shared_fl_context = fl_ctx.get_peer_context()
-        model_weights = incoming_dxo.data
-        # self.model_manager.assign_current_model(model_weights, fl_ctx)
+        local_model_dict, meta_data = self.learner.train(incoming_dxo.data, fl_ctx)
 
-        shareable = self.learner.train(model_weights, fl_ctx)
-
-        # if self.trainer.state.rank == 0:
-        #     shareable = self.model_manager.generate_shareable(model_weights,
-        #                                                       self.fed_trainer.get_train_context(), fl_ctx)
-
-        # fl_ctx.set_prop(AppConstants.TRAIN_CONTEXT, self.fed_trainer.get_train_context())
-
-        # fl_ctx.set_prop(AppConstants.CURRENT_ROUND, shared_fl_context.get_prop(AppConstants.CURRENT_ROUND),
-        #                 private=False)
         self.logger.info(f"Completed the training for   round: {current_round}")
-        return shareable
+        return DXO(data_kind=DataKind.WEIGHTS, data=local_model_dict, meta=meta_data).to_shareable()
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        # engine = fl_ctx.get_engine()
-        # workspace = engine.get_workspace()
-        # run_number = fl_ctx.get_run_number()
-        # app_dir = workspace.get_app_dir(run_number)
-        # model_file = os.path.join(app_dir, "models/model.pt")
-        # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        # data = torch.load(model_file, map_location=device)
-        #
-        # default_train_conf = {"train": {"model": type(self.fed_trainer.net).__name__}}
-        # persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=default_train_conf)
-
-        submit_model = self.learner.get_best_model(fl_ctx)
-        return model_learnable_to_dxo(submit_model).to_shareable()
+        best_model = self.learner.get_best_model(fl_ctx)
+        return model_learnable_to_dxo(best_model).to_shareable()
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.logger.info(f"medl validate abort_signal {abort_signal.triggered}")
 
         incoming_dxo = from_shareable(shareable)
         model_weights = incoming_dxo.data
-        # self.model_manager.assign_current_model(model_weights, fl_ctx)
-
-        # self.evaluator.run()
-        #
-        # # fl_ctx.set_prop(FLConstants.TRAIN_CONTEXT, self.fitter.get_train_context())
-        # metrics = {self.validate_data_list_key: self.evaluator.state.metrics}
         metrics = self.learner.validate(model_weights, fl_ctx)
 
         return DXO(data_kind=DataKind.METRICS, data=metrics, meta={}).to_shareable()
