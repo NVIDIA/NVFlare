@@ -120,7 +120,7 @@ You can copy the whole block into the terminal, and it will execute each experim
 After training, each client's best model will be used for cross-site validation. The results can be shown with
 for example
 ```
-  cat ./workspaces/poc_workspace/server/run_2/cross_val_results/cross_val.json
+  cat ./workspaces/poc_workspace/server/run_2/cross_site_val/cross_site_val.json
 ```
 
 ### 3.4: Advanced FL algorithms (FedProx and FedOpt)

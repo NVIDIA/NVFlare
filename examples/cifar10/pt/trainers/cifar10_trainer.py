@@ -40,7 +40,7 @@ class CIFAR10Trainer(Executor):
         dataset_root: str = "./dataset",
         aggregation_epochs: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
-        submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
+        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         lr: float = 1e-2,
         fedproxloss_mu: float = 0.0,
         central: bool = False,
@@ -49,8 +49,7 @@ class CIFAR10Trainer(Executor):
 
         Args:
             dataset_root: directory with CIFAR-10 data.
-            aggregation_epochs: the number of training epochs for a round.
-                This parameter only works when `aggregation_iters` is 0. Defaults to 1.
+            aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
             submit_model_task_name: name of the task to submit the best local model.
 
@@ -246,12 +245,6 @@ class CIFAR10Trainer(Executor):
         self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
-        # Load previous training state from local model file
-        if os.path.isfile(self.local_model_file):
-            record_dict = torch.load(self.local_model_file)
-            # get current epoch and iteration when a round starts
-            self.epoch_of_start_time = record_dict["epoch"]
-
         # update local model weights with received weights
         dxo = from_shareable(shareable)
         global_weights = dxo.data
@@ -285,6 +278,8 @@ class CIFAR10Trainer(Executor):
 
         # perform valid before local train
         global_acc = self.local_valid(self.valid_loader, "val_acc_global_model", abort_signal)
+        if abort_signal.triggered:
+            return make_reply(ReturnCode.TASK_ABORTED)
         self.log_info(fl_ctx, f"val_acc_global_model: {global_acc:.4f}")
 
         # local train
