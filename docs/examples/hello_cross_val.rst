@@ -78,6 +78,8 @@ workflow. These models could be from other clients or models generated on server
 
 .. literalinclude:: ../../examples/hello-numpy-cross-val/custom/np_validator.py
    :language: python
+   :lines: 15-
+   :lineno-start: 15
    :linenos:
    :caption: np_validator.py
 
