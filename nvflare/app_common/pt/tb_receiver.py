@@ -17,8 +17,7 @@ from typing import List, Optional
 
 from torch.utils.tensorboard import SummaryWriter
 
-from nvflare.apis.analytix import Data as AnalyticsData
-from nvflare.apis.analytix import DataType as AnalyticsDataType
+from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -56,7 +55,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
                           - peer_name_2:
         """
         super().__init__(events=events)
-        self.writer = {}
+        self.writers_table = {}
         self.tb_folder = tb_folder
         self.root_log_dir = None
 
@@ -71,11 +70,11 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
         dxo = from_shareable(shareable)
         analytic_data = AnalyticsData.from_dxo(dxo)
 
-        writer = self.writer.get(record_origin)
+        writer = self.writers_table.get(record_origin)
         if writer is None:
             peer_log_dir = os.path.join(self.root_log_dir, record_origin)
             writer = SummaryWriter(log_dir=peer_log_dir)
-            self.writer[record_origin] = writer
+            self.writers_table[record_origin] = writer
 
         # depend on the type in dxo do different things
         for k, v in dxo.data.items():
@@ -97,6 +96,6 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
                 func(tag_name, v)
 
     def finalize(self, fl_ctx: FLContext):
-        for writer in self.writer.values():
+        for writer in self.writers_table.values():
             writer.flush()
             writer.close()

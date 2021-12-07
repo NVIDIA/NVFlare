@@ -14,7 +14,7 @@
 
 import datetime
 
-from nvflare.apis.analytix import Data as AnalytixData
+from nvflare.apis.analytix import AnalyticsData
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
@@ -101,7 +101,7 @@ class InfoCollector(Widget):
                 )
                 return
 
-            analytic_data = AnalytixData.from_dxo(dxo)
+            analytic_data = AnalyticsData.from_dxo(dxo)
 
             if event_type == EventType.ERROR_LOG_AVAILABLE:
                 key = "error"
