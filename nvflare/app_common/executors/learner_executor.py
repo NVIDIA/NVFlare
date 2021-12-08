@@ -23,11 +23,13 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class LearnerExecutor(Executor):
-
-    def __init__(self, learner_id,
-                 train_task=AppConstants.TASK_TRAIN,
-                 submit_model_task=AppConstants.TASK_SUBMIT_MODEL,
-                 validate_task=AppConstants.TASK_VALIDATION):
+    def __init__(
+        self,
+        learner_id,
+        train_task=AppConstants.TASK_TRAIN,
+        submit_model_task=AppConstants.TASK_SUBMIT_MODEL,
+        validate_task=AppConstants.TASK_VALIDATION,
+    ):
         super().__init__()
         self.learner_id = learner_id
         self.learner = None
@@ -73,7 +75,7 @@ class LearnerExecutor(Executor):
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
 
         train_result = self.learner.train(shareable, fl_ctx)
-        
+
         self.logger.info(f"Completed the training for round: {current_round}")
         return train_result
 

@@ -15,8 +15,8 @@
 import json
 import os
 import re
-from typing import List
 from collections import OrderedDict
+from typing import List
 
 import torch
 
