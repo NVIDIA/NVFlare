@@ -60,7 +60,7 @@ def main():
         exit(0)
 
     if args.ui_tool:
-        ui_helper_path = os.path.join(file_path, "NVIDIAFLARE2ProvisioningHelper.html")
+        ui_helper_path = os.path.join(file_path, "provision_helper.html")
         ui_helper_url = f"file://{ui_helper_path}"
         webbrowser.open_new_tab(ui_helper_url)
         print(
