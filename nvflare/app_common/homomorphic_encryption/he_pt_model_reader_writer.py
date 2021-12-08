@@ -15,7 +15,6 @@
 import numpy as np
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import feed_vars
 from nvflare.app_common.pt.pt_model_reader_writer import PTModelReaderWriter
 
