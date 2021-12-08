@@ -17,7 +17,6 @@ from pathlib import Path
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_processor import ModelProcessor
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import feed_vars
 
 
