@@ -28,11 +28,11 @@ class PTModelReaderWriter(ModelProcessor):
     def initialize(self, trainer):
         pass
 
-    def extract_model(self, network, multi_gpu, model_vars, fl_ctx: FLContext):
+    def extract_model(self, network, multi_processes, model_vars, fl_ctx: FLContext):
         # net = self.fitter.net
         net = network
         # if self.fitter.multi_gpu:
-        if multi_gpu:
+        if multi_processes:
             net = net.module
         local_state_dict = net.state_dict()
 
@@ -47,7 +47,7 @@ class PTModelReaderWriter(ModelProcessor):
 
         return local_model_dict
 
-    def apply_model(self, network, multi_gpu, model_params, fl_ctx: FLContext, options=None):
+    def apply_model(self, network, multi_processes, model_params, fl_ctx: FLContext, options=None):
         """Set the local model according to model_data
 
         Args:
@@ -65,7 +65,7 @@ class PTModelReaderWriter(ModelProcessor):
             # net = self.fitter.net
             net = network
             # if self.fitter.multi_gpu:
-            if multi_gpu:
+            if multi_processes:
                 net = net.module
             assign_ops, updated_local_model = feed_vars(net, model_params)
             self.logger.debug(f"assign_ops: {len(assign_ops)}")

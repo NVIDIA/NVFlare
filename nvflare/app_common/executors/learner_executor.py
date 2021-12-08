@@ -54,7 +54,7 @@ class LearnerExecutor(Executor):
         self.learner.initialize(engine.get_all_components(), fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.logger.info(f"Client trainer got task: {task_name}")
+        self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
         if task_name == self.train_task:
             return self.train(shareable, fl_ctx, abort_signal)
@@ -63,11 +63,11 @@ class LearnerExecutor(Executor):
         elif task_name == self.validate_task:
             return self.validate(shareable, fl_ctx, abort_signal)
         else:
-            self.logger.error(f"Could not handle task: {task_name}")
+            self.log_error(fl_ctx, f"Could not handle task: {task_name}")
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.logger.info(f"ClientTrainer abort signal: {abort_signal.triggered}")
+        self.log_info(fl_ctx, f"ClientTrainer abort signal: {abort_signal.triggered}")
         if abort_signal.triggered:
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -76,14 +76,14 @@ class LearnerExecutor(Executor):
 
         train_result = self.learner.train(shareable, fl_ctx)
 
-        self.logger.info(f"Completed the training for round: {current_round}")
+        self.log_info(fl_ctx, f"Completed the training for round: {current_round}")
         return train_result
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.learner.get_model_for_validation(Learner.BEST_MODEL, fl_ctx)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.logger.info(f"validate abort_signal {abort_signal.triggered}")
+        self.log_info(fl_ctx, f"validate abort_signal {abort_signal.triggered}")
         return self.learner.validate(shareable, fl_ctx)
 
     def finalize(self, fl_ctx: FLContext):

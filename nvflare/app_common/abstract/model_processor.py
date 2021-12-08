@@ -23,11 +23,11 @@ class ModelProcessor(ABC):
         pass
 
     @abstractmethod
-    def extract_model(self, network, multi_gpu, model_vars, fl_ctx: FLContext):
+    def extract_model(self, network, multi_processes, model_vars, fl_ctx: FLContext):
         pass
 
     @abstractmethod
-    def apply_model(self, network, multi_gpu, model_params, fl_ctx: FLContext, options=None):
+    def apply_model(self, network, multi_processes, model_params, fl_ctx: FLContext, options=None):
         pass
 
     @abstractmethod
