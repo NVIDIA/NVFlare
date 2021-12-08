@@ -71,8 +71,10 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
+
         train_result = self.learner.train(shareable, fl_ctx)
-        self.logger.info(f"Completed the training for   round: {current_round}")
+        
+        self.logger.info(f"Completed the training for round: {current_round}")
         return train_result
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
