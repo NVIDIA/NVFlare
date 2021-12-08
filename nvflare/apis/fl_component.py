@@ -17,8 +17,7 @@ import traceback
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 
-from .analytix import Data as AnalytixData
-from .analytix import DataType
+from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
 from .fl_constant import EventScope, FedEventHeader, FLContextKey, LogMessageTag
 from .fl_context import FLContext
@@ -157,7 +156,7 @@ class FLComponent(object):
         #     )
 
     def _fire_log_event(self, event_type: str, log_tag: str, log_msg: str, fl_ctx: FLContext):
-        event_data = AnalytixData(tag=log_tag, value=log_msg, data_type=DataType.TEXT, kwargs=None)
+        event_data = AnalyticsData(tag=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
         self.fire_event(event_type=event_type, fl_ctx=fl_ctx)

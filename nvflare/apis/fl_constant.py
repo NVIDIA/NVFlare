@@ -168,3 +168,4 @@ class LogMessageTag(object):
     EXCEPTION = "log/exception"
     INFO = "log/info"
     WARNING = "log/warning"
+    CRITICAL = "log/critical"
