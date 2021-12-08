@@ -71,9 +71,7 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
-
         train_result = self.learner.train(shareable, fl_ctx)
-
         self.logger.info(f"Completed the training for   round: {current_round}")
         return train_result
 
@@ -81,8 +79,7 @@ class LearnerExecutor(Executor):
         return self.learner.get_model_for_validation(Learner.BEST_MODEL, fl_ctx)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.logger.info(f"medl validate abort_signal {abort_signal.triggered}")
-
+        self.logger.info(f"validate abort_signal {abort_signal.triggered}")
         return self.learner.validate(shareable, fl_ctx)
 
     def finalize(self, fl_ctx: FLContext):
