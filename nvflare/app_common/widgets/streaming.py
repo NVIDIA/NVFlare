@@ -45,11 +45,11 @@ def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type
         event_type (str): Event type.
     """
     if not isinstance(comp, FLComponent):
-        raise TypeError("expect comp to be FLComponent, but got {}".format(type(fl_ctx)))
+        raise TypeError(f"expect comp to be an instance of FLComponent, but got {type(comp)}")
     if not isinstance(dxo, DXO):
-        raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
+        raise TypeError(f"expect dxo to be an instance of DXO, but got {type(dxo)}")
     if not isinstance(fl_ctx, FLContext):
-        raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
+        raise TypeError(f"expect fl_ctx to be an instance of FLContext, but got {type(fl_ctx)}")
 
     fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
     comp.fire_event(event_type=event_type, fl_ctx=fl_ctx)
@@ -117,7 +117,7 @@ class AnalyticsSender(Widget):
         """Sends analytics data.
 
         This class implements some common methods follows signatures from PyTorch SummaryWriter and Python logger.
-        It provides a convenient way for LearnerService to use.
+        It provides a convenient way for Learner to use.
         """
         super().__init__()
         self.engine = None
@@ -126,50 +126,66 @@ class AnalyticsSender(Widget):
         if event_type == EventType.START_RUN:
             self.engine = fl_ctx.get_engine()
 
-    def _add(self, tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict] = None):
+    def _add(
+        self,
+        tag: str,
+        value,
+        data_type: AnalyticsDataType,
+        global_step: Optional[int] = None,
+        kwargs: Optional[dict] = None,
+    ):
+        kwargs = kwargs if kwargs else {}
+        if global_step:
+            if not isinstance(global_step, int):
+                raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
+            kwargs["global_step"] = global_step
         dxo = _write(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx)
 
-    def add_scalar(self, tag: str, scalar: float, **kwargs):
+    def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
         """Sends a scalar.
 
         Args:
             tag (str): Data identifier.
             scalar (float): Value to send.
+            global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, kwargs=kwargs)
+        self._add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, kwargs=kwargs)
 
-    def add_scalars(self, tag: str, scalars: dict, **kwargs):
+    def add_scalars(self, tag: str, scalars: dict, global_step: Optional[int] = None, **kwargs):
         """Sends scalars.
 
         Args:
             tag (str): The parent name for the tags.
             scalars (dict): Key-value pair storing the tag and corresponding values.
+            global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, kwargs=kwargs)
+        self._add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, kwargs=kwargs)
 
-    def add_text(self, tag: str, text: str, **kwargs):
+    def add_text(self, tag: str, text: str, global_step: Optional[int] = None, **kwargs):
         """Sends a text.
 
         Args:
             tag (str): Data identifier.
             text (str): String to send.
+            global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
+        self._add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, global_step=global_step, kwargs=kwargs)
 
-    def add_image(self, tag: str, image, **kwargs):
+    def add_image(self, tag: str, image, global_step: Optional[int] = None, **kwargs):
         """Sends an image.
 
         Args:
             tag (str): Data identifier.
             image: Image to send.
+            global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, kwargs=kwargs)
+        self._add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, global_step=global_step, kwargs=kwargs)
 
     def _log(self, tag: LogMessageTag, msg: str, event_type: str, *args, **kwargs):
         """Logs a message.
@@ -210,6 +226,18 @@ class AnalyticsSender(Widget):
         """Logs a message with tag LogMessageTag.CRITICAL."""
         self._log(tag=LogMessageTag.CRITICAL, msg=msg, event_type=_LOG_CRITICAL_EVENT_TYPE, args=args, kwargs=kwargs)
 
+    def flush(self):
+        """Flushes out the message.
+
+        This is doing nothing, it is defined for mimic the PyTorch SummaryWriter behavior.
+        """
+        pass
+
+    def close(self):
+        """Close resources."""
+        if self.engine:
+            self.engine = None
+
 
 class AnalyticsReceiver(Widget, ABC):
     def __init__(self, events: Optional[List[str]] = None):
@@ -223,6 +251,7 @@ class AnalyticsReceiver(Widget, ABC):
             events = [_ANALYTIC_EVENT_TYPE, f"fed.{_ANALYTIC_EVENT_TYPE}"]
         self.events = events
         self._save_lock = Lock()
+        self._end = False
 
     @abstractmethod
     def initialize(self, fl_ctx: FLContext):
@@ -250,32 +279,34 @@ class AnalyticsReceiver(Widget, ABC):
 
         Args:
             fl_ctx (FLContext): fl context.
-
         """
         pass
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
-        elif event_type in self.events:
+        elif event_type in self.events and not self._end:
             data = fl_ctx.get_prop(FLContextKey.EVENT_DATA, None)
             if data is None:
-                self.log_error(fl_ctx, "Missing event data.")
+                self.log_error(fl_ctx, "Missing event data.", fire_event=False)
                 return
             if not isinstance(data, Shareable):
-                self.log_error(fl_ctx, f"Expect shareable but get {type(data)}")
+                self.log_error(
+                    fl_ctx, f"Expect data to be an instance of shareable but get {type(data)}", fire_event=False
+                )
                 return
-            record_origin = fl_ctx.get_identity_name()
 
             # if fed event use peer name to save
             if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION:
-                peer_name = data.get_peer_prop(ReservedKey.IDENTITY_NAME, None)
-                record_origin = peer_name
+                record_origin = data.get_peer_prop(ReservedKey.IDENTITY_NAME, None)
+            else:
+                record_origin = fl_ctx.get_identity_name()
 
             if record_origin is None:
-                self.log_error(fl_ctx, "record_origin can't be None.")
+                self.log_error(fl_ctx, "record_origin can't be None.", fire_event=False)
                 return
             with self._save_lock:
                 self.save(shareable=data, fl_ctx=fl_ctx, record_origin=record_origin)
         elif event_type == EventType.END_RUN:
+            self._end = True
             self.finalize(fl_ctx)
