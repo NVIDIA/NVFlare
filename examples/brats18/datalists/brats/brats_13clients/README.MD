@@ -1,0 +1,1 @@
+These datalist split files come from [dp-data-split](https://gitlab-master.nvidia.com/wenqil/rsna_demo_files/-/tree/master/segmentation_mri_brain_tumors_br16_t1c2tc_fl/config/splits/real), which is used in paper [DP](https://arxiv.org/pdf/1910.00962.pdf)
