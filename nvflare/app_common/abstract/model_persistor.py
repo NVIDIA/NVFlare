@@ -20,6 +20,20 @@ from nvflare.app_common.abstract.model import ModelLearnable
 from .learnable_persistor import LearnablePersistor
 
 
+class ModelDescriptor:
+    PT_CHECKPOINT = "pt_checkpoint"
+    TORCH_SCRIPT = "torch_script"
+    PT_ONNX = "pt_onnx"
+
+    def __init__(self, name: str, location: str, model_format: str, props: dict = None, data: object = None) -> None:
+        super().__init__()
+        self.name = name
+        self.location = location
+        self.model_format = model_format
+        self.props = props
+        self.data = data
+
+
 class ModelPersistor(LearnablePersistor, ABC):
     def load(self, fl_ctx: FLContext):
         return self.load_model(fl_ctx)
@@ -49,6 +63,17 @@ class ModelPersistor(LearnablePersistor, ABC):
         Args:
             model: Model object to be saved
             fl_ctx: FLContext
+
+        """
+        pass
+
+    def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
+        """
+            Get the model inventory of the ModelPersister
+        Args:
+            fl_ctx: FLContext
+
+        Returns: { model_name: ModelDescriptor }
 
         """
         pass

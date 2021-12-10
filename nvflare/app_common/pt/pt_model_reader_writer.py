@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-from pathlib import Path
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_processor import ModelProcessor
@@ -25,10 +24,7 @@ class PTModelReaderWriter(ModelProcessor):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
-    def initialize(self, trainer):
-        pass
-
-    def extract_model(self, network, multi_processes, model_vars, fl_ctx: FLContext):
+    def extract_model(self, network, multi_processes: bool, model_vars: dict, fl_ctx: FLContext) -> dict:
         # net = self.fitter.net
         net = network
         # if self.fitter.multi_gpu:
@@ -47,7 +43,7 @@ class PTModelReaderWriter(ModelProcessor):
 
         return local_model_dict
 
-    def apply_model(self, network, multi_processes, model_params, fl_ctx: FLContext, options=None):
+    def apply_model(self, network, multi_processes: bool, model_params: dict, fl_ctx: FLContext, options=None):
         """Set the local model according to model_data
 
         Args:
@@ -75,30 +71,3 @@ class PTModelReaderWriter(ModelProcessor):
             return assign_ops
         except Exception as e:
             raise RuntimeError("load_state_dict Exception:", str(e))
-
-    def get_local_models(self, model_params=None):
-        """Get the local models
-
-        Args:
-            model_params: model data information
-
-        Returns:
-            a dictionary from filename to bytes
-        """
-        if not model_params or "model_log_dir" not in model_params or "model_name" not in model_params:
-            return
-
-        model_dir = Path(model_params["model_log_dir"])
-        model_name = model_params["model_name"]
-
-        # Find all checkpoint files
-        model_file = Path(model_dir, model_name)
-        if not model_file.exists():
-            return None
-
-        # Read checkpoint files into bytes
-        buffer_dict = {}
-        with model_file.open("rb") as file_bytes:
-            buffer_dict[model_file.name] = file_bytes.read()
-
-        return buffer_dict

@@ -16,7 +16,6 @@ import json
 import os
 import re
 from collections import OrderedDict
-from typing import List
 
 import torch
 
@@ -24,7 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.abstract.model_persistor import ModelDescriptor, ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
@@ -228,17 +227,37 @@ class PTFileModelPersistor(ModelPersistor):
         self.persistence_manager.update(ml)
         self.save_model_file(self._ckpt_save_path)
 
-    def get_model_names(self) -> List[str]:
-        return [self.global_model_file_name]
-
-    def load_global_model(self, model_file, fl_ctx: FLContext) -> ModelLearnable:
+    def _load_global_model(self, model_file, fl_ctx: FLContext) -> ModelDescriptor:
         try:
             # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             # Use the "cpu" to load the global model weights, avoid GPU out of memory
             device = "cpu"
-            data = torch.load(os.path.join(self.log_dir, model_file), map_location=device)
+            location = os.path.join(self.log_dir, model_file)
+            data = torch.load(location, map_location=device)
             persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
-            return persistence_manager.to_model_learnable(self.exclude_vars)
+            learnable = persistence_manager.to_model_learnable(self.exclude_vars)
+            model_descriptor = ModelDescriptor(
+                name=self.global_model_file_name,
+                location=location,
+                model_format=ModelDescriptor.PT_CHECKPOINT,
+                props={},
+                data=learnable,
+            )
+            return model_descriptor
         except BaseException as e:
             self.log_exception(fl_ctx, "error loading checkpoint from {}".format(model_file))
             return None
+
+    def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
+        model_inventory = {}
+        if os.path.exists(os.path.join(self.log_dir, self.global_model_file_name)):
+            model_descriptor = self._load_global_model(self.global_model_file_name, fl_ctx)
+            if model_descriptor:
+                model_inventory[self.global_model_file_name] = model_descriptor
+
+        if os.path.exists(os.path.join(self.log_dir, self.best_global_model_file_name)):
+            model_descriptor = self._load_global_model(self.best_global_model_file_name, fl_ctx)
+            if model_descriptor:
+                model_inventory[self.best_global_model_file_name] = model_descriptor
+
+        return model_inventory

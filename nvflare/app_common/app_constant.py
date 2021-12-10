@@ -114,6 +114,8 @@ class AppConstants(object):
     DEFAULT_PERSISTOR_ID = "persistor"
     DEFAULT_SHAREABLE_GENERATOR_ID = "shareable_generator"
 
+    SUBMIT_MODEL_TYPE = "submit_model_type"
+
 
 class EnvironmentKey(object):
 

@@ -14,7 +14,8 @@
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.signal import Signal
 
 
 class Learner(FLComponent):
@@ -35,18 +36,19 @@ class Learner(FLComponent):
         """
         pass
 
-    def train(self, data: Shareable, fl_ctx: FLContext) -> Shareable:
+    def train(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
         Called to perform training. Can be called many times during the lifetime of the Learner.
 
         Args:
             data: the training input data (e.g. model weights)
             fl_ctx: FLContext of the running environment
+            abort_signal: signal to abort the train
 
         Returns: train result in Shareable
 
         """
-        pass
+        return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def get_model_for_validation(self, model_type: str, fl_ctx: FLContext) -> Shareable:
         """
@@ -59,20 +61,21 @@ class Learner(FLComponent):
         Returns: trained model for validation
 
         """
-        pass
+        return make_reply(ReturnCode.TASK_UNKNOWN)
 
-    def validate(self, data: Shareable, fl_ctx: FLContext) -> Shareable:
+    def validate(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
         Called to perform validation. Can be called many times during the lifetime of the Learner.
 
         Args:
             data: the training input data (e.g. model weights)
             fl_ctx: FLContext of the running environment
+            abort_signal: signal to abort the train
 
         Returns: validate result in Shareable
 
         """
-        pass
+        return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def abort(self, fl_ctx: FLContext):
         """

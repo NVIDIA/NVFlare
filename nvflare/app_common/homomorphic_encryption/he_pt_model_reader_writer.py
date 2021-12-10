@@ -20,7 +20,7 @@ from nvflare.app_common.pt.pt_model_reader_writer import PTModelReaderWriter
 
 
 class HEPTModelReaderWriter(PTModelReaderWriter):
-    def apply_model(self, network, multi_processes, model_params, fl_ctx: FLContext, options=None):
+    def apply_model(self, network, multi_processes: bool, model_params: dict, fl_ctx: FLContext, options=None):
         """
             Write global model back to local model.
             Needed to extract local parameter shape to reshape decrypted vectors.

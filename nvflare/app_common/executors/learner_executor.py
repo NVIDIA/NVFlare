@@ -68,23 +68,15 @@ class LearnerExecutor(Executor):
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"ClientTrainer abort signal: {abort_signal.triggered}")
-        if abort_signal.triggered:
-            self.finalize(fl_ctx)
-            return make_reply(ReturnCode.TASK_ABORTED)
-
-        current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
-
-        train_result = self.learner.train(shareable, fl_ctx)
-
-        self.log_info(fl_ctx, f"Completed the training for round: {current_round}")
-        return train_result
+        return self.learner.train(shareable, fl_ctx, abort_signal)
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        return self.learner.get_model_for_validation(Learner.BEST_MODEL, fl_ctx)
+        model_type = shareable.get_header(AppConstants.SUBMIT_MODEL_TYPE)
+        return self.learner.get_model_for_validation(model_type, fl_ctx)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"validate abort_signal {abort_signal.triggered}")
-        return self.learner.validate(shareable, fl_ctx)
+        return self.learner.validate(shareable, fl_ctx, abort_signal)
 
     def finalize(self, fl_ctx: FLContext):
         if self.learner:
