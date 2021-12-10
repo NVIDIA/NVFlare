@@ -23,6 +23,7 @@ source code.
 .. toctree::
    :maxdepth: 1
 
+   highlights
    installation
    quickstart
    user_guide

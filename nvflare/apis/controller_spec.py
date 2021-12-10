@@ -290,9 +290,9 @@ class ControllerSpec(ABC):
         The task is standing until one of the following conditions comes true:
             - if timeout is specified (> 0), and the task has been standing for more than the specified time
             - the controller has received the specified min_responses results for this task, and all target clients
-            are done.
+              are done.
             - the controller has received the specified min_responses results for this task, and has waited
-            for wait_time_after_min_received.
+              for wait_time_after_min_received.
 
         While the task is standing:
             - Before sending the task to a client, the before_task_sent CB (if specified) is called;
@@ -300,7 +300,7 @@ class ControllerSpec(ABC):
 
         After the task is done, the task_done CB (if specified) is called:
             - If result_received CB is specified, the 'result' in the ClientTask of each
-            client is produced by the result_received CB;
+              client is produced by the result_received CB;
             - Otherwise, the 'result' contains the original result submitted by the clients;
 
         NOTE: if the targets is None, the actual broadcast target clients will be dynamic, because the clients
@@ -312,9 +312,9 @@ class ControllerSpec(ABC):
             fl_ctx: the FL context
             targets: list of destination clients. None means all clients are determined dynamically;
             min_responses: the min number of responses expected. If == 0, must get responses from
-            all clients that the task has been sent to;
+              all clients that the task has been sent to;
             wait_time_after_min_received: how long (secs) to wait after the min_responses is received.
-            If == 0, end the task immediately after the min responses are received;
+              If == 0, end the task immediately after the min responses are received;
 
         Returns:
 

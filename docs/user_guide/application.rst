@@ -75,9 +75,7 @@ To use it in your application, put the code inside the "custom" folder of the ap
 In your server or client config, use path to refer to that component.
 
 For example, with a ``SimpleTrainer`` class stored in a file ``my_trainer.py`` inside the custom folder,
-the client config should have the following in order to configure it as an Executor:
-
-.. code-block:: json
+the client config should have the following in order to configure it as an Executor::
 
     ...
     "executor": {
