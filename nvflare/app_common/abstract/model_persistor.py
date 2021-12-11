@@ -16,9 +16,8 @@ from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
-
-from ..model_desc import ModelDescriptor
 from .learnable_persistor import LearnablePersistor
+from ..model_desc import ModelDescriptor
 
 
 class ModelPersistor(LearnablePersistor, ABC):

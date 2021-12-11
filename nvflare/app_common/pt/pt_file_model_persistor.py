@@ -24,7 +24,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey, ModelKind
+from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
