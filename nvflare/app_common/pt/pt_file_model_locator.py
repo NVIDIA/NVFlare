@@ -18,17 +18,15 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_locator import ModelLocator
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
 
 
-class PTModelLocator(ModelLocator):
+class PTFileModelLocator(ModelLocator):
     def __init__(self, pt_persistor_id: str):
-        """The ModelLocator's job is to find the models to be included for cross site evaluation
-        located on server. This PTModelLocator finds and extracts server global model  and best global model
-        that is saved during training.
+        """The ModelLocator's job is to find and locate the models inventory saved during training.
 
         Args:
-            persistor_id (str): ModelPersistor component ID
+            pt_persistor_id (str): ModelPersistor component ID
         """
         super().__init__()
 
@@ -42,7 +40,7 @@ class PTModelLocator(ModelLocator):
 
     def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        self.model_persistor: ModelPersistor = engine.get_component(self.pt_persistor_id)
+        self.model_persistor: PTFileModelPersistor = engine.get_component(self.pt_persistor_id)
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add()
@@ -57,7 +55,19 @@ class PTModelLocator(ModelLocator):
         return list(self.model_inventory.keys())
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
-        weights = self.model_inventory.get(model_name, {}).data
+        """Call to locate and load the model weights of "model_name"
+
+        Args:
+            model_name: name of the model
+            fl_ctx: FLContext
+
+        Returns: model_weight DXO
+
+        """
+        if model_name not in list(self.model_inventory.keys()):
+            raise ValueError(f"model inventory does not contain: {model_name}")
+
+        weights = self.model_persistor.get_model(model_name, fl_ctx)
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
 
         return dxo

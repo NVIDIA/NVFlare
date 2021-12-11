@@ -127,3 +127,13 @@ class DefaultCheckpointFileName(object):
 
     GLOBAL_MODEL = "FL_global_model.pt"
     BEST_GLOBAL_MODEL = "best_FL_global_model.pt"
+
+
+class ModelKind(object):
+
+    BEST_MODEL = "best_model"
+    FINAL_MODEL = "final_model"
+
+    PT_CHECKPOINT = "pt_checkpoint"
+    TORCH_SCRIPT = "torch_script"
+    PT_ONNX = "pt_onnx"

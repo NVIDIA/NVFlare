@@ -19,9 +19,6 @@ from nvflare.apis.signal import Signal
 
 
 class Learner(FLComponent):
-    BEST_MODEL = "best_model"
-    FINAL_MODEL = "final_model"
-
     def initialize(self, parts: dict, fl_ctx: FLContext):
         """
         Initialize the Learner object. This is called before the Learner can train or validate.

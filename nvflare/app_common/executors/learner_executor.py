@@ -67,15 +67,15 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.log_info(fl_ctx, f"ClientTrainer abort signal: {abort_signal.triggered}")
+        self.log_debug(fl_ctx, f"ClientTrainer abort signal: {abort_signal.triggered}")
         return self.learner.train(shareable, fl_ctx, abort_signal)
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        model_type = shareable.get_header(AppConstants.SUBMIT_MODEL_TYPE)
-        return self.learner.get_model_for_validation(model_type, fl_ctx)
+        model_kind = shareable.get_header(AppConstants.SUBMIT_MODEL_TYPE)
+        return self.learner.get_model_for_validation(model_kind, fl_ctx)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.log_info(fl_ctx, f"validate abort_signal {abort_signal.triggered}")
+        self.log_debug(fl_ctx, f"validate abort_signal {abort_signal.triggered}")
         return self.learner.validate(shareable, fl_ctx, abort_signal)
 
     def finalize(self, fl_ctx: FLContext):

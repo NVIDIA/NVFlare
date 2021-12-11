@@ -29,7 +29,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.abstract.model_locator import ModelLocator
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_constant import AppConstants, ModelKind
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -198,11 +198,11 @@ class CrossSiteModelEval(Controller):
             self.log_info(fl_ctx, f"Beginning model validation with clients: {self._participating_clients}.")
 
             if self._submit_model_task_name:
-                shareable = Shareable()
-                shareable.set_header(AppConstants.SUBMIT_MODEL_TYPE, Learner.BEST_MODEL)
+                model_kind = Shareable()
+                model_kind.set_header(AppConstants.SUBMIT_MODEL_TYPE, ModelKind.BEST_MODEL)
                 submit_model_task = Task(
                     name=self._submit_model_task_name,
-                    data=shareable,
+                    data=model_kind,
                     result_received_cb=self._receive_local_model_cb,
                     timeout=self._submit_model_timeout,
                 )
