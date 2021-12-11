@@ -71,8 +71,8 @@
     
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Filters" href="filters.html" />
-    <link rel="prev" title="FLComponent" href="fl_component.html" /> 
+    <link rel="next" title="Scatter and Gather Workflow" href="controllers/scatter_and_gather_workflow.html" />
+    <link rel="prev" title="Programming Guide - Developing Apps with NVIDIA FLARE" href="../programming_guide.html" /> 
 </head>
 
 <body class="wy-body-for-nav">
@@ -162,32 +162,31 @@
             
             
               <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="fl_context.html">FLContext</a></li>
-<li class="toctree-l2"><a class="reference internal" href="fl_component.html">FLComponent</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Controllers and Controller API</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#controller-worker-interactions">Controller/Worker Interactions</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#controller-api">Controller API</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#scatter-and-gather-workflow">Scatter and Gather Workflow</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#trainer">Trainer</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#learnable">Learnable</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#aggregator">Aggregator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#controller-api">Controller API</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="controllers/scatter_and_gather_workflow.html">Scatter and Gather Workflow</a></li>
+<li class="toctree-l4"><a class="reference internal" href="controllers/cross_site_model_evaluation.html">Cross Site Model Evaluation / Federated Evaluation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="controllers/cyclic_workflow.html">Cyclic Workflow</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#cross-site-model-evaluation-federated-evaluation">Cross Site Model Evaluation / Federated Evaluation</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#cyclic-workflow">Cyclic Workflow</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#task-lifecycle">Task Lifecycle</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="filters.html">Filters</a></li>
 <li class="toctree-l2"><a class="reference internal" href="executor.html">Executors</a></li>
 <li class="toctree-l2"><a class="reference internal" href="event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="filters.html">Filters</a></li>
 <li class="toctree-l2"><a class="reference internal" href="shareable.html">Shareable</a></li>
 <li class="toctree-l2"><a class="reference internal" href="data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_component.html">FLComponent</a></li>
 <li class="toctree-l2"><a class="reference internal" href="best_practices.html">NVIDIA FLARE Programming Best Practices</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../programming_guide.html#code-structure">Code Structure</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../faq.html">FAQ</a></li>
@@ -289,78 +288,14 @@ in different ways:</p>
 </ul>
 </div></blockquote>
 <p>See the included <a class="reference internal" href="../apidocs/nvflare.apis.impl.html#nvflare.apis.impl.controller.Controller" title="nvflare.apis.impl.controller.Controller"><code class="xref py py-class docutils literal notranslate"><span class="pre">Controller</span></code></a> implementation and full reference
-implementations of the following controller workflows: <a class="reference internal" href="controllers/scatter_and_gather_workflow.html#scatter-and-gather-workflow"><span class="std std-ref">Scatter and Gather Workflow</span></a>, <a class="reference internal" href="controllers/cross_site_model_evaluation.html#cross-site-model-evaluation"><span class="std std-ref">Cross Site Model Evaluation / Federated Evaluation</span></a>, and
-<span class="xref std std-ref">cyclic_workflow</span>.</p>
+implementations of the following controller workflows:</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="controllers/scatter_and_gather_workflow.html">Scatter and Gather Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="controllers/cross_site_model_evaluation.html">Cross Site Model Evaluation / Federated Evaluation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="controllers/cyclic_workflow.html">Cyclic Workflow</a></li>
+</ul>
 </div>
-<div class="section" id="scatter-and-gather-workflow">
-<span id="id1"></span><h2>Scatter and Gather Workflow<a class="headerlink" href="#scatter-and-gather-workflow" title="Permalink to this headline">¶</a></h2>
-<p>The Federated scatter and gather workflow is an included reference implementation of the default workflow of previous versions
-of NVIDIA FLARE with a Server aggregating results from Clients that have produced Shareable results from their Trainer.</p>
-<p>At the core, the control_flow of <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather</span></code></a> is a for loop:</p>
-<img alt="../_images/fed_sag_round.png" src="../_images/fed_sag_round.png" style="height: 400px;" />
-<div class="section" id="trainer">
-<h3>Trainer<a class="headerlink" href="#trainer" title="Permalink to this headline">¶</a></h3>
-<p>A <code class="xref py py-class docutils literal notranslate"><span class="pre">Trainer</span></code> is a type of <a class="reference internal" href="../apidocs/nvflare.apis.html#nvflare.apis.executor.Executor" title="nvflare.apis.executor.Executor"><code class="xref py py-class docutils literal notranslate"><span class="pre">Executor</span></code></a> in NVIDIA FLARE.</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">execute()</span></code> method needs to get the required information from the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>,
-use that in its training process, then returning the local training result as a <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>.</p>
-<p>You will need to configure your own <code class="docutils literal notranslate"><span class="pre">Trainer</span></code> in config_fed_client.json.
-Example FL configurations can be found in <a class="reference internal" href="../user_guide/application.html#application"><span class="std std-ref">NVIDIA FLARE Application</span></a>.</p>
-</div>
-<div class="section" id="learnable">
-<h3>Learnable<a class="headerlink" href="#learnable" title="Permalink to this headline">¶</a></h3>
-<p><a class="reference internal" href="../apidocs/nvflare.app_common.abstract.html#nvflare.app_common.abstract.learnable.Learnable" title="nvflare.app_common.abstract.learnable.Learnable"><code class="xref py py-class docutils literal notranslate"><span class="pre">Learnable</span></code></a> is the result of an FL application.
-For example, in the deep learning scenario, it can be the model weights.
-In the AutoML case, it can be the network architecture.</p>
-<p>A <a class="reference internal" href="../apidocs/nvflare.app_common.abstract.html#nvflare.app_common.abstract.learnable_persistor.LearnablePersistor" title="nvflare.app_common.abstract.learnable_persistor.LearnablePersistor"><code class="xref py py-class docutils literal notranslate"><span class="pre">LearnablePersistor</span></code></a> defines how to load
-and save a <code class="docutils literal notranslate"><span class="pre">Learnable</span></code>. <code class="docutils literal notranslate"><span class="pre">Learnable</span></code> is a subset of the model file (which can contain other data like LR schedule)
-which is to be learned, like the model weights.</p>
-</div>
-<div class="section" id="aggregator">
-<h3>Aggregator<a class="headerlink" href="#aggregator" title="Permalink to this headline">¶</a></h3>
-<p><a class="reference internal" href="../apidocs/nvflare.app_common.abstract.html#nvflare.app_common.abstract.aggregator.Aggregator" title="nvflare.app_common.abstract.aggregator.Aggregator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Aggregators</span></code></a> define the aggregation algorithm to aggregate the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>.
-For example, a simple aggregator would be just average all the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code> of the same round.</p>
-<p>Below is the signature for an aggregator.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Aggregator</span><span class="p">(</span><span class="n">FLComponent</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
-    <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">accept</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">            accept the shareable submitted by the client.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            shareable: submitted Shareable object</span>
-<span class="sd">            fl_ctx: FLContext</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            first boolean to indicate if the contribution has been accepted.</span>
-
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">pass</span>
-
-    <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">            perform the aggregation for all the received Shareable from the clients.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            fl_ctx: FLContext</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            shareable</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">pass</span>
-</pre></div>
-</div>
-</div>
-</div>
-<div class="section" id="cross-site-model-evaluation-federated-evaluation">
-<span id="cross-site-model-evaluation"></span><h2>Cross Site Model Evaluation / Federated Evaluation<a class="headerlink" href="#cross-site-model-evaluation-federated-evaluation" title="Permalink to this headline">¶</a></h2>
-<p>The cross site model evaluation workflow uses the data from clients to run evaluation with the models of other clients.</p>
-<p><a class="reference internal" href="../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval</span></code></a></p>
-</div>
-<div class="section" id="cyclic-workflow">
-<h2>Cyclic Workflow<a class="headerlink" href="#cyclic-workflow" title="Permalink to this headline">¶</a></h2>
-<p>Cyclic workflow is new for NVIDIA FLARE 2.0.</p>
-<p><a class="reference internal" href="../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cyclic_ctl.CyclicController" title="nvflare.app_common.workflows.cyclic_ctl.CyclicController"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.cyclic_ctl.CyclicController</span></code></a></p>
 <p>You can study the source code and use it as a starting point to write your own controller workflows.</p>
 </div>
 <div class="section" id="task-lifecycle">
@@ -405,8 +340,8 @@ the task data.</p>
           </div>
           <footer>
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-        <a href="filters.html" class="btn btn-neutral float-right" title="Filters" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-        <a href="fl_component.html" class="btn btn-neutral float-left" title="FLComponent" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="controllers/scatter_and_gather_workflow.html" class="btn btn-neutral float-right" title="Scatter and Gather Workflow" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../programming_guide.html" class="btn btn-neutral float-left" title="Programming Guide - Developing Apps with NVIDIA FLARE" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

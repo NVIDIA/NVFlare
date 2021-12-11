@@ -70,7 +70,9 @@
 
     
     <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" /> 
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Cyclic Workflow" href="cyclic_workflow.html" />
+    <link rel="prev" title="Scatter and Gather Workflow" href="scatter_and_gather_workflow.html" /> 
 </head>
 
 <body class="wy-body-for-nav">
@@ -159,11 +161,34 @@
               
             
             
-              <ul>
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../controllers.html">Controllers and Controller API</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="../controllers.html#controller-worker-interactions">Controller/Worker Interactions</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="../controllers.html#controller-api">Controller API</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="scatter_and_gather_workflow.html">Scatter and Gather Workflow</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">Cross Site Model Evaluation / Federated Evaluation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="cyclic_workflow.html">Cyclic Workflow</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../controllers.html#task-lifecycle">Task Lifecycle</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../executor.html">Executors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../filters.html">Filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../shareable.html">Shareable</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../fl_component.html">FLComponent</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../best_practices.html">NVIDIA FLARE Programming Best Practices</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../programming_guide.html#code-structure">Code Structure</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="../../faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../apidocs/modules.html">API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../appendix.html">Appendix</a></li>
@@ -215,6 +240,10 @@
     
       <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
         
+          <li><a href="../../programming_guide.html">Programming Guide - Developing Apps with NVIDIA FLARE</a> &raquo;</li>
+        
+          <li><a href="../controllers.html">Controllers and Controller API</a> &raquo;</li>
+        
       <li>Cross Site Model Evaluation / Federated Evaluation</li>
     
     
@@ -236,7 +265,13 @@
             
   <div class="section" id="cross-site-model-evaluation-federated-evaluation">
 <span id="cross-site-model-evaluation"></span><h1>Cross Site Model Evaluation / Federated Evaluation<a class="headerlink" href="#cross-site-model-evaluation-federated-evaluation" title="Permalink to this headline">¶</a></h1>
-<p>The cross site model evaluation workflow uses the data from clients to run evaluation with the models of other clients.</p>
+<p>The cross site model evaluation workflow uses the data from clients to run evaluation with the models of other clients.
+Data is not shared, rather the collection of models is distributed to each client site to run local validation.  The
+results of local validation are collected by the server to construct an all-to-all matrix of model performance vs.
+client dataset.</p>
+<p>The server’s global model is also distributed to each client for evaluation on the client’s local dataset for global
+model evaluation.</p>
+<p>See the code for details:</p>
 <p><a class="reference internal" href="../../apidocs/nvflare.app_common.workflows.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval</span></code></a></p>
 </div>
 
@@ -245,6 +280,10 @@
            
           </div>
           <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="cyclic_workflow.html" class="btn btn-neutral float-right" title="Cyclic Workflow" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="scatter_and_gather_workflow.html" class="btn btn-neutral float-left" title="Scatter and Gather Workflow" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
 
   <hr/>
 

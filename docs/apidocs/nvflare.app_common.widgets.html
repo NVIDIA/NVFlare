@@ -162,6 +162,7 @@
             
             
               <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -312,7 +313,7 @@
 <p>Receives analytic data.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>events</strong> (<em>optional</em><em>, </em><em>List</em><em>[</em><em>str</em><em>]</em>) – A list of event that this receiver will handled.</p>
+<dd class="field-odd"><p><strong>events</strong> (<em>optional</em><em>, </em><em>List</em><em>[</em><em>str</em><em>]</em>) – A list of event that this receiver will handle.</p>
 </dd>
 </dl>
 <dl class="py method">
@@ -372,39 +373,148 @@
 
 <dl class="py class">
 <dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender">
-<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AnalyticsSender</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">'log_analytics'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender" title="Permalink to this definition">¶</a></dt>
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AnalyticsSender</span></span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="nvflare.widgets.html#nvflare.widgets.widget.Widget" title="nvflare.widgets.widget.Widget"><code class="xref py py-class docutils literal notranslate"><span class="pre">nvflare.widgets.widget.Widget</span></code></a></p>
-<p>Sends analytic data.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>event</strong> (<em>str</em>) – The event that corresponding to this send.</p>
-</dd>
-</dl>
+<p>Sends analytics data.</p>
+<p>This class implements some common methods follows signatures from PyTorch SummaryWriter and Python logger.
+It provides a convenient way for LearnerService to use.</p>
 <dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.write">
-<span class="sig-name descname"><span class="pre">write</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.analytix.DataType" title="nvflare.apis.analytix.DataType"><span class="pre">nvflare.apis.analytix.DataType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">kwargs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.write"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.write" title="Permalink to this definition">¶</a></dt>
-<dd><p>Writes the analytic data.</p>
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.add_image">
+<span class="sig-name descname"><span class="pre">add_image</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.add_image"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.add_image" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sends an image.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – fl context info.</p></li>
-<li><p><strong>tag</strong> (<em>str</em>) – the tag associated with this value.</p></li>
-<li><p><strong>value</strong> – the analytic data.</p></li>
-<li><p><strong>data_type</strong> (<em>AnalyticsDataType</em>) – analytic data type.</p></li>
-<li><p><strong>kwargs</strong> (<em>dict</em>) – additional arguments to be passed into the receiver side’s function.</p></li>
+<li><p><strong>tag</strong> (<em>str</em>) – Data identifier.</p></li>
+<li><p><strong>image</strong> – Image to send.</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments to pass to the receiver side.</p></li>
 </ul>
 </dd>
 </dl>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.write_image">
-<span class="sig-name descname"><span class="pre">write_image</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.write_image"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.write_image" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.add_scalar">
+<span class="sig-name descname"><span class="pre">add_scalar</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scalar</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.add_scalar"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.add_scalar" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sends a scalar.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tag</strong> (<em>str</em>) – Data identifier.</p></li>
+<li><p><strong>scalar</strong> (<em>float</em>) – Value to send.</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments to pass to the receiver side.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.add_scalars">
+<span class="sig-name descname"><span class="pre">add_scalars</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scalars</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.add_scalars"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.add_scalars" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sends scalars.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tag</strong> (<em>str</em>) – The parent name for the tags.</p></li>
+<li><p><strong>scalars</strong> (<em>dict</em>) – Key-value pair storing the tag and corresponding values.</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments to pass to the receiver side.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.add_text">
+<span class="sig-name descname"><span class="pre">add_text</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.add_text"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.add_text" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sends a text.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tag</strong> (<em>str</em>) – Data identifier.</p></li>
+<li><p><strong>text</strong> (<em>str</em>) – String to send.</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments to pass to the receiver side.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.critical">
+<span class="sig-name descname"><span class="pre">critical</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.critical"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.critical" title="Permalink to this definition">¶</a></dt>
+<dd><p>Logs a message with tag LogMessageTag.CRITICAL.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.debug">
+<span class="sig-name descname"><span class="pre">debug</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.debug"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.debug" title="Permalink to this definition">¶</a></dt>
+<dd><p>Logs a message with tag LogMessageTag.DEBUG.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.error">
+<span class="sig-name descname"><span class="pre">error</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.error"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.error" title="Permalink to this definition">¶</a></dt>
+<dd><p>Logs a message with tag LogMessageTag.ERROR.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.exception">
+<span class="sig-name descname"><span class="pre">exception</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.exception"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.exception" title="Permalink to this definition">¶</a></dt>
+<dd><p>Logs a message with tag LogMessageTag.EXCEPTION.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.handle_event">
+<span class="sig-name descname"><span class="pre">handle_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.handle_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.handle_event" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>perform the handler process based on the event_type.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> – event type fired by workflow</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.info">
+<span class="sig-name descname"><span class="pre">info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.info" title="Permalink to this definition">¶</a></dt>
+<dd><p>Logs a message with tag LogMessageTag.INFO.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.warning">
+<span class="sig-name descname"><span class="pre">warning</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.warning"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.warning" title="Permalink to this definition">¶</a></dt>
+<dd><p>Logs a message with tag LogMessageTag.WARNING.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.send_analytic_dxo">
+<span class="sig-name descname"><span class="pre">send_analytic_dxo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">comp</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_component.FLComponent" title="nvflare.apis.fl_component.FLComponent"><span class="pre">nvflare.apis.fl_component.FLComponent</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dxo</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">'analytix_log_stats'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#send_analytic_dxo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.send_analytic_dxo" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sends analytic dxo.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>comp</strong> (<em>FLComponent</em>) – An FLComponent.</p></li>
+<li><p><strong>dxo</strong> (<em>DXO</em>) – analytic data in dxo.</p></li>
+<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – fl context info.</p></li>
+<li><p><strong>event_type</strong> (<em>str</em>) – Event type.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.write_image">
+<span class="sig-name descname"><span class="pre">write_image</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#write_image"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.write_image" title="Permalink to this definition">¶</a></dt>
 <dd><p>Writes an image.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – fl context info.</p></li>
 <li><p><strong>tag</strong> (<em>str</em>) – the tag associated with this value.</p></li>
 <li><p><strong>image</strong> – the image to write.</p></li>
 </ul>
@@ -412,14 +522,13 @@
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalar">
-<span class="sig-name descname"><span class="pre">write_scalar</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scalar</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.write_scalar"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalar" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.write_scalar">
+<span class="sig-name descname"><span class="pre">write_scalar</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scalar</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#write_scalar"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.write_scalar" title="Permalink to this definition">¶</a></dt>
 <dd><p>Writes a scalar.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – fl context info.</p></li>
 <li><p><strong>tag</strong> (<em>str</em>) – the tag associated with this value.</p></li>
 <li><p><strong>scalar</strong> (<em>float</em>) – a scalar to write.</p></li>
 </ul>
@@ -427,14 +536,13 @@
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalars">
-<span class="sig-name descname"><span class="pre">write_scalars</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag_scalar_dict</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.write_scalars"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.write_scalars" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.write_scalars">
+<span class="sig-name descname"><span class="pre">write_scalars</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag_scalar_dict</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#write_scalars"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.write_scalars" title="Permalink to this definition">¶</a></dt>
 <dd><p>Writes scalars.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – fl context info.</p></li>
 <li><p><strong>tag</strong> (<em>str</em>) – the tag associated with this dict.</p></li>
 <li><p><strong>tag_scalar_dict</strong> (<em>dict</em>) – A dictionary that contains tag and scalars to write.</p></li>
 </ul>
@@ -442,21 +550,18 @@
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.AnalyticsSender.write_text">
-<span class="sig-name descname"><span class="pre">write_text</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#AnalyticsSender.write_text"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.AnalyticsSender.write_text" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.app_common.widgets.streaming.write_text">
+<span class="sig-name descname"><span class="pre">write_text</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">text</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.html#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></span><a class="reference internal" href="../_modules/nvflare/app_common/widgets/streaming.html#write_text"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.widgets.streaming.write_text" title="Permalink to this definition">¶</a></dt>
 <dd><p>Writes text.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – fl context info.</p></li>
 <li><p><strong>tag</strong> (<em>str</em>) – the tag associated with this value.</p></li>
-<li><p><strong>text</strong> – the text to write.</p></li>
+<li><p><strong>text</strong> (<em>str</em>) – the text to write.</p></li>
 </ul>
 </dd>
 </dl>
-</dd></dl>
-
 </dd></dl>
 
 </div>

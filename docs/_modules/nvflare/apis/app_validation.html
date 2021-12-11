@@ -160,6 +160,7 @@
             
             
               <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -248,6 +249,7 @@
 <span class="c1"># limitations under the License.</span>
 
 <span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Tuple</span>
 
 
 <div class="viewcode-block" id="AppValidationKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.app_validation.AppValidationKey">[docs]</a><span class="k">class</span> <span class="nc">AppValidationKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
@@ -258,7 +260,7 @@
 
 <div class="viewcode-block" id="AppValidator"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.app_validation.AppValidator">[docs]</a><span class="k">class</span> <span class="nc">AppValidator</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
 <div class="viewcode-block" id="AppValidator.validate"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.app_validation.AppValidator.validate">[docs]</a>    <span class="nd">@abstractmethod</span>
-    <span class="k">def</span> <span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_folder</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="p">{}):</span>
+    <span class="k">def</span> <span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_folder</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">]:</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Validate and/or clean the content of specified application folder.</span>
 

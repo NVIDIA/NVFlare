@@ -160,6 +160,7 @@
             
             
               <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -233,7 +234,22 @@
            <div itemprop="articleBody">
             
   <h1>Source code for nvflare.apis.analytix</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+<span></span><span class="c1"># Copyright (c) 2021, NVIDIA CORPORATION.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
 
 <span class="kn">from</span> <span class="nn">nvflare.apis.dxo</span> <span class="kn">import</span> <span class="n">DXO</span><span class="p">,</span> <span class="n">DataKind</span>
 
@@ -241,32 +257,44 @@
 <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">&quot;analytics_kwargs&quot;</span>
 
 
-<div class="viewcode-block" id="DataType"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.DataType">[docs]</a><span class="k">class</span> <span class="nc">DataType</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+<div class="viewcode-block" id="AnalyticsDataType"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.AnalyticsDataType">[docs]</a><span class="k">class</span> <span class="nc">AnalyticsDataType</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
     <span class="n">SCALARS</span> <span class="o">=</span> <span class="s2">&quot;SCALARS&quot;</span>
     <span class="n">SCALAR</span> <span class="o">=</span> <span class="s2">&quot;SCALAR&quot;</span>
     <span class="n">IMAGE</span> <span class="o">=</span> <span class="s2">&quot;IMAGE&quot;</span>
     <span class="n">TEXT</span> <span class="o">=</span> <span class="s2">&quot;TEXT&quot;</span></div>
 
 
-<div class="viewcode-block" id="Data"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.Data">[docs]</a><span class="k">class</span> <span class="nc">Data</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;This class defines Data format.</span>
-<span class="sd">    It is a wrapper to provide from / to DXO conversion.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="AnalyticsData"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.AnalyticsData">[docs]</a><span class="k">class</span> <span class="nc">AnalyticsData</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">data_type</span><span class="p">:</span> <span class="n">AnalyticsDataType</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]):</span>
+        <span class="sd">&quot;&quot;&quot;This class defines AnalyticsData format.</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">data_type</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+<span class="sd">            It is a wrapper to provide from / to DXO conversion.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            tag (str): tag name</span>
+<span class="sd">            value: value</span>
+<span class="sd">            data_type (AnalyticDataType): type of the analytic data.</span>
+<span class="sd">            kwargs (optional, dict): additional arguments to be passed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">tag</span> <span class="o">=</span> <span class="n">tag</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">data_type</span> <span class="o">=</span> <span class="n">data_type</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span>
 
-<div class="viewcode-block" id="Data.to_dxo"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.Data.to_dxo">[docs]</a>    <span class="k">def</span> <span class="nf">to_dxo</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="AnalyticsData.to_dxo"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.AnalyticsData.to_dxo">[docs]</a>    <span class="k">def</span> <span class="nf">to_dxo</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Converts the AnalyticsData to DXO object.&quot;&quot;&quot;</span>
         <span class="n">dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">ANALYTIC</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="bp">self</span><span class="o">.</span><span class="n">tag</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">})</span>
         <span class="n">dxo</span><span class="o">.</span><span class="n">set_meta_prop</span><span class="p">(</span><span class="n">DATA_TYPE_KEY</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_type</span><span class="p">)</span>
         <span class="n">dxo</span><span class="o">.</span><span class="n">set_meta_prop</span><span class="p">(</span><span class="n">KWARGS_KEY</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">dxo</span></div>
 
-<div class="viewcode-block" id="Data.from_dxo"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.Data.from_dxo">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="AnalyticsData.from_dxo"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.html#nvflare.apis.analytix.AnalyticsData.from_dxo">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_dxo</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">dxo</span><span class="p">:</span> <span class="n">DXO</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generates the AnalyticsData from DXO object.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            dxo (DXO): The DXO object to convert.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dxo</span><span class="p">,</span> <span class="n">DXO</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;dxo is not of type DXO, instead it has type </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">dxo</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
 
@@ -277,8 +305,8 @@
 
         <span class="n">data_type</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">get_meta_prop</span><span class="p">(</span><span class="n">DATA_TYPE_KEY</span><span class="p">)</span>
         <span class="n">kwargs</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">get_meta_prop</span><span class="p">(</span><span class="n">KWARGS_KEY</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data_type</span><span class="p">,</span> <span class="n">DataType</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;data_type is not supported.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data_type</span><span class="p">,</span> <span class="n">AnalyticsDataType</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;data_type </span><span class="si">{</span><span class="n">data_type</span><span class="si">}</span><span class="s2"> is not supported.&quot;</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">data_type</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span></div></div>
 </pre></div>

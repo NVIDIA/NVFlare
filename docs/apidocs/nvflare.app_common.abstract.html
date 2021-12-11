@@ -162,6 +162,7 @@
             
             
               <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -411,107 +412,6 @@
 <li><p><strong>learnable</strong> – the Learnable object to be saved</p></li>
 <li><p><strong>fl_ctx</strong> – FLContext</p></li>
 </ul>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
-</div>
-<div class="section" id="module-nvflare.app_common.abstract.learner_service_provider_spec">
-<span id="nvflare-app-common-abstract-learner-service-provider-spec-module"></span><h2>nvflare.app_common.abstract.learner_service_provider_spec module<a class="headerlink" href="#module-nvflare.app_common.abstract.learner_service_provider_spec" title="Permalink to this headline">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec">
-<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">LearnerServiceProviderSpec</span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learner_service_provider_spec.html#LearnerServiceProviderSpec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">abc.ABC</span></code></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.abort">
-<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">abort</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learner_service_provider_spec.html#LearnerServiceProviderSpec.abort"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.abort" title="Permalink to this definition">¶</a></dt>
-<dd><p>Called (from another thread) to abort the current task (validate or train).</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>ctx</strong> (<em>dict</em>) – contextual info of running environment.</p>
-</dd>
-</dl>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>This is to abort the current task only, not the LearnerServiceProvider.
-After aborting, the LearnerServiceProvider may still be called to perform another task.</p>
-</div>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.finalize">
-<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">finalize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learner_service_provider_spec.html#LearnerServiceProviderSpec.finalize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.finalize" title="Permalink to this definition">¶</a></dt>
-<dd><p>Called to finalize the LearnerServiceProvider (close/release resources gracefully).
-After this call, the LearnerServiceProvider will be destroyed.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>ctx</strong> (<em>dict</em>) – contextual info of running environment.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.initialize">
-<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">initialize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parts</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learner_service_provider_spec.html#LearnerServiceProviderSpec.initialize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.initialize" title="Permalink to this definition">¶</a></dt>
-<dd><p>Initializes the LearnerServiceProvider object.</p>
-<p>This is called before the LearnerServiceProvider can train or validate.
-This is called only once.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>parts</strong> (<em>dict</em>) – components to be used by the LearnerServiceProvider.</p></li>
-<li><p><strong>ctx</strong> (<em>dict</em>) – contextual info of running environment. For example:
-MMAR root, security settings, workspace location, stuff in FLContext</p></li>
-</ul>
-</dd>
-</dl>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<dl class="simple">
-<dt>Some example parts:</dt><dd><ul class="simple">
-<li><p>A “SummaryWriter” part could be implemented as a NVFlare widget that knows how to
-stream data (fire an event back to NVFlare).</p></li>
-<li><p>A “Logger” part that streams log messages back.</p></li>
-</ul>
-</dd>
-</dl>
-</div>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.train">
-<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">train</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learner_service_provider_spec.html#LearnerServiceProviderSpec.train"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.train" title="Permalink to this definition">¶</a></dt>
-<dd><p>Called to perform training.</p>
-<p>This method can be called many times during the life time of the LearnerServiceProvider.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>data</strong> (<em>dict</em>) – the training input data (e.g. model weights)</p></li>
-<li><p><strong>ctx</strong> (<em>dict</em>) – contextual info of running environment.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>A dictionary that contains the training result.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.validate">
-<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">validate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span></span></span><a class="reference internal" href="../_modules/nvflare/app_common/abstract/learner_service_provider_spec.html#LearnerServiceProviderSpec.validate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.app_common.abstract.learner_service_provider_spec.LearnerServiceProviderSpec.validate" title="Permalink to this definition">¶</a></dt>
-<dd><p>Called to perform validation.</p>
-<p>This method can be called many times during the life time of the LearnerServiceProvider.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>data</strong> (<em>dict</em>) – the validation input data (e.g. model weights)</p></li>
-<li><p><strong>ctx</strong> (<em>dict</em>) – contextual info of running environment.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>A dictionary that contains the validation result.</p>
 </dd>
 </dl>
 </dd></dl>

@@ -36,14 +36,6 @@ nvflare.app\_common.abstract.learnable\_persistor module
    :undoc-members:
    :show-inheritance:
 
-nvflare.app\_common.abstract.learner\_service\_provider\_spec module
---------------------------------------------------------------------
-
-.. automodule:: nvflare.app_common.abstract.learner_service_provider_spec
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 nvflare.app\_common.abstract.model module
 -----------------------------------------
 

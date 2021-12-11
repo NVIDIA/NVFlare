@@ -160,6 +160,7 @@
             
             
               <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -249,7 +250,7 @@
 
 <span class="kn">import</span> <span class="nn">datetime</span>
 
-<span class="kn">from</span> <span class="nn">nvflare.apis.analytix</span> <span class="kn">import</span> <span class="n">Data</span> <span class="k">as</span> <span class="n">AnalytixData</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.analytix</span> <span class="kn">import</span> <span class="n">AnalyticsData</span>
 <span class="kn">from</span> <span class="nn">nvflare.apis.dxo</span> <span class="kn">import</span> <span class="n">from_shareable</span>
 <span class="kn">from</span> <span class="nn">nvflare.apis.event_type</span> <span class="kn">import</span> <span class="n">EventType</span>
 <span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span>
@@ -336,7 +337,7 @@
                 <span class="p">)</span>
                 <span class="k">return</span>
 
-            <span class="n">analytic_data</span> <span class="o">=</span> <span class="n">AnalytixData</span><span class="o">.</span><span class="n">from_dxo</span><span class="p">(</span><span class="n">dxo</span><span class="p">)</span>
+            <span class="n">analytic_data</span> <span class="o">=</span> <span class="n">AnalyticsData</span><span class="o">.</span><span class="n">from_dxo</span><span class="p">(</span><span class="n">dxo</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">ERROR_LOG_AVAILABLE</span><span class="p">:</span>
                 <span class="n">key</span> <span class="o">=</span> <span class="s2">&quot;error&quot;</span>

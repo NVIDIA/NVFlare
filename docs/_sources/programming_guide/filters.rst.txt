@@ -26,5 +26,5 @@ purpose of security. In fact, privacy and homomorphic encryption techniques are 
 
     - ExcludeVars to exclude variables from shareable (:mod:`nvflare.app_common.filters.exclude_vars`)
     - PercentilePrivacy (:mod:`nvflare.app_common.filters.percentile_privacy`)
-    - SVTPrivacy (:mod:`nvflare.app_common.filters.svt_privacy`)
+    - SVTPrivacy for differential privacy (:mod:`nvflare.app_common.filters.svt_privacy`)
     - Homomorphic encryption (:mod:`nvflare.app_common.homomorphic_encryption.he_model_encryptor.py` and :mod:`nvflare.app_common.homomorphic_encryption.he_model_decryptor`)

@@ -162,6 +162,7 @@
             
             
               <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -492,8 +493,8 @@ has any standing tasks.</p>
 <li><p><strong>fl_ctx</strong> (<em>FLContext</em>) – FLContext associated with this task</p></li>
 <li><p><strong>targets</strong> (<em>Union</em><em>[</em><em>List</em><em>[</em><em>Client</em><em>]</em><em>, </em><em>List</em><em>[</em><em>str</em><em>]</em><em>, </em><em>None</em><em>]</em><em>, </em><em>optional</em>) – the list of eligible clients or client names or None (all clients). Defaults to None.</p></li>
 <li><p><strong>min_responses</strong> (<em>int</em><em>, </em><em>optional</em>) – the condition to mark this task as completed because enough clients respond with submission. Defaults to 1.</p></li>
-<li><p><strong>wait_time_after_min_received</strong> (<em>int</em><em>, </em><em>optional</em>) – a grace period for late clients to contribute their submission.  0 means no grace period.</p></li>
-<li><p><strong>0.</strong> (<em>Submission of late clients in the grace period are still collected as valid submission. Defaults to</em>) – </p></li>
+<li><p><strong>wait_time_after_min_received</strong> (<em>int</em><em>, </em><em>optional</em>) – a grace period for late clients to contribute their submission.  0 means no grace period.
+Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Raises</dt>

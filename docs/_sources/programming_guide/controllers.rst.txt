@@ -36,14 +36,14 @@ in different ways:
    - Arrange a task to be done by multiple clients in turns
 
 See the included :class:`Controller<nvflare.apis.impl.controller.Controller>` implementation and full reference
-implementations of the following controller workflows: :ref:`scatter_and_gather_workflow`, :ref:`cross_site_model_evaluation`, and
-:ref:`cyclic_workflow`.
+implementations of the following controller workflows:
 
-.. include:: controllers/scatter_and_gather_workflow.rst
+.. toctree::
+   :maxdepth: 1
 
-.. include:: controllers/cross_site_model_evaluation.rst
-
-.. include:: controllers/cyclic_workflow.rst
+   controllers/scatter_and_gather_workflow
+   controllers/cross_site_model_evaluation.rst
+   controllers/cyclic_workflow.rst
 
 You can study the source code and use it as a starting point to write your own controller workflows.
 

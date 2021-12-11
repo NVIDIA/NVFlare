@@ -160,6 +160,7 @@
             
             
               <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -525,9 +526,9 @@
 <span class="sd">        The task is standing until one of the following conditions comes true:</span>
 <span class="sd">            - if timeout is specified (&gt; 0), and the task has been standing for more than the specified time</span>
 <span class="sd">            - the controller has received the specified min_responses results for this task, and all target clients</span>
-<span class="sd">            are done.</span>
+<span class="sd">              are done.</span>
 <span class="sd">            - the controller has received the specified min_responses results for this task, and has waited</span>
-<span class="sd">            for wait_time_after_min_received.</span>
+<span class="sd">              for wait_time_after_min_received.</span>
 
 <span class="sd">        While the task is standing:</span>
 <span class="sd">            - Before sending the task to a client, the before_task_sent CB (if specified) is called;</span>
@@ -535,7 +536,7 @@
 
 <span class="sd">        After the task is done, the task_done CB (if specified) is called:</span>
 <span class="sd">            - If result_received CB is specified, the &#39;result&#39; in the ClientTask of each</span>
-<span class="sd">            client is produced by the result_received CB;</span>
+<span class="sd">              client is produced by the result_received CB;</span>
 <span class="sd">            - Otherwise, the &#39;result&#39; contains the original result submitted by the clients;</span>
 
 <span class="sd">        NOTE: if the targets is None, the actual broadcast target clients will be dynamic, because the clients</span>
@@ -547,9 +548,9 @@
 <span class="sd">            fl_ctx: the FL context</span>
 <span class="sd">            targets: list of destination clients. None means all clients are determined dynamically;</span>
 <span class="sd">            min_responses: the min number of responses expected. If == 0, must get responses from</span>
-<span class="sd">            all clients that the task has been sent to;</span>
+<span class="sd">              all clients that the task has been sent to;</span>
 <span class="sd">            wait_time_after_min_received: how long (secs) to wait after the min_responses is received.</span>
-<span class="sd">            If == 0, end the task immediately after the min responses are received;</span>
+<span class="sd">              If == 0, end the task immediately after the min responses are received;</span>
 
 <span class="sd">        Returns:</span>
 

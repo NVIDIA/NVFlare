@@ -162,6 +162,7 @@
             
             
               <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a><ul class="current">
@@ -411,12 +412,12 @@ application or in a sub-folder (for example: config) of the FL application.</p>
 <p>In your server or client config, use path to refer to that component.</p>
 <p>For example, with a <code class="docutils literal notranslate"><span class="pre">SimpleTrainer</span></code> class stored in a file <code class="docutils literal notranslate"><span class="pre">my_trainer.py</span></code> inside the custom folder,
 the client config should have the following in order to configure it as an Executor:</p>
-<div class="highlight-json notranslate"><div class="highlight"><pre><span></span>...
-&quot;executor&quot;: {
-  &quot;path&quot;: &quot;my_trainer.SimpleTrainer&quot;,
-  &quot;args&quot;: {}
-},
-...
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">...</span>
+<span class="s2">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+  <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;my_trainer.SimpleTrainer&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="p">},</span>
+<span class="o">...</span>
 </pre></div>
 </div>
 <div class="admonition note">

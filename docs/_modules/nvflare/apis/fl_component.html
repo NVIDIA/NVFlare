@@ -160,6 +160,7 @@
             
             
               <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -252,8 +253,7 @@
 
 <span class="kn">from</span> <span class="nn">nvflare.apis.utils.fl_context_utils</span> <span class="kn">import</span> <span class="n">generate_log_message</span>
 
-<span class="kn">from</span> <span class="nn">.analytix</span> <span class="kn">import</span> <span class="n">Data</span> <span class="k">as</span> <span class="n">AnalytixData</span>
-<span class="kn">from</span> <span class="nn">.analytix</span> <span class="kn">import</span> <span class="n">DataType</span>
+<span class="kn">from</span> <span class="nn">.analytix</span> <span class="kn">import</span> <span class="n">AnalyticsData</span><span class="p">,</span> <span class="n">AnalyticsDataType</span>
 <span class="kn">from</span> <span class="nn">.event_type</span> <span class="kn">import</span> <span class="n">EventType</span>
 <span class="kn">from</span> <span class="nn">.fl_constant</span> <span class="kn">import</span> <span class="n">EventScope</span><span class="p">,</span> <span class="n">FedEventHeader</span><span class="p">,</span> <span class="n">FLContextKey</span><span class="p">,</span> <span class="n">LogMessageTag</span>
 <span class="kn">from</span> <span class="nn">.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
@@ -392,7 +392,7 @@
         <span class="c1">#     )</span>
 
     <span class="k">def</span> <span class="nf">_fire_log_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">log_tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">log_msg</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
-        <span class="n">event_data</span> <span class="o">=</span> <span class="n">AnalytixData</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="n">log_tag</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">log_msg</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="n">DataType</span><span class="o">.</span><span class="n">TEXT</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+        <span class="n">event_data</span> <span class="o">=</span> <span class="n">AnalyticsData</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="n">log_tag</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">log_msg</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="n">AnalyticsDataType</span><span class="o">.</span><span class="n">TEXT</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
         <span class="n">dxo</span> <span class="o">=</span> <span class="n">event_data</span><span class="o">.</span><span class="n">to_dxo</span><span class="p">()</span>
         <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">EVENT_DATA</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">(),</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">event_type</span><span class="o">=</span><span class="n">event_type</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span></div>

@@ -162,32 +162,37 @@
             
             
               <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../quickstart.html">Quickstart</a><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="hello_pt.html">Quickstart (PyTorch)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="hello_numpy.html">Quickstart (Numpy)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="hello_tf2.html">Quickstart (TensorFlow 2)</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Quickstart (Numpy - Cross Site Validation)</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#before-you-start">Before You Start</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#prerequisite">Prerequisite</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#introduction">Introduction</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#training">Training</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#implementing-the-validator">Implementing the Validator</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#application-configuration">Application Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../quickstart.html#setting-up-the-application-environment-in-poc-mode">Setting Up the Application Environment in POC Mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../quickstart.html#starting-the-application-environment-in-poc-mode">Starting the Application Environment in POC Mode</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../quickstart.html#example-apps-for-nvidia-flare">Example Apps for NVIDIA FLARE</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="hello_pt.html">Quickstart (PyTorch)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="hello_numpy.html">Quickstart (Numpy)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="hello_tf2.html">Quickstart (TensorFlow 2)</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Quickstart (Numpy - Cross Site Validation)</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#before-you-start">Before You Start</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#prerequisite">Prerequisite</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#training">Training</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#implementing-the-validator">Implementing the Validator</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#application-configuration">Application Configuration</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#cross-site-validation">Cross site validation!</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#setting-up-the-application-environment">Setting Up the Application Environment</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#running-the-fl">Running the FL</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cross-site-validation">Cross site validation!</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#running-the-fl-system">Running the FL System</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#accessing-the-results">Accessing the results</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#understanding-the-output">Understanding the Output</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#accessing-the-results">Accessing the results</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#understanding-the-output">Understanding the Output</a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10</a></li>
+<li class="toctree-l3"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -571,47 +576,13 @@ workflow to get the client models.</p>
 </div>
 <div class="section" id="cross-site-validation">
 <h2>Cross site validation!<a class="headerlink" href="#cross-site-validation" title="Permalink to this headline">¶</a></h2>
-<p>Now you must set up a local environment and generate packages to simulate the server, clients, and admin. The steps to
-set up and run this application are identical to the <a class="reference internal" href="hello_numpy.html"><span class="doc">Hello Numpy</span></a> example except the app is now <code class="docutils literal notranslate"><span class="pre">hello-numpy-cross-val</span></code>
-instead of <code class="docutils literal notranslate"><span class="pre">hello-numpy</span></code>.</p>
-<div class="section" id="setting-up-the-application-environment">
-<h3>Setting Up the Application Environment<a class="headerlink" href="#setting-up-the-application-environment" title="Permalink to this headline">¶</a></h3>
-<p>This command generates a poc folder with server, one client and one admin:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ poc -n <span class="m">2</span>
-</pre></div>
-</div>
-<p>Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
-folder for the admin):</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ mkdir -p poc/admin/transfer
-$ cp -rf examples/* poc/admin/transfer
-</pre></div>
-</div>
-<p>With both the client and server ready, you can now run everything and see federated
-learning in action. FL systems usually have a server and multiple clients. We
-therefore have to start the server first:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/server/startup/start.sh
-</pre></div>
-</div>
-<p>Once the server is running you can start the clients in different terminals.
-Open a new terminal and start the first client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-1/startup/start.sh
-</pre></div>
-</div>
-<p>Open another terminal and start the second client:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/site-2/startup/start.sh
-</pre></div>
-</div>
-<p>In one last terminal, start the admin:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ ./poc/admin/startup/fl_admin.sh localhost
-</pre></div>
-</div>
-<p>This will launch a command prompt, where you can input commands to control and monitor many aspects of
-the FL process. Log in by entering <code class="docutils literal notranslate"><span class="pre">admin</span></code> for both the username and password.</p>
-</div>
-<div class="section" id="running-the-fl">
-<h3>Running the FL<a class="headerlink" href="#running-the-fl" title="Permalink to this headline">¶</a></h3>
-<p>Enter the commands below in order.  Pay close attention to what happens in each of four terminals.  You
-can see the admin controls server and clients with each command.</p>
+<p>Now you can use admin commands to upload, deploy, and start this example app. To do this on a proof of concept local
+FL system, follow the sections <a class="reference internal" href="../quickstart.html#setting-up-poc"><span class="std std-ref">Setting Up the Application Environment in POC Mode</span></a> and <a class="reference internal" href="../quickstart.html#starting-poc"><span class="std std-ref">Starting the Application Environment in POC Mode</span></a> if you have not already.</p>
+<div class="section" id="running-the-fl-system">
+<h3>Running the FL System<a class="headerlink" href="#running-the-fl-system" title="Permalink to this headline">¶</a></h3>
+<p>With the admin client command prompt successfully connected and logged in, enter the commands below in order.  Pay close
+attention to what happens in each of four terminals.  You can see how the admin controls the server and clients with
+each command.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; upload_app hello-numpy-cross-val
 </pre></div>
 </div>

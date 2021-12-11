@@ -162,6 +162,7 @@
             
             
               <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">NVIDIA FLARE Key Features</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Provision, Start, Operate</a></li>
@@ -312,46 +313,65 @@
 <div class="section" id="module-nvflare.apis.analytix">
 <span id="nvflare-apis-analytix-module"></span><h2>nvflare.apis.analytix module<a class="headerlink" href="#module-nvflare.apis.analytix" title="Permalink to this headline">¶</a></h2>
 <dl class="py class">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.Data">
-<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">Data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#Data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.Data" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsData">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AnalyticsData</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_type</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.analytix.AnalyticsDataType" title="nvflare.apis.analytix.AnalyticsDataType"><span class="pre">nvflare.apis.analytix.AnalyticsDataType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#AnalyticsData"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsData" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
-<p>This class defines Data format.
-It is a wrapper to provide from / to DXO conversion.</p>
+<p>This class defines AnalyticsData format.</p>
+<blockquote>
+<div><p>It is a wrapper to provide from / to DXO conversion.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tag</strong> (<em>str</em>) – tag name</p></li>
+<li><p><strong>value</strong> – value</p></li>
+<li><p><strong>data_type</strong> (<em>AnalyticDataType</em>) – type of the analytic data.</p></li>
+<li><p><strong>kwargs</strong> (<em>optional</em><em>, </em><em>dict</em>) – additional arguments to be passed.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.Data.from_dxo">
-<em class="property"><span class="pre">classmethod</span> </em><span class="sig-name descname"><span class="pre">from_dxo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dxo</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#Data.from_dxo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.Data.from_dxo" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsData.from_dxo">
+<em class="property"><span class="pre">classmethod</span> </em><span class="sig-name descname"><span class="pre">from_dxo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dxo</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.dxo.DXO" title="nvflare.apis.dxo.DXO"><span class="pre">nvflare.apis.dxo.DXO</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#AnalyticsData.from_dxo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsData.from_dxo" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generates the AnalyticsData from DXO object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>dxo</strong> (<em>DXO</em>) – The DXO object to convert.</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.Data.to_dxo">
-<span class="sig-name descname"><span class="pre">to_dxo</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#Data.to_dxo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.Data.to_dxo" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsData.to_dxo">
+<span class="sig-name descname"><span class="pre">to_dxo</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#AnalyticsData.to_dxo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsData.to_dxo" title="Permalink to this definition">¶</a></dt>
+<dd><p>Converts the AnalyticsData to DXO object.</p>
+</dd></dl>
 
 </dd></dl>
 
 <dl class="py class">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.DataType">
-<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">DataType</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#DataType"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.DataType" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsDataType">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">AnalyticsDataType</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/analytix.html#AnalyticsDataType"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsDataType" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">enum.Enum</span></code></p>
 <p>An enumeration.</p>
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.DataType.IMAGE">
-<span class="sig-name descname"><span class="pre">IMAGE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'IMAGE'</span></em><a class="headerlink" href="#nvflare.apis.analytix.DataType.IMAGE" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsDataType.IMAGE">
+<span class="sig-name descname"><span class="pre">IMAGE</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'IMAGE'</span></em><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsDataType.IMAGE" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.DataType.SCALAR">
-<span class="sig-name descname"><span class="pre">SCALAR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'SCALAR'</span></em><a class="headerlink" href="#nvflare.apis.analytix.DataType.SCALAR" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsDataType.SCALAR">
+<span class="sig-name descname"><span class="pre">SCALAR</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'SCALAR'</span></em><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsDataType.SCALAR" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.DataType.SCALARS">
-<span class="sig-name descname"><span class="pre">SCALARS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'SCALARS'</span></em><a class="headerlink" href="#nvflare.apis.analytix.DataType.SCALARS" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsDataType.SCALARS">
+<span class="sig-name descname"><span class="pre">SCALARS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'SCALARS'</span></em><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsDataType.SCALARS" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="nvflare.apis.analytix.DataType.TEXT">
-<span class="sig-name descname"><span class="pre">TEXT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'TEXT'</span></em><a class="headerlink" href="#nvflare.apis.analytix.DataType.TEXT" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="nvflare.apis.analytix.AnalyticsDataType.TEXT">
+<span class="sig-name descname"><span class="pre">TEXT</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'TEXT'</span></em><a class="headerlink" href="#nvflare.apis.analytix.AnalyticsDataType.TEXT" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
@@ -381,7 +401,7 @@ It is a wrapper to provide from / to DXO conversion.</p>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">abc.ABC</span></code></p>
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.apis.app_validation.AppValidator.validate">
-<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">validate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/app_validation.html#AppValidator.validate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.app_validation.AppValidator.validate" title="Permalink to this definition">¶</a></dt>
+<em class="property"><span class="pre">abstract</span> </em><span class="sig-name descname"><span class="pre">validate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">app_folder</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span> </span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/nvflare/apis/app_validation.html#AppValidator.validate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.app_validation.AppValidator.validate" title="Permalink to this definition">¶</a></dt>
 <dd><p>Validate and/or clean the content of specified application folder.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -613,14 +633,14 @@ has any standing tasks.</p>
 <span class="sig-name descname"><span class="pre">broadcast</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">nvflare.apis.controller_spec.Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">nvflare.apis.fl_context.FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">nvflare.apis.client.Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_responses</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wait_time_after_min_received</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.broadcast"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.broadcast" title="Permalink to this definition">¶</a></dt>
 <dd><p>Schedule to broadcast the task to specified targets.
 This is a non-blocking call.</p>
-<dl>
+<dl class="simple">
 <dt>The task is standing until one of the following conditions comes true:</dt><dd><ul class="simple">
 <li><p>if timeout is specified (&gt; 0), and the task has been standing for more than the specified time</p></li>
-<li><p>the controller has received the specified min_responses results for this task, and all target clients</p></li>
+<li><p>the controller has received the specified min_responses results for this task, and all target clients
+are done.</p></li>
+<li><p>the controller has received the specified min_responses results for this task, and has waited
+for wait_time_after_min_received.</p></li>
 </ul>
-<p>are done.
-- the controller has received the specified min_responses results for this task, and has waited
-for wait_time_after_min_received.</p>
 </dd>
 <dt>While the task is standing:</dt><dd><ul class="simple">
 <li><p>Before sending the task to a client, the before_task_sent CB (if specified) is called;</p></li>
@@ -628,10 +648,10 @@ for wait_time_after_min_received.</p>
 </ul>
 </dd>
 <dt>After the task is done, the task_done CB (if specified) is called:</dt><dd><ul class="simple">
-<li><p>If result_received CB is specified, the ‘result’ in the ClientTask of each</p></li>
+<li><p>If result_received CB is specified, the ‘result’ in the ClientTask of each
+client is produced by the result_received CB;</p></li>
+<li><p>Otherwise, the ‘result’ contains the original result submitted by the clients;</p></li>
 </ul>
-<p>client is produced by the result_received CB;
-- Otherwise, the ‘result’ contains the original result submitted by the clients;</p>
 </dd>
 </dl>
 <p>NOTE: if the targets is None, the actual broadcast target clients will be dynamic, because the clients
@@ -643,11 +663,10 @@ becomes a target for this broadcast.</p>
 <li><p><strong>task</strong> – the task to be sent</p></li>
 <li><p><strong>fl_ctx</strong> – the FL context</p></li>
 <li><p><strong>targets</strong> – list of destination clients. None means all clients are determined dynamically;</p></li>
-<li><p><strong>min_responses</strong> – the min number of responses expected. If == 0, must get responses from</p></li>
-<li><p><strong>to;</strong> (<em>all clients that the task has been sent</em>) – </p></li>
-<li><p><strong>wait_time_after_min_received</strong> – how long (secs) to wait after the min_responses is received.</p></li>
-<li><p><strong>0</strong> (<em>If ==</em>) – </p></li>
-<li><p><strong>received;</strong> (<em>end the task immediately after the min responses are</em>) – </p></li>
+<li><p><strong>min_responses</strong> – the min number of responses expected. If == 0, must get responses from
+all clients that the task has been sent to;</p></li>
+<li><p><strong>wait_time_after_min_received</strong> – how long (secs) to wait after the min_responses is received.
+If == 0, end the task immediately after the min responses are received;</p></li>
 </ul>
 </dd>
 </dl>
@@ -1046,7 +1065,7 @@ You can also use this CB to alter the data of the task to be sent.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="nvflare.apis.dxo.DXO.remove_meta_props">
-<span class="sig-name descname"><span class="pre">remove_meta_props</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/dxo.html#DXO.remove_meta_props"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.dxo.DXO.remove_meta_props" title="Permalink to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">remove_meta_props</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/dxo.html#DXO.remove_meta_props"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.dxo.DXO.remove_meta_props" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
@@ -1694,6 +1713,11 @@ You can also use this CB to alter the data of the task to be sent.</p>
 <dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag">
 <em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">LogMessageTag</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#LogMessageTag"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.CRITICAL">
+<span class="sig-name descname"><span class="pre">CRITICAL</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'log/critical'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.CRITICAL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
 <dl class="py attribute">
 <dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.DEBUG">
 <span class="sig-name descname"><span class="pre">DEBUG</span></span><em class="property"> <span class="pre">=</span> <span class="pre">'log/debug'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.DEBUG" title="Permalink to this definition">¶</a></dt>
