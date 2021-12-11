@@ -27,7 +27,6 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.formatter import Formatter
-from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelKind
 from nvflare.app_common.app_event_type import AppEventType
