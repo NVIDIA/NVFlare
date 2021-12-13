@@ -20,30 +20,33 @@ from nvflare.apis.shareable import Shareable
 
 
 class Aggregator(FLComponent, ABC):
+    def __init__(self) -> None:
+        """Abstract class for Aggregators used in ScatterAndGather workflow."""
+        super().__init__()
+
     @abstractmethod
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        """
-            accept the shareable submitted by the client.
+        """Accept the shareable submitted by the client.
 
         Args:
-            shareable: submitted Shareable object
-            fl_ctx: FLContext
+            shareable (Shareable): Shareable object containing contribution.
+            fl_ctx (FLContext): FL Context used to pass data.
 
         Returns:
-            first boolean to indicate if the contribution has been accepted.
+            Bool to indicate if contribution is accepted.
 
         """
         pass
 
     @abstractmethod
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        """
-            perform the aggregation for all the received Shareable from the clients.
+        """Perform the aggregation for all the received Shareable from the clients.
 
         Args:
-            fl_ctx: FLContext
+            fl_ctx (FLContext): FL Context used to pass data.
 
         Returns:
-            shareable
+            shareable (Shareable): Shareable containing aggregated model.
+
         """
         pass

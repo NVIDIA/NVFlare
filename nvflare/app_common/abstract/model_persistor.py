@@ -15,12 +15,15 @@
 from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable
-
-from .learnable_persistor import LearnablePersistor
 
 
 class ModelPersistor(LearnablePersistor, ABC):
+    def __init__(self):
+        """Abstract class for ModelPersistor to save or load models."""
+        super().__init__()
+
     def load(self, fl_ctx: FLContext):
         return self.load_model(fl_ctx)
 
@@ -29,26 +32,27 @@ class ModelPersistor(LearnablePersistor, ABC):
 
     @abstractmethod
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
-        """
-            initialize and load the model.
+        """Initialize and load the model.
 
         Args:
-            fl_ctx: FLContext
+            fl_ctx (FLContext): FLContext used to pass data.
 
         Returns:
-            Model object
+            ModelLearnable object.
 
         """
         pass
 
     @abstractmethod
     def save_model(self, model: ModelLearnable, fl_ctx: FLContext):
-        """
-            persist the model object
+        """Persist the model object.
 
         Args:
-            model: Model object to be saved
-            fl_ctx: FLContext
+            model (ModelLearnable): Model object to be saved.
+            fl_ctx (FLContext): fl context used to pass around data
+
+        Returns:
+            None
 
         """
         pass

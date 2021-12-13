@@ -24,7 +24,8 @@ from nvflare.app_common.app_constant import AppConstants
 
 class InTimeAccumulateWeightedAggregator(Aggregator):
     def __init__(self, exclude_vars=None, aggregation_weights=None, expected_data_kind=DataKind.WEIGHT_DIFF):
-        """Perform accumulated weighted aggregation
+        """Performs accumulated weighted aggregation as soon as contributions are received.
+
         It computes
         weighted_sum = sum(shareable*n_iteration*aggregation_weights) and
         sum_of_weights = sum(n_iteration)
@@ -36,6 +37,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         Args:
             exclude_vars ([type], optional): regex to match excluded vars during aggregation. Defaults to None.
             aggregation_weights ([type], optional): dictionary to map client name to its aggregation weights. Defaults to None.
+
         """
         super().__init__()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
@@ -65,7 +67,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
 
         Returns:
             The first boolean indicates if this shareable is accepted.
-            The second bollean indicates if aggregate can be called.
+
         """
         try:
             dxo = from_shareable(shareable)
@@ -175,7 +177,8 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             fl_ctx (FLContext): context provided by workflow
 
         Returns:
-            Shareable: the weighted mean of accepted shareables from clients
+            Shareable: the weighted mean of accepted shareables from clients.
+
         """
 
         self.log_debug(fl_ctx, "Start aggregation")

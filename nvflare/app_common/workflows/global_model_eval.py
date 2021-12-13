@@ -30,7 +30,7 @@ class GlobalModelEval(CrossSiteModelEval):
         participating_clients=None,
         wait_for_clients_timeout=300,
     ):
-        """Cross Site Model Validation workflow
+        """GlobalModelEval locates models on server using ModelLocator and sends to all clients for validation.
 
         Args:
             task_check_period (float, optional): How often to check for new tasks or tasks being finished.

@@ -28,7 +28,7 @@ from nvflare.app_common.abstract.model import (
 
 
 def feed_vars(model: nn.Module, model_params):
-    """feed variable values from model_params to pytorch state_dict.
+    """Feed variable values from model_params to pytorch state_dict.
 
     Args:
         model (nn.Module): the local pytorch model
@@ -36,6 +36,7 @@ def feed_vars(model: nn.Module, model_params):
 
     Returns:
         a list of params and a dictionary of vars to params
+
     """
     _logger = logging.getLogger("AssignVariables")
     _logger.debug("AssignVariables...")
@@ -149,7 +150,7 @@ class PTModelPersistenceFormatManager(object):
         Update the persistence data with the learned values
 
         Args:
-            ml:
+            ml (ModelLearnable):
 
         Returns:
 

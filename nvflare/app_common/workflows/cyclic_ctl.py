@@ -26,10 +26,6 @@ from nvflare.app_common.app_event_type import AppEventType
 
 
 class CyclicController(Controller):
-    """
-    A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning
-    """
-
     def __init__(
         self,
         num_rounds: int = 5,
@@ -38,6 +34,15 @@ class CyclicController(Controller):
         shareable_generator_id="shareable_generator",
         task_name="train",
     ):
+        """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
+
+        Args:
+            num_rounds (int): Number of rounds of training.
+            task_assignment_timeout (int): Time after which relay task times out.
+            persistor_id (string): ID for the persistor component.
+            shareable_generator_id (str): ID for the shareable generator component.
+            task_name (str): Training task name.
+        """
         super().__init__()
         if not isinstance(num_rounds, int):
             raise TypeError("num_rounds must be int.")

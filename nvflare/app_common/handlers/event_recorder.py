@@ -26,16 +26,16 @@ from nvflare.apis.shareable import Shareable
 
 
 class _CtxPropReq(object):
-    """Requirements of a prop in the FLContext.
-
-    Arguments:
-        dtype: data type of the prop.
-        is_private: if this prop is private.
-        is_sticky: if this prop is sticky.
-        allow_none: if this prop can be None
-    """
-
     def __init__(self, dtype, is_private, is_sticky, allow_none: bool = False):
+        """Requirements of a prop in the FLContext.
+
+        Args:
+            dtype: data type of the prop.
+            is_private: if this prop is private.
+            is_sticky: if this prop is sticky.
+            allow_none: if this prop can be None
+
+        """
         self.dtype = dtype
         self.is_private = is_private
         self.is_sticky = is_sticky
@@ -43,13 +43,6 @@ class _CtxPropReq(object):
 
 
 class _EventReq(object):
-    """Requirements for FL and peer context when an event is fired.
-
-    Arguments:
-        ctx_reqs: A dictionary that describes the requirements for fl_ctx. It maps property names to _CtxPropReq
-        peer_ctx_reqs: A dictionary that describes the requirements for peer_ctx. It maps property names to _CtxPropReq
-    """
-
     def __init__(
         self,
         ctx_reqs: Dict[str, _CtxPropReq],
@@ -57,6 +50,13 @@ class _EventReq(object):
         ctx_block_list: [str] = None,
         peer_ctx_block_list: [str] = None,
     ):
+        """Requirements for FL and peer context when an event is fired.
+
+        Args:
+            ctx_reqs: A dictionary that describes the requirements for fl_ctx. It maps property names to _CtxPropReq
+            peer_ctx_reqs: A dictionary that describes the requirements for peer_ctx. It maps property names to _CtxPropReq
+
+        """
         self.ctx_reqs = ctx_reqs  # prop name => _CtxPropReq
         self.peer_ctx_reqs = peer_ctx_reqs
 
@@ -71,9 +71,8 @@ class _EventReq(object):
 
 
 class _EventStats(object):
-    """Stats of each event."""
-
     def __init__(self):
+        """Stats of each event."""
         self.call_count = 0
         self.prop_missing = 0
         self.prop_none_value = 0

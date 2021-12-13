@@ -33,6 +33,15 @@ class AccuItem(object):
 
 class AccumulateWeightedAggregator(Aggregator):
     def __init__(self, exclude_vars=None, aggregation_weights=None, expected_data_kind="WEIGHT_DIFF"):
+        """AccumulateWeightedAggregator saves contributions from clients in accept and
+        aggregates them when aggregate is called.
+
+        Args:
+            exclude_vars (List): Variables to exclude during aggregation.
+            aggregation_weights (List): Weights for each client.
+            expected_data_kind (str): Expected data kind of incoming shareables.
+
+        """
         super().__init__()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
         self.aggregation_weights = aggregation_weights or {}
@@ -47,6 +56,16 @@ class AccumulateWeightedAggregator(Aggregator):
         self.warning_limit = 10
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """Saves contributions from client.
+
+        Args:
+            shareable (Shareable): Shareable containing contribution.
+            fl_ctx (FLContext): FL Context used for sharing data.
+
+        Returns:
+            True if contribution is accepted, else False.
+
+        """
         try:
             dxo = from_shareable(shareable)
         except:
@@ -107,11 +126,14 @@ class AccumulateWeightedAggregator(Aggregator):
         return any(client_name == item.client for item in self.accumulator)
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        """
-        Aggregate model variables.
-        This function is not thread-safe.
+        """Aggregate model variables. This function is not thread-safe.
 
-        :return Return True to indicates the current model is the best model so far.
+        Args:
+            fl_ctx (FLContext): FL Context used for sharing data.
+
+        Returns:
+            Shareable containing aggregated model.
+
         """
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, "aggregating {} updates at round {}".format(len(self.accumulator), current_round))

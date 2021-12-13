@@ -29,6 +29,7 @@ class ConvertToFedEvent(Widget):
         Args:
             events_to_convert (List[str]): A list of event names to be converted.
             fed_event_prefix (str): The prefix that will be added to the converted event's name.
+
         """
         super().__init__()
         self.events_to_convert = events_to_convert

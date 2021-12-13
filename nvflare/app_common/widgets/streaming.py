@@ -43,6 +43,7 @@ def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type
         dxo (DXO): analytic data in dxo.
         fl_ctx (FLContext): fl context info.
         event_type (str): Event type.
+
     """
     if not isinstance(comp, FLComponent):
         raise TypeError("expect comp to be FLComponent, but got {}".format(type(fl_ctx)))
@@ -66,6 +67,7 @@ def _write(tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict]
 
     Returns:
         A DXO object that contains the analytic data.
+
     """
     data = AnalyticsData(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
     dxo = data.to_dxo()
@@ -78,6 +80,7 @@ def write_scalar(tag: str, scalar: float, **kwargs) -> DXO:
     Args:
         tag (str): the tag associated with this value.
         scalar (float): a scalar to write.
+
     """
     return _write(tag, scalar, data_type=AnalyticsDataType.SCALAR, kwargs=kwargs)
 
@@ -88,6 +91,7 @@ def write_scalars(tag: str, tag_scalar_dict: dict, **kwargs) -> DXO:
     Args:
         tag (str): the tag associated with this dict.
         tag_scalar_dict (dict): A dictionary that contains tag and scalars to write.
+
     """
     return _write(tag, tag_scalar_dict, data_type=AnalyticsDataType.SCALARS, kwargs=kwargs)
 
@@ -98,6 +102,7 @@ def write_image(tag: str, image, **kwargs) -> DXO:
     Args:
         tag (str): the tag associated with this value.
         image: the image to write.
+
     """
     return _write(tag, image, data_type=AnalyticsDataType.IMAGE, kwargs=kwargs)
 
@@ -108,6 +113,7 @@ def write_text(tag: str, text: str, **kwargs) -> DXO:
     Args:
         tag (str): the tag associated with this value.
         text (str): the text to write.
+
     """
     return _write(tag, text, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
 
@@ -118,6 +124,7 @@ class AnalyticsSender(Widget):
 
         This class implements some common methods follows signatures from PyTorch SummaryWriter and Python logger.
         It provides a convenient way for LearnerService to use.
+
         """
         super().__init__()
         self.engine = None
@@ -138,6 +145,7 @@ class AnalyticsSender(Widget):
             tag (str): Data identifier.
             scalar (float): Value to send.
             **kwargs: Additional arguments to pass to the receiver side.
+
         """
         self._add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, kwargs=kwargs)
 
@@ -148,6 +156,7 @@ class AnalyticsSender(Widget):
             tag (str): The parent name for the tags.
             scalars (dict): Key-value pair storing the tag and corresponding values.
             **kwargs: Additional arguments to pass to the receiver side.
+
         """
         self._add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, kwargs=kwargs)
 
@@ -158,6 +167,7 @@ class AnalyticsSender(Widget):
             tag (str): Data identifier.
             text (str): String to send.
             **kwargs: Additional arguments to pass to the receiver side.
+
         """
         self._add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
 
@@ -168,6 +178,7 @@ class AnalyticsSender(Widget):
             tag (str): Data identifier.
             image: Image to send.
             **kwargs: Additional arguments to pass to the receiver side.
+
         """
         self._add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, kwargs=kwargs)
 
@@ -180,6 +191,7 @@ class AnalyticsSender(Widget):
             event_type (str): Event type that associated with this message.
             *args: From python logger api, args is used to format strings.
             **kwargs: Additional arguments to be passed into the log function.
+
         """
         msg = msg.format(*args, **kwargs)
         dxo = _write(tag=str(tag), value=msg, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
@@ -217,6 +229,7 @@ class AnalyticsReceiver(Widget, ABC):
 
         Args:
             events (optional, List[str]): A list of event that this receiver will handle.
+
         """
         super().__init__()
         if events is None:
@@ -230,6 +243,7 @@ class AnalyticsReceiver(Widget, ABC):
 
         Args:
             fl_ctx (FLContext): fl context.
+
         """
         pass
 
@@ -241,6 +255,7 @@ class AnalyticsReceiver(Widget, ABC):
             fl_ctx (FLContext): fl context.
             shareable (Shareable): the received message.
             record_origin (str): the sender of this message / record.
+
         """
         pass
 

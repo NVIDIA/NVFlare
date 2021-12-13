@@ -58,6 +58,7 @@ class ScatterAndGather(Controller):
             persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
+
         """
         Controller.__init__(self)
 

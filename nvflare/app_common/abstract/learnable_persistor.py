@@ -20,13 +20,15 @@ from nvflare.app_common.abstract.learnable import Learnable
 
 
 class LearnablePersistor(FLComponent, ABC):
+    def __init__(self):
+        super().__init__()
+
     @abstractmethod
     def load(self, fl_ctx: FLContext) -> Learnable:
-        """
-            load the Learnable object.
+        """Load the Learnable object.
 
         Args:
-            fl_ctx: FLContext
+            fl_ctx (FLContext): FL Context for passing data.
 
         Returns:
             Learnable object loaded
@@ -36,12 +38,11 @@ class LearnablePersistor(FLComponent, ABC):
 
     @abstractmethod
     def save(self, learnable: Learnable, fl_ctx: FLContext):
-        """
-            persist the Learnable object
+        """Persist the Learnable object.
 
         Args:
-            learnable: the Learnable object to be saved
-            fl_ctx: FLContext
+            learnable (Learnable): the Learnable object to be saved
+            fl_ctx (FLContext): FL Context for passing data.
 
         """
         pass

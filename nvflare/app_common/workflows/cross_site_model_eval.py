@@ -48,7 +48,9 @@ class CrossSiteModelEval(Controller):
         participating_clients=None,
         wait_for_clients_timeout=300,
     ):
-        """Cross Site Model Validation workflow
+        """Cross Site Model Validation workflow. This workflow retrieves models from server
+        using ModelLocator & models from clients through submit_model task. It then broadcasts
+        models to all clients for validation and saves validation results in a 2d map.
 
         Args:
             task_check_period (float, optional): How often to check for new tasks or tasks being finished.

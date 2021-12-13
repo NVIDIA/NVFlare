@@ -26,13 +26,13 @@ from nvflare.app_common.app_event_type import AppEventType
 
 class IntimeModelSelectionHandler(FLComponent):
     def __init__(self, weigh_by_local_iter=False, aggregation_weights=None):
-        """
+        """Selects model based on average validation metrics sent by clients.
 
         Args:
-            weigh_by_local_iter: default False
+            weigh_by_local_iter (bool): defaults to False.
             validation_metric_name: meta data name used for model selection
-        """
 
+        """
         super().__init__()
 
         self.val_metric = self.best_val_metric = -np.inf
@@ -44,14 +44,11 @@ class IntimeModelSelectionHandler(FLComponent):
         self._reset_stats()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """
-            perform the handler process based on the event_type.
+        """Perform the handler process based on the event_type.
 
         Args:
             event_type (str): event type delivered from workflow
             fl_ctx (FLContext): FL context, including peer context and other information
-
-        Returns:
 
         """
         if event_type == EventType.START_RUN:

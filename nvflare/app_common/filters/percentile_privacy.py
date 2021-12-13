@@ -30,9 +30,10 @@ class PercentilePrivacy(Filter):
         Args:
             percentile (int, optional): Only abs diff greater than this percentile is updated.
               Allowed range 0..100.  Defaults to 10.
-            gamma (float, optional): The upper limit to truncate abs values of weight diff. Defaults to 0.01.  Any weight diff with abs<gamma will become 0.
-        """
+            gamma (float, optional): The upper limit to truncate abs values of weight diff. Defaults to 0.01.
+                Any weight diff with abs<gamma will become 0.
 
+        """
         super().__init__()
 
         # must be in 0..100, only update abs diff greater than percentile
@@ -46,13 +47,13 @@ class PercentilePrivacy(Filter):
         the percentile value
 
         Args:
-            shareable: information from client
-            fl_ctx: context provided by workflow
+            shareable (Shareable): information from client
+            fl_ctx (FLContext): context provided by workflow
 
         Returns:
             Shareable: a shareable containing the truncated weight diff
-        """
 
+        """
         self.log_debug(fl_ctx, "inside filter")
 
         rc = shareable.get_return_code()

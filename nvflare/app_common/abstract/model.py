@@ -24,23 +24,20 @@ from .learnable import Learnable as ModelLearnable
 
 
 class ModelLearnableKey(object):
-
-    """
-    Model Learnable is a dict that contains two items: weights and meta info
-    """
+    """Model Learnable is a dict that contains two items: weights and meta info."""
 
     WEIGHTS = "weights"
     META = "meta"
 
 
 def validate_model_learnable(model_learnable: ModelLearnable) -> str:
-    """
-    Check whether the specified model is a valid Model Shareable
+    """Check whether the specified model is a valid Model Shareable.
 
     Args:
-        model: model to be validated
+        model_learnable (ModelLearnable): model to be validated.
 
-    Returns: error text
+    Returns:
+        error_text if error else emtpy.
 
     """
     if not isinstance(model_learnable, ModelLearnable):

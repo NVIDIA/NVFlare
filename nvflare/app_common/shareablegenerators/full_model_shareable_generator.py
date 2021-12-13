@@ -21,15 +21,19 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class FullModelShareableGenerator(ShareableGenerator):
+    def __init__(self):
+        super().__init__()
+
     def learnable_to_shareable(self, ml: ModelLearnable, fl_ctx: FLContext) -> Shareable:
         """Convert Learnable to Shareable
 
         Args:
-            model (Learnable): model to be converted
+            ml (ModelLearnable): model to be converted.
             fl_ctx (FLContext): FL context
 
         Returns:
-            Shareable: a shareable containing a DXO object,
+            Shareable: a shareable containing a DXO object
+
         """
         dxo = model_learnable_to_dxo(ml)
         return dxo.to_shareable()
@@ -43,7 +47,9 @@ class FullModelShareableGenerator(ShareableGenerator):
             shareable (Shareable): Shareable that contains a DXO object
             fl_ctx (FLContext): FL context
 
-        Returns: a ModelLearnable object
+        Returns:
+            a ModelLearnable object
+
         """
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         if not base_model:

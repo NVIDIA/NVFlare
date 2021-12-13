@@ -27,6 +27,7 @@ class PTFedProxLoss(_Loss):
 
     Returns:
         FedProx loss term
+
     """
 
     def __init__(self, mu: float = 0.01) -> None:

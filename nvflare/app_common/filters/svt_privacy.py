@@ -23,7 +23,7 @@ from nvflare.apis.shareable import Shareable
 
 class SVTPrivacy(Filter):
     def __init__(self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6):
-        """implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
+        """Implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
 
         lambda_rho = gamma * 2.0 / epsilon
         threshold = tau + np.random.laplace(scale=lambda_rho)
@@ -34,6 +34,7 @@ class SVTPrivacy(Filter):
             noise_var (float, optional): additive noise. Defaults to 0.1.
             gamma (float, optional): Defaults to 1e-5.
             tau (float, optional): Defaults to 1e-6.
+
         """
         super().__init__()
 
@@ -48,11 +49,12 @@ class SVTPrivacy(Filter):
         """Compute the differentially private SVT
 
         Args:
-            shareable: information from client
-            fl_ctx: context provided by workflow
+            shareable (Shareable): information from client
+            fl_ctx (FLContext): context provided by workflow
 
         Returns:
             Shareable: updated shareable
+
         """
         self.log_debug(fl_ctx, "inside filter")
 

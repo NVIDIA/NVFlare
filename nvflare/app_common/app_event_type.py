@@ -14,9 +14,7 @@
 
 
 class AppEventType(object):
-    """
-    Defines application events.
-    """
+    """Defines application events."""
 
     START_ROUND = "_start_round"
     END_ROUND = "_end_round"

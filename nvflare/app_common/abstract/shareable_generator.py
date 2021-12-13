@@ -21,32 +21,34 @@ from nvflare.app_common.abstract.learnable import Learnable
 
 
 class ShareableGenerator(FLComponent, ABC):
+    def __init__(self):
+        """Abstract class for ShareableGenerator. Shareable generators convert shareable to learnable and vice versa."""
+        super().__init__()
+
     @abstractmethod
     def learnable_to_shareable(self, model: Learnable, fl_ctx: FLContext) -> Shareable:
-        """
-            generate the initial Shareable from the Learnable object.
+        """Converts a shareable into learnable.
 
         Args:
-            model: model object
-            fl_ctx: FLContext
+            model (Learnable): model object.
+            fl_ctx (FLContext): fl context used to pass data.
 
         Returns:
-            shareable
+            Converted shareable.
 
         """
         pass
 
     @abstractmethod
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> Learnable:
-        """
-            construct the Learnable object from Shareable
+        """Construct the Learnable object from Shareable.
 
         Args:
-            shareable: shareable
-            fl_ctx: FLContext
+            shareable (Shareable): shareable object
+            fl_ctx (FLContext): fl context used to pass data.
 
         Returns:
-            model object
+            Learnable object.
 
         """
         pass
