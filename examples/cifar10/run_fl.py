@@ -44,7 +44,7 @@ def main():
     # Run
     start = time.time()
     runner.run(run_number, args.app, restart_all_first=False, shutdown_on_error=True, shutdown_at_end=True,
-               timeout=7200, min_clients=args.min_clients)  # will timeout if not completed in 2 hours
+               timeout=7200, min_clients=args.min_clients)  # will time out if not completed in 2 hours
     print("Total training time", time.time() - start)
 
 
