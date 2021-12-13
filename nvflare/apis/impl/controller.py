@@ -439,7 +439,7 @@ class Controller(Responder, ControllerSpec, ABC):
             targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
             min_responses (int, optional): the condition to mark this task as completed because enough clients respond with submission. Defaults to 1.
             wait_time_after_min_received (int, optional): a grace period for late clients to contribute their submission.  0 means no grace period.
-            Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.
+              Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.
 
         Raises:
             ValueError: min_responses is greater than the length of targets since this condition will make the task, if allowed to be scheduled, never exit.

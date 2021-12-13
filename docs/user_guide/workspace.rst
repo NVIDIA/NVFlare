@@ -30,7 +30,7 @@ Server
 
 
 ******
-Server
+Client
 ******
 ::
 

@@ -120,62 +120,15 @@ workflow to get the client models.
 Cross site validation!
 ----------------------
 
-Now you must set up a local environment and generate packages to simulate the server, clients, and admin. The steps to
-set up and run this application are identical to the :doc:`Hello Numpy <hello_numpy>` example except the app is now ``hello-numpy-cross-val``
-instead of ``hello-numpy``.
+Now you can use admin commands to upload, deploy, and start this example app. To do this on a proof of concept local
+FL system, follow the sections :ref:`setting_up_poc` and :ref:`starting_poc` if you have not already.
 
-Setting Up the Application Environment
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-This command generates a poc folder with server, one client and one admin:
+Running the FL System
+^^^^^^^^^^^^^^^^^^^^^
 
-.. code-block:: shell
-
-    $ poc -n 2
-
-Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
-folder for the admin):
-
-.. code-block:: shell
-
-  $ mkdir -p poc/admin/transfer
-  $ cp -rf examples/* poc/admin/transfer
-
-With both the client and server ready, you can now run everything and see federated
-learning in action. FL systems usually have a server and multiple clients. We
-therefore have to start the server first:
-
-.. code-block:: shell
-
-    $ ./poc/server/startup/start.sh
-
-Once the server is running you can start the clients in different terminals.
-Open a new terminal and start the first client:
-
-.. code-block:: shell
-
-    $ ./poc/site-1/startup/start.sh
-
-Open another terminal and start the second client:
-
-.. code-block:: shell
-
-    $ ./poc/site-2/startup/start.sh
-
-In one last terminal, start the admin:
-
-.. code-block:: shell
-
-  $ ./poc/admin/startup/fl_admin.sh localhost
-
-
-This will launch a command prompt, where you can input commands to control and monitor many aspects of
-the FL process. Log in by entering ``admin`` for both the username and password.
-
-Running the FL
-^^^^^^^^^^^^^^
-
-Enter the commands below in order.  Pay close attention to what happens in each of four terminals.  You
-can see the admin controls server and clients with each command.
+With the admin client command prompt successfully connected and logged in, enter the commands below in order.  Pay close
+attention to what happens in each of four terminals.  You can see how the admin controls the server and clients with
+each command.
 
 .. code-block:: shell
 

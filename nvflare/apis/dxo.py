@@ -14,6 +14,7 @@
 
 import copy
 import pickle
+from typing import List
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 
@@ -68,7 +69,7 @@ class DXO(object):
             self.meta = {}
         self.meta[key] = value
 
-    def remove_meta_props(self, keys: [str]):
+    def remove_meta_props(self, keys: List[str]):
         if self.meta and keys:
             for k in keys:
                 self.meta.pop(k, None)

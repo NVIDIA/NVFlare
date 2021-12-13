@@ -1,3 +1,5 @@
+.. _best_practices:
+
 NVIDIA FLARE Programming Best Practices
 =======================================
 .. currentmodule:: nvflare.apis.fl_component.FLComponent
