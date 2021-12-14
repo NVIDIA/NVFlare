@@ -25,7 +25,7 @@ from nvflare.app_common.abstract.model import (
     make_model_learnable,
     validate_model_learnable,
 )
-from nvflare.app_common.app_constant import ModelKind
+from nvflare.app_common.app_constant import ModelFormat
 
 
 def feed_vars(model: nn.Module, model_params):
@@ -168,4 +168,4 @@ class PTModelPersistenceFormatManager(object):
             self.var_dict[k] = v
 
     def get_persist_model_format(self):
-        return ModelKind.PT_CHECKPOINT
+        return ModelFormat.PT_CHECKPOINT

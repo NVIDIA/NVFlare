@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.dxo import from_shareable, MetaKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
@@ -19,7 +20,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_constant import AppConstants, ValidateType
 
 
 class LearnerExecutor(Executor):
@@ -67,15 +68,24 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.log_debug(fl_ctx, f"ClientTrainer abort signal: {abort_signal.triggered}")
-        return self.learner.train(shareable, fl_ctx, abort_signal)
+        self.log_debug(fl_ctx, f"train abort signal: {abort_signal.triggered}")
+
+        shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.BEFORE_TRAIN_VALIDATE)
+        metrics_dxo = from_shareable(self.learner.validate(shareable, fl_ctx, abort_signal))
+
+        train_result = self.learner.train(shareable, fl_ctx, abort_signal)
+        train_dxo = from_shareable(train_result)
+        train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
+        return train_dxo.to_shareable()
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        model_kind = shareable.get_header(AppConstants.SUBMIT_MODEL_TYPE)
-        return self.learner.get_model_for_validation(model_kind, fl_ctx)
+        model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
+        return self.learner.get_model_for_validation(model_name, fl_ctx)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_debug(fl_ctx, f"validate abort_signal {abort_signal.triggered}")
+
+        shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE)
         return self.learner.validate(shareable, fl_ctx, abort_signal)
 
     def finalize(self, fl_ctx: FLContext):

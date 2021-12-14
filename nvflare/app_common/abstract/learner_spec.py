@@ -47,18 +47,18 @@ class Learner(FLComponent):
         """
         return make_reply(ReturnCode.TASK_UNKNOWN)
 
-    def get_model_for_validation(self, model_type: str, fl_ctx: FLContext) -> Shareable:
+    def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
         """
         Called to return the best trained model from the Learner.
 
         Args:
-            model_type: type of the model for validation
+            model_name: type of the model for validation
             fl_ctx: FLContext of the running environment
 
         Returns: trained model for validation
 
         """
-        return make_reply(ReturnCode.TASK_UNKNOWN)
+        return make_reply(ReturnCode.MODEL_UNRECOGNIZED)
 
     def validate(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
