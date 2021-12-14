@@ -90,8 +90,11 @@ class LearnerExecutor(Executor):
 
         # if the learner returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
         # the train result, which can be used for best model selection.
-        if validate_result and isinstance(validate_result, Shareable) \
-                and validate_result.get_return_code() == ReturnCode.OK:
+        if (
+            validate_result
+            and isinstance(validate_result, Shareable)
+            and validate_result.get_return_code() == ReturnCode.OK
+        ):
             metrics_dxo = from_shareable(validate_result)
             train_dxo = from_shareable(train_result)
             train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
