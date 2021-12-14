@@ -45,7 +45,7 @@ class Learner(FLComponent):
         Returns: train result in Shareable
 
         """
-        return make_reply(ReturnCode.TASK_UNKNOWN)
+        return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
     def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
         """
@@ -58,7 +58,7 @@ class Learner(FLComponent):
         Returns: trained model for validation
 
         """
-        return make_reply(ReturnCode.MODEL_UNRECOGNIZED)
+        return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
     def validate(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
@@ -72,7 +72,7 @@ class Learner(FLComponent):
         Returns: validate result in Shareable
 
         """
-        return make_reply(ReturnCode.TASK_UNKNOWN)
+        return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
     def abort(self, fl_ctx: FLContext):
         """

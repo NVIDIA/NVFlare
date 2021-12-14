@@ -71,11 +71,20 @@ class LearnerExecutor(Executor):
         self.log_debug(fl_ctx, f"train abort signal: {abort_signal.triggered}")
 
         shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.BEFORE_TRAIN_VALIDATE)
-        metrics_dxo = from_shareable(self.learner.validate(shareable, fl_ctx, abort_signal))
+        validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
 
         train_result = self.learner.train(shareable, fl_ctx, abort_signal)
+        if not train_result:
+            return make_reply(ReturnCode.EMPTY_RESULT)
+
         train_dxo = from_shareable(train_result)
-        train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
+
+        # if the learner returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
+        # the train result, which can be used for best model selection.
+        if validate_result and validate_result.get_return_code() == ReturnCode.OK:
+            metrics_dxo = from_shareable(validate_result)
+            train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
+
         return train_dxo.to_shareable()
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
