@@ -42,30 +42,41 @@ class LearnerExecutor(Executor):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.ABORT_TASK:
-            if self.learner:
-                self.learner.abort(fl_ctx)
+            try:
+                if self.learner:
+                    self.learner.abort(fl_ctx)
+            except Exception as e:
+                self.log_exception(fl_ctx, f"learner abort exception: {e}")
         elif event_type == EventType.END_RUN:
             self.finalize(fl_ctx)
 
     def initialize(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        self.learner = engine.get_component(self.learner_id)
-        if not isinstance(self.learner, Learner):
-            raise TypeError(f"learner must be Learner type. Got: {type(self.learner)}")
-        self.learner.initialize(engine.get_all_components(), fl_ctx)
+        try:
+            engine = fl_ctx.get_engine()
+            self.learner = engine.get_component(self.learner_id)
+            if not isinstance(self.learner, Learner):
+                raise TypeError(f"learner must be Learner type. Got: {type(self.learner)}")
+            self.learner.initialize(engine.get_all_components(), fl_ctx)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"learner initialize exception: {e}")
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
-        if task_name == self.train_task:
-            return self.train(shareable, fl_ctx, abort_signal)
-        elif task_name == self.submit_model_task:
-            return self.submit_model(shareable, fl_ctx)
-        elif task_name == self.validate_task:
-            return self.validate(shareable, fl_ctx, abort_signal)
-        else:
-            self.log_error(fl_ctx, f"Could not handle task: {task_name}")
-            return make_reply(ReturnCode.TASK_UNKNOWN)
+        try:
+            if task_name == self.train_task:
+                return self.train(shareable, fl_ctx, abort_signal)
+            elif task_name == self.submit_model_task:
+                return self.submit_model(shareable, fl_ctx)
+            elif task_name == self.validate_task:
+                return self.validate(shareable, fl_ctx, abort_signal)
+            else:
+                self.log_error(fl_ctx, f"Could not handle task: {task_name}")
+                return make_reply(ReturnCode.TASK_UNKNOWN)
+        except Exception as e:
+            # Task execution error, return EXECUTION_EXCEPTION Shareable
+            self.log_exception(fl_ctx, f"learner execute exception: {e}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_debug(fl_ctx, f"train abort signal: {abort_signal.triggered}")
@@ -106,5 +117,8 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.EMPTY_RESULT)
 
     def finalize(self, fl_ctx: FLContext):
-        if self.learner:
-            self.learner.finalize(fl_ctx)
+        try:
+            if self.learner:
+                self.learner.finalize(fl_ctx)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"learner finalize exception: {e}")
