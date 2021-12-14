@@ -19,17 +19,32 @@ from nvflare.apis.fl_context import FLContext
 
 class ModelProcessor(ABC):
     @abstractmethod
-    def initialize(self, trainer):
+    def extract_model(self, network, multi_processes: bool, model_vars: dict, fl_ctx: FLContext) -> dict:
+        """
+        Call to extract the current model from the training network
+        Args:
+            network: training network
+            multi_processes: boolean to indicates if it's a multi-processes
+            model_vars: global model dict
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
         pass
 
     @abstractmethod
-    def extract_model(self, model_vars, fl_ctx: FLContext):
-        pass
+    def apply_model(self, network, multi_processes: bool, model_params: dict, fl_ctx: FLContext, options=None):
+        """
+        Call to apply the model parameters to the training network
+        Args:
+            network: training network
+            multi_processes: boolean to indicates if it's a multi-processes
+            model_params: model parameters to apply
+            fl_ctx: FLContext
+            options:
 
-    @abstractmethod
-    def apply_model(self, model_params, fl_ctx: FLContext, options=None):
-        pass
+        Returns:
 
-    @abstractmethod
-    def get_local_models(self, model_params=None):
+        """
         pass

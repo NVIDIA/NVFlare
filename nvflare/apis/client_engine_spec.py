@@ -49,6 +49,9 @@ class ClientEngineSpec(object):
     def get_component(self, component_id: str) -> object:
         pass
 
+    def get_all_components(self) -> dict:
+        pass
+
     def get_widget(self, widget_id: str) -> Widget:
         pass
 

@@ -26,6 +26,7 @@ from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
 
 
@@ -99,6 +100,8 @@ class PTFileModelPersistor(ModelPersistor):
         self.global_model_file_name = global_model_file_name
         self.best_global_model_file_name = best_global_model_file_name
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
+
+        self.default_train_conf = None
 
         if source_ckpt_file_full_name and not os.path.exists(source_ckpt_file_full_name):
             raise ValueError("specified source checkpoint model file {} does not exist")
@@ -203,11 +206,9 @@ class PTFileModelPersistor(ModelPersistor):
                 return None
 
         if self.model:
-            default_train_conf = {"train": {"model": type(self.model).__name__}}
-        else:
-            default_train_conf = None
+            self.default_train_conf = {"train": {"model": type(self.model).__name__}}
 
-        self.persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=default_train_conf)
+        self.persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
         return self.persistence_manager.to_model_learnable(self.exclude_vars)
 
     def handle_event(self, event: str, fl_ctx: FLContext):
@@ -226,3 +227,38 @@ class PTFileModelPersistor(ModelPersistor):
         assert isinstance(self.persistence_manager, PTModelPersistenceFormatManager)
         self.persistence_manager.update(ml)
         self.save_model_file(self._ckpt_save_path)
+
+    def get_model(self, model_file, fl_ctx: FLContext) -> ModelLearnable:
+        try:
+            # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+            # Use the "cpu" to load the global model weights, avoid GPU out of memory
+            device = "cpu"
+            location = os.path.join(self.log_dir, model_file)
+            data = torch.load(location, map_location=device)
+            persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
+            return persistence_manager.to_model_learnable(self.exclude_vars)
+        except BaseException as e:
+            self.log_exception(fl_ctx, "error loading checkpoint from {}".format(model_file))
+            return {}
+
+    def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
+        model_inventory = {}
+        location = os.path.join(self.log_dir, self.global_model_file_name)
+        if os.path.exists(location):
+            model_inventory[self.global_model_file_name] = ModelDescriptor(
+                name=self.global_model_file_name,
+                location=location,
+                model_format=self.persistence_manager.get_persist_model_format(),
+                props={},
+            )
+
+        location = os.path.join(self.log_dir, self.best_global_model_file_name)
+        if os.path.exists(location):
+            model_inventory[self.best_global_model_file_name] = ModelDescriptor(
+                name=self.best_global_model_file_name,
+                location=location,
+                model_format=self.persistence_manager.get_persist_model_format(),
+                props={},
+            )
+
+        return model_inventory

@@ -114,6 +114,9 @@ class AppConstants(object):
     DEFAULT_PERSISTOR_ID = "persistor"
     DEFAULT_SHAREABLE_GENERATOR_ID = "shareable_generator"
 
+    SUBMIT_MODEL_NAME = "submit_model_name"
+    VALIDATE_TYPE = "_validate_type"
+
 
 class EnvironmentKey(object):
 
@@ -125,3 +128,24 @@ class DefaultCheckpointFileName(object):
 
     GLOBAL_MODEL = "FL_global_model.pt"
     BEST_GLOBAL_MODEL = "best_FL_global_model.pt"
+
+
+class ModelName(object):
+
+    BEST_MODEL = "best_model"
+    FINAL_MODEL = "final_model"
+
+
+class ModelFormat(object):
+
+    PT_CHECKPOINT = "pt_checkpoint"
+    TORCH_SCRIPT = "torch_script"
+    PT_ONNX = "pt_onnx"
+    TF_CHECKPOINT = "tf_checkpoint"
+    KERAS = "keras_model"
+
+
+class ValidateType(object):
+
+    BEFORE_TRAIN_VALIDATE = "before_train_validate"
+    MODEL_VALIDATE = "model_validate"
