@@ -49,7 +49,7 @@ class Learner(FLComponent):
 
     def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
         """
-        Called to return the best trained model from the Learner.
+        Called to return the trained model from the Learner.
 
         Args:
             model_name: type of the model for validation

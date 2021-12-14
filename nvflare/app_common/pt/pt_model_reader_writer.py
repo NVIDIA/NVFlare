@@ -25,9 +25,7 @@ class PTModelReaderWriter(ModelProcessor):
         self.logger = logging.getLogger(self._name)
 
     def extract_model(self, network, multi_processes: bool, model_vars: dict, fl_ctx: FLContext) -> dict:
-        # net = self.fitter.net
         net = network
-        # if self.fitter.multi_gpu:
         if multi_processes:
             net = net.module
         local_state_dict = net.state_dict()
@@ -58,9 +56,7 @@ class PTModelReaderWriter(ModelProcessor):
             a list of ops applied to model
         """
         try:
-            # net = self.fitter.net
             net = network
-            # if self.fitter.multi_gpu:
             if multi_processes:
                 net = net.module
             assign_ops, updated_local_model = feed_vars(net, model_params)
