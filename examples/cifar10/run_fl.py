@@ -1,3 +1,17 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
 import os
 import time
@@ -44,7 +58,7 @@ def main():
     # Run
     start = time.time()
     runner.run(run_number, args.app, restart_all_first=False, shutdown_on_error=True, shutdown_at_end=True,
-               timeout=7200, min_clients=args.min_clients)  # will timeout if not completed in 2 hours
+               timeout=7200, min_clients=args.min_clients)  # will time out if not completed in 2 hours
     print("Total training time", time.time() - start)
 
 

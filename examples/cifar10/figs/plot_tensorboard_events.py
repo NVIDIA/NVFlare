@@ -22,8 +22,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-client_results_root = "./workspaces/results/site1"
-server_results_root = "./workspaces/results/server"
+client_results_root = "./workspaces/secure_workspace/site-1"
+server_results_root = "./workspaces/secure_workspace/localhost"
 
 # 4.1 Central vs. FedAvg
 experiments = {"cifar10_central": {"run": "run_1", "tag": "val_acc_local_model"},

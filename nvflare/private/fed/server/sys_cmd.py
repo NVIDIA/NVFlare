@@ -73,8 +73,10 @@ class SystemCommandModule(CommandModule, CommandUtil):
             conn.append_error('no responses from clients')
             return
 
+        engine = conn.app_ctx
         for r in replies:
-            conn.append_string("Client " + r.client_name)
+            client_name = engine.get_client_name_from_token(r.client_token)
+            conn.append_string("Client: " + client_name)
 
             if r.reply:
                 try:

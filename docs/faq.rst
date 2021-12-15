@@ -53,7 +53,7 @@ General
 
     A :ref:`Task <tasks>` is a piece of work (Python code) that is assigned by the :ref:`Controller <controllers>` to
     client workers. Depending on how the Task is assigned (broadcast, send, or relay), the task will be performed by one
-    or more clients.  The logic to be performed in a Task is defined in an :ref:`Executor <executors>`.
+    or more clients.  The logic to be performed in a Task is defined in an :ref:`Executor <executor>`.
 
 #. What is Learnable?
 
@@ -126,6 +126,7 @@ Operational
     or startup kits, that allow all participants to join the NVIDIA FLARE system from across different locations.  This
     mutual-trust is a mandatory feature of Open Provision API as every participant authenticates others by the
     information inside the configuration.  The configurations usually include, but are not limited to:
+
         - network discovery, such as domain names, port numbers or IP addresses
         - credentials for authentication, such as certificates of participants and root authority
         - authorization policy, such as roles, rights and rules

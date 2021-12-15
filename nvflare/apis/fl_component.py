@@ -26,6 +26,7 @@ from .shareable import Shareable
 
 class FLComponent(object):
     def __init__(self):
+        """FLComponent base class."""
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
@@ -33,12 +34,17 @@ class FLComponent(object):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
         engine = fl_ctx.get_engine()
         if engine is None:
-            # must not call self.fire_event again, or it will be a dead loop!
             self.log_error(fl_ctx=fl_ctx, msg="Logic Error: no engine in fl_ctx: {}".format(fl_ctx), fire_event=False)
         else:
             engine.fire_event(event_type, fl_ctx)
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
+        """Fires an event.
+
+        Args:
+            event_type (str): The type of event.
+            fl_ctx (FLContext): FLContext information.
+        """
         if not isinstance(event_type, str):
             raise TypeError("expect event_type to be str, but got {}".format(type(event_type)))
 
@@ -52,6 +58,19 @@ class FLComponent(object):
         self._fire(event_type, fl_ctx)
 
     def fire_fed_event(self, event_type: str, event_data: Shareable, fl_ctx: FLContext, targets=None):
+        """Fires a federation event.
+
+        A federation event means that the event will be sent to different sites.
+        For example, if fire a federation event on the server side, one can decide what clients to send via the
+        parameter `targets`.
+        If fire a federation event on the client side, the event will be sent to the server.
+
+        Args:
+            event_type (str): The type of event.
+            event_data (Shareable): The data of this fed event.
+            fl_ctx (FLContext): FLContext information.
+            targets: The targets to send to. It is only used when fire federation event from server side.
+        """
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
 
@@ -64,46 +83,47 @@ class FLComponent(object):
         self._fire(event_type, fl_ctx)
 
     def system_panic(self, reason: str, fl_ctx: FLContext):
-        """
-        Signal a fatal condition that could cause the RUN to end
+        """Signals a fatal condition that could cause the RUN to end.
+
         Args:
-            reason: reason for panic
-            fl_ctx: the FL context
-
-        Returns:
-
+            reason (str): The reason for panic.
+            fl_ctx (FLContext): FLContext information.
         """
         fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
         self.fire_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
 
     def task_panic(self, reason: str, fl_ctx: FLContext):
-        """
-        Signal a fatal condition that could cause the current task (on Client) to end
-        Args:
-            reason: reason for panic
-            fl_ctx: FL context
-        Returns:
+        """Signals a fatal condition that could cause the current task (on Client) to end.
 
+        Args:
+            reason (str): The reason for panic.
+            fl_ctx (FLContext): FLContext information.
         """
         fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
         self.fire_event(EventType.FATAL_TASK_ERROR, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """
-            perform the handler process based on the event_type.
+        """Handles events.
 
         Args:
-            event_type: event type fired by workflow
-            fl_ctx: FLContext
-
+            event_type (str): event type fired by workflow.
+            fl_ctx (FLContext): FLContext information.
         """
         pass
 
-    def make_log_message(self, fl_ctx: FLContext, msg: str):
-        return generate_log_message(fl_ctx, msg)
+    def log_info(self, fl_ctx: FLContext, msg: str, fire_event=False):
+        """Logs a message with logger.info.
 
-    def log_info(self, fl_ctx: FLContext, msg: str, fire_event=True):
-        log_msg = self.make_log_message(fl_ctx, msg)
+        These log_XXX methods are implemented because we want to have a unified way of logging messages.
+        For example, in this method, we are using generate_log_message to add the FLContext information
+        into the message. And we can decide whether to fire a log event afterwards.
+
+        Args:
+            fl_ctx (FLContext): FLContext information.
+            msg (str): The message to log.
+            fire_event (bool): Whether to fire a log event.
+        """
+        log_msg = generate_log_message(fl_ctx, msg)
         self.logger.info(log_msg)
 
         if fire_event:
@@ -112,7 +132,14 @@ class FLComponent(object):
             )
 
     def log_warning(self, fl_ctx: FLContext, msg: str, fire_event=True):
-        log_msg = self.make_log_message(fl_ctx, msg)
+        """Logs a message with logger.warning.
+
+        Args:
+            fl_ctx (FLContext): FLContext information.
+            msg (str): The message to log.
+            fire_event (bool): Whether to fire a log event.
+        """
+        log_msg = generate_log_message(fl_ctx, msg)
         self.logger.warning(log_msg)
         if fire_event:
             self._fire_log_event(
@@ -123,37 +150,74 @@ class FLComponent(object):
             )
 
     def log_error(self, fl_ctx: FLContext, msg: str, fire_event=True):
-        log_msg = self.make_log_message(fl_ctx, msg)
+        """Logs a message with logger.error.
+
+        Args:
+            fl_ctx (FLContext): FLContext information.
+            msg (str): The message to log.
+            fire_event (bool): Whether to fire a log event.
+        """
+        log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
         if fire_event:
             self._fire_log_event(
                 event_type=EventType.ERROR_LOG_AVAILABLE, log_tag=LogMessageTag.ERROR, log_msg=log_msg, fl_ctx=fl_ctx
             )
 
-    def log_debug(self, fl_ctx: FLContext, msg: str, fire_event=True):
-        log_msg = self.make_log_message(fl_ctx, msg)
+    def log_debug(self, fl_ctx: FLContext, msg: str, fire_event=False):
+        """Logs a message with logger.debug.
+
+        Args:
+            fl_ctx (FLContext): FLContext information.
+            msg (str): The message to log.
+            fire_event (bool): Whether to fire a log event.
+        """
+        log_msg = generate_log_message(fl_ctx, msg)
         self.logger.debug(log_msg)
         if fire_event:
             self._fire_log_event(
                 event_type=EventType.DEBUG_LOG_AVAILABLE, log_tag=LogMessageTag.DEBUG, log_msg=log_msg, fl_ctx=fl_ctx
             )
 
-    def log_exception(self, fl_ctx: FLContext, msg: str, fire_event=True):
-        log_msg = self.make_log_message(fl_ctx, msg)
+    def log_critical(self, fl_ctx: FLContext, msg: str, fire_event=True):
+        """Logs a message with logger.critical.
+
+        Args:
+            fl_ctx (FLContext): FLContext information.
+            msg (str): The message to log.
+            fire_event (bool): Whether to fire a log event.
+        """
+        log_msg = generate_log_message(fl_ctx, msg)
+        self.logger.critical(log_msg)
+        if fire_event:
+            self._fire_log_event(
+                event_type=EventType.CRITICAL_LOG_AVAILABLE,
+                log_tag=LogMessageTag.CRITICAL,
+                log_msg=log_msg,
+                fl_ctx=fl_ctx,
+            )
+
+    def log_exception(self, fl_ctx: FLContext, msg: str, fire_event=False):
+        """Logs exception message with logger.error.
+
+        Args:
+            fl_ctx (FLContext): FLContext information.
+            msg (str): The message to log.
+            fire_event (bool): Whether to fire a log event. Unused.
+        """
+        log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
         traceback.print_exc()
 
-        # post exception log event - don't do it for now since exception could go deep.
-        #
-        # if fire_event:
-        #     ex_text = traceback.format_exc()
-        #     ex_msg = "{}\n{}".format(log_msg, ex_text)
-        #     self._fire_log_event(
-        #         event_type=EventType.EXCEPTION_LOG_AVAILABLE,
-        #         log_tag=LogMessageTag.EXCEPTION,
-        #         log_msg=ex_msg,
-        #         fl_ctx=fl_ctx,
-        #     )
+        if fire_event:
+            ex_text = traceback.format_exc()
+            ex_msg = "{}\n{}".format(log_msg, ex_text)
+            self._fire_log_event(
+                event_type=EventType.EXCEPTION_LOG_AVAILABLE,
+                log_tag=LogMessageTag.EXCEPTION,
+                log_msg=ex_msg,
+                fl_ctx=fl_ctx,
+            )
 
     def _fire_log_event(self, event_type: str, log_tag: str, log_msg: str, fl_ctx: FLContext):
         event_data = AnalyticsData(tag=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)

@@ -40,8 +40,9 @@ class EventType(object):
     BEFORE_SEND_TASK_RESULT = "_before_send_task_result"
     AFTER_SEND_TASK_RESULT = "_after_send_task_result"
 
-    DEBUG_LOG_AVAILABLE = "_debug_log_available"
+    CRITICAL_LOG_AVAILABLE = "_critical_log_available"
     ERROR_LOG_AVAILABLE = "_error_log_available"
     EXCEPTION_LOG_AVAILABLE = "_exception_log_available"
-    INFO_LOG_AVAILABLE = "_info_log_available"
     WARNING_LOG_AVAILABLE = "_warning_log_available"
+    INFO_LOG_AVAILABLE = "_info_log_available"
+    DEBUG_LOG_AVAILABLE = "_debug_log_available"
