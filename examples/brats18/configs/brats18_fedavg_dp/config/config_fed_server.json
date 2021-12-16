@@ -56,9 +56,9 @@
     },
     {
       "id": "model_locator",
-      "path": "pt.pt_model_locator.PTModelLocator",
+      "name": "PTFileModelLocator",
       "args": {
-        "model_dir": "app_server/models"
+        "pt_persistor_id": "persistor"
       }
     },
     {

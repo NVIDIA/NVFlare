@@ -58,16 +58,20 @@ class SupervisedValidator(Executor):
         self.epoch_of_start_time = 0
 
         # Set the paths according to fl_ctx
-        self.app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+        engine = fl_ctx.get_engine()
+        ws = engine.get_workspace()
+        app_config_dir = ws.get_app_config_dir(fl_ctx.get_run_number())
+
+        train_config_file_path = os.path.join(app_config_dir, self.train_config_filename)
+
         fl_args = fl_ctx.get_prop(FLContextKey.ARGS)
         self.client_id = fl_ctx.get_identity_name()
         self.log_info(
             fl_ctx,
-            f"Client {self.client_id} initialized at \n {self.app_root} \n with args: {fl_args}",
+            f"Client {self.client_id} initialized with args: \n {fl_args}",
         )
 
         # Set the training-related contexts
-        train_config_file_path = os.path.join(self.app_root, self.train_config_filename)
         self._validation_config(fl_ctx, train_config_file_path=train_config_file_path)
 
     def _validation_config(self, fl_ctx: FLContext, train_config_file_path: str):

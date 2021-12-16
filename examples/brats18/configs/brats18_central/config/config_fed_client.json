@@ -8,7 +8,7 @@
         "path": "pt.trainers.brats_trainer.BratsTrainer",
         "args": {
           "aggregation_epochs":1,
-          "train_config_filename": "config/config_train.json"
+          "train_config_filename": "config_train.json"
         }
       }
     },
@@ -17,7 +17,7 @@
       "executor": {
         "path": "pt.validators.brats_validator.BratsValidator",
         "args": {
-          "train_config_filename": "config/config_train.json"
+          "train_config_filename": "config_train.json"
         }
       }
     }
