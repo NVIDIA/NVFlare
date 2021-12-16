@@ -14,13 +14,13 @@
 
 import pytest
 
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.handlers.intime_model_selection_handler import IntimeModelSelectionHandler
-from nvflare.apis.dxo import DXO, DataKind, MetaKey
 
 
 class MockSimpleEngine:

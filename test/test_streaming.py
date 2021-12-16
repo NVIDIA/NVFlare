@@ -17,7 +17,7 @@ import pytest
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.widgets.streaming import send_analytic_dxo, write_scalar, write_scalars, write_text, write_image
+from nvflare.app_common.widgets.streaming import send_analytic_dxo, write_image, write_scalar, write_scalars, write_text
 
 INVALID_TEST_CASES = [
     (list(), dict(), FLContext(), TypeError, f"expect comp to be an instance of FLComponent, but got {type(list())}"),
