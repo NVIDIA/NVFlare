@@ -2,7 +2,7 @@
 # add current folder to PYTHONPATH
 export PYTHONPATH="${PWD}"
 echo "PYTHONPATH is ${PYTHONPATH}"
-
+ 
 # customized settings
 algorithms_dir="${PWD}/configs"
 workspace="workspace_prostate"

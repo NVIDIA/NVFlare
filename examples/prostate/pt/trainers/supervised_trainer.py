@@ -73,22 +73,26 @@ class SupervisedTrainer(Executor):
         # when the run starts, this is where the actual settings get initialized for trainer
 
         # Set the paths according to fl_ctx
-        self.app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+        engine = fl_ctx.get_engine()
+        ws = engine.get_workspace()
+        app_config_dir = ws.get_app_config_dir(fl_ctx.get_run_number())
+        app_dir = ws.get_app_dir(fl_ctx.get_run_number())
+
+        self.local_model_file = os.path.join(app_dir, "local_model.pt")
+        self.best_local_model_file = os.path.join(app_dir, "best_local_model.pt")
+        train_config_file_path = os.path.join(app_config_dir, self.train_config_filename)
+
+        # get and print the args
         fl_args = fl_ctx.get_prop(FLContextKey.ARGS)
         self.client_id = fl_ctx.get_identity_name()
         self.log_info(
             fl_ctx,
-            f"Client {self.client_id} initialized at \n {self.app_root} \n with args: {fl_args}",
+            f"Client {self.client_id} initialized with args: \n {fl_args}",
         )
 
-        self.local_model_file = os.path.join(self.app_root, "local_model.pt")
-        self.best_local_model_file = os.path.join(self.app_root, "best_local_model.pt")
-
         # Set local tensorboard writer - to be replaced by event
-        self.writer = SummaryWriter(self.app_root)
-
+        self.writer = SummaryWriter(app_dir)
         # Set the training-related contexts
-        train_config_file_path = os.path.join(self.app_root, self.train_config_filename)
         self.train_config(fl_ctx, train_config_file_path=train_config_file_path)
 
     def _extra_train_config(self, fl_ctx: FLContext, config_info: dict):
@@ -323,6 +327,7 @@ class SupervisedTrainer(Executor):
             model_data = torch.load(self.best_local_model_file, map_location="cpu")
         except Exception as e:
             self.log_error(fl_ctx, f"Unable to load best model: {e}")
+            return make_reply(ReturnCode.EXEUTION_ERROR)
 
         # Checking abort signal
         if abort_signal.triggered:

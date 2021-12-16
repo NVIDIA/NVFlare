@@ -8,7 +8,7 @@
         "path": "pt.trainers.prostate_trainer.ProstateTrainer",
         "args": {
           "aggregation_epochs": 10,
-          "train_config_filename": "config/config_train.json"
+          "train_config_filename": "config_train.json"
         }
       }
     },
@@ -17,7 +17,7 @@
       "executor": {
         "path": "pt.validators.prostate_validator.ProstateValidator",
         "args": {
-          "train_config_filename": "config/config_train.json"
+          "train_config_filename": "config_train.json"
         }
       }
     }
