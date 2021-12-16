@@ -1,3 +1,17 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 import random
 import time
@@ -17,7 +31,6 @@ class CustomExecutor(Executor):
             raise TypeError("task name should be a string.")
 
         self.task_name = task_name
-        self.logger = logging.getLogger("POCExecutor")
 
     def execute(
         self,
@@ -26,7 +39,7 @@ class CustomExecutor(Executor):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Shareable:
-        if task_name in self.task_name:
+        if task_name == self.task_name:
             peer_ctx = fl_ctx.get_prop(FLContextKey.PEER_CONTEXT)
             r = peer_ctx.get_prop("current_round")
 
