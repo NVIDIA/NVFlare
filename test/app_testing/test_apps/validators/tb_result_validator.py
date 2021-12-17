@@ -36,8 +36,4 @@ class TBResultValidator(AppResultValidator):
                 print(f"tb validate results: client_side_client_tb_dir {client_side_client_tb_dir} doesn't exist.")
                 return False
 
-            server_side_client_tb_dir = os.path.join(server_tb_root_dir, client_data["client_names"][i])
-            if not os.path.exists(server_side_client_tb_dir):
-                print(f"tb validate results: server_side_client_tb_dir {server_side_client_tb_dir} doesn't exist.")
-                return False
         return True

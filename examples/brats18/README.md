@@ -80,6 +80,8 @@ We only cover POC mode in this example. To run it with Secure mode, please refer
 ## 3. Run automated experiments
 
 ### 3.1 FedAvg with and without differential privacy
+
+#### 3.1.1 Test FedAvg with and without differential privacy on 2 clients and GPUs
 Next, FL training will start automatically. 
 
 The [run_poc.sh](./run_poc.sh) script follows this pattern:
@@ -93,40 +95,31 @@ The [run_poc.sh](./run_poc.sh) script follows this pattern:
 For example, 
 to run brats FL without differential privacy:
 ```
-./run_poc.sh 2 brats18_fedavg 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+./run_poc.sh 2 brats18_fedavg 1 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
 ```
 To run brats FL with differential privacy:
 ```
-./run_poc.sh 2 brats18_fedavg_dp 3 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+./run_poc.sh 2 brats18_fedavg_dp 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
 ```
 
 These scripts will start the FL server and `[n_clients]` clients automatically to run FL experiments on localhost. 
 Each client can be assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [run_poc.sh](./run_poc.sh). 
-In this example, we run 2 clients, each on one GPU with 12 GB memory.
+Here we test it on 2 clients, each on one GPU with 12 GB memory.
 
 The commands above will use the data split in `./datalists/brats/brats_13clients` to simulate each client having different data distributions.
 The `[config]` argument controls which experiment to run. The respective folder under `[configs]` will be selected and 
 uploaded to the server for distribution to each client using the admin API with [run_fl.py](./run_fl.py). 
 The run will time out if not completed in 36 hours. You can adjust this within the `run()` call of the customized admin API script in [run_fl.py](./run_fl.py). 
 
-### 3.2 Centralized training
-
-To simulate a centralized training baseline, we run FL with 1 client using [all the training data](./datalists/brats/brats_1clients). 
-```
-./run_poc.sh 1 brats18_central 1 /dataset/brats18/ ${PWD}/datalists/brats/brats_1clients
-```
-You can visualize the training progress by running `tensorboard --logdir=[workspace]/.`
-
-
-### 3.3 Reproduce FedAvg with and without differential privacy on 13 clients and GPUs
+#### 3.1.2 Reproduce FedAvg with and without differential privacy on 13 clients and GPUs
 [Li et al. 2019](https://arxiv.org/abs/1910.00962) split BraTS18 dataset into [13 datasets](./datalists/brats/brats_13clients) for 13 clients.
-So we will run the following cmd:
+To reproduce [Li et al. 2019](https://arxiv.org/abs/1910.00962), we will run the following cmd:
 ```
 ./create_poc_workpace.sh 13
-./run_poc.sh 13 brats18_fedavg 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
-./run_poc.sh 13 brats18_fedavg_dp 3 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+./run_poc.sh 13 brats18_fedavg 1 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+./run_poc.sh 13 brats18_fedavg_dp 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
 ```
-In [run_poc.sh](./run_poc.sh), the default server's IP address is `servername="localhost"`. It works when your server and clients run on the same machine. However, if you need to run server and clients on different machines, you would start the server first, then change `servername` to connect clients to the server's IP address. The IP address can be found by `echo "The server starts on IP address: $(hostname --all-ip-addresses)"`.
+In [run_poc.sh](./run_poc.sh), the default server's IP address is `servername="localhost"`. It works when your server and clients run on the same machine. However, if you need to run server and clients on different machines, you would start the server first, then change `servername` to connect clients to the server's IP address. The IP address can be found by `echo "The server starts on IP address: $(hostname --all-ip-addresses)"` and is already in [run_poc.sh](./run_poc.sh).
 
 
 > **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
@@ -145,12 +138,22 @@ for example
 cat ./workspaces/poc_workspace/server/run_2/cross_site_val/global_val.json
 ```
 
+### 3.2 Centralized training
+
+To simulate a centralized training baseline, we run FL with 1 client using [all the training data](./datalists/brats/brats_1clients). 
+```
+./run_poc.sh 1 brats18_central 3 /dataset/brats18/ ${PWD}/datalists/brats/brats_1clients
+```
+You can visualize the training progress by running `tensorboard --logdir=[workspace]/.`
+
+
+
 ### 3.4 Running all examples
 
 You can use `./run_experiments.sh` to execute all above-mentioned experiments sequentially if preferred. 
 This script uses the secure workspace to also support the HE experiment.
 
-## 4. Results on 13 clients for Central vs. FedAvg vs. FedAvg with DP
+## 4. Results on 13 clients for FedAvg vs. FedAvg with DP vs. Central
 
 ### 4.1 Validation curve 
 Let's summarize the result of the experiments run above. First, we will compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the
@@ -158,16 +161,16 @@ same BraTS validation set.
 
 The TensorBoard curves for validation Dice scores of the global model for 600 training epochs:
 
-![All training curve](./figs/all_training.jpg)
+![All training curve](./figs/nvflare_brats18.png)
 
 ### 4.2 Best model
 Next, we compare the best achieved models. One can see that FedAvg with DP can achieve a similar performance compared with FedAvg while adding privacy to the aggregation step.
 
-| Config	|  	Val score	| 
-| ----------- | ----------- |  
-| brats18_central 	| 	0.82758	| 
-| brats18_fedavg  	| 	0.81983	| 
-| brats18_fedavg_dp | 	0.81036	|
+| Config	| Val Overall Dice|  	Val TC Dice	|  	Val WT Dice	|  	Val ET Dice	| 
+| ----------- | ----------- |----------- |----------- |----------- |  
+| brats18_fedavg  	| 	0.84375	| 0.84313	| 0.89811	| 0.78647	| 
+| brats18_fedavg_dp | 	0.84871	| 0.85726	| 0.90016	| 0.78327	|
+| brats18_central 	| 	0.85442	| 	0.86723	| 0.90317	| 0.78958	| 
 
 
 
