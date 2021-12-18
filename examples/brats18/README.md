@@ -148,7 +148,7 @@ You can visualize the training progress by running `tensorboard --logdir=[worksp
 
 
 
-### 3.4 Running all examples
+### 3.3 Running all examples
 
 You can use `./run_experiments.sh` to execute all above-mentioned experiments sequentially if preferred. 
 This script uses the secure workspace to also support the HE experiment.
