@@ -150,8 +150,7 @@ You can visualize the training progress by running `tensorboard --logdir=[worksp
 
 ### 3.3 Running all examples
 
-You can use `./run_experiments.sh` to execute all above-mentioned experiments sequentially if preferred. 
-This script uses the secure workspace to also support the HE experiment.
+You can use `./run_experiments.sh` to execute all above-mentioned experiments sequentially if preferred.
 
 ## 4. Results on 13 clients for FedAvg vs. FedAvg with DP vs. Central
 
