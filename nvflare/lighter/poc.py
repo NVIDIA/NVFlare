@@ -49,7 +49,7 @@ def main():
         completed_process = subprocess.run(["unzip", "-q", poc_zip_path])
         returncode = completed_process.returncode
         if returncode != 0:
-            print(f"Error during creating poc folder: {returncode=}")
+            print("Error during creating poc folder, return code: {}.".format(returncode))
             exit(returncode)
         clone_client(args.num_clients)
         print("Successfully creating poc folder.  Please read poc/Readme.rst for user guide.")

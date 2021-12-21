@@ -89,7 +89,8 @@ class PercentilePrivacy(Filter):
         cutoff = np.percentile(a=all_abs_values, q=self.percentile, overwrite_input=False)
         self.log_info(
             fl_ctx,
-            f"Max abs delta_w: {np.max(all_abs_values)}, Min abs delta_w: {np.min(all_abs_values)}, {cutoff=}, scale: {total_steps}.",
+            f"Max abs delta_w: {np.max(all_abs_values)}, Min abs delta_w: {np.min(all_abs_values)},"
+            f"cutoff: {cutoff}, scale: {total_steps}.",
         )
 
         for name in delta_w:

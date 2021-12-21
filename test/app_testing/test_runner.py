@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
         test_apps = read_yaml(args.yaml)
 
-        print(f"{test_apps=}")
+        print(f"test_apps = {test_apps}")
 
         site_launcher = SiteLauncher(poc_directory=args.poc, app_path=args.app_path)
 

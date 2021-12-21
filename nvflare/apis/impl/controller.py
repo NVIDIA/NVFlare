@@ -42,9 +42,9 @@ _TASK_KEY_DONE = "___done"
 
 def _check_positive_int(name, value):
     if not isinstance(value, int):
-        raise TypeError(f"{name} must be an instance of int.")
+        raise TypeError("{} must be an instance of int.".format(name))
     if value < 0:
-        raise ValueError(f"{name} must >= 0.")
+        raise ValueError("{} must >= 0.".format(name))
 
 
 def _check_inputs(task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None]):
@@ -79,7 +79,7 @@ class Controller(Responder, ControllerSpec, ABC):
         self._task_check_period = task_check_period
 
     def initialize_run(self, fl_ctx: FLContext):
-        """Called by runners to initailze controller with information in fl_ctx
+        """Called by runners to initialize controller with information in fl_ctx
 
         Note: Controller subclasses must not overwrite this method.
 
@@ -145,30 +145,30 @@ class Controller(Responder, ControllerSpec, ABC):
 
         client_task_to_send = None
         with self._task_lock:
-            self.logger.debug(f"{self._tasks=}")
+            self.logger.debug("self._tasks: {}".format(self._tasks))
             for task in self._tasks:
-                assert isinstance(task, Task)
-
                 if task.completion_status is not None:
                     # this task is finished (and waiting for the monitor to exit it)
                     continue
 
                 # do we need to send this task to this client?
                 # note: the task could be sent to a client multiple times (e.g. in relay)
-                # we only check the last ClientTask sent to the client!
+                # we only check the last ClientTask sent to the client
                 client_task_to_check = task.last_client_task_map.get(client.name, None)
-                self.logger.debug(f"task to check {client_task_to_check=}")
+                self.logger.debug("client_task_to_check: {}".format(client_task_to_check))
                 resend_task = False
 
                 if client_task_to_check is not None:
-                    # this client has been sent the task already.
-                    # do we need to send again?
+                    # this client has been sent the task already
                     if not isinstance(client_task_to_check, ClientTask):
-                        raise TypeError(f"{client_task_to_check=} must be an instance of ClientTask.")
+                        raise TypeError(
+                            "client_task_to_check must be an instance of ClientTask, but got {}".format(
+                                type(client_task_to_check)
+                            )
+                        )
                     if client_task_to_check.result_received_time is None:
-                        # we have not received result
-                        # the client must be working on this task, but apparently something is wrong
-                        # we resend the task!
+                        # controller has not received result from client
+                        # something wrong happens when client working on this task, so resend the task
                         resend_task = True
                         client_task_to_send = client_task_to_check
                         fl_ctx.set_prop(FLContextKey.IS_CLIENT_TASK_RESEND, True, sticky=False)
@@ -179,41 +179,40 @@ class Controller(Responder, ControllerSpec, ABC):
                     if client_task_to_check is None:
                         client_task_to_check = ClientTask(task=task, client=client)
                     check_status = manager.check_task_send(client_task_to_check, fl_ctx)
-                    self.logger.debug(f"checking client task {client_task_to_check} {client_task_to_check.client.name}")
-                    self.logger.debug(f"Check task send get {check_status=}")
+                    self.logger.debug(
+                        "Checking client task: {}, task.client.name: {}".format(
+                            client_task_to_check, client_task_to_check.client.name
+                        )
+                    )
+                    self.logger.debug("Check task send get check_status: {}".format(check_status))
                     if check_status == TaskCheckStatus.BLOCK:
-                        # TODO: make sure engine understand the return value
                         # do not send this task, and do not check other tasks
                         return self._try_again()
                     elif check_status == TaskCheckStatus.NO_BLOCK:
                         # do not send this task, but continue to check next task
                         continue
                     else:
-                        # go ahead to send the task!
-                        # only need to remember the client_task if task is sent to it!
+                        # send the task and remember the client_task
                         client_task_to_send = ClientTask(client, task)
-                        self.logger.debug(f"mapping {client.name} to {client_task_to_send}")
                         task.last_client_task_map[client.name] = client_task_to_send
                         task.client_tasks.append(client_task_to_send)
-                        self.logger.debug(f"{task.client_tasks=}")
-                        self.logger.debug(f"Adding {client_task_to_send.id=}")
                         self._client_task_map[client_task_to_send.id] = client_task_to_send
                         break
 
-        # NOTE: move task sending process outside of the lock
-        # This is to minimize the locking time.
-        # Also to avoid potential dead lock - the CB could schedule another task, which requires lock
-        self.logger.debug(f"Determining based on {client_task_to_send=}")
+        # NOTE: move task sending process outside the lock
+        # This is to minimize the locking time and to avoid potential deadlock:
+        # the CB could schedule another task, which requires lock
+        self.logger.debug("Determining based on client_task_to_send: {}".format(client_task_to_send))
         if client_task_to_send is None:
             # no task available for this client
             return self._try_again()
 
-        # now try to send
+        # try to send the task
         can_send_task = True
         task = client_task_to_send.task
         with task.cb_lock:
             # Note: must guarantee the after_task_sent_cb is always called
-            # regardless whether the task is sent successfully!
+            # regardless whether the task is sent successfully.
             # This is so that the app could clear up things in after_task_sent_cb.
             if task.before_task_sent_cb is not None:
                 try:
@@ -229,17 +228,17 @@ class Controller(Responder, ControllerSpec, ABC):
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
                 except BaseException as ex:
-                    # this task cannot proceed any more
+                    # this task cannot proceed anymore
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
 
-            self.logger.debug(f"before_task_sent_cb done on {client_task_to_send=}")
+            self.logger.debug("before_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
 
             if task.completion_status is not None:
                 can_send_task = False
 
             # remember the task name and data to be sent to the client
-            # since task.data could be reset by the after_task_sent_cb!
+            # since task.data could be reset by the after_task_sent_cb
             task_name = task.name
             task_data = task.data
 
@@ -257,19 +256,18 @@ class Controller(Responder, ControllerSpec, ABC):
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
                 except BaseException as ex:
-                    # this task cannot proceed any more
+                    # this task cannot proceed anymore
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
 
             if task.completion_status is not None:
-                # NOTE: the CB could cancel the task!
-                # tell the client to try again
+                # NOTE: the CB could cancel the task
                 can_send_task = False
 
             if not can_send_task:
                 return self._try_again()
 
-            self.logger.debug(f"after_task_sent_cb done on {client_task_to_send=}")
+            self.logger.debug("after_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
 
             client_task_to_send.task_sent_time = time.time()
             client_task_to_send.task_send_count += 1
@@ -284,10 +282,9 @@ class Controller(Responder, ControllerSpec, ABC):
         """
         with self._task_lock:
             # task_id is the uuid associated with the client_task
-            self.logger.debug(f"Handle exception on {task_id=}")
             client_task = self._client_task_map.get(task_id, None)
+            self.logger.debug("Handle exception on client_task {} with id {}".format(client_task, task_id))
 
-        self.logger.debug(f"{client_task=}")
         if client_task is None:
             # cannot find a standing task on the exception
             return
@@ -323,17 +320,15 @@ class Controller(Responder, ControllerSpec, ABC):
 
         with self._task_lock:
             # task_id is the uuid associated with the client_task
-            self.logger.debug(f"Submission {task_id=}")
             client_task = self._client_task_map.get(task_id, None)
+            self.logger.debug("Get submission={} from client task={} id={}".format(result, client_task, task_id))
 
-        self.logger.debug(f"{client_task=}")
         if client_task is None:
             # cannot find a standing task for the submission
             self.log_info(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
             self.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
             return
 
-        assert isinstance(client_task, ClientTask)
         task = client_task.task
         with task.cb_lock:
             if task.name != task_name:
@@ -344,15 +339,12 @@ class Controller(Responder, ControllerSpec, ABC):
                 self.log_info(fl_ctx, "task is already finished - submission dropped")
                 return
 
-            # do client task CB processing outside of the lock!
-            # this is because the CB could schedule another task, which requires the lock!
-            self.logger.debug(f"Submission {result=}")
-            self.logger.debug(f"{client_task.client.name=}")
+            # do client task CB processing outside the lock
+            # this is because the CB could schedule another task, which requires the lock
             client_task.result = result
             client_task.result_received_time = time.time()
 
             manager = task.props[_TASK_KEY_MANAGER]
-            assert isinstance(manager, TaskManager)
             manager.check_task_result(result, client_task, fl_ctx)
 
             if task.result_received_cb is not None:
@@ -369,7 +361,7 @@ class Controller(Responder, ControllerSpec, ABC):
                     task.exception = ex
                     return
                 except BaseException as ex:
-                    # this task cannot proceed any more
+                    # this task cannot proceed anymore
                     self.log_exception(
                         fl_ctx,
                         "processing error in result_received_cb on task {}:{}".format(task_name, task_id),
@@ -390,8 +382,8 @@ class Controller(Responder, ControllerSpec, ABC):
     ):
         if task.schedule_time is not None:
             # this task was scheduled before
-            # we do not allow a task object to be reused!
-            self.logger.debug(f"{task.schedule_time=}")
+            # we do not allow a task object to be reused
+            self.logger.debug("task.schedule_time: {}".format(task.schedule_time))
             raise ValueError("Task was already used. Please create a new task object.")
 
         task.targets = targets
@@ -417,7 +409,6 @@ class Controller(Responder, ControllerSpec, ABC):
         task.schedule_time = time.time()
 
         with self._task_lock:
-            self.logger.debug(f"{task=} added")
             self._tasks.append(task)
             self.log_info(fl_ctx, "scheduled task {}".format(task.name))
 
@@ -537,7 +528,7 @@ class Controller(Responder, ControllerSpec, ABC):
         if not isinstance(send_order, SendOrder):
             raise TypeError("send_order must be in Enum SendOrder.")
 
-        # targets must be provided!
+        # targets must be provided
         if targets is None or len(targets) == 0:
             raise ValueError("Targets must be provided for send.")
 
@@ -628,7 +619,8 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def _end_task(self, task_names, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        assert isinstance(engine, ServerEngineSpec)
+        if not isinstance(engine, ServerEngineSpec):
+            raise TypeError("engine should be an instance of ServerEngineSpec, but got {}".format(type(engine)))
         request = Shareable()
         request["task_names"] = task_names
         engine.send_aux_request(targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx)
@@ -785,7 +777,7 @@ class Controller(Responder, ControllerSpec, ABC):
                     if not isinstance(manager, TaskManager):
                         raise TypeError("manager in task must be an instance of TaskManager.")
                     should_exit, exit_status = manager.check_task_exit(task)
-                    self.logger.debug(f"{should_exit=}, {exit_status=}")
+                    self.logger.debug("should_exit: {}, exit_status: {}".format(should_exit, exit_status))
                     if should_exit:
                         task.completion_status = exit_status
                         exit_tasks.append(task)
@@ -799,20 +791,21 @@ class Controller(Responder, ControllerSpec, ABC):
 
             for exit_task in exit_tasks:
                 exit_task.is_standing = False
-                self.logger.debug(f"Removing {exit_task=} for {exit_task.completion_status=}")
+                self.logger.debug(
+                    "Removing task={}, completion_status={}".format(exit_task, exit_task.completion_status)
+                )
                 self._tasks.remove(exit_task)
                 for client_task in exit_task.client_tasks:
-                    self.logger.debug(f"Removing {client_task.id=}")
+                    self.logger.debug("Removing client_task with id={}".format(client_task.id))
                     self._client_task_map.pop(client_task.id)
 
-        # do the task exit processing outside of the lock to minimize the locking time!
-        # also to avoid potential dead lock since the CB could schedule another task
+        # do the task exit processing outside the lock to minimize the locking time
+        # and to avoid potential deadlock since the CB could schedule another task
         if len(exit_tasks) <= 0:
             return
 
         with self._engine.new_context() as fl_ctx:
             for exit_task in exit_tasks:
-                assert isinstance(exit_task, Task)
                 with exit_task.cb_lock:
                     self.log_info(
                         fl_ctx, "task {} exit with status {}".format(exit_task.name, exit_task.completion_status)
@@ -830,7 +823,9 @@ class Controller(Responder, ControllerSpec, ABC):
                             task.completion_status = TaskCompletionStatus.ERROR
                             task.exception = ex
                         except BaseException as ex:
-                            self.log_exception(fl_ctx, f"Exception {ex} raised in task_done_cb on task={exit_task}")
+                            self.log_exception(
+                                fl_ctx, "Exception {} raised in task_done_cb on task={}".format(ex, exit_task)
+                            )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = ex
 

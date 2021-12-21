@@ -195,7 +195,8 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
             )
             return Learnable()
 
-        if (processed_algorithm := dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)) is not None:
+        processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
+        if processed_algorithm is not None:
             self.system_panic(
                 f"FedOpt is not implemented for shareable processed by {processed_algorithm}",
                 fl_ctx,

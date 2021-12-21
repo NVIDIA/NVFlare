@@ -51,7 +51,9 @@ class SiteLauncher(object):
 
         # TODO: What is log directory and should it be added here?
         root_dir = tempfile.mkdtemp()
-        shutil.copytree(self.original_poc_directory, root_dir, dirs_exist_ok=True)
+        if os.path.exists(root_dir):
+            shutil.rmtree(root_dir)
+        shutil.copytree(self.original_poc_directory, root_dir)
         self.poc_directory = root_dir
         print(f"Using root dir: {root_dir}")
 
