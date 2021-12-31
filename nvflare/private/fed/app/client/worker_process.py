@@ -57,7 +57,6 @@ def main():
         args.client_config = os.path.join(config_folder, "config_fed_client.json")
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
-    args.log_config = None
 
     try:
         remove_restart_file(args)
@@ -90,12 +89,13 @@ def main():
                 )
             )
 
-        workspace = os.path.join("/tmp/fl", client_name)  # TODO: find a way to replace "/tmp/fl"
+        workspace = os.path.join("/tmp/fl", client_name)
+        args.log_config = os.path.join(workspace, "log.config")
 
         conf = FLClientStarterConfiger(
             app_root=workspace,
             client_config_file_name=args.fed_client,
-            log_config_file_name=os.path.join(workspace, "log.config"),
+            log_config_file_name=args.log_config,
             kv_list=args.set,
         )
         conf.configure()
