@@ -233,7 +233,7 @@ cat ./workspace_prostate/server/run_1/cross_site_val/global_val.json
 ### Validation curve 
 Let's summarize the result of the experiments run above. We compare the final validation scores of 
 the global models for different settings. In this example, each client computes their validation scores using their own
-validation set. 
+validation set, and the centralized model computes the validation score using the combined validation set. 
 
 The TensorBoard curves for validation Dice of the global model for the 1000 epochs (100 rounds, 10 local epochs per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
