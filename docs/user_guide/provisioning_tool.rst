@@ -387,6 +387,18 @@ The following is an example of the default project.yml file.
 .. literalinclude:: ../../nvflare/lighter/project.yml
   :language: yaml
 
+.. note::
+
+   For each participant, the ``enable_byoc`` flag can be set to enable loading of code in the custom folder of applications.
+   If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
+
+   There is also a setting for ``allow_byoc`` in the rules for authorization groups (in AuthPolicyBuilder). This controls
+   whether or not applications containing custom code will be allowed to be uploaded and deployed to the participants
+   of the orgs of that rule group.
+
+   Here, ``byoc`` is referring to the custom code in the custom folder in an FL application. Code already in the python path
+   through other means is not considered ``byoc`` for these purposes.
+
 *****************************
 Provision commandline options
 *****************************
