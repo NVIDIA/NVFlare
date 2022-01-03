@@ -14,11 +14,10 @@
 
 """Provides a command line interface for a federated client trainer"""
 
-import traceback
-
 import argparse
 import os
 import sys
+import traceback
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
@@ -90,7 +89,13 @@ def main():
             )
 
         workspace = os.path.join("/tmp/fl", client_name)
-        args.log_config = os.path.join(workspace, "log.config")
+        app_root = os.path.join(args.workspace, "run_" + str(run_number), "app_" + client_name)
+
+        app_log_config = os.path.join(app_root, config_folder, "log.config")
+        if os.path.exists(app_log_config):
+            args.log_config = app_log_config
+        else:
+            args.log_config = os.path.join(workspace, "log.config")
 
         conf = FLClientStarterConfiger(
             app_root=workspace,
@@ -109,8 +114,6 @@ def main():
         federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
-
-        app_root = os.path.join(args.workspace, "run_" + str(run_number), "app_" + client_name)
 
         client_config_file_name = os.path.join(app_root, args.client_config)
         conf = ClientJsonConfigurator(
