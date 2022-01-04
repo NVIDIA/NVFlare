@@ -37,7 +37,7 @@ class AccumulateWeightedAggregator(Aggregator):
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
         self.aggregation_weights = aggregation_weights or {}
         if expected_data_kind not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
-            raise ValueError(f"{expected_data_kind=} not in WEIGHT_DIFF or WEIGHTS")
+            raise ValueError(f"expected_data_kind={expected_data_kind} not in WEIGHT_DIFF or WEIGHTS")
         self.expected_data_kind = expected_data_kind
         self.logger.debug(f"aggregation weights control: {aggregation_weights}")
 
@@ -62,7 +62,8 @@ class AccumulateWeightedAggregator(Aggregator):
             self.log_error(fl_ctx, "expect {} but got {}".format(self.expected_data_kind, dxo.data_kind))
             return False
 
-        if (processed_algorithm := dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)) is not None:
+        processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
+        if processed_algorithm is not None:
             self.log_error(fl_ctx, f"unable to accept shareable processed by {processed_algorithm}")
             return False
 

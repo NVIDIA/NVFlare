@@ -91,7 +91,7 @@ class CyclicController(Controller):
                 if abort_signal.triggered:
                     return
 
-                self.log_debug(fl_ctx, f"Starting {current_round=}.")
+                self.log_debug(fl_ctx, "Starting current round={}.".format(current_round))
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=False)
 
                 # Task for one cyclic
@@ -118,7 +118,7 @@ class CyclicController(Controller):
                     abort_signal=abort_signal,
                 )
                 self.persistor.save(self.last_learnable, fl_ctx)
-                self.log_debug(fl_ctx, f"Ending {current_round=}.")
+                self.log_debug(fl_ctx, "Ending current round={}.".format(current_round))
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:

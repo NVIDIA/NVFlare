@@ -56,7 +56,7 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
         if expected_data_kind not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
-            raise ValueError(f"{expected_data_kind=} not in WEIGHT_DIFF or WEIGHTS")
+            raise ValueError(f"expected_data_kind={expected_data_kind} not in WEIGHT_DIFF or WEIGHTS")
         self.expected_data_kind = expected_data_kind
         self.expected_algorithm = expected_algorithm
         if self.expected_algorithm != he.HE_ALGORITHM_CKKS:

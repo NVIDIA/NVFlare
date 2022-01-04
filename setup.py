@@ -40,7 +40,7 @@ if os.path.exists(os.path.join(this_directory, "nvflare", "poc.zip")):
 shutil.make_archive(base_name="poc", format="zip", root_dir=os.path.join(this_directory, "nvflare"), base_dir="poc")
 shutil.move("poc.zip", os.path.join(this_directory, "nvflare", "poc.zip"))
 
-python_version = os.environ.get("PY_VERSION", "3.8")
+python_version = os.environ.get("PY_VERSION", "3.7")
 setup(
     name=package_name,
     version=version,
@@ -66,7 +66,7 @@ setup(
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    python_requires=">=3.8",
+    python_requires=">=3.7",
     # install_requires=list(pkutils.parse_requirements("requirements.txt")),
     install_requires=[
         "PyYAML",
