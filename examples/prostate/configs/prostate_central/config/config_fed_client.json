@@ -1,0 +1,31 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": ["train", "submit_model"],
+      "executor": {
+        "path": "pt.trainers.prostate_trainer.ProstateTrainer",
+        "args": {
+          "aggregation_epochs": 10,
+          "train_config_filename": "config_train.json"
+        }
+      }
+    },
+    {
+      "tasks": ["validate"],
+      "executor": {
+        "path": "pt.validators.prostate_validator.ProstateValidator",
+        "args": {
+          "train_config_filename": "config_train.json"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+  "components": [
+  ]
+}
