@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "np_model_persistor.NPModelPersistor",
+      "path": "test.app_testing.np.np_model_persistor.NPModelPersistor",
       "args": {}
     },
     {

@@ -20,8 +20,9 @@ import pytest
 
 from nvflare.apis.controller_spec import SendOrder, TaskCompletionStatus
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-from .controller_test import TestController, create_client, create_task, get_ready, launch_task
+
 from ..utils import skip_if_quick
+from .controller_test import TestController, create_client, create_task, get_ready, launch_task
 
 
 def _process_task_request_test_cases():

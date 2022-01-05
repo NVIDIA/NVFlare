@@ -24,7 +24,7 @@ function print_style_fail_msg() {
 grep -V
 echo "set to +e"
 set +e
-grep -r --include "*.py" -L "# Copyright (c) 2021, NVIDIA CORPORATION." nvflare > no_license.lst
+grep -r --include "*.py" -L "# Copyright (c) 2021, NVIDIA CORPORATION." nvflare test > no_license.lst
 if [ -s no_license.lst ]; then
     # The file is not-empty.
     cat no_license.lst

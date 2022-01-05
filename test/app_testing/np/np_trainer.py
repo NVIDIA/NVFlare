@@ -1,3 +1,17 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 import time
 
@@ -71,7 +85,7 @@ class NPTrainer(Executor):
                 self.system_panic(f"Unable to convert shareable to model definition. Exception {e.__str__()}", fl_ctx)
                 return self._get_exception_shareable()
 
-            # Information about workflow is retreived from the shareable header.
+            # Information about workflow is retrieved from the shareable header.
             current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
             total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
 
@@ -186,10 +200,9 @@ class NPTrainer(Executor):
             os.makedirs(model_path)
 
         model_save_path = os.path.join(model_path, self._model_name)
-        if model_save_path:
-            with open(model_save_path, "wb") as f:
-                np.save(f, model[NPConstants.NUMPY_KEY])
-            self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")
+        with open(model_save_path, "wb") as f:
+            np.save(f, model[NPConstants.NUMPY_KEY])
+        self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")
 
     def _get_exception_shareable(self) -> Shareable:
         """Abort execution. This is used if abort_signal is triggered. Users should

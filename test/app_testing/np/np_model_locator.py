@@ -1,3 +1,17 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 from typing import List
 
@@ -43,20 +57,23 @@ class NPModelLocator(ModelLocator):
         engine = fl_ctx.get_engine()
 
         if model_name == NPModelLocator.SERVER_MODEL_NAME:
-            run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-            run_dir = engine.get_workspace().get_run_dir(run_number)
-            model_path = os.path.join(run_dir, self.model_dir)
-
-            model_load_path = os.path.join(model_path, self.model_file_name)
-            np_data = None
             try:
-                np_data = np.load(model_load_path, allow_pickle=True)
-                self.log_info(fl_ctx, f"Loaded {model_name} model from {model_load_path}.")
-            except Exception as e:
-                self.log_error(fl_ctx, f"Unable to load NP Model: {e}.")
+                run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+                run_dir = engine.get_workspace().get_run_dir(run_number)
+                model_path = os.path.join(run_dir, self.model_dir)
 
-            if np_data is not None:
-                weights = {NPConstants.NUMPY_KEY: np_data}
-                dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
+                model_load_path = os.path.join(model_path, self.model_file_name)
+                np_data = None
+                try:
+                    np_data = np.load(model_load_path, allow_pickle=True)
+                    self.log_info(fl_ctx, f"Loaded {model_name} model from {model_load_path}.")
+                except Exception as e:
+                    self.log_error(fl_ctx, f"Unable to load NP Model: {e}.")
+
+                if np_data is not None:
+                    weights = {NPConstants.NUMPY_KEY: np_data}
+                    dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
+            except:
+                self.log_exception(fl_ctx, f"Exception in retrieving {NPModelLocator.SERVER_MODEL_NAME} model.")
 
         return dxo

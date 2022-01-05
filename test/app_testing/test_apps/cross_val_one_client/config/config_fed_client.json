@@ -8,7 +8,7 @@
         "submit_model"
       ],
       "executor": {
-        "path": "np_trainer.NPTrainer",
+        "path": "test.app_testing.np.np_trainer.NPTrainer",
         "args": {}
       }
     },
@@ -17,7 +17,7 @@
         "validate"
       ],
       "executor": {
-        "path": "np_validator.NPValidator"
+        "path": "test.app_testing.np.np_validator.NPValidator"
       }
     }
   ],
