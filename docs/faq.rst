@@ -191,6 +191,14 @@ Operational
     The :ref:`Admin client <admin_commands>` is used to orchestrate the FL study, including starting and stopping server
     and clients, deploying applications, and managing FL experiments.
 
+#. Why am I getting an error about my custom files not being found?
+
+    Make sure that BYOC is enabled. BYOC is always enabled in POC mode, but disabled by default in secure mode when
+    provisioning.  Either through the UI tool or though yml, make sure the ``enable_byoc`` flag is set for each participant.
+    If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
+    There is also a setting for ``allow_byoc`` through the authorization rule groups. This controls whether or not apps
+    containing BYOC code will be allowed to be uploaded and deployed.
+
 ********
 Security
 ********
