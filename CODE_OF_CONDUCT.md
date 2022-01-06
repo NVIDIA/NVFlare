@@ -2,7 +2,7 @@
 
 ## Overview
 
-Define the code of conduct followed and enforced by the NVFlare project.
+Define the code of conduct followed and enforced by the NVIDIA FLARE project.
 
 ### Intended audience
 

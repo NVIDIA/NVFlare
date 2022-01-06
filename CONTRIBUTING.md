@@ -15,21 +15,27 @@
 ## Introduction
 
 
-Welcome to NVFlare! We're excited you're here and want to contribute. This documentation is intended for individuals and institutions interested in contributing to NVFlare. NVFlare is an open-source project and, as such, its success relies on its community of contributors willing to keep improving it. Your contribution will be a valued addition to the code base; we simply ask that you read this page and understand our contribution process, whether you are a seasoned open-source contributor or whether you are a first-time contributor.
+Welcome to NVIDIA FLARE! We're excited you're here and want to contribute.
+This documentation is intended for individuals and institutions interested in contributing to NVIDIA FLARE.
+NVIDIA FLARE is an open-source project and, as such, its success relies on its community of contributors willing to keep improving it.
+Your contribution will be a valued addition to the code base;
+we simply ask that you read this page and understand our contribution process, whether you are a seasoned open-source contributor or whether you are a first-time contributor.
 
 ### Communicate with us
 
-We are happy to talk with you about your needs for NVFlare and your ideas for contributing to the project. One way to do this is to create an issue discussing your thoughts. It might be that a very similar feature is under development or already exists, so an issue is a great starting point.
+We are happy to talk with you about your needs for NVIDIA FLARE and your ideas for contributing to the project.
+One way to do this is to create an issue discussing your thoughts. It might be that a very similar feature is under development or already exists, so an issue is a great starting point.
 
 ## The contribution process
 
 _Pull request early_
 
-We encourage you to create pull requests early. It helps us track the contributions under development, whether they are ready to be merged or not. Change your pull request's title, to begin with `[WIP]` and/or [create a draft pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests#draft-pull-requests) until it is ready for formal review.
+We encourage you to create pull requests early.
+It helps us track the contributions under development, whether they are ready to be merged or not. Change your pull request's title, to begin with `[WIP]` and/or [create a draft pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests#draft-pull-requests) until it is ready for formal review.
 
 
 ### Preparing pull requests
-To ensure the code quality, NVFlare relies on several linting tools ([flake8 and its plugins](https://gitlab.com/pycqa/flake8), [black](https://github.com/psf/black) and [isort](https://github.com/timothycrosley/isort))
+To ensure the code quality, NVIDIA FLARE relies on several linting tools ([flake8 and its plugins](https://gitlab.com/pycqa/flake8), [black](https://github.com/psf/black) and [isort](https://github.com/timothycrosley/isort))
 
 This section highlights all the necessary preparation steps required before sending a pull request.
 To collaborate efficiently, please read through this section and follow them.
@@ -40,11 +46,12 @@ To collaborate efficiently, please read through this section and follow them.
 * [Signing your work](#signing-your-work)
 
 #### Checking the coding style
-We check code style using flake8 and isort. A bash script (`runtest.sh`) is provided to run all tests locally. 
+We check code style using flake8 and isort.
+A bash script (`runtest.sh`) is provided to run all tests locally.
 
 License information: all source code files should start with this paragraph:
 ```
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -61,7 +68,8 @@ License information: all source code files should start with this paragraph:
 ```
 
 #### Unit testing
-NVFlare tests are located under test/. The unit test file names follow the `test_[module_name].py` pattern.
+NVIDIA FLARE tests are located under test/.
+The unit test file names follow the `test_[module_name].py` pattern.
 
 The bash script `runtest.sh` will run unit tests also.
 
@@ -86,12 +94,12 @@ Once built, you can view the docs in `docs/_build folder`. To clean the docs, pl
 ```
 
 #### Signing your work
-NVFlare enforces the [Developer Certificate of Origin](https://developercertificate.org/) (DCO) on all pull requests.
+NVIDIA FLARE enforces the [Developer Certificate of Origin](https://developercertificate.org/) (DCO) on all pull requests.
 
 For a detailed guide on signing commits, please see [Signing commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits) from GitHub.
 
 #### Commit signature verification
-NVFlare enforces commit signature verification, a security feature provided by GitHub. Developers are required to setup GPG keys as described in [Commit Signature Verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#gpg-commit-signature-verification).
+NVIDIA FLARE enforces commit signature verification, a security feature provided by GitHub. Developers are required to setup GPG keys as described in [Commit Signature Verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#gpg-commit-signature-verification).
 
 Full text of the DCO:
 ```
@@ -136,7 +144,7 @@ By making a contribution to this project, I certify that:
 
 ### Submitting pull requests
 All code changes to the dev branch must be done via [pull requests](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests).
-1. Create a new ticket or take a known ticket from [the issue list][NVFlare issue list].
+1. Create a new ticket or take a known ticket from [the issue list][NVIDIA FLARE issue list].
 2. Check if there's already a branch dedicated to the task.
 3. If the task has not been taken, [create a new branch in your fork](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork)
 of the codebase.
@@ -161,7 +169,7 @@ All code review comments should be specific, constructive, and actionable.
 1. Make in-line comments to specific code segments, [request for changes](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-reviews) if needed.
 1. Review any further code changes until all comments addressed by the contributors.
 1. Merge the pull request to the main branch.
-1. Close the corresponding task ticket on [the issue list][NVFlare issue list].
+1. Close the corresponding task ticket on [the issue list][NVIDIA FLARE issue list].
 
 [github ci]: https://github.com/NVIDIA/NVFlare/actions
-[NVFlare issue list]: https://github.com/NVIDIA/NVFlare/issues
+[NVIDIA FLARE issue list]: https://github.com/NVIDIA/NVFlare/issues
