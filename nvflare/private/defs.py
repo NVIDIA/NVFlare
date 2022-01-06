@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 
 class SpecialTaskName(object):
 
-    TRY_AGAIN = '__try_again__'
-    END_RUN = '__end_run__'
+    TRY_AGAIN = "__try_again__"
+    END_RUN = "__end_run__"
 
 
 class TaskConstant(object):
@@ -33,58 +33,58 @@ class EngineConstant(object):
 
 class InfoCollectorTopic(object):
 
-    SHOW_STATS = 'info.show_stats'
-    SHOW_ERRORS = 'info.show_errors'
-    RESET_ERRORS = 'info.reset_errors'
+    SHOW_STATS = "info.show_stats"
+    SHOW_ERRORS = "info.show_errors"
+    RESET_ERRORS = "info.reset_errors"
 
 
 class ComponentCallerTopic(object):
 
-    CALL_COMPONENT = 'comp_caller.call'
+    CALL_COMPONENT = "comp_caller.call"
 
 
 class TrainingTopic(object):
 
-    START = 'train.start'
-    ABORT = 'train.abort'
-    ABORT_TASK = 'train.abort_task'
-    DELETE_RUN = 'train.delete_run'
-    DEPLOY = 'train.deploy'
-    SHUTDOWN = 'train.shutdown'
-    RESTART = 'train.restart'
-    CHECK_STATUS = 'train.check_status'
-    SET_RUN_NUMBER = 'train.set_run_number'
+    START = "train.start"
+    ABORT = "train.abort"
+    ABORT_TASK = "train.abort_task"
+    DELETE_RUN = "train.delete_run"
+    DEPLOY = "train.deploy"
+    SHUTDOWN = "train.shutdown"
+    RESTART = "train.restart"
+    CHECK_STATUS = "train.check_status"
+    SET_RUN_NUMBER = "train.set_run_number"
 
 
 class RequestHeader(object):
 
-    RUN_NUM = 'run_number'
-    APP_NAME = 'app_name'
-    CONTROL_COMMAND = 'control_command'
-    CALL_NAME = 'call_name'
-    COMPONENT_TARGET = 'component_target'
+    RUN_NUM = "run_number"
+    APP_NAME = "app_name"
+    CONTROL_COMMAND = "control_command"
+    CALL_NAME = "call_name"
+    COMPONENT_TARGET = "component_target"
 
 
 class SysCommandTopic(object):
 
-    SYS_INFO = 'sys.info'
-    SHELL = 'sys.shell'
+    SYS_INFO = "sys.info"
+    SHELL = "sys.shell"
 
 
 class ControlCommandTopic(object):
 
-    DO_COMMAND = 'control.do_command'
+    DO_COMMAND = "control.do_command"
 
 
 class ControlCommandName(object):
 
-    ABORT_TASK = 'abort_task'
-    END_RUN = 'end_run'
+    ABORT_TASK = "abort_task"
+    END_RUN = "end_run"
 
 
 class ClientStatusKey(object):
 
-    RUN_NUM = 'run_number'
-    CURRENT_TASK = 'current_task'
-    STATUS = 'status'
-    APP_NAME = 'app_name'
+    RUN_NUM = "run_number"
+    CURRENT_TASK = "current_task"
+    STATUS = "status"
+    APP_NAME = "app_name"

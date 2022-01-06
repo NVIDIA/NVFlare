@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -39,9 +39,7 @@ class AuxRunner(FLComponent):
         if event_type == EventType.START_RUN:
             self.run_num = fl_ctx.get_run_number()
 
-    def register_aux_message_handler(self,
-                                     topic: str,
-                                     message_handle_func):
+    def register_aux_message_handler(self, topic: str, message_handle_func):
         """
         Register aux message handling function with specified topics.
 
@@ -59,23 +57,23 @@ class AuxRunner(FLComponent):
             bad message_handle_func - must be callable
         """
         if not isinstance(topic, str):
-            raise TypeError('topic must be str, but got {}'.format(type(topic)))
+            raise TypeError("topic must be str, but got {}".format(type(topic)))
 
         if topic == self.TOPIC_BULK:
             raise ValueError('topic value "{}" is reserved'.format(topic))
 
         if len(topic) <= 0:
-            raise ValueError('topic must not be empty')
+            raise ValueError("topic must not be empty")
 
         if message_handle_func is None:
-            raise ValueError('message handler function is not specified')
+            raise ValueError("message handler function is not specified")
 
         if not callable(message_handle_func):
-            raise TypeError('specified message_handle_func is not callable')
+            raise TypeError("specified message_handle_func is not callable")
 
         with self.reg_lock:
             if topic in self.topic_table:
-                raise ValueError('handler already registered for topic {}'.format(topic))
+                raise ValueError("handler already registered for topic {}".format(topic))
 
             self.topic_table[topic] = message_handle_func
 
@@ -97,12 +95,7 @@ class AuxRunner(FLComponent):
             return make_reply(ReturnCode.TOPIC_UNKNOWN)
 
         if not isinstance(request, Shareable):
-            self.log_error(
-                fl_ctx,
-                "received invalid aux request: expects a Shareable but got {}".format(
-                    type(request)
-                )
-            )
+            self.log_error(fl_ctx, "received invalid aux request: expects a Shareable but got {}".format(type(request)))
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         peer_props = request.get_peer_props()
@@ -125,7 +118,7 @@ class AuxRunner(FLComponent):
         try:
             reply = handler_f(topic=topic, request=request, fl_ctx=fl_ctx)
         except BaseException:
-            self.log_exception(fl_ctx, 'processing error in message handling')
+            self.log_exception(fl_ctx, "processing error in message handling")
             return make_reply(ReturnCode.HANDLER_EXCEPTION)
 
         return reply
@@ -156,7 +149,7 @@ class AuxRunner(FLComponent):
     def _process_bulk_requests(self, topic: str, request: Shareable, fl_ctx: FLContext):
         reqs = request.get(self.DATA_KEY_BULK, None)
         if not isinstance(reqs, list):
-            self.log_error(fl_ctx, 'invalid bulk request - missing list of requests')
+            self.log_error(fl_ctx, "invalid bulk request - missing list of requests")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         abort_signal = fl_ctx.get_run_abort_signal()
@@ -165,13 +158,11 @@ class AuxRunner(FLComponent):
                 break
 
             if not isinstance(req, Shareable):
-                self.log_error(fl_ctx,
-                               'invalid request in bulk: expect Shareable but got {}'.format(type(req)))
+                self.log_error(fl_ctx, "invalid request in bulk: expect Shareable but got {}".format(type(req)))
                 continue
-            req_topic = req.get_header(ReservedHeaderKey.TOPIC, '')
+            req_topic = req.get_header(ReservedHeaderKey.TOPIC, "")
             if not req_topic:
-                self.log_error(fl_ctx,
-                               'invalid request in bulk: no topic in header')
+                self.log_error(fl_ctx, "invalid request in bulk: no topic in header")
                 continue
 
             self._process_request(req_topic, req, fl_ctx)

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class Cifar10Validator(Executor):
-    
     def __init__(self, validate_task_name=AppConstants.TASK_VALIDATION):
         super(Cifar10Validator, self).__init__()
 
@@ -35,15 +34,17 @@ class Cifar10Validator(Executor):
 
         # Setup the model
         self.model = SimpleNetwork()
-        self.transforms = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ])
+        self.transforms = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ]
+        )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model.to(self.device)
 
         # Preparing the dataset for testing.
-        self.test_data = torchvision.datasets.CIFAR10(root='~/data', train=False, transform=self.transforms)
+        self.test_data = torchvision.datasets.CIFAR10(root="~/data", train=False, transform=self.transforms)
         self.test_loader = torch.utils.data.DataLoader(self.test_data, batch_size=4, shuffle=False)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -71,10 +72,14 @@ class Cifar10Validator(Executor):
 
                 # Get validation accuracy
                 val_accuracy = self.do_validation(weights)
-                self.log_info(fl_ctx, f"Accuracy when validating {model_owner}'s model on"
-                                      f" {fl_ctx.get_identity_name()}"f's data: {val_accuracy}')
+                self.log_info(
+                    fl_ctx,
+                    f"Accuracy when validating {model_owner}'s model on"
+                    f" {fl_ctx.get_identity_name()}"
+                    f"s data: {val_accuracy}",
+                )
 
-                dxo = DXO(data_kind=DataKind.METRICS, data={'val_acc': val_accuracy})
+                dxo = DXO(data_kind=DataKind.METRICS, data={"val_acc": val_accuracy})
                 return dxo.to_shareable()
             except:
                 self.log_exception(fl_ctx, f"Exception in validating model from {model_owner}")
@@ -101,6 +106,6 @@ class Cifar10Validator(Executor):
                 correct += (pred_label == labels).sum().item()
                 total += images.size()[0]
 
-            metric = correct/float(total)
+            metric = correct / float(total)
 
         return metric

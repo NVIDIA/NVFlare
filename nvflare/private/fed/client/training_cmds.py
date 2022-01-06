@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -157,5 +157,5 @@ class SetRunNumberProcessor(RequestProcessor):
         run_number = int(req.get_header(RequestHeader.RUN_NUM))
         result = engine.set_run_number(run_number)
         if not result:
-            result = 'OK'
+            result = "OK"
         return Message(topic="reply_" + req.topic, body=result)

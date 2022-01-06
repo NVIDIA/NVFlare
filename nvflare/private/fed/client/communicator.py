@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -118,10 +118,10 @@ class Communicator:
         """
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            s.connect(('10.255.255.255', 1))  # doesn't even have to be reachable
+            s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
             ip = s.getsockname()[0]
         except Exception:
-            ip = '127.0.0.1'
+            ip = "127.0.0.1"
         finally:
             s.close()
         return ip

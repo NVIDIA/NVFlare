@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ class FederatedClient(FederatedClientBase):
         handlers: Optional[List[FLComponent]] = None,
         executors: Optional[List[Executor]] = None,
         compression=None,
-        enable_byoc=False
+        enable_byoc=False,
     ):
         # We call the base implementation directly.
         super().__init__(

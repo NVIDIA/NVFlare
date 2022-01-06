@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ class BaseClientDeployer:
         self.client_config = build_ctx["client_config"]
         self.secure_train = build_ctx["secure_train"]
         self.client_name = build_ctx["client_name"]
-        self.host = build_ctx['server_host']
+        self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
 
     def set_model_manager(self, model_manager):
@@ -48,7 +48,7 @@ class BaseClientDeployer:
         if self.host:
             for item in self.server_config:
                 target = item["service"].get("target", None)
-                item["service"]['target'] = self.host + ':' + target.split(':')[1]
+                item["service"]["target"] = self.host + ":" + target.split(":")[1]
 
         servers = [{t["name"]: t["service"]} for t in self.server_config]
         retry_timeout = 30
@@ -70,7 +70,7 @@ class BaseClientDeployer:
             retry_timeout=retry_timeout,
             executors=self.executors,
             compression=compression,
-            enable_byoc=self.enable_byoc
+            enable_byoc=self.enable_byoc,
         )
         return self.federated_client
 

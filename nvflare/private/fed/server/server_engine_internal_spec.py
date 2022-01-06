@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -258,14 +258,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def aux_send(
-            self,
-            targets: [],
-            topic: str,
-            request: Shareable,
-            timeout: float,
-            fl_ctx: FLContext
-    ) -> dict:
+    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         """
         Send a request to client(s) via the aux channel
 

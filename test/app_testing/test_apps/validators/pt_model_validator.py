@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,16 +25,20 @@ def check_pt_results(server_data, client_data, run_data):
     server_dir = server_data["server_path"]
 
     server_run_dir = os.path.join(server_dir, "run_" + str(run_number))
-    intended_model = OrderedDict([('model',
-                                   OrderedDict([('linear.weight',
-                                                np.array([[-0.1234, -0.1452, -0.1570]])),
-                                                ('linear.bias', np.array([0.4643]))])),
-                                  ('train_conf', {'train': {'model': 'SimpleNetwork'}})])
+    intended_model = OrderedDict(
+        [
+            (
+                "model",
+                OrderedDict(
+                    [("linear.weight", np.array([[-0.1234, -0.1452, -0.1570]])), ("linear.bias", np.array([0.4643]))]
+                ),
+            ),
+            ("train_conf", {"train": {"model": "SimpleNetwork"}}),
+        ]
+    )
 
     if not os.path.exists(server_run_dir):
-        print(
-            f"check_sag_results: server run dir {server_run_dir} doesn't exist."
-        )
+        print(f"check_sag_results: server run dir {server_run_dir} doesn't exist.")
         return False
 
     models_dir = os.path.join(server_run_dir, "app_server")
@@ -51,7 +55,6 @@ def check_pt_results(server_data, client_data, run_data):
 
 
 class PTModelValidator(AppResultValidator):
-
     def __init__(self):
         super(PTModelValidator, self).__init__()
 

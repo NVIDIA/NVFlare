@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ from nvflare.fuel.hci.client.fl_admin_api_spec import FLAdminAPIResponse, Target
 
 
 class AdminController(object):
-
     def __init__(self, app_path, poll_period=10):
         """
         This class runs an app on a given server and clients.
@@ -55,14 +54,13 @@ class AdminController(object):
             timeout = 100
             start_time = time.time()
             while time.time() - start_time <= timeout:
-                response: FLAdminAPIResponse = self.admin_api.login_with_password(username="admin",
-                                                                                  password="admin")
+                response: FLAdminAPIResponse = self.admin_api.login_with_password(username="admin", password="admin")
                 if response["status"] == APIStatus.SUCCESS:
                     success = True
                     break
                 time.sleep(1.0)
             if not success:
-                details = response.get('details') if response else "No details"
+                details = response.get("details") if response else "No details"
                 raise ValueError(f"Login to admin api failed: {details}")
             else:
                 print("Admin successfully logged into server.")
@@ -72,11 +70,7 @@ class AdminController(object):
         return success
 
     def get_run_data(self):
-        run_data = {
-            "run_number": self.run_number,
-            "app_path": self.app_path,
-            "app_name": self.last_app_name
-        }
+        run_data = {"run_number": self.run_number, "app_path": self.app_path, "app_name": self.last_app_name}
 
         return run_data
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,8 +41,9 @@ class ClientRunInfo(object):
 
 class ClientRunManager(ClientEngineExecutorSpec):
     """
-        ClientRunManager provides the ClientEngine APIs implementation running in the child process.
+    ClientRunManager provides the ClientEngine APIs implementation running in the child process.
     """
+
     def __init__(
         self,
         client_name: str,
@@ -51,7 +52,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         client: FederatedClient,
         components: Dict[str, FLComponent],
         handlers: Optional[List[FLComponent]] = None,
-        conf: ClientJsonConfigurator = None
+        conf: ClientJsonConfigurator = None,
     ) -> None:
         super().__init__()
 
@@ -69,10 +70,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         self.run_info = ClientRunInfo(run_number=run_num)
 
-        self.widgets = {
-            WidgetID.INFO_COLLECTOR: InfoCollector(),
-            WidgetID.FED_EVENT_RUNNER: ClientFedEventRunner()
-        }
+        self.widgets = {WidgetID.INFO_COLLECTOR: InfoCollector(), WidgetID.FED_EVENT_RUNNER: ClientFedEventRunner()}
         for _, widget in self.widgets.items():
             self.handlers.append(widget)
 

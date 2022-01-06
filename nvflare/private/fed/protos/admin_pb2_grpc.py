@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,20 +33,20 @@ class AdminCommunicatingStub(object):
             channel: A grpc.Channel.
         """
         self.Retrieve = channel.unary_unary(
-                '/admin.AdminCommunicating/Retrieve',
-                request_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Client.SerializeToString,
-                response_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Messages.FromString,
-                )
+            "/admin.AdminCommunicating/Retrieve",
+            request_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Client.SerializeToString,
+            response_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Messages.FromString,
+        )
         self.SendReply = channel.unary_unary(
-                '/admin.AdminCommunicating/SendReply',
-                request_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.SerializeToString,
-                response_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.FromString,
-                )
+            "/admin.AdminCommunicating/SendReply",
+            request_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.SerializeToString,
+            response_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.FromString,
+        )
         self.SendResult = channel.unary_unary(
-                '/admin.AdminCommunicating/SendResult',
-                request_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.SerializeToString,
-                response_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.FromString,
-                )
+            "/admin.AdminCommunicating/SendResult",
+            request_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.SerializeToString,
+            response_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.FromString,
+        )
 
 
 class AdminCommunicatingServicer(object):
@@ -57,51 +57,47 @@ class AdminCommunicatingServicer(object):
     """
 
     def Retrieve(self, request, context):
-        """client retrieve requests.
-        """
+        """client retrieve requests."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def SendReply(self, request, context):
-        """client send reply to server
-        """
+        """client send reply to server"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def SendResult(self, request, context):
-        """client send process results to server
-        """
+        """client send process results to server"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
 
 def add_AdminCommunicatingServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Retrieve': grpc.unary_unary_rpc_method_handler(
-                    servicer.Retrieve,
-                    request_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Client.FromString,
-                    response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Messages.SerializeToString,
-            ),
-            'SendReply': grpc.unary_unary_rpc_method_handler(
-                    servicer.SendReply,
-                    request_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.FromString,
-                    response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.SerializeToString,
-            ),
-            'SendResult': grpc.unary_unary_rpc_method_handler(
-                    servicer.SendResult,
-                    request_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.FromString,
-                    response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.SerializeToString,
-            ),
+        "Retrieve": grpc.unary_unary_rpc_method_handler(
+            servicer.Retrieve,
+            request_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Client.FromString,
+            response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Messages.SerializeToString,
+        ),
+        "SendReply": grpc.unary_unary_rpc_method_handler(
+            servicer.SendReply,
+            request_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.FromString,
+            response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.SerializeToString,
+        ),
+        "SendResult": grpc.unary_unary_rpc_method_handler(
+            servicer.SendResult,
+            request_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.FromString,
+            response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.SerializeToString,
+        ),
     }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'admin.AdminCommunicating', rpc_method_handlers)
+    generic_handler = grpc.method_handlers_generic_handler("admin.AdminCommunicating", rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
- # This class is part of an EXPERIMENTAL API.
+# This class is part of an EXPERIMENTAL API.
 class AdminCommunicating(object):
     """import "google/protobuf/timestamp.proto";
     import "google/protobuf/struct.proto";
@@ -110,52 +106,88 @@ class AdminCommunicating(object):
     """
 
     @staticmethod
-    def Retrieve(request,
+    def Retrieve(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
             target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/admin.AdminCommunicating/Retrieve',
+            "/admin.AdminCommunicating/Retrieve",
             nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Client.SerializeToString,
             nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Messages.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
 
     @staticmethod
-    def SendReply(request,
+    def SendReply(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
             target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/admin.AdminCommunicating/SendReply',
+            "/admin.AdminCommunicating/SendReply",
             nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.SerializeToString,
             nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
 
     @staticmethod
-    def SendResult(request,
+    def SendResult(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
             target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/admin.AdminCommunicating/SendResult',
+            "/admin.AdminCommunicating/SendResult",
             nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Reply.SerializeToString,
             nvflare_dot_private_dot_fed_dot_protos_dot_admin__pb2.Empty.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )

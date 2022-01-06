@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,11 +22,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec):
     The ClientEngineExecutorSpec defines the ClientEngine APIs running in the child process.
     """
 
-    def aux_send(self,
-                 topic: str,
-                 request: Shareable,
-                 timeout: float,
-                 fl_ctx: FLContext) -> Shareable:
+    def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
         """
         Send the request to the Server.
 

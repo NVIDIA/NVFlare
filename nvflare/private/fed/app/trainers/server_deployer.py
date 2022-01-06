@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ class ServerDeployer:
             heart_beat_timeout=heart_beat_timeout,
             args=args,
             secure_train=secure_train,
-            enable_byoc=self.enable_byoc
+            enable_byoc=self.enable_byoc,
         )
         return first_server, services
 

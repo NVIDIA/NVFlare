@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,32 +52,24 @@ class ClientAuxRunner(AuxRunner):
             if self.sender and self.sender.is_alive():
                 self.sender.join()
 
-    def send_aux_request(
-            self,
-            topic: str,
-            request: Shareable,
-            timeout: float,
-            fl_ctx: FLContext) -> Shareable:
+    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
         if not isinstance(topic, str):
-            raise TypeError('invalid topic: expects str but got {}'.format(
-                type(topic)))
+            raise TypeError("invalid topic: expects str but got {}".format(type(topic)))
 
         if not topic:
-            raise ValueError('invalid topic: must not be empty')
+            raise ValueError("invalid topic: must not be empty")
 
         if topic == self.TOPIC_BULK:
             raise ValueError('topic value "{}" is reserved'.format(topic))
 
         if not isinstance(timeout, float):
-            raise TypeError('invalid timeout: expects float but got {}'.format(
-                type(timeout)))
+            raise TypeError("invalid timeout: expects float but got {}".format(type(timeout)))
 
         if timeout < 0:
-            raise ValueError('invalid timeout value {}: must >= 0.0'.format(timeout))
+            raise ValueError("invalid timeout value {}: must >= 0.0".format(timeout))
 
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError('invalid fl_ctx: expects FLContext but got {}'.format(
-                type(fl_ctx)))
+            raise TypeError("invalid fl_ctx: expects FLContext but got {}".format(type(fl_ctx)))
 
         req_to_send = request
         req_to_send.set_header(ReservedHeaderKey.TOPIC, topic)
@@ -93,26 +85,16 @@ class ClientAuxRunner(AuxRunner):
         engine = fl_ctx.get_engine()
         assert isinstance(engine, ClientEngineExecutorSpec)
 
-        reply = engine.aux_send(
-            topic=topic,
-            request=req_to_send,
-            timeout=timeout,
-            fl_ctx=fl_ctx
-        )
+        reply = engine.aux_send(topic=topic, request=req_to_send, timeout=timeout, fl_ctx=fl_ctx)
 
         # check whether the RUN should be aborted
         if not isinstance(reply, Shareable):
-            self.log_error(
-                fl_ctx,
-                'bad reply from peer: expect Shareable but got {}'.format(type(reply)))
+            self.log_error(fl_ctx, "bad reply from peer: expect Shareable but got {}".format(type(reply)))
             return make_reply(ReturnCode.ERROR)
 
         rc = reply.get_return_code()
         if rc == ReturnCode.RUN_MISMATCH:
-            self.log_info(
-                fl_ctx,
-                'got RUN_MISMATCH - asked engine to abort app'
-            )
+            self.log_info(fl_ctx, "got RUN_MISMATCH - asked engine to abort app")
             engine.abort_app(run_number=self.run_num, fl_ctx=fl_ctx)
 
         return reply
@@ -135,12 +117,7 @@ class ClientAuxRunner(AuxRunner):
                     bulk.set_header(ReservedHeaderKey.TOPIC, topic)
                     bulk.set_peer_props(fl_ctx.get_all_public_props())
                     bulk[self.DATA_KEY_BULK] = self.fnf_requests
-                    reply = self.engine.aux_send(
-                        topic=topic,
-                        request=bulk,
-                        timeout=1.0,
-                        fl_ctx=fl_ctx
-                    )
+                    reply = self.engine.aux_send(topic=topic, request=bulk, timeout=1.0, fl_ctx=fl_ctx)
 
                     rc = reply.get_return_code()
                     if rc != ReturnCode.COMMUNICATION_ERROR:
