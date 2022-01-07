@@ -103,7 +103,7 @@ def main():
                 server_conf=first_server,
                 args=args,
                 secure_train=secure_train,
-                app_validator=deployer.config_validator,
+                app_validator=deployer.app_validator,
             )
             admin_server.start()
 
