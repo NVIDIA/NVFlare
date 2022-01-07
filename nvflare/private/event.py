@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import FLContextKey, EventScope
 from nvflare.apis.fl_context import FLContext
 
 # do not use underscore as key name; otherwise it cannot be removed from ctx
-_KEY_EVENT_DEPTH = '###event_depth'
+_KEY_EVENT_DEPTH = "###event_depth"
 _MAX_EVENT_DEPTH = 20
 
 
@@ -59,8 +59,6 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
                 ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=event_scope, private=True, sticky=False)
                 h.handle_event(event, ctx)
             except:
-                h.log_exception(ctx,
-                                'exception when handling event "{}"'.format(event),
-                                fire_event=False)
+                h.log_exception(ctx, 'exception when handling event "{}"'.format(event), fire_event=False)
 
     ctx.set_prop(key=_KEY_EVENT_DEPTH, value=depth, private=True, sticky=False)

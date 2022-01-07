@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ FL_MODULES = ["server", "client", "aggregators", "handlers", "pt", "app", "app_c
 
 
 class WorkFlow:
-
     def __init__(self, id, responder: Responder):
         super().__init__()
         self.id = id
@@ -34,11 +33,7 @@ class WorkFlow:
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
-    def __init__(
-        self,
-        config_file_name: str,
-        exclude_libs=True
-    ):
+    def __init__(self, config_file_name: str, exclude_libs=True):
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
@@ -47,15 +42,16 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             config_file_name=config_file_name,
             base_pkgs=base_pkgs,
             module_names=module_names,
-            exclude_libs=exclude_libs)
+            exclude_libs=exclude_libs,
+        )
 
         self.runner_config = None
 
         # if server doesn't hear heartbeat from client for this long, we'll consider the client dead
-        self.heartbeat_timeout = 60      # default to 1 minute
+        self.heartbeat_timeout = 60  # default to 1 minute
 
         # server will ask client to come back for next task after this many secs
-        self.task_request_interval = 2   # default to 2 secs
+        self.task_request_interval = 2  # default to 2 secs
 
         # workflows to be executed
         self.workflows = []
@@ -89,8 +85,9 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         if re.search(r"^workflows\.#[0-9]+$", path):
             workflow = self.build_component(element)
             if not isinstance(workflow, Responder):
-                raise ConfigError('"workflow" must be a Responder or Controller object, but got {}'.format(
-                    type(workflow)))
+                raise ConfigError(
+                    '"workflow" must be a Responder or Controller object, but got {}'.format(type(workflow))
+                )
 
             cid = element.get("id", None)
             if not cid:
@@ -122,7 +119,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         FedJsonConfigurator.finalize_config(self, config_ctx)
 
         if not self.workflows:
-            raise ConfigError('workflows not specified')
+            raise ConfigError("workflows not specified")
 
         self.runner_config = ServerRunnerConfig(
             heartbeat_timeout=self.heartbeat_timeout,
@@ -131,5 +128,5 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             task_data_filters=self.data_filter_table,
             task_result_filters=self.result_filter_table,
             components=self.components,
-            handlers=self.handlers
+            handlers=self.handlers,
         )

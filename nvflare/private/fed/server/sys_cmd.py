@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -56,7 +56,10 @@ class SystemCommandModule(CommandModule, CommandUtil):
             for k, v in infos.items():
                 table.add_row([str(k), str(v)])
             table.add_row(
-                ["available_percent", "%.1f" % (psutil.virtual_memory().available * 100 / psutil.virtual_memory().total)]
+                [
+                    "available_percent",
+                    "%.1f" % (psutil.virtual_memory().available * 100 / psutil.virtual_memory().total),
+                ]
             )
             return
 
@@ -70,7 +73,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
     def _process_replies(self, conn, replies):
         if not replies:
-            conn.append_error('no responses from clients')
+            conn.append_error("no responses from clients")
             return
 
         engine = conn.app_ctx

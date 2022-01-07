@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ class _Client(object):
         self.token = token
         self.last_heard_time = None
         self.outgoing_reqs = []
-        self.fnf_reqs = []   # fire-and-forget requests
+        self.fnf_reqs = []  # fire-and-forget requests
         self.waiters = {}  # ref => waiter
         self.req_lock = threading.Lock()
         self.waiter_lock = threading.Lock()
@@ -367,9 +367,7 @@ class FedAdminServer(AdminServer):
             time.sleep(0.1)
 
         for cr in client_reqs:
-            result.append(ClientReply(client_token=cr.client.token,
-                                      req=cr.waiter.req,
-                                      reply=cr.waiter.reply))
+            result.append(ClientReply(client_token=cr.client.token, req=cr.waiter.req, reply=cr.waiter.reply))
 
             if cr.waiter.reply_time is None:
                 # this client timed out

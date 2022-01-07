@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -66,10 +66,7 @@ class SimpleTrainer(Executor):
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         model.compile(optimizer="adam", loss=loss_fn, metrics=["accuracy"])
         _ = model(tf.keras.Input(shape=(28, 28)))
-        self.var_list = [
-            model.get_layer(index=index).name
-            for index in range(len(model.get_weights()))
-        ]
+        self.var_list = [model.get_layer(index=index).name for index in range(len(model.get_weights()))]
         self.model = model
 
     def execute(
@@ -108,8 +105,7 @@ class SimpleTrainer(Executor):
 
         # use previous round's client weights to replace excluded layers from server
         prev_weights = {
-            self.model.get_layer(index=key).name: value
-            for key, value in enumerate(self.model.get_weights())
+            self.model.get_layer(index=key).name: value for key, value in enumerate(self.model.get_weights())
         }
         print("dxo")
         ordered_model_weights = {key: model_weights.get(key) for key in prev_weights}
@@ -131,10 +127,7 @@ class SimpleTrainer(Executor):
         )
 
         # report updated weights in shareable
-        weights = {
-            self.model.get_layer(index=key).name: value
-            for key, value in enumerate(self.model.get_weights())
-        }
+        weights = {self.model.get_layer(index=key).name: value for key, value in enumerate(self.model.get_weights())}
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights)
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")

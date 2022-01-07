@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 
 
 class EventRelayer(FLComponent):
-
     def __init__(self, conn, local_rank):
         super().__init__()
         self.conn = conn
@@ -44,7 +43,9 @@ class EventRelayer(FLComponent):
             event_type = data[CommunicationMetaData.EVENT_TYPE]
             fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
 
-            fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN_SITE, CommunicateData.MULTI_PROCESS_EXECUTOR, private=True, sticky=False)
+            fl_ctx.set_prop(
+                FLContextKey.EVENT_ORIGIN_SITE, CommunicateData.MULTI_PROCESS_EXECUTOR, private=True, sticky=False
+            )
             self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -55,18 +56,20 @@ class EventRelayer(FLComponent):
         if event_site != CommunicateData.MULTI_PROCESS_EXECUTOR:
             with self.event_lock:
                 try:
-                    data = {CommunicationMetaData.EVENT_TYPE: event_type,
-                            CommunicationMetaData.RANK_NUMBER: self.local_rank,
-                            CommunicationMetaData.FL_CTX: new_fl_ctx
-                            }
+                    data = {
+                        CommunicationMetaData.EVENT_TYPE: event_type,
+                        CommunicationMetaData.RANK_NUMBER: self.local_rank,
+                        CommunicationMetaData.FL_CTX: new_fl_ctx,
+                    }
                     self.conn.send(data)
 
                     return_data = self.conn.recv()
                     # update the fl_ctx from the child process return data.
                     fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
                 except BaseException:
-                    self.log_warning(fl_ctx, f"Failed to relay the event to parent process. Event: {event_type}",
-                                     fire_event=False)
+                    self.log_warning(
+                        fl_ctx, f"Failed to relay the event to parent process. Event: {event_type}", fire_event=False
+                    )
 
 
 def main():
@@ -83,7 +86,7 @@ def main():
     SecurityContentService.initialize(content_folder=startup)
 
     # local_rank = args.local_rank
-    local_rank = int(os.environ['LOCAL_RANK'])
+    local_rank = int(os.environ["LOCAL_RANK"])
     listen_port = listen_ports[local_rank * 3]
     exe_conn = _create_connection(listen_port)
 
@@ -113,7 +116,7 @@ def main():
         client=None,
         components=data[CommunicationMetaData.COMPONENTS],
         handlers=data[CommunicationMetaData.HANDLERS],
-        conf=None
+        conf=None,
     )
 
     relayer = EventRelayer(event_conn, local_rank)
@@ -123,14 +126,10 @@ def main():
     executor = data[CommunicationMetaData.LOCAL_EXECUTOR]
     exe_conn.send({CommunicationMetaData.RANK_PROCESS_STARTED: True})
 
-    exe_thread = threading.Thread(
-        target=execute, args=(run_manager, local_rank, exe_conn, executor)
-    )
+    exe_thread = threading.Thread(target=execute, args=(run_manager, local_rank, exe_conn, executor))
     exe_thread.start()
 
-    event_thread = threading.Thread(
-        target=handle_event, args=(run_manager, local_rank, handle_conn)
-    )
+    event_thread = threading.Thread(target=handle_event, args=(run_manager, local_rank, handle_conn))
     event_thread.start()
 
     with run_manager.new_context() as fl_ctx:
@@ -165,13 +164,13 @@ def execute(run_manager, local_rank, exe_conn, executor):
                     fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
 
                     shareable = executor.execute(
-                        task_name=task_name,
-                        shareable=shareable,
-                        fl_ctx=fl_ctx,
-                        abort_signal=abort_signal)
+                        task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal
+                    )
                     if local_rank == 0:
-                        return_data = {CommunicationMetaData.SHAREABLE: shareable,
-                                       CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx)}
+                        return_data = {
+                            CommunicationMetaData.SHAREABLE: shareable,
+                            CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                        }
                         exe_conn.send(return_data)
 
             elif command == CommunicateData.CLOSE:

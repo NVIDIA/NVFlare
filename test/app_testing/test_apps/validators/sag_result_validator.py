@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,16 +24,12 @@ def check_sag_results(server_data, client_data, run_data):
 
     server_run_dir = os.path.join(server_dir, "run_" + str(run_number))
     intended_model = np.array(
-        [[4., 5., 6.],
-         [7., 8., 9.],
-         [10., 11., 12.]],
+        [[4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
         dtype="float32",
     )
 
     if not os.path.exists(server_run_dir):
-        print(
-            f"check_sag_results: server run dir {server_run_dir} doesn't exist."
-        )
+        print(f"check_sag_results: server run dir {server_run_dir} doesn't exist.")
         return False
 
     models_dir = os.path.join(server_run_dir, "models")

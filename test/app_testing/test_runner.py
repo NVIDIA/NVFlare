@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,13 +49,9 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description="Run NVFlare tests")
         parser.add_argument("--poc", "-p", type=str, help="Poc Directory")
         parser.add_argument("--n_clients", "-n", type=int, help="Number of clients.")
-        parser.add_argument(
-            "--app_path", "-ap", type=str, help="Directory for the apps."
-        )
+        parser.add_argument("--app_path", "-ap", type=str, help="Directory for the apps.")
         parser.add_argument("--yaml", "-y", type=str, help="Yaml test config path.")
-        parser.add_argument(
-            "--cleanup", "-c", action="store_true", help="Whether to cleanup "
-        )
+        parser.add_argument("--cleanup", "-c", action="store_true", help="Whether to cleanup ")
 
         args = parser.parse_args()
 
@@ -73,9 +69,7 @@ if __name__ == "__main__":
         admin_controller = AdminController(app_path=args.app_path)
         admin_controller.initialize()
 
-        admin_controller.ensure_clients_started(
-            num_clients=args.n_clients
-        )
+        admin_controller.ensure_clients_started(num_clients=args.n_clients)
 
         print(f"Server status: {admin_controller.server_status()}.")
 
@@ -106,12 +100,8 @@ if __name__ == "__main__":
                 for validator_module in validators:
 
                     # Create validator instance
-                    module_name, class_name = get_module_class_from_full_path(
-                        validator_module
-                    )
-                    app_validator_cls = getattr(
-                        importlib.import_module(module_name), class_name
-                    )
+                    module_name, class_name = get_module_class_from_full_path(validator_module)
+                    app_validator_cls = getattr(importlib.import_module(module_name), class_name)
                     app_validator = app_validator_cls()
 
                     app_validate_res = app_validator.validate_results(

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ from nvflare.app_common.app_event_type import AppEventType
 
 
 class ValidationJsonGenerator(FLComponent):
-
     def __init__(self, results_dir=AppConstants.CROSS_VAL_DIR, json_file_name="cross_val.json"):
         super(ValidationJsonGenerator, self).__init__()
 
@@ -67,5 +66,5 @@ class ValidationJsonGenerator(FLComponent):
                 os.makedirs(cross_val_res_dir)
 
             res_file_path = os.path.join(cross_val_res_dir, self.json_file_name)
-            with open(res_file_path, 'w') as f:
+            with open(res_file_path, "w") as f:
                 json.dump(self.val_results, f)

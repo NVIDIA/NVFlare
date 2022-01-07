@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,10 +20,7 @@ from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 
 
 class ServerCommandModules:
-    cmd_modules = [ShellCommandModule(),
-                   SystemCommandModule(),
-                   TrainingCommandModule(),
-                   InfoCollectorCommandModule()]
+    cmd_modules = [ShellCommandModule(), SystemCommandModule(), TrainingCommandModule(), InfoCollectorCommandModule()]
 
     def __init__(self) -> None:
         super().__init__()

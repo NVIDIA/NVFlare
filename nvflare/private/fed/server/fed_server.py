@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,6 +57,7 @@ class BaseServer:
     """
     Base FL server, provides the clients management, server deployment.
     """
+
     def __init__(
         self,
         project_name=None,
@@ -223,7 +224,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         handlers: Optional[List[FLComponent]] = None,
         args=None,
         secure_train=False,
-        enable_byoc=False
+        enable_byoc=False,
     ):
         """
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -137,7 +137,7 @@ class NPTrainer(Executor):
             if abort_signal.triggered:
                 return self._get_exception_shareable()
 
-            weights_diff = {k: new_weights[k]-weights[k] for k in weights.keys()}
+            weights_diff = {k: new_weights[k] - weights[k] for k in weights.keys()}
 
             outgoing_dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=weights_diff, meta={})
             return outgoing_dxo.to_shareable()
