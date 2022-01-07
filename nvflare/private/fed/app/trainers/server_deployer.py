@@ -25,7 +25,7 @@ class ServerDeployer:
     def build(self, build_ctx):
         self.server_config = build_ctx["server_config"]
         self.secure_train = build_ctx["secure_train"]
-        self.config_validator = build_ctx["app_validator"]
+        self.app_validator = build_ctx["app_validator"]
         self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
 
