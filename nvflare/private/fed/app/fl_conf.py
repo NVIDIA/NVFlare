@@ -92,6 +92,10 @@ class FLServerStarterConfiger(JsonConfigurator):
             self.enable_byoc = element
             return
 
+        if path == "config_validator" and isinstance(element, dict):
+            self.config_validator = self.build_component(element)
+            return
+
     def finalize_config(self, config_ctx: ConfigContext):
         secure_train = False
         if self.cmd_vars.get("secure_train"):
