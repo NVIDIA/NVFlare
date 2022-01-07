@@ -35,6 +35,9 @@ builders:
     args:
       # config_folder can be set to inform NVFlare where to get configuration
       config_folder: config
+      # app_validator is used to verify if uploaded app has proper structures
+      # if not set, no app_validator is included in fed_server.json
+      # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
   - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder

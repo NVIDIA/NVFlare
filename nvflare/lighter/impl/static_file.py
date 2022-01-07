@@ -20,10 +20,11 @@ from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
-    def __init__(self, enable_byoc=False, config_folder="", docker_image=""):
+    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image=""):
         self.enable_byoc = enable_byoc
         self.config_folder = config_folder
         self.docker_image = docker_image
+        self.app_validator = app_validator
 
     def _write(self, file_full_path, content, mode, exe=False):
         mode = mode + "w"
@@ -46,6 +47,8 @@ class StaticFileBuilder(Builder):
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
         config["enable_byoc"] = server.enable_byoc
+        if self.app_validator:
+            config["app_validator"] = {"path": self.app_validator}
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
         replacement_dict = {
             "admin_port": admin_port,
