@@ -85,9 +85,7 @@ class LearnerExecutor(Executor):
         validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
 
         train_result = self.learner.train(shareable, fl_ctx, abort_signal)
-        if not (
-            train_result and isinstance(train_result, Shareable) and train_result.get_return_code() == ReturnCode.OK
-        ):
+        if not (train_result and isinstance(train_result, Shareable)):
             return make_reply(ReturnCode.EMPTY_RESULT)
 
         # if the learner returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
@@ -98,20 +96,20 @@ class LearnerExecutor(Executor):
             and validate_result.get_return_code() == ReturnCode.OK
         ):
             metrics_dxo = from_shareable(validate_result)
-            train_dxo = from_shareable(train_result)
-            train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
-            return train_dxo.to_shareable()
+
+            try:
+                train_dxo = from_shareable(train_result)
+                train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
+                return train_dxo.to_shareable()
+            except ValueError:
+                return train_result
         else:
             return train_result
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
         submit_model_result = self.learner.get_model_for_validation(model_name, fl_ctx)
-        if (
-            submit_model_result
-            and isinstance(submit_model_result, Shareable)
-            and submit_model_result.get_return_code() == ReturnCode.OK
-        ):
+        if submit_model_result and isinstance(submit_model_result, Shareable):
             return submit_model_result
         else:
             return make_reply(ReturnCode.EMPTY_RESULT)
@@ -121,11 +119,7 @@ class LearnerExecutor(Executor):
 
         shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE)
         validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
-        if (
-            validate_result
-            and isinstance(validate_result, Shareable)
-            and validate_result.get_return_code() == ReturnCode.OK
-        ):
+        if validate_result and isinstance(validate_result, Shareable):
             return validate_result
         else:
             return make_reply(ReturnCode.EMPTY_RESULT)
