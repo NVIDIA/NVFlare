@@ -167,14 +167,14 @@ same CIFAR-10 test set. The plotting script used for the below graphs is in
 
 ### 4.1 Central vs. FedAvg
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
-One can see that FedAvg can achieve a similar performance to central training and 
-that HE does not impact the performance accuracy of FedAvg while adding security to the aggregation step.
+One can see that FedAvg can achieve similar performance to central training and 
+that HE does not impact the performance accuracy of FedAvg significantly while adding security to the aggregation step.
 
 | Config	| Alpha	| 	Val score	| 
 | ----------- | ----------- |  ----------- |
-| cifar10_central | 1.0	| 	0.8668	| 
-| cifar10_fedavg  | 1.0	| 	0.8840	| 
-| cifar10_fedavg_he | 1.0	| 	0.8868	|
+| cifar10_central | 1.0	| 	0.8798	| 
+| cifar10_fedavg  | 1.0	| 	0.8873	| 
+| cifar10_fedavg_he | 1.0	| 	0.8864	|
 
 ![Central vs. FedAvg](./figs/central_vs_fedavg_he.png)
 
@@ -185,10 +185,10 @@ This can be observed in the resulting performance of the FedAvg algorithms.
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
-| cifar10_fedavg |	1.0 |	0.8840 |
-| cifar10_fedavg |	0.5 |	0.8727 |
-| cifar10_fedavg |	0.3 |	0.8264 |
-| cifar10_fedavg | 	0.1 |	0.7626 |
+| cifar10_fedavg |	1.0 |	0.8873 |
+| cifar10_fedavg |	0.5 |	0.8726 |
+| cifar10_fedavg |	0.3 |	0.8315 |
+| cifar10_fedavg |	0.1 |	0.7726 |
 
 ![Impact of client data heterogeneity](./figs/fedavg_alpha.png)
 
@@ -199,10 +199,10 @@ impact on more advanced FL algorithms, namely FedProx and FedOpt. Both achieve a
 with the same `alpha` setting but FedOpt shows a better convergence rate by utilizing SGD with momentum
 to update the global model on the server, and achieves a better performance with the same amount of training steps.
 
-| Config |	Alpha |	Val score |
-| ----------- | ----------- |  ----------- |
-| cifar10_fedavg |	0.1 |	0.7626 |
-| cifar10_fedprox |	0.1 |	0.7709 |
-| cifar10_fedopt |	0.1 |	0.7963 |
+| Config           |	Alpha |	Val score |
+|------------------| ----------- |  ----------- |
+| cifar10_fedavg   |	0.1 |	0.7726 |
+| cifar10_fedprox  |	0.1 |	0.7512 |
+| cifar10_fedopt   |	0.1 |	0.7986 |
 
 ![FedProx vs. FedOpt](./figs/fedopt_fedprox.png)

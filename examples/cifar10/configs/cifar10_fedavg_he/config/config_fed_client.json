@@ -5,22 +5,14 @@
 
   "executors": [
     {
-      "tasks": ["train", "submit_model"],
+      "tasks": [
+        "train", "submit_model", "validate"
+      ],
       "executor": {
-        "path": "pt.trainers.cifar10_trainer.CIFAR10Trainer",
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.learner_executor.LearnerExecutor",
         "args": {
-          "dataset_root": "{DATASET_ROOT}",
-          "aggregation_epochs": 4,
-          "lr": 1e-2
-        }
-      }
-    },
-    {
-      "tasks": ["validate"],
-      "executor": {
-        "path": "pt.validators.cifar10_validator.CIFAR10Validator",
-        "args": {
-          "dataset_root": "{DATASET_ROOT}"
+          "learner_id": "cifar10-learner"
         }
       }
     }
@@ -41,6 +33,7 @@
       ]
     }
   ],
+
   "task_data_filters": [
     {
       "tasks": ["train", "validate"],
@@ -53,6 +46,16 @@
       ]
     }
   ],
+
   "components": [
+    {
+      "id": "cifar10-learner",
+      "path": "pt.learners.cifar10_learner.CIFAR10Learner",
+      "args": {
+        "dataset_root": "{DATASET_ROOT}",
+        "aggregation_epochs": 4,
+        "lr": 1e-2
+      }
+    }
   ]
 }
