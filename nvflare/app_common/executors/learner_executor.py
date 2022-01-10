@@ -95,10 +95,13 @@ class LearnerExecutor(Executor):
             and isinstance(validate_result, Shareable)
             and validate_result.get_return_code() == ReturnCode.OK
         ):
-            metrics_dxo = from_shareable(validate_result)
-            train_dxo = from_shareable(train_result)
-            train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
-            return train_dxo.to_shareable()
+            try:
+                metrics_dxo = from_shareable(validate_result)
+                train_dxo = from_shareable(train_result)
+                train_dxo.meta[MetaKey.INITIAL_METRICS] = metrics_dxo.data.get(MetaKey.INITIAL_METRICS, 0)
+                return train_dxo.to_shareable()
+            except ValueError:
+                return train_result
         else:
             return train_result
 
