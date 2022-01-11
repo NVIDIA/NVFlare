@@ -22,7 +22,7 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvidia.g
 
 ## 2. FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
-  * Includes examples of using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
+  * Includes examples of using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/), and streaming of TensorBoard metrics to the server during training.
 
 ## 3. Medical Image Analysis
 * [Hello MONAI](./hello-monai/README.md)
