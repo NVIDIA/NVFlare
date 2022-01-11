@@ -210,7 +210,7 @@ to update the global model on the server, and achieves a better performance with
 
 ## 5. Streaming TensorBoard metrics to the server
 
-In a real-world scenario, the researcher won't have access to all TensorBoard of the individual clients. In order to visualize the training performance in a central place, the streaming widget, `ConvertToFedEvent`, and `TBAnalyticsReceiver` can be used. For an example using FedAvg and metric streaming during training, run:
+In a real-world scenario, the researcher won't have access to the TensorBoard events of the individual clients. In order to visualize the training performance in a central place, `AnalyticsSender`, `ConvertToFedEvent` on the client, and `TBAnalyticsReceiver` on the server can be used. For an example using FedAvg and metric streaming during training, run:
 ```
 ./run_poc.sh 8 cifar10_fedavg_stream_tb 9 1.0
 ```

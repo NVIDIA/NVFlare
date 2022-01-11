@@ -44,7 +44,7 @@ class CIFAR10Learner(Learner):
         lr: float = 1e-2,
         fedproxloss_mu: float = 0.0,
         central: bool = False,
-        stream_tb: bool = False
+        analytic_sender_id: str = "analytic_sender"
     ):
         """Simple CIFAR-10 Trainer.
 
@@ -53,7 +53,7 @@ class CIFAR10Learner(Learner):
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
             submit_model_task_name: name of the task to submit the best local model.
-            stream_tb: whether to send TensorBoard values. Defaults to False.
+            analytic_sender_id: id of `AnalyticsSender` if configured as a client component. If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
 
         Returns:
             a Shareable with the updated local model after running `execute()`
@@ -72,7 +72,7 @@ class CIFAR10Learner(Learner):
         self.central = central
 
         self.writer = None
-        self.stream_tb = stream_tb
+        self.analytic_sender_id = analytic_sender_id
 
         # Epoch counter
         self.epoch_of_start_time = 0
@@ -93,8 +93,10 @@ class CIFAR10Learner(Learner):
         self.local_model_file = os.path.join(self.app_root, "local_model.pt")
         self.best_local_model_file = os.path.join(self.app_root, "best_local_model.pt")
 
-        # Set local tensorboard writer - to be replaced by event
-        self.writer = SummaryWriter(self.app_root)
+        # Select local TensorBoard writer or event-based writer for streaming
+        self.writer = parts.get(self.analytic_sender_id)  # user configured config_fed_client.json for streaming
+        if not self.writer:  # use local TensorBoard writer only
+            self.writer = SummaryWriter(self.app_root)
 
         # Set datalist, here the path and filename are hard-coded, can also be fed as an argument
         site_idx_file_name = os.path.join(self.dataset_root, self.client_id + ".npy")
@@ -195,8 +197,6 @@ class CIFAR10Learner(Learner):
                 self.optimizer.step()
                 current_step = epoch_len * self.epoch_global + i
                 self.writer.add_scalar("train_loss", loss.item(), current_step)
-                if self.stream_tb:
-                    self.send_tb_scalar("train_loss", loss.item(), current_step, fl_ctx)
             if val_freq > 0 and epoch % val_freq == 0:
                 acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model", fl_ctx=fl_ctx)
                 if acc > self.best_acc:
@@ -332,8 +332,6 @@ class CIFAR10Learner(Learner):
             metric = correct / float(total)
             if tb_id:
                 self.writer.add_scalar(tb_id, metric, self.epoch_global)
-                if self.stream_tb:
-                    self.send_tb_scalar(tb_id, metric, self.epoch_global, fl_ctx)
         return metric
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
