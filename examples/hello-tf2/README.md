@@ -25,7 +25,7 @@ Then, use these Admin commands to run the experiment:
 ```
 set_run_number 1
 upload_app hello-tf2
-deploy_app hello-tf2
+deploy_app hello-tf2 all
 start_app all
 ```
 
