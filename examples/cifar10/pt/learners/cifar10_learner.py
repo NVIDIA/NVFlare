@@ -31,7 +31,6 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
-from nvflare.app_common.widgets.streaming import send_analytic_dxo, write_scalar
 
 
 class CIFAR10Learner(Learner):
@@ -44,7 +43,7 @@ class CIFAR10Learner(Learner):
         lr: float = 1e-2,
         fedproxloss_mu: float = 0.0,
         central: bool = False,
-        analytic_sender_id: str = "analytic_sender"
+        analytic_sender_id: str = "analytic_sender",
     ):
         """Simple CIFAR-10 Trainer.
 
@@ -165,10 +164,6 @@ class CIFAR10Learner(Learner):
     def finalize(self, fl_ctx: FLContext):
         # collect threads, close files here
         pass
-
-    def send_tb_scalar(self, tag, number, r, fl_ctx):
-        dxo = write_scalar(tag, number, global_step=r)
-        send_analytic_dxo(comp=self, dxo=dxo, fl_ctx=fl_ctx)
 
     def local_train(self, fl_ctx, train_loader, model_global, abort_signal: Signal, val_freq: int = 0):
         for epoch in range(self.aggregation_epochs):
