@@ -206,3 +206,12 @@ to update the global model on the server, and achieves a better performance with
 | cifar10_fedopt   |	0.1 |	0.7986 |
 
 ![FedProx vs. FedOpt](./figs/fedopt_fedprox.png)
+
+
+## 5. Streaming TensorBoard metrics to the server
+
+In a real-world scenario, the researcher won't have access to all TensorBoard of the individual clients. In order to visualize the training performance in a central place, the streaming widget, `ConvertToFedEvent`, and `TBAnalyticsReceiver` can be used. For an example using FedAvg and metric streaming during training, run:
+```
+./run_poc.sh 8 cifar10_fedavg_stream_tb 9 1.0
+```
+Using this configuration, a `tb_events` folder will be created under the `run_*` folder of the server that includes all the TensorBoard event values of the different clients.

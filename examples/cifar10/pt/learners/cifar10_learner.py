@@ -31,6 +31,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
+from nvflare.app_common.widgets.streaming import send_analytic_dxo, write_scalar
 
 
 class CIFAR10Learner(Learner):
@@ -43,6 +44,7 @@ class CIFAR10Learner(Learner):
         lr: float = 1e-2,
         fedproxloss_mu: float = 0.0,
         central: bool = False,
+        stream_tb: bool = False
     ):
         """Simple CIFAR-10 Trainer.
 
@@ -51,6 +53,7 @@ class CIFAR10Learner(Learner):
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
             submit_model_task_name: name of the task to submit the best local model.
+            stream_tb: whether to send TensorBoard values. Defaults to False.
 
         Returns:
             a Shareable with the updated local model after running `execute()`
@@ -67,7 +70,9 @@ class CIFAR10Learner(Learner):
         self.submit_model_task_name = submit_model_task_name
         self.best_acc = 0.0
         self.central = central
-        self.initialized = False
+
+        self.writer = None
+        self.stream_tb = stream_tb
 
         # Epoch counter
         self.epoch_of_start_time = 0
@@ -159,6 +164,10 @@ class CIFAR10Learner(Learner):
         # collect threads, close files here
         pass
 
+    def send_tb_scalar(self, tag, number, r, fl_ctx):
+        dxo = write_scalar(tag, number, global_step=r)
+        send_analytic_dxo(comp=self, dxo=dxo, fl_ctx=fl_ctx)
+
     def local_train(self, fl_ctx, train_loader, model_global, abort_signal: Signal, val_freq: int = 0):
         for epoch in range(self.aggregation_epochs):
             if abort_signal.triggered:
@@ -184,9 +193,12 @@ class CIFAR10Learner(Learner):
 
                 loss.backward()
                 self.optimizer.step()
-                self.writer.add_scalar("train_loss", loss.item(), epoch_len * self.epoch_global + i)
+                current_step = epoch_len * self.epoch_global + i
+                self.writer.add_scalar("train_loss", loss.item(), current_step)
+                if self.stream_tb:
+                    self.send_tb_scalar("train_loss", loss.item(), current_step, fl_ctx)
             if val_freq > 0 and epoch % val_freq == 0:
-                acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model")
+                acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model", fl_ctx=fl_ctx)
                 if acc > self.best_acc:
                     self.save_model(is_best=True)
 
@@ -255,7 +267,7 @@ class CIFAR10Learner(Learner):
         self.epoch_of_start_time += self.aggregation_epochs
 
         # perform valid after local train
-        acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model")
+        acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model", fl_ctx=fl_ctx)
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         self.log_info(fl_ctx, f"val_acc_local_model: {acc:.4f}")
@@ -304,7 +316,7 @@ class CIFAR10Learner(Learner):
         else:
             raise ValueError(f"Unknown model_type: {model_name}")  # Raised errors are caught in LearnerExecutor class.
 
-    def local_valid(self, valid_loader, abort_signal: Signal, tb_id=None):
+    def local_valid(self, valid_loader, abort_signal: Signal, tb_id=None, fl_ctx=None):
         self.model.eval()
         with torch.no_grad():
             correct, total = 0, 0
@@ -320,6 +332,8 @@ class CIFAR10Learner(Learner):
             metric = correct / float(total)
             if tb_id:
                 self.writer.add_scalar(tb_id, metric, self.epoch_global)
+                if self.stream_tb:
+                    self.send_tb_scalar(tb_id, metric, self.epoch_global, fl_ctx)
         return metric
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -350,7 +364,7 @@ class CIFAR10Learner(Learner):
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
             # perform valid before local train
-            global_acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_global_model")
+            global_acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_global_model", fl_ctx=fl_ctx)
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             self.log_info(fl_ctx, f"val_acc_global_model: {global_acc:.4f}")
