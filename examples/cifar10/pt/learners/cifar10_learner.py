@@ -53,7 +53,7 @@ class CIFAR10Learner(Learner):
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
             submit_model_task_name: name of the task to submit the best local model.
-            stream_tb: whether to send TensorBoard values to server. Defaults to False.
+            stream_tb: whether to send TensorBoard values. Defaults to False.
 
         Returns:
             a Shareable with the updated local model after running `execute()`
