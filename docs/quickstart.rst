@@ -74,6 +74,10 @@ the FL process. Log in by entering ``admin`` for both the username and password.
 
 Example Apps for NVIDIA FLARE
 =============================
+NVIDIA FLARE has several examples to help you get started with federated learning and to explore certain features in
+`the examples directory <https://github.com/NVIDIA/NVFlare/tree/main/examples>`_.
+
+The following quickstart guides walk you through some of these examples:
 
 .. toctree::
    :maxdepth: 1

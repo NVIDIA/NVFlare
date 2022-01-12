@@ -25,7 +25,7 @@ Then, use these Admin commands to run the experiment:
 ```
 set_run_number 1
 upload_app hello-monai
-deploy_app hello-monai
+deploy_app hello-monai all
 start_app all
 ```
 
