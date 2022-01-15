@@ -30,9 +30,18 @@
       "args": {
         "dataset_root": "{DATASET_ROOT}",
         "aggregation_epochs": 4,
-        "lr": 1e-2,
-        "stream_tb": true
+        "lr": 1e-2
       }
+    },
+    {
+      "id": "analytic_sender",
+      "name": "AnalyticsSender",
+      "args": {}
+    },
+    {
+      "id": "tb_analytics_receive",
+      "name": "TBAnalyticsReceiver",
+      "args": {"events": ["analytix_log_stats"]}
     },
     {
       "id": "event_to_fed",
