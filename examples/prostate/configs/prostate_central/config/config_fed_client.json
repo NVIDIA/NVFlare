@@ -3,29 +3,32 @@
 
   "executors": [
     {
-      "tasks": ["train", "submit_model"],
+      "tasks": [
+        "train", "submit_model", "validate"
+      ],
       "executor": {
-        "path": "pt.trainers.prostate_trainer.ProstateTrainer",
+        "id": "Executor",
+        "name": "LearnerExecutor",
         "args": {
-          "aggregation_epochs": 10,
-          "train_config_filename": "config_train.json"
-        }
-      }
-    },
-    {
-      "tasks": ["validate"],
-      "executor": {
-        "path": "pt.validators.prostate_validator.ProstateValidator",
-        "args": {
-          "train_config_filename": "config_train.json"
+          "learner_id": "prostate-learner"
         }
       }
     }
   ],
+
   "task_result_filters": [
   ],
   "task_data_filters": [
   ],
+
   "components": [
+    {
+      "id": "prostate-learner",
+      "path": "pt.learners.prostate_learner.ProstateLearner",
+      "args": {
+        "aggregation_epochs": 10,
+        "train_config_filename": "config_train.json"
+      }
+    }
   ]
 }

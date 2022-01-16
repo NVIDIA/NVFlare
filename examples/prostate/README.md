@@ -196,7 +196,9 @@ The [run_poc.sh](./run_poc.sh) script follows the pattern:
 
 This script will start the FL server and clients automatically to run FL experiments on localhost. 
 Each client will be alternately assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [run_poc.sh](./run_poc.sh). 
-In this example, we run 4 clients on two GPUs, two clients for each GPU with 12 GB memory.
+In this example, we run 4 clients on two GPUs, two clients for each GPU with 12 GB memory.  
+
+Note that in order to make it working under most system resource conditions, the current script used regular `Dataset` for data loading in `pt/learners/prostate_learner.py`, which could be slow. If resource permits, it will make the training much faster by replacing it with `CacheDataset`. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
 
 ### 4.1 FedAvg 
 To run FL with [FedAvg](https://arxiv.org/abs/1602.05629), we use
