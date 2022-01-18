@@ -1,0 +1,41 @@
+name: Build docs
+
+on:
+  push:
+    branches: main
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8"]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-doc.txt
+        pip install torch
+    - name: Build docs
+      run: |
+        ./build_doc.sh --html
+        mv docs/ docs_build/
+        mv docs_build/_build/ docs/
+        touch docs/.nojekyll
+        rm -r docs/.doctrees
+        rm -r docs_build/
+    - uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: Check in built docs
+        branch: docs
+        push_options: '--force'
+        skip_checkout: true
+
