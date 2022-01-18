@@ -173,3 +173,4 @@ class LogMessageTag(object):
     INFO = "log/info"
     WARNING = "log/warning"
     CRITICAL = "log/critical"
+    LOG_RECORD = "log_record"

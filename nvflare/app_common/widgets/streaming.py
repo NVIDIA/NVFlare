@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 from abc import ABC, abstractmethod
+from logging import LogRecord
 from threading import Lock
 from typing import List, Optional
 
@@ -33,6 +34,8 @@ _LOG_WARNING_EVENT_TYPE = "analytix_log_warning"
 _LOG_ERROR_EVENT_TYPE = "analytix_log_error"
 _LOG_EXCEPTION_EVENT_TYPE = "analytix_log_exception"
 _LOG_CRITICAL_EVENT_TYPE = "analytix_log_critical"
+
+_LOGGING_EVENT_TYPE = "analytix_logging"
 
 
 def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = _ANALYTIC_EVENT_TYPE):
@@ -202,29 +205,29 @@ class AnalyticsSender(Widget):
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=event_type)
 
-    def info(self, msg: str, *args, **kwargs):
-        """Logs a message with tag LogMessageTag.INFO."""
-        self._log(tag=LogMessageTag.INFO, msg=msg, event_type=_LOG_INFO_EVENT_TYPE, args=args, kwargs=kwargs)
-
-    def warning(self, msg: str, *args, **kwargs):
-        """Logs a message with tag LogMessageTag.WARNING."""
-        self._log(tag=LogMessageTag.WARNING, msg=msg, event_type=_LOG_WARNING_EVENT_TYPE, args=args, kwargs=kwargs)
-
-    def error(self, msg: str, *args, **kwargs):
-        """Logs a message with tag LogMessageTag.ERROR."""
-        self._log(tag=LogMessageTag.ERROR, msg=msg, event_type=_LOG_ERROR_EVENT_TYPE, args=args, kwargs=kwargs)
-
-    def debug(self, msg: str, *args, **kwargs):
-        """Logs a message with tag LogMessageTag.DEBUG."""
-        self._log(tag=LogMessageTag.DEBUG, msg=msg, event_type=_LOG_DEBUG_EVENT_TYPE, args=args, kwargs=kwargs)
-
-    def exception(self, msg: str, *args, **kwargs):
-        """Logs a message with tag LogMessageTag.EXCEPTION."""
-        self._log(tag=LogMessageTag.EXCEPTION, msg=msg, event_type=_LOG_EXCEPTION_EVENT_TYPE, args=args, kwargs=kwargs)
-
-    def critical(self, msg: str, *args, **kwargs):
-        """Logs a message with tag LogMessageTag.CRITICAL."""
-        self._log(tag=LogMessageTag.CRITICAL, msg=msg, event_type=_LOG_CRITICAL_EVENT_TYPE, args=args, kwargs=kwargs)
+    # def info(self, msg: str, *args, **kwargs):
+    #     """Logs a message with tag LogMessageTag.INFO."""
+    #     self._log(tag=LogMessageTag.INFO, msg=msg, event_type=_LOG_INFO_EVENT_TYPE, args=args, kwargs=kwargs)
+    #
+    # def warning(self, msg: str, *args, **kwargs):
+    #     """Logs a message with tag LogMessageTag.WARNING."""
+    #     self._log(tag=LogMessageTag.WARNING, msg=msg, event_type=_LOG_WARNING_EVENT_TYPE, args=args, kwargs=kwargs)
+    #
+    # def error(self, msg: str, *args, **kwargs):
+    #     """Logs a message with tag LogMessageTag.ERROR."""
+    #     self._log(tag=LogMessageTag.ERROR, msg=msg, event_type=_LOG_ERROR_EVENT_TYPE, args=args, kwargs=kwargs)
+    #
+    # def debug(self, msg: str, *args, **kwargs):
+    #     """Logs a message with tag LogMessageTag.DEBUG."""
+    #     self._log(tag=LogMessageTag.DEBUG, msg=msg, event_type=_LOG_DEBUG_EVENT_TYPE, args=args, kwargs=kwargs)
+    #
+    # def exception(self, msg: str, *args, **kwargs):
+    #     """Logs a message with tag LogMessageTag.EXCEPTION."""
+    #     self._log(tag=LogMessageTag.EXCEPTION, msg=msg, event_type=_LOG_EXCEPTION_EVENT_TYPE, args=args, kwargs=kwargs)
+    #
+    # def critical(self, msg: str, *args, **kwargs):
+    #     """Logs a message with tag LogMessageTag.CRITICAL."""
+    #     self._log(tag=LogMessageTag.CRITICAL, msg=msg, event_type=_LOG_CRITICAL_EVENT_TYPE, args=args, kwargs=kwargs)
 
     def flush(self):
         """Flushes out the message.
@@ -310,3 +313,39 @@ class AnalyticsReceiver(Widget, ABC):
         elif event_type == EventType.END_RUN:
             self._end = True
             self.finalize(fl_ctx)
+
+
+class LogSender(Widget, logging.StreamHandler):
+
+    def __init__(self, log_level=""):
+        """
+        LogSender for sending the logging record to the FL server.
+        Args:
+            log_level: log_level threshold
+        """
+        Widget.__init__(self)
+        logging.StreamHandler.__init__(self)
+        self.log_level = getattr(logging, log_level, logging.INFO)
+        self.engine = None
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.ABOUT_TO_START_RUN:
+            self.engine = fl_ctx.get_engine()
+            logging.root.addHandler(self)
+        if event_type == EventType.END_RUN:
+            logging.root.removeHandler(self)
+
+    def emit(self, record: LogRecord) -> None:
+        """
+        When the log_level higher than the configured level, sends the log record to the FL server to collect.
+        Args:
+            record: logging record
+
+        Returns:
+
+        """
+        if record.levelno >= self.log_level and self.engine:
+            dxo = _write(tag=LogMessageTag.LOG_RECORD, value=record, data_type=AnalyticsDataType.LOG_RECORD)
+            with self.engine.new_context() as fl_ctx:
+                send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=_LOGGING_EVENT_TYPE)
+            self.flush()
