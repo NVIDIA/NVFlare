@@ -316,7 +316,6 @@ class AnalyticsReceiver(Widget, ABC):
 
 
 class LogSender(Widget, logging.StreamHandler):
-
     def __init__(self, log_level=""):
         """
         LogSender for sending the logging record to the FL server.
