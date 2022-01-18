@@ -16,7 +16,6 @@ import argparse
 import os
 import pathlib
 import shutil
-import subprocess
 
 
 def clone_client(num_clients: int):
@@ -41,16 +40,12 @@ def main():
 
     args = parser.parse_args()
 
-    file_path = pathlib.Path(__file__).parent.absolute()
-    poc_zip_path = os.path.join(file_path, "..", "poc.zip")
+    file_dir_path = pathlib.Path(__file__).parent.absolute()
+    poc_zip_path = file_dir_path.parent / "poc.zip"
     answer = input("This will delete poc folder in current directory and create a new one. Is it OK to proceed? (y/N) ")
     if answer.strip().upper() == "Y":
         shutil.rmtree(os.path.join(os.getcwd(), "poc"), ignore_errors=True)
-        completed_process = subprocess.run(["unzip", "-q", poc_zip_path])
-        returncode = completed_process.returncode
-        if returncode != 0:
-            print("Error during creating poc folder, return code: {}.".format(returncode))
-            exit(returncode)
+        shutil.unpack_archive(poc_zip_path)
         clone_client(args.num_clients)
         print("Successfully creating poc folder.  Please read poc/Readme.rst for user guide.")
 
