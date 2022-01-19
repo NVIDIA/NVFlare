@@ -28,7 +28,7 @@ class LocalLogger:
             logger = LocalLogger.loggers.get(name)
             if logger:
                 return logger
-    
+
             logger = logging.getLogger(name)
             LocalLogger.loggers[name] = logger
             for handler in logging.root.handlers:
