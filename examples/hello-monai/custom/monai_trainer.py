@@ -30,7 +30,7 @@ from train_configer import TrainConfiger
 
 class MONAITrainer(Executor):
     """
-    This class implements a MONAI based trainer that can be used for Federated Learning with NVFLARE.
+    This class implements a MONAI based trainer that can be used for Federated Learning with NVIDIA FLARE.
 
     Args:
         aggregation_epochs: the number of training epochs for a round. Defaults to 1.

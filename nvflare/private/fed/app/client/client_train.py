@@ -213,7 +213,7 @@ def create_admin_agent(
 
 if __name__ == "__main__":
     """
-    This is the main program when starting the NVFlare client process.
+    This is the main program when starting the NVIDIA FLARE client process.
     """
     # # For MacOS, it needs to use 'spawn' for creating multi-process.
     # if os.name == 'posix':

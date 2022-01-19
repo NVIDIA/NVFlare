@@ -226,7 +226,7 @@ def create_workspace(args):
 
 if __name__ == "__main__":
     """
-    This is the main program when starting the NVFlare server process.
+    This is the main program when starting the NVIDIA FLARE server process.
     """
 
     main()
