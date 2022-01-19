@@ -39,6 +39,8 @@ class ReturnCode(object):
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
 
+    SERVER_NOT_READY = "SERVER_NOT_READY"
+
 
 class MachineStatus(Enum):
     """

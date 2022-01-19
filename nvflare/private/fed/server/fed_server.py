@@ -34,7 +34,7 @@ import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey
+from nvflare.apis.shareable import Shareable, ReservedHeaderKey, make_reply, ReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -506,13 +506,15 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # if not self.run_manager:
         #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
-        if self.server_runner is None or self.engine.run_manager is None:
-            # context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
-            self.logger.info("ignored result submission since Server Engine isn't ready")
-            context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
-
         # fl_ctx = self.fl_ctx.clone_sticky()
         with self.engine.new_context() as fl_ctx:
+            if self.server_runner is None or self.engine.run_manager is None:
+                self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
+                reply = make_reply(ReturnCode.SERVER_NOT_READY)
+                aux_reply = fed_msg.AuxReply()
+                aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
+
+                return aux_reply
 
             contribution = request
 
