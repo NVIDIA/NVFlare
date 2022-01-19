@@ -13,24 +13,27 @@
 # limitations under the License.
 
 import logging
+import threading
 
 from nvflare.app_common.widgets.streaming import LogSender
 
 
 class LocalLogger:
     loggers = {}
+    lock = threading.Lock()
 
     @staticmethod
     def get_logger(name=None) -> logging.Logger:
-        logger = LocalLogger.loggers.get(name)
-        if logger:
+        with LocalLogger.lock:
+            logger = LocalLogger.loggers.get(name)
+            if logger:
+                return logger
+    
+            logger = logging.getLogger(name)
+            LocalLogger.loggers[name] = logger
+            for handler in logging.root.handlers:
+                if not isinstance(handler, LogSender):
+                    logger.addHandler(handler)
+            logger.propagate = False
+
             return logger
-
-        logger = logging.getLogger(name)
-        LocalLogger.loggers[name] = logger
-        for handler in logging.root.handlers:
-            if not isinstance(handler, LogSender):
-                logger.addHandler(handler)
-        logger.propagate = False
-
-        return logger
