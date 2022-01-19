@@ -184,7 +184,7 @@ def remove_restart_file(args):
 
 if __name__ == "__main__":
     """
-    This is the program when starting the child process for running the NVFlare executor.
+    This is the program when starting the child process for running the NVIDIA FLARE executor.
     """
 
     main()
