@@ -205,30 +205,6 @@ class AnalyticsSender(Widget):
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=event_type)
 
-    # def info(self, msg: str, *args, **kwargs):
-    #     """Logs a message with tag LogMessageTag.INFO."""
-    #     self._log(tag=LogMessageTag.INFO, msg=msg, event_type=_LOG_INFO_EVENT_TYPE, args=args, kwargs=kwargs)
-    #
-    # def warning(self, msg: str, *args, **kwargs):
-    #     """Logs a message with tag LogMessageTag.WARNING."""
-    #     self._log(tag=LogMessageTag.WARNING, msg=msg, event_type=_LOG_WARNING_EVENT_TYPE, args=args, kwargs=kwargs)
-    #
-    # def error(self, msg: str, *args, **kwargs):
-    #     """Logs a message with tag LogMessageTag.ERROR."""
-    #     self._log(tag=LogMessageTag.ERROR, msg=msg, event_type=_LOG_ERROR_EVENT_TYPE, args=args, kwargs=kwargs)
-    #
-    # def debug(self, msg: str, *args, **kwargs):
-    #     """Logs a message with tag LogMessageTag.DEBUG."""
-    #     self._log(tag=LogMessageTag.DEBUG, msg=msg, event_type=_LOG_DEBUG_EVENT_TYPE, args=args, kwargs=kwargs)
-    #
-    # def exception(self, msg: str, *args, **kwargs):
-    #     """Logs a message with tag LogMessageTag.EXCEPTION."""
-    #     self._log(tag=LogMessageTag.EXCEPTION, msg=msg, event_type=_LOG_EXCEPTION_EVENT_TYPE, args=args, kwargs=kwargs)
-    #
-    # def critical(self, msg: str, *args, **kwargs):
-    #     """Logs a message with tag LogMessageTag.CRITICAL."""
-    #     self._log(tag=LogMessageTag.CRITICAL, msg=msg, event_type=_LOG_CRITICAL_EVENT_TYPE, args=args, kwargs=kwargs)
-
     def flush(self):
         """Flushes out the message.
 

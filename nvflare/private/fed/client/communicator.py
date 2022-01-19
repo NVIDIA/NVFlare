@@ -27,7 +27,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.utils.aux_comm_logging import aux_comm_logging
+from nvflare.apis.utils.aux_comm_logger import AuxCommLogger
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata, make_context_data, make_shareeable_data
 
 
@@ -302,8 +302,8 @@ class Communicator:
             while retry > 0:
                 try:
                     start_time = time.time()
-                    # self.logger.info(f"Send AuxMessage to {project_name} server")
-                    aux_comm_logging(self.logger, f"Send AuxMessage to {project_name} server")
+                    logger = AuxCommLogger(self.logger)
+                    logger.info(f"Send AuxMessage to {project_name} server")
                     server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
                     # Clear the stopping flag
                     # if the connection to server recovered.
