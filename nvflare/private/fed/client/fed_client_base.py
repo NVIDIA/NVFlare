@@ -27,7 +27,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.aux_comm_logger import AuxCommLogger
+from nvflare.apis.utils.local_logger import LocalLogger
 from nvflare.private.defs import EngineConstant
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -51,6 +51,7 @@ class FederatedClientBase:
         compression=None,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.local_logger = LocalLogger.get_logger(self.__class__.__name__ + ".local")
 
         self.client_name = client_name
         self.token = None
@@ -148,8 +149,7 @@ class FederatedClientBase:
         :param shareable: Shareable object to submit to server
         """
         try:
-            logger = AuxCommLogger(self.logger)
-            logger.info("Starting to send aux message.")
+            self.local_logger.info("Starting to send aux message.")
             message = self.communicator.auxCommunicate(
                 self.servers, project_name, self.token, fl_ctx, self.client_name, shareable, topic, timeout
             )
