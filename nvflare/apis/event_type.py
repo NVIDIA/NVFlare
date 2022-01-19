@@ -20,6 +20,7 @@ class EventType(object):
 
     ABOUT_TO_START_RUN = "_about_to_start_run"
     START_RUN = "_start_run"
+    ABOUT_TO_END_RUN = "_about_to_end_run"
     END_RUN = "_end_run"
     START_WORKFLOW = "_start_workflow"
     END_WORKFLOW = "_end_workflow"

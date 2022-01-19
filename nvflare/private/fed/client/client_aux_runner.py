@@ -49,6 +49,7 @@ class ClientAuxRunner(AuxRunner):
             self.sender.start()
         elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
+            self.log_debug(fl_ctx, "Received END_RUN")
             if self.sender and self.sender.is_alive():
                 self.sender.join()
 
@@ -79,7 +80,7 @@ class ClientAuxRunner(AuxRunner):
             # this is fire-and-forget request
             with self.fnf_lock:
                 self.fnf_requests.append(req_to_send)
-                return make_reply(ReturnCode.OK)
+            return make_reply(ReturnCode.OK)
 
         # send regular request
         engine = fl_ctx.get_engine()
@@ -104,23 +105,27 @@ class ClientAuxRunner(AuxRunner):
         sleep_time = 0.5
         while True:
             time.sleep(sleep_time)
-            if self.asked_to_stop or self.abort_signal.triggered:
+            if self.abort_signal.triggered:
                 break
 
-            with self.fnf_lock:
-                if len(self.fnf_requests) <= 0:
+            if len(self.fnf_requests) <= 0:
+                if self.asked_to_stop:
+                    break
+                else:
                     sleep_time = 1.0
                     continue
 
-                with self.engine.new_context() as fl_ctx:
-                    bulk = Shareable()
-                    bulk.set_header(ReservedHeaderKey.TOPIC, topic)
-                    bulk.set_peer_props(fl_ctx.get_all_public_props())
+            with self.engine.new_context() as fl_ctx:
+                self.log_debug(fl_ctx, "preparing bulk send")
+                bulk = Shareable()
+                bulk.set_header(ReservedHeaderKey.TOPIC, topic)
+                bulk.set_peer_props(fl_ctx.get_all_public_props())
+                with self.fnf_lock:
                     bulk[self.DATA_KEY_BULK] = self.fnf_requests
                     reply = self.engine.aux_send(topic=topic, request=bulk, timeout=1.0, fl_ctx=fl_ctx)
-
                     rc = reply.get_return_code()
                     if rc != ReturnCode.COMMUNICATION_ERROR:
+                        self.log_debug(fl_ctx, "aux bulk send returns no ERROR")
                         # if communication error we'll retry
                         self.fnf_requests = []
             sleep_time = 0.5
