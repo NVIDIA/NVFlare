@@ -49,7 +49,6 @@ class ClientAuxRunner(AuxRunner):
             self.sender.start()
         elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
-            self.log_debug(fl_ctx, "Received END_RUN")
             if self.sender and self.sender.is_alive():
                 self.sender.join()
 
@@ -116,7 +115,6 @@ class ClientAuxRunner(AuxRunner):
                     continue
 
             with self.engine.new_context() as fl_ctx:
-                self.log_debug(fl_ctx, "preparing bulk send")
                 bulk = Shareable()
                 bulk.set_header(ReservedHeaderKey.TOPIC, topic)
                 bulk.set_peer_props(fl_ctx.get_all_public_props())
@@ -125,7 +123,6 @@ class ClientAuxRunner(AuxRunner):
                     reply = self.engine.aux_send(topic=topic, request=bulk, timeout=1.0, fl_ctx=fl_ctx)
                     rc = reply.get_return_code()
                     if rc != ReturnCode.COMMUNICATION_ERROR:
-                        self.log_debug(fl_ctx, "aux bulk send returns no ERROR")
                         # if communication error we'll retry
                         self.fnf_requests = []
             sleep_time = 0.5

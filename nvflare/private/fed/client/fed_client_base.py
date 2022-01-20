@@ -154,7 +154,6 @@ class FederatedClientBase:
                 self.servers, project_name, self.token, fl_ctx, self.client_name, shareable, topic, timeout
             )
 
-            self.logger.info("Done with sending aux message.")
             return message
         except FLCommunicationError as e:
             self.local_logger.info(e)

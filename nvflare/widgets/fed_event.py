@@ -106,7 +106,6 @@ class FedEventRunner(Widget):
             self.log_error(fl_ctx, "missing event_type in incoming fed event")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        self.log_debug(fl_ctx, f"Current in_events size {len(self.in_events)}")
         with self.in_lock:
             last_timestamp = self.last_timestamps.get(peer_name, None)
             if last_timestamp is None or timestamp > last_timestamp:
@@ -161,7 +160,6 @@ class FedEventRunner(Widget):
             with self.engine.new_context() as fl_ctx:
                 assert isinstance(fl_ctx, FLContext)
 
-                self.log_debug(fl_ctx, "firing fed event")
                 if self.asked_to_stop:
                     self.log_warning(fl_ctx, f"{n} items remained in in_events.  Will stop when it reaches 0.")
                 fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=event_to_post, private=True, sticky=False)
