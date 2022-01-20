@@ -290,17 +290,18 @@ From the cases shown previously, implementing your own Builders only requires th
 
 Bundled builders
 ================
-The following is the list of bundled builders included by default in the NVIDIA FLARE package.  They are provided as a convenient tool.  As
-mentioned previously, developers are encouraged to add / modify / remove builders based on their own requirements:
+The following is the list of bundled builders included by default in the NVIDIA FLARE package.  They are provided as a
+convenient tool.  As mentioned previously, developers are encouraged to add / modify / remove builders based on their
+own requirements:
 
-    - CertBuilder
-    - HEBuilder
-    - SignatureBuilder
-    - TemplateBuilder
-    - StaticFileBuilder
-    - WorkspaceBuilder
-    - DistributionBuilder
-    - AuthPolicyBuilder
+    - :class:`WorkspaceBuilder<nvflare.lighter.impl.workspace.WorkspaceBuilder>`
+    - :class:`TemplateBuilder<nvflare.lighter.impl.template.TemplateBuilder>`
+    - :class:`StaticFileBuilder<nvflare.lighter.impl.static_file.StaticFileBuilder>`
+    - :class:`AuthPolicyBuilder<nvflare.lighter.impl.auth_policy.AuthPolicyBuilder>`
+    - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
+    - :class:`HEBuilder<nvflare.lighter.impl.he.HEBuilder>`
+    - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
+    - :class:`DistributionBuilder<nvflare.lighter.impl.workspace.DistributionBuilder>`
 
 ::
 

@@ -65,15 +65,18 @@ Example:
     components, All of the Components to use
 
 ***********
-Custom Code
+Custom code
 ***********
 
-You can write your own components following the :ref:`programming_guide`.
+You can write your own components and bring your own code (BYOC) following the :ref:`programming_guide`.
 
-To use it in your application, put the code inside the "custom" folder of the application folder.
+To use it in your application, put the code inside the "custom" folder of the application folder and make sure BYOC is
+enabled and allowed.
 
 In your server or client config, use path to refer to that component.
 
+Custom code config example
+==========================
 For example, with a ``SimpleTrainer`` class stored in a file ``my_trainer.py`` inside the custom folder,
 the client config should have the following in order to configure it as an Executor::
 
@@ -89,6 +92,13 @@ the client config should have the following in order to configure it as an Execu
     Configuration of Executor Tasks is ignored here.
 
 Please follow :ref:`quickstart:Quickstart` to learn more.
+
+Troubleshooting BYOC
+====================
+There is an ``enable_byoc`` flag for each participant that can be set at provisioning, and if that is disabled, even if
+you have custom code in your application folder, it will not be loaded. There is also a setting for ``allow_byoc``
+through the authorization rule groups. This controls whether or not apps containing BYOC code will be allowed to be
+uploaded and deployed.
 
 *********
 Resources
