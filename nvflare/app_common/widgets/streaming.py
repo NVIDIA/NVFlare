@@ -24,21 +24,12 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey, LogMessageTag, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
 
-_ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 
-_LOG_DEBUG_EVENT_TYPE = "analytix_log_debug"
-_LOG_INFO_EVENT_TYPE = "analytix_log_info"
-_LOG_WARNING_EVENT_TYPE = "analytix_log_warning"
-_LOG_ERROR_EVENT_TYPE = "analytix_log_error"
-_LOG_EXCEPTION_EVENT_TYPE = "analytix_log_exception"
-_LOG_CRITICAL_EVENT_TYPE = "analytix_log_critical"
-
-_LOGGING_EVENT_TYPE = "analytix_logging"
-
-
-def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = _ANALYTIC_EVENT_TYPE):
+def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext,
+                      event_type: str = AppEventType.ANALYTIC_EVENT_TYPE):
     """Sends analytic dxo.
 
     Args:
@@ -227,7 +218,7 @@ class AnalyticsReceiver(Widget, ABC):
         """
         super().__init__()
         if events is None:
-            events = [_ANALYTIC_EVENT_TYPE, f"fed.{_ANALYTIC_EVENT_TYPE}"]
+            events = [AppEventType.ANALYTIC_EVENT_TYPE, f"fed.{AppEventType.ANALYTIC_EVENT_TYPE}"]
         self.events = events
         self._save_lock = Lock()
         self._end = False
@@ -322,5 +313,5 @@ class LogSender(Widget, logging.StreamHandler):
         if record.levelno >= self.log_level and self.engine:
             dxo = _write(tag=LogMessageTag.LOG_RECORD, value=record, data_type=AnalyticsDataType.LOG_RECORD)
             with self.engine.new_context() as fl_ctx:
-                send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=_LOGGING_EVENT_TYPE)
+                send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=AppEventType.LOGGING_EVENT_TYPE)
             self.flush()

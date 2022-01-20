@@ -22,13 +22,16 @@ from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_constant import LogMessageTag
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
-class LogAnalyticsReceiver(AnalyticsReceiver, logging.StreamHandler):
+class LogAnalyticsReceiver(AnalyticsReceiver):
     CLIENT_LOG_FOLDER = "client_log"
 
     def __init__(self, events: Optional[List[str]] = None, formatter=None):
+        if events is None:
+            events = [AppEventType.LOGGING_EVENT_TYPE, f"fed.{AppEventType.LOGGING_EVENT_TYPE}"]
         super().__init__(events=events)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.root_log_dir = None
