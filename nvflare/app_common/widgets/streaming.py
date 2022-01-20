@@ -28,8 +28,9 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
 
 
-def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext,
-                      event_type: str = AppEventType.ANALYTIC_EVENT_TYPE):
+def send_analytic_dxo(
+    comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = AppEventType.ANALYTIC_EVENT_TYPE
+):
     """Sends analytic dxo.
 
     Args:
