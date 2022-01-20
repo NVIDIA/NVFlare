@@ -12,40 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
+import os
 from logging import LogRecord
 from typing import List, Optional
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
-from nvflare.apis.dxo import DXO, from_shareable
+from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_constant import LogMessageTag
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
-def _get_sender_log_info(dxo: DXO, record_origin: str) -> str:
-    record: LogRecord = dxo.data.get(LogMessageTag.LOG_RECORD)
-    data = {
-        "from-client": record_origin,
-        "name": record.name,
-        "log_level": record.levelname,
-        "pathname": record.pathname,
-        "lineno": record.lineno,
-        "func": record.funcName,
-        "msg": record.msg,
-    }
-    return json.dumps(data)
+class LogAnalyticsReceiver(AnalyticsReceiver, logging.StreamHandler):
+    CLIENT_LOG_FOLDER = "client_log"
 
-
-class LogAnalyticsReceiver(AnalyticsReceiver):
-    def __init__(self, events: Optional[List[str]] = None):
+    def __init__(self, events: Optional[List[str]] = None, formatter=None):
         super().__init__(events=events)
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.root_log_dir = None
+        if formatter is None:
+            formatter = ""
+        self.formatter = formatter
+
+        self.handlers = {}
 
     def initialize(self, fl_ctx: FLContext):
-        pass
+        workspace = fl_ctx.get_engine().get_workspace()
+        run_dir = workspace.get_run_dir(fl_ctx.get_run_number())
+        self.root_log_dir = os.path.join(run_dir, LogAnalyticsReceiver.CLIENT_LOG_FOLDER)
+        os.makedirs(self.root_log_dir, exist_ok=True)
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
         try:
@@ -54,9 +51,21 @@ class LogAnalyticsReceiver(AnalyticsReceiver):
             data_type = analytic_data.data_type
 
             if data_type == AnalyticsDataType.LOG_RECORD:
-                self.logger.info(_get_sender_log_info(dxo, record_origin))
+                handler = self.handlers.get(record_origin)
+                if not handler:
+                    handler = self._create_log_handler(record_origin)
+
+                record: LogRecord = dxo.data.get(LogMessageTag.LOG_RECORD)
+                handler.emit(record)
         except ValueError:
             self.logger.error(f"Failed to save the log received: {record_origin}")
+
+    def _create_log_handler(self, record_origin):
+        filename = os.path.join(self.root_log_dir, record_origin + ".log")
+        handler = logging.FileHandler(filename)
+        handler.setFormatter(logging.Formatter(self.formatter))
+        self.handlers[record_origin] = handler
+        return handler
 
     def finalize(self, fl_ctx: FLContext):
         pass
