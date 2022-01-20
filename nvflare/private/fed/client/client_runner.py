@@ -288,14 +288,7 @@ class ClientRunner(FLComponent):
             # in case any task is still running, abort it
             self._abort_current_task()
 
-            with self.engine.new_context() as fl_ctx:
-                with self.end_run_lock:
-                    if not self.end_run_fired:
-                        self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
-                        self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
-                        self.fire_event(EventType.END_RUN, fl_ctx)
-                        self.log_info(fl_ctx, "END_RUN fired")
-                        self.end_run_fired = True
+            self.end_run_events_sequence("run method")
 
     def _abort_current_task(self):
         with self.task_lock:
@@ -338,6 +331,17 @@ class ClientRunner(FLComponent):
         if has_task_to_abort:
             self._abort_current_task()
 
+    def end_run_events_sequence(self, requester):
+        with self.engine.new_context() as fl_ctx:
+            self.log_info(fl_ctx, f"{requester} requests end run events sequence")
+            with self.end_run_lock:
+                if not self.end_run_fired:
+                    self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+                    self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
+                    self.fire_event(EventType.END_RUN, fl_ctx)
+                    self.log_info(fl_ctx, "END_RUN fired")
+                    self.end_run_fired = True
+
     def abort(self):
         """
         Abort the current run
@@ -350,15 +354,7 @@ class ClientRunner(FLComponent):
         self._abort_current_task()
         self.run_abort_signal.trigger("ABORT (RUN) triggered")
         self.asked_to_stop = True
-        with self.engine.new_context() as fl_ctx:
-            self.log_info(fl_ctx, "ABORT (RUN) request sequence done")
-            with self.end_run_lock:
-                if not self.end_run_fired:
-                    self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
-                    self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
-                    self.fire_event(EventType.END_RUN, fl_ctx)
-                    self.log_info(fl_ctx, "END_RUN fired")
-                    self.end_run_fired = True
+        self.end_run_events_sequence("ABORT (RUN)")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
