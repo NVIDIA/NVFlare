@@ -156,7 +156,7 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e)
+            self.local_logger.info(e)
             # self.communicator.heartbeat_done = True
 
     def send_heartbeat(self, project_name):
