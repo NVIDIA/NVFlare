@@ -27,6 +27,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
+from nvflare.apis.utils.local_logger import LocalLogger
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata, make_context_data, make_shareeable_data
 
 
@@ -50,6 +51,7 @@ class Communicator:
         self.compression = compression
 
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.local_logger = LocalLogger.get_logger(self.__class__.__name__ + ".local")
 
     def set_up_channel(self, channel_dict, token=None):
         """
@@ -301,7 +303,7 @@ class Communicator:
             while retry > 0:
                 try:
                     start_time = time.time()
-                    self.logger.info(f"Send AuxMessage to {project_name} server")
+                    self.local_logger.info(f"Send AuxMessage to {project_name} server")
                     server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
                     # Clear the stopping flag
                     # if the connection to server recovered.
@@ -310,7 +312,8 @@ class Communicator:
                     break
                 except grpc.RpcError as grpc_error:
                     self.grpc_error_handler(
-                        servers[project_name], grpc_error, "AuxCommunicate", start_time, retry, verbose=self.verbose
+                        servers[project_name], grpc_error, "AuxCommunicate", start_time, retry, verbose=self.verbose,
+                        local_logging=True
                     )
                     retry -= 1
                     time.sleep(5)
@@ -386,38 +389,43 @@ class Communicator:
 
         return contrib
 
-    def grpc_error_handler(self, service, grpc_error, action, start_time, retry, verbose=False):
+    def grpc_error_handler(self, service, grpc_error, action, start_time, retry, verbose=False, local_logging=False):
         """
         Handling grpc exceptions
         :param action:
         :param start_time:
         :param service:
         """
+        if local_logging:
+            logger = self.local_logger
+        else:
+            logger = self.logger
+
         status_code = None
         if isinstance(grpc_error, grpc.Call):
             status_code = grpc_error.code()
 
         if grpc.StatusCode.RESOURCE_EXHAUSTED == status_code:
             if grpc_error.details().startswith("No token"):
-                self.logger.info("No token for this client in current round. " "Waiting for server new round. ")
+                logger.info("No token for this client in current round. " "Waiting for server new round. ")
                 self.should_stop = False
                 return
 
-        self.logger.error(
+        logger.error(
             f"Action: {action} grpc communication error. retry: {retry}, First start till now: {time.time() - start_time} seconds."
         )
         if grpc.StatusCode.UNAVAILABLE == status_code:
-            self.logger.error(
+            logger.error(
                 f"Could not connect to server: {service.get('target')}\t"
                 f"Setting flag for stopping training. {grpc_error.details()}"
             )
             self.should_stop = True
 
         if grpc.StatusCode.OUT_OF_RANGE == status_code:
-            self.logger.error(
+            logger.error(
                 f"Server training has stopped.\t" f"Setting flag for stopping training. {grpc_error.details()}"
             )
             self.should_stop = True
 
         if verbose:
-            self.logger.info(grpc_error)
+            logger.info(grpc_error)

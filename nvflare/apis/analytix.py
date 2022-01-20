@@ -26,6 +26,7 @@ class AnalyticsDataType(Enum):
     SCALAR = "SCALAR"
     IMAGE = "IMAGE"
     TEXT = "TEXT"
+    LOG_RECORD = "LOG_RECORD"
 
 
 class AnalyticsData:

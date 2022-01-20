@@ -18,6 +18,7 @@ class EventType(object):
     Built-in system events.
     """
 
+    ABOUT_TO_START_RUN = "_about_to_start_run"
     START_RUN = "_start_run"
     END_RUN = "_end_run"
     START_WORKFLOW = "_start_workflow"

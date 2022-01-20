@@ -267,6 +267,7 @@ class ClientRunner(FLComponent):
 
     def run(self, app_root, args):
         with self.engine.new_context() as fl_ctx:
+            self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
             fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.run_abort_signal, private=True, sticky=True)

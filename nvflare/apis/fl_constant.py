@@ -39,6 +39,8 @@ class ReturnCode(object):
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
 
+    SERVER_NOT_READY = "SERVER_NOT_READY"
+
 
 class MachineStatus(Enum):
     """
@@ -173,3 +175,4 @@ class LogMessageTag(object):
     INFO = "log/info"
     WARNING = "log/warning"
     CRITICAL = "log/critical"
+    LOG_RECORD = "log_record"
