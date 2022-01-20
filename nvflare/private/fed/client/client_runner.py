@@ -345,8 +345,13 @@ class ClientRunner(FLComponent):
         Returns:
 
         """
-        self._abort_current_task()
         with self.engine.new_context() as fl_ctx:
+            self.log_info(fl_ctx, "ABORT (RUN) command received")
+        self._abort_current_task()
+        self.run_abort_signal.trigger("ABORT (RUN) triggered")
+        self.asked_to_stop = True
+        with self.engine.new_context() as fl_ctx:
+            self.log_info(fl_ctx, "ABORT (RUN) request sequence done")
             with self.end_run_lock:
                 if not self.end_run_fired:
                     self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
