@@ -36,6 +36,10 @@ class FedEventRunner(Widget):
         self.topic = topic
         self.abort_signal = None
         self.asked_to_stop = False
+        self.asked_to_flush = False
+        self.regular_interval = 0.001
+        self.grace_period = 2
+        self.flush_wait = 2
         self.engine = None
         self.last_timestamps = {}  # client name => last_timestamp
         self.in_events = []
@@ -48,7 +52,14 @@ class FedEventRunner(Widget):
             self.engine.register_aux_message_handler(topic=self.topic, message_handle_func=self._receive)
             self.abort_signal = fl_ctx.get_run_abort_signal()
             self.asked_to_stop = False
+            self.asked_to_flush = False
             self.poster.start()
+        elif event_type == EventType.ABOUT_TO_END_RUN:
+            self.asked_to_flush = True
+            # delay self.flush_wait seconds so
+            # _post can empty the queue before
+            # END_RUN is fired
+            time.sleep(self.flush_wait)
         elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
             if self.poster.is_alive():
@@ -109,29 +120,59 @@ class FedEventRunner(Widget):
         return make_reply(ReturnCode.OK)
 
     def _post(self):
-        sleep_time = 0.1
+        """
+        During ABOUT_TO_END_RUN, sleep_time is 0 and system will flush
+         in_events by firing events without delay.
+        During END_RUN, system will wait for self.grace_period, even the queue is empty,
+        so any new item can be processed.
+        However, since the system does not guarantee the receiving side of _post is still
+        alive, we catch the exception and show warning messages to users if events can not
+        be handled by receiving side.
+        """
+        sleep_time = self.regular_interval
+        countdown = self.grace_period
         while True:
             time.sleep(sleep_time)
-            if self.asked_to_stop or self.abort_signal.triggered:
+            if self.abort_signal.triggered:
                 break
-
-            with self.in_lock:
-                if len(self.in_events) <= 0:
+            n = len(self.in_events)
+            if n > 0:
+                if self.asked_to_flush:
+                    sleep_time = 0
+                else:
+                    sleep_time = self.regular_interval
+                with self.in_lock:
+                    event_to_post = self.in_events.pop(0)
+            elif self.asked_to_stop:
+                # the queue is empty and we are asked to stop.  Give
+                # it self.grace_period seconds to wait, then
+                # exit.
+                if countdown < 0:
+                    break
+                else:
+                    countdown = countdown - 1
+                    time.sleep(1)
                     continue
-                event_to_post = self.in_events.pop(0)
-                assert isinstance(event_to_post, Shareable)
-
-            if self.asked_to_stop or self.abort_signal.triggered:
-                break
+            else:
+                sleep_time = min(sleep_time * 2, 1)
+                continue
 
             with self.engine.new_context() as fl_ctx:
                 assert isinstance(fl_ctx, FLContext)
 
+                if self.asked_to_stop:
+                    self.log_warning(fl_ctx, f"{n} items remained in in_events.  Will stop when it reaches 0.")
                 fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=event_to_post, private=True, sticky=False)
                 fl_ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=EventScope.FEDERATION, private=True, sticky=False)
 
                 event_type = event_to_post.get_header(FedEventHeader.EVENT_TYPE)
-                self.engine.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+                try:
+                    self.engine.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+                except BaseException as e:
+                    if self.asked_to_stop:
+                        self.log_warning(fl_ctx, f"event {event_to_post} fired unsuccessfully during END_RUN")
+                    else:
+                        raise e
 
 
 class ServerFedEventRunner(FedEventRunner):

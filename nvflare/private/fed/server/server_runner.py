@@ -128,8 +128,10 @@ class ServerRunner(FLComponent):
         self.status = "done"
         with self.wf_lock:
             with self.engine.new_context() as fl_ctx:
-                self.log_debug(fl_ctx, "firing event EventType.END_RUN")
+                self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+                self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
                 self.fire_event(EventType.END_RUN, fl_ctx)
+                self.log_info(fl_ctx, "END_RUN fired")
 
         # ask all clients to end run!
         self.engine.send_aux_request(
