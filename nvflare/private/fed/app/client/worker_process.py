@@ -122,11 +122,11 @@ def main():
         )
         conf.configure()
 
-        startup = Workspace(args.workspace, client_name, config_folder)
+        workspace = Workspace(args.workspace, client_name, config_folder)
         run_manager = ClientRunManager(
             client_name=client_name,
             run_num=int(run_number),
-            workspace=startup,
+            workspace=workspace,
             client=federated_client,
             components=conf.runner_config.components,
             handlers=conf.runner_config.handlers,
@@ -140,7 +140,7 @@ def main():
             fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, startup, private=True)
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
 
             client_runner = ClientRunner(config=conf.runner_config, run_num=int(run_number), engine=run_manager)
