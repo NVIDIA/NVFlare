@@ -19,7 +19,6 @@ from typing import List, Optional
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO
-from nvflare.apis.utils.local_logger import LocalLogger
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey, LogMessageTag, ReservedKey
@@ -298,8 +297,6 @@ class LogSender(Widget, logging.StreamHandler):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABOUT_TO_START_RUN:
-            # initialize the LocalLogger to keep all the local handlers.
-            LocalLogger.initialize()
             self.engine = fl_ctx.get_engine()
             logging.root.addHandler(self)
         if event_type == EventType.END_RUN:
