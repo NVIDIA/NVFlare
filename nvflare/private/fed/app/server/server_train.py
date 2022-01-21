@@ -17,7 +17,6 @@
 import argparse
 import logging
 import os
-import shutil
 import sys
 
 from nvflare.fuel.common.excepts import ConfigError
