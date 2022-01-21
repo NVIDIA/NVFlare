@@ -1,6 +1,5 @@
 -r requirements-doc.txt
 pydocstyle
-tenseal==0.3.0
 isort==5.8.0
 flake8==3.9.2
 black==21.5b1
