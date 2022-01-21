@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import socket
 import sys
 
 from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
@@ -26,5 +27,14 @@ class PTMultiProcessExecutor(MultiProcessExecutor):
             f"{sys.executable} -m torch.distributed.run --nproc_per_node="
             + str(self.num_of_processes)
             + " --nnodes=1 --node_rank=0"
-            + ' --master_addr="localhost" --master_port=1234'
+            + ' --master_addr="localhost" --master_port='
+            + str(self._get_open_port())
         )
+
+    def _get_open_port(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+        s.close()
+        return port
