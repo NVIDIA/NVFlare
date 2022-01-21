@@ -399,10 +399,6 @@ def start_server_training(server, args, app_root, run_number):
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
-    if os.path.exists(os.path.join(app_root, args.env)):
-        env_config = args.env
-    else:
-        env_config = "/tmp/fl_server/environment.json"
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)
 

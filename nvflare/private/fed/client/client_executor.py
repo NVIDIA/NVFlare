@@ -29,8 +29,8 @@ from .client_status import ClientStatus, get_status_message
 
 
 class ClientExecutor(object):
-    def __init__(self, uid) -> None:
-        pipe_path = "/tmp/fl/" + uid + "/comm"
+    def __init__(self, uid, startup) -> None:
+        pipe_path = startup + "/comm"
         if not os.path.exists(pipe_path):
             os.makedirs(pipe_path)
 
@@ -123,9 +123,10 @@ class ProcessExecutor(ClientExecutor):
     Run the Client executor in a child process.
     """
 
-    def __init__(self, uid):
-        ClientExecutor.__init__(self, uid)
+    def __init__(self, uid, startup):
+        ClientExecutor.__init__(self, uid, startup)
         # self.client = client
+        self.startup = startup
 
         self.conn_client = None
         # self.pool = None
@@ -171,6 +172,7 @@ class ProcessExecutor(ClientExecutor):
         command = (
             f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
             + args.workspace
+            + " -w " + self.startup
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )

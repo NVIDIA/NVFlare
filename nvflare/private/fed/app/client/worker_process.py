@@ -35,6 +35,7 @@ from nvflare.private.fed.client.command_agent import CommandAgent
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
 
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
@@ -88,17 +89,17 @@ def main():
                 )
             )
 
-        workspace = os.path.join("/tmp/fl", client_name)
+        startup = args.startup
         app_root = os.path.join(args.workspace, "run_" + str(run_number), "app_" + client_name)
 
         app_log_config = os.path.join(app_root, config_folder, "log.config")
         if os.path.exists(app_log_config):
             args.log_config = app_log_config
         else:
-            args.log_config = os.path.join(workspace, "log.config")
+            args.log_config = os.path.join(startup, "log.config")
 
         conf = FLClientStarterConfiger(
-            app_root=workspace,
+            app_root=startup,
             client_config_file_name=args.fed_client,
             log_config_file_name=args.log_config,
             kv_list=args.set,

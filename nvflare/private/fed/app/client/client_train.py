@@ -16,9 +16,7 @@
 
 import argparse
 import os
-import shutil
 import sys
-import time
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
@@ -66,9 +64,7 @@ def main():
         os.chdir(args.workspace)
         AuditService.initialize(audit_file_name="audit.log")
 
-        if rank == 0:
-            workspace = create_workspace(args)
-        time.sleep(rank * 2)
+        workspace = os.path.join(args.workspace, "startup")
 
         # trainer = WorkFlowFactory().create_client_trainer(train_configs, envs)
         conf = FLClientStarterConfiger(
@@ -76,7 +72,7 @@ def main():
             # wf_config_file_name="config_train.json",
             client_config_file_name=args.fed_client,
             # env_config_file_name="environment.json",
-            log_config_file_name=workspace + "/log.config",
+            log_config_file_name="log.config",
             kv_list=args.set,
         )
         conf.configure()
@@ -171,18 +167,6 @@ def remove_restart_file(args):
     restart_file = os.path.join(args.workspace, "shutdown.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
-
-
-def create_workspace(args):
-    kv_vars = parse_vars(args.set)
-    workspace = "/tmp/fl/" + kv_vars.get("uid")
-
-    if os.path.exists(workspace):
-        shutil.rmtree(workspace)
-    startup = os.path.join(args.workspace, "startup")
-    shutil.copytree(startup, workspace)
-
-    return workspace
 
 
 def create_admin_agent(
