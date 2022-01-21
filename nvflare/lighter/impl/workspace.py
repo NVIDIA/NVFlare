@@ -23,6 +23,30 @@ from nvflare.lighter.utils import generate_password
 
 class WorkspaceBuilder(Builder):
     def __init__(self, template_file):
+        """Manages the folder structure for provisioned projects.
+
+        Sets the template_file containing scripts and configs to put into startup folders, creates directories for the
+        participants, and moves the provisioned project to the final location at the end
+        ($WORKSPACE/$PROJECT_NAME/prod_XX). WorkspaceBuilder manages and sets the number in prod_XX by incrementing from
+        the last time provision was run for this project in this workspace, starting with 00 to a max of 99.
+
+        Each time the provisioning tool runs, it requires a workspace folder in the local file system.  The workspace
+        will have the following folder structure:
+
+        .. code-block:: text
+
+          $WORKSPACE/    <--- this is assigned by -w option of provision command (default is workspace)
+            $PROJECT_NAME/  <--- this is the name value in the project.yml file
+              prod_00/   <--- a new prod_NN folder is created if provision does not have any errors.
+              prod_01/
+              ...
+              resources/ <--- this folder stores resources for other builders to load
+              state/     <--- this folder stores persistent information (such as certificates) so subsequent runs of the provision command can load the state back.
+              wip/  <--- this is only used during runtime, and will be removed when the provision command exits
+
+        Args:
+            template_file: name of template file containing scripts and configs to put into startup folders
+        """
         self.template_file = template_file
 
     def _make_dir(self, dirs):
@@ -63,6 +87,12 @@ class WorkspaceBuilder(Builder):
 
 class DistributionBuilder(Builder):
     def __init__(self, zip_password=False):
+        """Creates the zip files containing the archives for each startup kit. It will add password protection if the
+        argument (zip_password) is true.
+
+        Args:
+            zip_password: if true, will create zipped packages with passwords
+        """
         self.zip_password = zip_password
 
     def build(self, study: Study, ctx: dict):

@@ -21,6 +21,20 @@ from nvflare.lighter.utils import sh_replace
 
 class StaticFileBuilder(Builder):
     def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image=""):
+        """Uses the information from project.yml through study to go through the participants and write the contents of
+        each file with the template, and replacing with the appropriate values from project.yml.
+
+        Usually, two main categories of files are created in all FL participants, static and dynamic. Static files
+        have similar contents among different participants, with small differences.  For example, the differences in
+        sub_start.sh are client name and python module.  Those are basically static files.  This builder uses template
+        file and string replacement to generate those static files for each participant.
+
+        Args:
+            enable_byoc: for each participant, true to enable loading of code in the custom folder of applications
+            config_folder: usually "config"
+            app_validator: optional path to an app validator to verify that uploaded app has the expected structure
+            docker_image: when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
+        """
         self.enable_byoc = enable_byoc
         self.config_folder = config_folder
         self.docker_image = docker_image

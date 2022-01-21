@@ -27,6 +27,15 @@ class HEBuilder(Builder):
         scale_bits=40,
         scheme="CKKS",
     ):
+        """Generates Tenseal homomorphic encryption context for server and client and writes them to server and client
+        participant folders.
+
+        Args:
+            poly_modulus_degree: defaults to 8192.
+            coeff_mod_bit_sizes: defaults to [60, 40, 40].
+            scale_bits: defaults to 40.
+            scheme: defaults to "CKKS".
+        """
 
         self._context = None
         self.scheme_type_mapping = {
