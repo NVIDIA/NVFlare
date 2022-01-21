@@ -37,7 +37,7 @@ from monai.transforms import (
     RandShiftIntensityd,
     Spacingd,
 )
-from pt.trainers.supervised_trainer import SupervisedTrainer
+from pt.learners.supervised_learner import SupervisedLearner
 from pt.utils.custom_client_datalist_json_path import custom_client_datalist_json_path
 
 from nvflare.apis.fl_context import FLContext
@@ -46,7 +46,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
 
-class ProstateTrainer(SupervisedTrainer):
+class ProstateLearner(SupervisedLearner):
     def __init__(
         self,
         train_config_filename,
@@ -162,12 +162,16 @@ class ProstateTrainer(SupervisedTrainer):
                 EnsureTyped(keys=["image", "label"]),
             ]
         )
-        self.transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold_values=True)])
+        self.transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
         # Set dataset
         self.train_dataset = Dataset(
             data=train_list,
             transform=self.transform_train,
+        )
+        self.train_dataset_for_valid = Dataset(
+            data=train_list,
+            transform=self.transform_valid,
         )
         self.valid_dataset = Dataset(
             data=valid_list,
@@ -178,6 +182,12 @@ class ProstateTrainer(SupervisedTrainer):
             self.train_dataset,
             batch_size=1,
             shuffle=True,
+            num_workers=1,
+        )
+        self.train_for_valid_loader = DataLoader(
+            self.train_dataset_for_valid,
+            batch_size=1,
+            shuffle=False,
             num_workers=1,
         )
         self.valid_loader = DataLoader(
@@ -191,7 +201,7 @@ class ProstateTrainer(SupervisedTrainer):
         self.inferer = SlidingWindowInferer(roi_size=self.infer_roi_size, sw_batch_size=4, overlap=0.25)
         self.valid_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
 
-    def local_valid(self, valid_loader, tb_id, abort_signal: Signal):
+    def local_valid(self, valid_loader, abort_signal: Signal, tb_id=None):
         self.model.eval()
         with torch.no_grad():
             metric_score = 0
@@ -206,7 +216,8 @@ class ProstateTrainer(SupervisedTrainer):
                 # Compute metric
                 metric = self.valid_metric(y_pred=val_outputs, y=val_labels)
                 metric_score += metric.item()
-            # comput mean dice over whole validation set
+            # compute mean dice over whole validation set
             metric_score /= len(valid_loader)
-            self.writer.add_scalar(tb_id, metric_score, self.epoch_of_start_time)
+            if tb_id:
+                self.writer.add_scalar(tb_id, metric_score, self.epoch_of_start_time)
         return metric_score

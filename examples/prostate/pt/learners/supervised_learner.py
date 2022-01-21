@@ -21,30 +21,28 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
-from nvflare.apis.event_type import EventType
-from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.abstract.learner_spec import Learner
+from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
 
-class SupervisedTrainer(Executor):
+class SupervisedLearner(Learner):
     def __init__(
         self,
         train_config_filename,
         aggregation_epochs: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
-        submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
+        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
     ):
         """Simple Supervised Trainer.
 
         Args:
             train_config_filename: directory of config file.
-            aggregation_epochs: the number of training epochs for a round.
-                This parameter only works when `aggregation_iters` is 0. Defaults to 1.
+            aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
             submit_model_task_name: name of the task to submit the best local model.
 
@@ -60,6 +58,7 @@ class SupervisedTrainer(Executor):
         self.train_task_name = train_task_name
         self.submit_model_task_name = submit_model_task_name
         self.best_acc = 0.0
+        self.initialized = False
 
         # Epoch counter
         self.epoch_of_start_time = 0
@@ -69,7 +68,7 @@ class SupervisedTrainer(Executor):
         self.fedproxloss_mu = 0.0
         self.criterion_prox = None
 
-    def _initialize_trainer(self, fl_ctx: FLContext):
+    def initialize(self, parts: dict, fl_ctx: FLContext):
         # when the run starts, this is where the actual settings get initialized for trainer
 
         # Set the paths according to fl_ctx
@@ -104,6 +103,7 @@ class SupervisedTrainer(Executor):
         self.criterion
         self.transform_post
         self.train_loader
+        self.train_for_valid_loader
         self.valid_loader
         self.inferer
         self.valid_metric
@@ -131,21 +131,9 @@ class SupervisedTrainer(Executor):
 
         self._extra_train_config(fl_ctx, config_info)
 
-    def _terminate_trainer(self):
+    def finalize(self, fl_ctx: FLContext):
         # collect threads, close files here
         pass
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        # the start and end of a run - only happen once
-        if event_type == EventType.START_RUN:
-            try:
-                self._initialize_trainer(fl_ctx)
-            except BaseException as e:
-                error_msg = f"Exception in _initialize_trainer: {e}"
-                self.log_exception(fl_ctx, error_msg)
-                self.system_panic(error_msg, fl_ctx)
-        elif event_type == EventType.END_RUN:
-            self._terminate_trainer()
 
     def local_train(
         self,
@@ -189,11 +177,11 @@ class SupervisedTrainer(Executor):
                 self.optimizer.step()
                 self.writer.add_scalar("train_loss", loss.item(), epoch_len * self.epoch_global + i)
             if val_freq > 0 and epoch % val_freq == 0:
-                acc = self.local_valid(self.valid_loader, "val_acc_local_model", abort_signal)
+                acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model")
                 if acc > self.best_acc:
                     self.save_model(is_best=True)
 
-    def local_valid(self, valid_loader, tb_id, abort_signal: Signal):
+    def local_valid(self, valid_loader, abort_signal: Signal, tb_id=None):
         self.model.eval()
         with torch.no_grad():
             correct, total = 0, 0
@@ -207,7 +195,8 @@ class SupervisedTrainer(Executor):
                 total += inputs.data.size()[0]
                 correct += (pred_label == labels.data).sum().item()
             metric = correct / float(total)
-            self.writer.add_scalar(tb_id, metric, self.epoch_global)
+            if tb_id:
+                self.writer.add_scalar(tb_id, metric, self.epoch_global)
         return metric
 
     def save_model(self, is_best=False):
@@ -220,7 +209,7 @@ class SupervisedTrainer(Executor):
         else:
             torch.save(save_dict, self.local_model_file)
 
-    def _train(
+    def train(
         self,
         shareable: Shareable,
         fl_ctx: FLContext,
@@ -229,7 +218,6 @@ class SupervisedTrainer(Executor):
         # Check abort signal
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
-        self.epoch_of_start_time += self.aggregation_epochs
 
         # get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
@@ -268,12 +256,6 @@ class SupervisedTrainer(Executor):
         else:
             model_global = None
 
-        # perform valid before local train
-        global_acc = self.local_valid(self.valid_loader, "val_acc_global_model", abort_signal)
-        if abort_signal.triggered:
-            return make_reply(ReturnCode.TASK_ABORTED)
-        self.log_info(fl_ctx, f"val_acc_global_model: {global_acc:.4f}")
-
         # local train
         self.local_train(
             fl_ctx=fl_ctx,
@@ -284,9 +266,10 @@ class SupervisedTrainer(Executor):
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
+        self.epoch_of_start_time += self.aggregation_epochs
 
         # perform valid after local train
-        acc = self.local_valid(self.valid_loader, "val_acc_local_model", abort_signal)
+        acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model")
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         self.log_info(fl_ctx, f"val_acc_local_model: {acc:.4f}")
@@ -310,49 +293,84 @@ class SupervisedTrainer(Executor):
         # build the shareable
         dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff)
         dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)
-        dxo.set_meta_prop(MetaKey.INITIAL_METRICS, global_acc)
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo.to_shareable()
 
-    def _submit_model(
-        self,
-        fl_ctx: FLContext,
-        abort_signal: Signal,
-    ) -> Shareable:
-        # Retrieve the local model saved during training.
-        model_data = None
-        try:
-            # load model to cpu to make it serializable
-            model_data = torch.load(self.best_local_model_file, map_location="cpu")
-        except Exception as e:
-            self.log_error(fl_ctx, f"Unable to load best model: {e}")
-            return make_reply(ReturnCode.EXEUTION_ERROR)
+    def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
+        # Retrieve the best local model saved during training.
+        if model_name == ModelName.BEST_MODEL:
+            model_data = None
+            try:
+                # load model to cpu as server might or might not have a GPU
+                model_data = torch.load(self.best_local_model_file, map_location="cpu")
+            except Exception as e:
+                self.log_error(fl_ctx, f"Unable to load best model: {e}")
 
-        # Checking abort signal
+            # Create DXO and shareable from model data.
+            if model_data:
+                dxo = DXO(data_kind=DataKind.WEIGHTS, data=model_data["model_weights"])
+                return dxo.to_shareable()
+            else:
+                # Set return code.
+                self.log_error(fl_ctx, f"best local model not found at {self.best_local_model_file}.")
+                return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
+        else:
+            raise ValueError(f"Unknown model_type: {model_name}")  # Raised errors are caught in LearnerExecutor class.
+
+    def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        # Check abort signal
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # Create DXO and shareable from model data.
-        if model_data:
-            dxo = DXO(data_kind=DataKind.WEIGHTS, data=model_data["model_weights"])
-            return dxo.to_shareable()
-        else:
-            # Set return code.
-            self.log_error(fl_ctx, f"best local model not found at {self.best_local_model_file}.")
-            return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
+        # get round information
+        self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
-    def execute(
-        self,
-        task_name: str,
-        shareable: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal,
-    ) -> Shareable:
-        self.log_info(fl_ctx, f"Task name: {task_name}")
-        if task_name == self.train_task_name:
-            return self._train(shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal)
-        elif task_name == self.submit_model_task_name:
-            return self._submit_model(fl_ctx=fl_ctx, abort_signal=abort_signal)
+        # update local model weights with received weights
+        dxo = from_shareable(shareable)
+        global_weights = dxo.data
+
+        # Before loading weights, tensors might need to be reshaped to support HE for secure aggregation.
+        local_var_dict = self.model.state_dict()
+        model_keys = global_weights.keys()
+        for var_name in local_var_dict:
+            if var_name in model_keys:
+                weights = torch.as_tensor(global_weights[var_name], device=self.device)
+                try:
+                    # update the local dict
+                    local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
+                except Exception as e:
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
+        self.model.load_state_dict(local_var_dict)
+
+        validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
+        if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
+            # perform valid before local train
+            global_acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_global_model")
+            if abort_signal.triggered:
+                return make_reply(ReturnCode.TASK_ABORTED)
+            self.log_info(fl_ctx, f"val_acc_global_model: {global_acc:.4f}")
+
+            return DXO(data_kind=DataKind.METRICS, data={MetaKey.INITIAL_METRICS: global_acc}, meta={}).to_shareable()
+
+        elif validate_type == ValidateType.MODEL_VALIDATE:
+            # perform valid
+            train_acc = self.local_valid(self.train_for_valid_loader, abort_signal)
+            if abort_signal.triggered:
+                return make_reply(ReturnCode.TASK_ABORTED)
+            self.log_info(fl_ctx, f"training acc: {train_acc:.4f}")
+
+            val_acc = self.local_valid(self.valid_loader, abort_signal)
+            if abort_signal.triggered:
+                return make_reply(ReturnCode.TASK_ABORTED)
+            self.log_info(fl_ctx, f"validation acc: {val_acc:.4f}")
+
+            self.log_info(fl_ctx, "Evaluation finished. Returning shareable")
+
+            val_results = {"train_accuracy": train_acc, "val_accuracy": val_acc}
+
+            metric_dxo = DXO(data_kind=DataKind.METRICS, data=val_results)
+            return metric_dxo.to_shareable()
+
         else:
-            return make_reply(ReturnCode.TASK_UNKNOWN)
+            return make_reply(ReturnCode.VALIDATE_TYPE_UNKNOWN)
