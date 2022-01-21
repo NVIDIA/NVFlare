@@ -15,7 +15,6 @@
 import logging
 import os
 import shlex
-import socket
 import subprocess
 import threading
 import time
@@ -29,22 +28,11 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
-
-
-def _get_open_ports(number):
-    ports = []
-    for i in range(number):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("", 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-        s.close()
-        ports.append(port)
-    return ports
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -153,7 +141,7 @@ class MultiProcessExecutor(Executor):
     def _initialize_multi_process(self, fl_ctx: FLContext):
 
         try:
-            self.open_ports = _get_open_ports(self.num_of_processes * 3)
+            self.open_ports = get_open_ports(self.num_of_processes * 3)
 
             command = (
                 self.get_multi_process_command()
