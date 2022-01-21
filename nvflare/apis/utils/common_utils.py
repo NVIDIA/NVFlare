@@ -16,6 +16,12 @@ import socket
 
 
 def get_open_ports(number):
+    """    Get the number of open ports from the system.
+    Args:
+        number: number of ports
+    Returns: list of open_ports
+
+    """
     ports = []
     for i in range(number):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -23,5 +29,8 @@ def get_open_ports(number):
         s.listen(1)
         port = s.getsockname()[1]
         s.close()
-        ports.append(port)
+        if port > 0:
+            ports.append(port)
+    if len(ports) != number:
+        raise RuntimeError("Could not get enough open ports from the system.")
     return ports
