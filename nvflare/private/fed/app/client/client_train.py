@@ -66,7 +66,6 @@ def main():
         AuditService.initialize(audit_file_name="audit.log")
 
         workspace = os.path.join(args.workspace, "startup")
-        time.sleep(rank * 2)
 
         # trainer = WorkFlowFactory().create_client_trainer(train_configs, envs)
         conf = FLClientStarterConfiger(
