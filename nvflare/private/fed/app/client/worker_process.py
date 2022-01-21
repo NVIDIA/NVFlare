@@ -35,6 +35,7 @@ from nvflare.private.fed.client.command_agent import CommandAgent
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
 
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
@@ -88,17 +89,17 @@ def main():
                 )
             )
 
-        workspace = os.path.join("/tmp/fl", client_name)
+        startup = args.startup
         app_root = os.path.join(args.workspace, "run_" + str(run_number), "app_" + client_name)
 
         app_log_config = os.path.join(app_root, config_folder, "log.config")
         if os.path.exists(app_log_config):
             args.log_config = app_log_config
         else:
-            args.log_config = os.path.join(workspace, "log.config")
+            args.log_config = os.path.join(startup, "log.config")
 
         conf = FLClientStarterConfiger(
-            app_root=workspace,
+            app_root=startup,
             client_config_file_name=args.fed_client,
             log_config_file_name=args.log_config,
             kv_list=args.set,
@@ -121,11 +122,11 @@ def main():
         )
         conf.configure()
 
-        workspace = Workspace(args.workspace, client_name, config_folder)
+        startup = Workspace(args.workspace, client_name, config_folder)
         run_manager = ClientRunManager(
             client_name=client_name,
             run_num=int(run_number),
-            workspace=workspace,
+            workspace=startup,
             client=federated_client,
             components=conf.runner_config.components,
             handlers=conf.runner_config.handlers,
@@ -139,7 +140,7 @@ def main():
             fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, startup, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
 
             client_runner = ClientRunner(config=conf.runner_config, run_num=int(run_number), engine=run_manager)

@@ -45,7 +45,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.args = args
         self.rank = rank
         self.client.process = None
-        self.client_executor = ProcessExecutor(client.client_name)
+        self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
 
         self.run_number = -1
         self.status = MachineStatus.STOPPED
