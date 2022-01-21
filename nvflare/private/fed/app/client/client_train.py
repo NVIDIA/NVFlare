@@ -17,7 +17,6 @@
 import argparse
 import os
 import sys
-import time
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
