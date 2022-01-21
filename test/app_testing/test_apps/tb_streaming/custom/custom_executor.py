@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import random
 import time
 
@@ -21,7 +20,8 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.widgets.streaming import send_analytic_dxo, write_scalar, write_text
+from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
+from nvflare.apis.analytix import AnalyticsDataType
 
 
 class CustomExecutor(Executor):
@@ -46,9 +46,10 @@ class CustomExecutor(Executor):
             number = random.random()
 
             # send analytics
-            dxo = write_scalar("random_number", number, global_step=r)
+            dxo = create_analytic_dxo(tag="random_number", value=number, data_type=AnalyticsDataType.SCALAR, global_step=r)
             send_analytic_dxo(comp=self, dxo=dxo, fl_ctx=fl_ctx)
-            dxo = write_text("debug_msg", "Hello world", global_step=r)
+            dxo = create_analytic_dxo(tag="debug_msg", value="Hello world", data_type=AnalyticsDataType.TEXT,
+                                      global_step=r)
             send_analytic_dxo(comp=self, dxo=dxo, fl_ctx=fl_ctx)
             time.sleep(2.0)
 

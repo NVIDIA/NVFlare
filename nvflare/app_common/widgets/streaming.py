@@ -11,9 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 from abc import ABC, abstractmethod
-from logging import LogRecord
 from threading import Lock
 from typing import List, Optional
 
@@ -21,7 +19,7 @@ from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import EventScope, FLContextKey, LogMessageTag, ReservedKey
+from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_event_type import AppEventType
@@ -50,14 +48,14 @@ def send_analytic_dxo(
     comp.fire_event(event_type=event_type, fl_ctx=fl_ctx)
 
 
-def _write(tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict] = None) -> DXO:
-    """Writes the analytic data.
+def create_analytic_dxo(tag: str, value, data_type: AnalyticsDataType, **kwargs) -> DXO:
+    """Creates the analytic DXO.
 
     Args:
         tag (str): the tag associated with this value.
         value: the analytic data.
         data_type (AnalyticsDataType): analytic data type.
-        kwargs (dict): additional arguments to be passed into the receiver side's function.
+        kwargs: additional arguments to be passed into the receiver side's function.
 
     Returns:
         A DXO object that contains the analytic data.
@@ -67,51 +65,11 @@ def _write(tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict]
     return dxo
 
 
-def write_scalar(tag: str, scalar: float, **kwargs) -> DXO:
-    """Writes a scalar.
-
-    Args:
-        tag (str): the tag associated with this value.
-        scalar (float): a scalar to write.
-    """
-    return _write(tag, scalar, data_type=AnalyticsDataType.SCALAR, kwargs=kwargs)
-
-
-def write_scalars(tag: str, tag_scalar_dict: dict, **kwargs) -> DXO:
-    """Writes scalars.
-
-    Args:
-        tag (str): the tag associated with this dict.
-        tag_scalar_dict (dict): A dictionary that contains tag and scalars to write.
-    """
-    return _write(tag, tag_scalar_dict, data_type=AnalyticsDataType.SCALARS, kwargs=kwargs)
-
-
-def write_image(tag: str, image, **kwargs) -> DXO:
-    """Writes an image.
-
-    Args:
-        tag (str): the tag associated with this value.
-        image: the image to write.
-    """
-    return _write(tag, image, data_type=AnalyticsDataType.IMAGE, kwargs=kwargs)
-
-
-def write_text(tag: str, text: str, **kwargs) -> DXO:
-    """Writes text.
-
-    Args:
-        tag (str): the tag associated with this value.
-        text (str): the text to write.
-    """
-    return _write(tag, text, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
-
-
 class AnalyticsSender(Widget):
     def __init__(self):
         """Sends analytics data.
 
-        This class implements some common methods follows signatures from PyTorch SummaryWriter and Python logger.
+        This class implements some common methods follows signatures from PyTorch SummaryWriter.
         It provides a convenient way for Learner to use.
         """
         super().__init__()
@@ -134,7 +92,7 @@ class AnalyticsSender(Widget):
             if not isinstance(global_step, int):
                 raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
             kwargs["global_step"] = global_step
-        dxo = _write(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
+        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx)
 
@@ -181,21 +139,6 @@ class AnalyticsSender(Widget):
             **kwargs: Additional arguments to pass to the receiver side.
         """
         self._add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, global_step=global_step, kwargs=kwargs)
-
-    def _log(self, tag: LogMessageTag, msg: str, event_type: str, *args, **kwargs):
-        """Logs a message.
-
-        Args:
-            tag (LogMessageTag): A tag that contains the level of the log message.
-            msg (str): Message to log.
-            event_type (str): Event type that associated with this message.
-            *args: From python logger api, args is used to format strings.
-            **kwargs: Additional arguments to be passed into the log function.
-        """
-        msg = msg.format(*args, **kwargs)
-        dxo = _write(tag=str(tag), value=msg, data_type=AnalyticsDataType.TEXT, kwargs=kwargs)
-        with self.engine.new_context() as fl_ctx:
-            send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=event_type)
 
     def flush(self):
         """Flushes out the message.
@@ -256,7 +199,10 @@ class AnalyticsReceiver(Widget, ABC):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
-        elif event_type in self.events and not self._end:
+        elif event_type in self.events:
+            if self._end:
+                self.log_debug(fl_ctx, f"Already received end run event, drop event {event_type}.", fire_event=False)
+                return
             data = fl_ctx.get_prop(FLContextKey.EVENT_DATA, None)
             if data is None:
                 self.log_error(fl_ctx, "Missing event data.", fire_event=False)
@@ -281,38 +227,3 @@ class AnalyticsReceiver(Widget, ABC):
         elif event_type == EventType.END_RUN:
             self._end = True
             self.finalize(fl_ctx)
-
-
-class LogSender(Widget, logging.StreamHandler):
-    def __init__(self, log_level=""):
-        """
-        LogSender for sending the logging record to the FL server.
-        Args:
-            log_level: log_level threshold
-        """
-        Widget.__init__(self)
-        logging.StreamHandler.__init__(self)
-        self.log_level = getattr(logging, log_level, logging.INFO)
-        self.engine = None
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.ABOUT_TO_START_RUN:
-            self.engine = fl_ctx.get_engine()
-            logging.root.addHandler(self)
-        if event_type == EventType.END_RUN:
-            logging.root.removeHandler(self)
-
-    def emit(self, record: LogRecord) -> None:
-        """
-        When the log_level higher than the configured level, sends the log record to the FL server to collect.
-        Args:
-            record: logging record
-
-        Returns:
-
-        """
-        if record.levelno >= self.log_level and self.engine:
-            dxo = _write(tag=LogMessageTag.LOG_RECORD, value=record, data_type=AnalyticsDataType.LOG_RECORD)
-            with self.engine.new_context() as fl_ctx:
-                send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=AppEventType.LOGGING_EVENT_TYPE)
-            self.flush()
