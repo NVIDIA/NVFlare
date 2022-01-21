@@ -77,7 +77,7 @@ setup(
     python_requires=">=3.7",
     # install_requires=list(pkutils.parse_requirements("requirements.txt")),
     install_requires=["PyYAML", "psutil", "numpy", "grpcio", "google-api-python-client", "cryptography"],
-    extras_require={"homomorphic": ["tenseal==0.3.0"]},
+    extras_require={"HE": ["tenseal==0.3.0"]},
     entry_points={
         "console_scripts": [
             "provision=nvflare.lighter.provision:main",

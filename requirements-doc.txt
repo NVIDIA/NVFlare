@@ -1,4 +1,4 @@
--r requirements.txt
+-r requirements-extra.txt
 sphinx>=4.1.1
 sphinx_rtd_theme
 recommonmark
