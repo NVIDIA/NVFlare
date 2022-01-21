@@ -23,10 +23,7 @@ class LocalLogger:
 
     @staticmethod
     def initialize():
-        """        Initialize the LocalLogger to keep all the handlers before the adding of LogSender handler.
-        Returns:
-
-        """
+        """Initializes the LocalLogger."""
         if not LocalLogger.handlers:
             LocalLogger.handlers = []
             for handler in logging.root.handlers:
@@ -34,12 +31,13 @@ class LocalLogger:
 
     @staticmethod
     def get_logger(name=None) -> logging.Logger:
-        """        Get a logger only do the local logging.
+        """Gets a logger only do the local logging.
+
         Args:
             name: logger name
 
-        Returns: local_logger
-
+        Returns:
+            A local logger.
         """
         with LocalLogger.lock:
             if not LocalLogger.handlers:

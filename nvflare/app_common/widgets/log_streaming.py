@@ -15,15 +15,53 @@
 import logging
 import os
 from logging import LogRecord
+from threading import Lock
 from typing import List, Optional
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import LogMessageTag
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver, create_analytic_dxo, send_analytic_dxo
+from nvflare.widgets.widget import Widget
+
+
+class LogAnalyticsSender(Widget, logging.StreamHandler):
+    def __init__(self, log_level=""):
+        """Sends the log record.
+
+        Args:
+            log_level: log_level threshold
+        """
+        Widget.__init__(self)
+        logging.StreamHandler.__init__(self)
+        self.log_level = getattr(logging, log_level, logging.INFO)
+        self.engine = None
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.ABOUT_TO_START_RUN:
+            self.engine = fl_ctx.get_engine()
+            logging.root.addHandler(self)
+        elif event_type == EventType.END_RUN:
+            logging.root.removeHandler(self)
+
+    def emit(self, record: LogRecord):
+        """Sends the log record.
+
+        When the log_level higher than the configured level, sends the log record.
+        Args:
+            record: logging record
+        """
+        if record.levelno >= self.log_level and self.engine:
+            dxo = create_analytic_dxo(
+                tag=LogMessageTag.LOG_RECORD, value=record, data_type=AnalyticsDataType.LOG_RECORD
+            )
+            with self.engine.new_context() as fl_ctx:
+                send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=AppEventType.LOGGING_EVENT_TYPE)
+            self.flush()
 
 
 class LogAnalyticsReceiver(AnalyticsReceiver):
@@ -40,6 +78,7 @@ class LogAnalyticsReceiver(AnalyticsReceiver):
         self.formatter = formatter
 
         self.handlers = {}
+        self.handlers_lock = Lock()
 
     def initialize(self, fl_ctx: FLContext):
         workspace = fl_ctx.get_engine().get_workspace()
@@ -54,9 +93,11 @@ class LogAnalyticsReceiver(AnalyticsReceiver):
             data_type = analytic_data.data_type
 
             if data_type == AnalyticsDataType.LOG_RECORD:
-                handler = self.handlers.get(record_origin)
-                if not handler:
-                    handler = self._create_log_handler(record_origin)
+                with self.handlers_lock:
+                    handler = self.handlers.get(record_origin)
+                    if not handler:
+                        handler = self._create_log_handler(record_origin)
+                        self.handlers[record_origin] = handler
 
                 record: LogRecord = dxo.data.get(LogMessageTag.LOG_RECORD)
                 handler.emit(record)
@@ -67,7 +108,6 @@ class LogAnalyticsReceiver(AnalyticsReceiver):
         filename = os.path.join(self.root_log_dir, record_origin + ".log")
         handler = logging.FileHandler(filename)
         handler.setFormatter(logging.Formatter(self.formatter))
-        self.handlers[record_origin] = handler
         return handler
 
     def finalize(self, fl_ctx: FLContext):
