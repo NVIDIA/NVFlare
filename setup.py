@@ -27,7 +27,7 @@ with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
 with open(os.path.join(this_directory, "nvflare", "__init__.py"), encoding="utf-8") as f:
     for line in f.readlines():
         if "__version__" in line:
-            init_version = line.split("=")[1].strip()
+            init_version = line.split("=")[1].strip().strip('"')
 
 nvfl_version = os.environ.get("NVFL_VERSION", init_version)
 yymmdd = datetime.today().strftime("%y%m%d")

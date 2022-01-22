@@ -44,8 +44,13 @@ def main():
     poc_zip_path = file_dir_path.parent / "poc.zip"
     answer = input("This will delete poc folder in current directory and create a new one. Is it OK to proceed? (y/N) ")
     if answer.strip().upper() == "Y":
-        shutil.rmtree(os.path.join(os.getcwd(), "poc"), ignore_errors=True)
+        dest_poc_folder = os.path.join(os.getcwd(), "poc")
+        shutil.rmtree(dest_poc_folder, ignore_errors=True)
         shutil.unpack_archive(poc_zip_path)
+        for root, dirs, files in os.walk(dest_poc_folder):
+            for file in files:
+                if file.endswith(".sh"):
+                    os.chmod(os.path.join(root, file), 0o755)
         clone_client(args.num_clients)
         print("Successfully creating poc folder.  Please read poc/Readme.rst for user guide.")
 
