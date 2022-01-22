@@ -92,7 +92,7 @@ class AnalyticsSender(Widget):
             if not isinstance(global_step, int):
                 raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
             kwargs["global_step"] = global_step
-        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
+        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, **kwargs)
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx)
 
