@@ -39,6 +39,9 @@ class LogAnalyticsSender(Widget, logging.StreamHandler):
         Widget.__init__(self)
         logging.StreamHandler.__init__(self)
         self.log_level = getattr(logging, log_level, logging.INFO)
+        if self.log_level < logging.INFO:
+            raise ValueError(f"LogAnalyticsSender log level must be higher than logging.INFO: {logging.INFO}. "
+                             f"Got: {self.log_level}")
         self.engine = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
