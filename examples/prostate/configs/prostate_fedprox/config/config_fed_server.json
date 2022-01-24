@@ -55,13 +55,8 @@
       }
     },
     {
-      "id": "formatter",
-      "path": "pt.pt_formatter.PTFormatter",
-      "args": {}
-    },
-    {
       "id": "json_generator",
-      "path": "pt.validation_json_generator.ValidationJsonGenerator",
+      "name": "ValidationJsonGenerator",
       "args": {}
     }
   ],
@@ -86,7 +81,6 @@
       "name": "GlobalModelEval",
       "args": {
         "model_locator_id": "model_locator",
-        "formatter_id": "formatter",
         "validation_timeout": 6000,
         "cleanup_models": true
       }

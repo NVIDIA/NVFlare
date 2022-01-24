@@ -180,7 +180,7 @@ We only cover POC mode in this example. To run it with Secure mode, please refer
 ## 4. Run automated experiments
 First, we add the current directory path to `config_train.json` files for generating the absolute path to dataset and datalist.  
 ```
-for alg in prostate_central prostate_fedavg prostate_fedprox
+for alg in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do
   sed -i "s|PWD|${PWD}|g" configs/${alg}/config/config_train.json
 done
@@ -200,21 +200,27 @@ In this example, we run 4 clients on two GPUs, two clients for each GPU with 12 
 
 Note that in order to make it working under most system resource conditions, the current script used regular `Dataset` for data loading in `pt/learners/prostate_learner.py`, which could be slow. If resource permits, it will make the training much faster by replacing it with `CacheDataset`. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
 
-### 4.1 FedAvg 
-To run FL with [FedAvg](https://arxiv.org/abs/1602.05629), we use
-```
-./run_poc.sh prostate_fedavg 1 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
-```
-### 4.2 FedProx 
-To run FL with [FedProx](https://arxiv.org/abs/1812.06127), we use
-```
-./run_poc.sh prostate_fedprox 2 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
-```
-### 4.3 Centralized training
+### 4.1 Centralized training
 To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
 ```
-./run_poc.sh prostate_central 3 "All"
+./run_poc.sh prostate_central 1 "All"
 ```
+### 4.2 FedAvg 
+To run FL with standard [fedAvg](https://arxiv.org/abs/1602.05629), we use
+```
+./run_poc.sh prostate_fedavg 2 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
+```
+### 4.3 FedProx 
+To run FL with [FedProx](https://arxiv.org/abs/1812.06127), which adds a regularizer to the loss used in `SupervisedProstateLearner` (`fedproxloss_mu`), we use
+```
+./run_poc.sh prostate_fedprox 3 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
+```
+### 4.4 Ditto 
+To run FL with [Ditto](https://arxiv.org/abs/2012.04221)(official [implementation](https://github.com/litian96/ditto)), which uses a slightly modified version of the prostate Learner implementation, namely the `ProstateDittoLearner`, which decouples local personalized model from global model via an additional model training and a controllable prox term (`ditto_lambda`), we use
+```
+./run_poc.sh prostate_ditto 4 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
+```
+
 > **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
   using `abort all`. An automatic shutdown is useful here for development as code changes 
 > in your FL components will only be picked up on a restart of the FL system. 
@@ -235,7 +241,7 @@ cat ./workspace_prostate/server/run_1/cross_site_val/global_val.json
 ### Validation curve 
 Let's summarize the result of the experiments run above. We compare the final validation scores of 
 the global models for different settings. In this example, each client computes their validation scores using their own
-validation set, and the centralized model computes the validation score using the combined validation set. 
+validation set, and the centralized model computes the validation score using the combined validation set. Please note that due to the limited size of data set, the validation curve can have significant variations across runs.
 
 The TensorBoard curves for validation Dice of the global model for the 1000 epochs (100 rounds, 10 local epochs per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
