@@ -386,6 +386,7 @@ class ClientRunner(FLComponent):
     def _handle_end_run(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_info(fl_ctx, "received aux request from Server to end current RUN")
         self._abort_current_task()
+        self.asked_to_stop = True
         self.end_run_events_sequence("AUX END_RUN ")
 
         return make_reply(ReturnCode.OK)

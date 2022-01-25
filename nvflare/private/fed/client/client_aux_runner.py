@@ -39,6 +39,7 @@ class ClientAuxRunner(AuxRunner):
         self.engine = None
         self.fnf_requests = []
         self.fnf_lock = threading.Lock()
+        self.time_to_stop_run = time.time()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         AuxRunner.handle_event(self, event_type, fl_ctx)
@@ -47,8 +48,9 @@ class ClientAuxRunner(AuxRunner):
             self.abort_signal = fl_ctx.get_run_abort_signal()
             self.sender = threading.Thread(target=self._send_fnf_requests, args=())
             self.sender.start()
-        elif event_type == EventType.RUN_WRAP_UP:
+        elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
+            self.time_to_stop_run = time.time()
             if self.sender and self.sender.is_alive():
                 self.sender.join()
 
@@ -104,9 +106,11 @@ class ClientAuxRunner(AuxRunner):
         sleep_time = 0.5
         while True:
             time.sleep(sleep_time)
+            if self.abort_signal.triggered:
+                break
 
             if len(self.fnf_requests) <= 0:
-                if self.asked_to_stop:
+                if self.asked_to_stop and self._wrap_up_time_expired():
                     break
                 else:
                     sleep_time = 1.0
@@ -125,6 +129,7 @@ class ClientAuxRunner(AuxRunner):
                         self.fnf_requests = []
             sleep_time = 0.5
 
-            if self.abort_signal.triggered:
-                break
+    def _wrap_up_time_expired(self):
+        return time.time() - self.time_to_stop_run > 5.
+
 
