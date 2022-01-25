@@ -22,6 +22,7 @@ class EventType(object):
     START_RUN = "_start_run"
     ABOUT_TO_END_RUN = "_about_to_end_run"
     END_RUN = "_end_run"
+    RUN_WRAP_UP = "_run_wrap_up"
     START_WORKFLOW = "_start_workflow"
     END_WORKFLOW = "_end_workflow"
     ABORT_TASK = "_abort_task"

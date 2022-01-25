@@ -57,7 +57,7 @@ class LogAnalyticsSender(Widget, logging.StreamHandler):
         if event_type == EventType.ABOUT_TO_START_RUN:
             self.engine = fl_ctx.get_engine()
             logging.root.addHandler(self)
-        elif event_type == EventType.END_RUN:
+        elif event_type == EventType.RUN_WRAP_UP:
             logging.root.removeHandler(self)
 
     def emit(self, record: LogRecord):
@@ -113,6 +113,7 @@ class LogAnalyticsReceiver(AnalyticsReceiver):
 
                 record: LogRecord = dxo.data.get(LogMessageTag.LOG_RECORD)
                 handler.emit(record)
+                handler.flush()
         except ValueError:
             self.logger.error(f"Failed to save the log received: {record_origin}")
 

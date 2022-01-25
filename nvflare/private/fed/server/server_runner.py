@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import threading
+import time
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -124,6 +125,14 @@ class ServerRunner(FLComponent):
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, "Error executing RUN")
 
+        # ask all clients to end run!
+        self.engine.send_aux_request(
+            targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
+        )
+
+        # We need to sleep here to wait for the clients to finish the END_RUN.
+        time.sleep(10)
+
         # use wf_lock to ensure state of current_wf!
         self.status = "done"
         with self.wf_lock:
@@ -132,11 +141,6 @@ class ServerRunner(FLComponent):
                 self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
                 self.fire_event(EventType.END_RUN, fl_ctx)
                 self.log_info(fl_ctx, "END_RUN fired")
-
-        # ask all clients to end run!
-        self.engine.send_aux_request(
-            targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
-        )
 
         self.log_info(fl_ctx, "Server runner finished.")
 

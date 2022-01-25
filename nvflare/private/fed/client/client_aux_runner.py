@@ -47,7 +47,7 @@ class ClientAuxRunner(AuxRunner):
             self.abort_signal = fl_ctx.get_run_abort_signal()
             self.sender = threading.Thread(target=self._send_fnf_requests, args=())
             self.sender.start()
-        elif event_type == EventType.END_RUN:
+        elif event_type == EventType.RUN_WRAP_UP:
             self.asked_to_stop = True
             if self.sender and self.sender.is_alive():
                 self.sender.join()
@@ -104,8 +104,6 @@ class ClientAuxRunner(AuxRunner):
         sleep_time = 0.5
         while True:
             time.sleep(sleep_time)
-            if self.abort_signal.triggered:
-                break
 
             if len(self.fnf_requests) <= 0:
                 if self.asked_to_stop:
@@ -126,3 +124,7 @@ class ClientAuxRunner(AuxRunner):
                         # if communication error we'll retry
                         self.fnf_requests = []
             sleep_time = 0.5
+
+            if self.abort_signal.triggered:
+                break
+

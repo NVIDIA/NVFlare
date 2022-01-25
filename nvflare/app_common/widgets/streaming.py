@@ -200,9 +200,9 @@ class AnalyticsReceiver(Widget, ABC):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type in self.events:
-            if self._end:
-                self.log_debug(fl_ctx, f"Already received end run event, drop event {event_type}.", fire_event=False)
-                return
+            # if self._end:
+            #     self.log_debug(fl_ctx, f"Already received end run event, drop event {event_type}.", fire_event=False)
+            #     return
             data = fl_ctx.get_prop(FLContextKey.EVENT_DATA, None)
             if data is None:
                 self.log_error(fl_ctx, "Missing event data.", fire_event=False)
