@@ -58,7 +58,7 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
                 ctx.set_prop(key=FLContextKey.EVENT_ORIGIN, value=event_origin, private=True, sticky=False)
                 ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=event_scope, private=True, sticky=False)
                 h.handle_event(event, ctx)
-            except Exception as e:
+            except:
                 h.log_exception(ctx, 'exception when handling event "{}"'.format(event), fire_event=False,
                                 local_logging=True)
 
