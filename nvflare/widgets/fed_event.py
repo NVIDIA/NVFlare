@@ -192,7 +192,18 @@ class ServerFedEventRunner(FedEventRunner):
 class ClientFedEventRunner(FedEventRunner):
     def __init__(self, topic=FED_EVENT_TOPIC):
         FedEventRunner.__init__(self, topic)
+        self.ready = False
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        super().handle_event(event_type, fl_ctx)
+
+        if event_type == EventType.START_RUN:
+            self.ready = True
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
+        if not self.ready:
+            self.log_warning(fl_ctx, "Engine in not ready, skip the aux event firing.", local_logging=True)
+            return
+
         assert isinstance(self.engine, ClientEngineSpec)
         self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx)

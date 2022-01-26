@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import argparse
 import copy
 import os
@@ -118,6 +119,9 @@ def main():
         handlers=data[CommunicationMetaData.HANDLERS],
         conf=None,
     )
+
+    log_config_file_path = os.path.join(startup, "log.config")
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
     relayer = EventRelayer(event_conn, local_rank)
     run_manager.add_handler(relayer)

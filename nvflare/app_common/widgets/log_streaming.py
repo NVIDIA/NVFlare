@@ -30,7 +30,7 @@ from nvflare.widgets.widget import Widget
 
 
 class LogAnalyticsSender(Widget, logging.StreamHandler):
-    def __init__(self, log_level=""):
+    def __init__(self, log_level=None):
         """Sends the log record.
 
         Args:
@@ -38,7 +38,19 @@ class LogAnalyticsSender(Widget, logging.StreamHandler):
         """
         Widget.__init__(self)
         logging.StreamHandler.__init__(self)
-        self.log_level = getattr(logging, log_level, logging.INFO)
+        if log_level is None:
+            log_level = "INFO"
+
+        self.log_level = getattr(logging, log_level)
+        if not isinstance(self.log_level, int):
+            raise ValueError(f"log_level must be integer. Got: {self.log_level}")
+
+        if self.log_level < logging.INFO:
+            raise ValueError(
+                f"LogAnalyticsSender log level must be higher than or equal to logging.INFO: {logging.INFO}. "
+                f"Got: {self.log_level}"
+            )
+
         self.engine = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
