@@ -64,9 +64,8 @@ class CertBuilder(Builder):
     def _build_root(self, subject):
         if not self.persistent_state:
             pri_key, pub_key = self._generate_keys()
-            self.subject = self._x509_name(subject)
-            issuer = self.subject
-            self.root_cert = self._generate_cert(self.subject, issuer, pri_key, pub_key, ca=True)
+            self.issuer = subject
+            self.root_cert = self._generate_cert(subject, self.issuer, pri_key, pub_key, ca=True)
             self.pri_key = pri_key
             self.pub_key = pub_key
             self.serialized_cert = serialize_cert(self.root_cert)
@@ -106,9 +105,8 @@ class CertBuilder(Builder):
 
     def get_pri_key_cert(self, participant):
         pri_key, pub_key = self._generate_keys()
-        subject = self._x509_name(participant.subject)
-        issuer = self.subject
-        cert = self._generate_cert(subject, issuer, self.pri_key, pub_key)
+        subject = participant.subject
+        cert = self._generate_cert(subject, self.issuer, self.pri_key, pub_key)
         return pri_key, cert
 
     def _generate_keys(self):
@@ -117,10 +115,12 @@ class CertBuilder(Builder):
         return pri_key, pub_key
 
     def _generate_cert(self, subject, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False):
+        x509_subject = self._x509_name(subject)
+        x509_issuer = self._x509_name(issuer)
         builder = (
             x509.CertificateBuilder()
-            .subject_name(subject)
-            .issuer_name(issuer)
+            .subject_name(x509_subject)
+            .issuer_name(x509_issuer)
             .public_key(subject_pub_key)
             .serial_number(x509.random_serial_number())
             .not_valid_before(datetime.datetime.utcnow())
@@ -130,6 +130,7 @@ class CertBuilder(Builder):
                 + datetime.timedelta(days=valid_days)
                 # Sign our certificate with our private key
             )
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
         )
         if ca:
             builder = (

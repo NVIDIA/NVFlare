@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import _version
+from flask import Flask
 
-__version__ = _version.get_versions()["version"]
+app = Flask(__name__)
+app.config["APPLICATION_ROOT"] = "/api/v1"
