@@ -36,7 +36,12 @@ class FLComponent(object):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
         engine = fl_ctx.get_engine()
         if engine is None:
-            self.log_error(fl_ctx=fl_ctx, msg="Logic Error: no engine in fl_ctx: {}".format(fl_ctx), fire_event=False)
+            self.log_error(
+                fl_ctx=fl_ctx,
+                msg="Logic Error: no engine in fl_ctx: {}".format(fl_ctx),
+                fire_event=False,
+                local_logging=True,
+            )
         else:
             engine.fire_event(event_type, fl_ctx)
 

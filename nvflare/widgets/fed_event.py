@@ -93,17 +93,17 @@ class FedEventRunner(Widget):
     def _receive(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         peer_name = request.get_peer_prop(ReservedKey.IDENTITY_NAME, None)
         if not peer_name:
-            self.log_error(fl_ctx, "missing identity name of the data sender")
+            self.log_error(fl_ctx, "missing identity name of the data sender", local_logging=True)
             return make_reply(ReturnCode.MISSING_PEER_CONTEXT)
 
         timestamp = request.get_header(FedEventHeader.TIMESTAMP, None)
         if timestamp is None:
-            self.log_error(fl_ctx, "missing timestamp in incoming fed event")
+            self.log_error(fl_ctx, "missing timestamp in incoming fed event", local_logging=True)
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         event_type = request.get_header(FedEventHeader.EVENT_TYPE, None)
         if event_type is None:
-            self.log_error(fl_ctx, "missing event_type in incoming fed event")
+            self.log_error(fl_ctx, "missing event_type in incoming fed event", local_logging=True)
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         with self.in_lock:
@@ -161,7 +161,9 @@ class FedEventRunner(Widget):
                 assert isinstance(fl_ctx, FLContext)
 
                 if self.asked_to_stop:
-                    self.log_warning(fl_ctx, f"{n} items remained in in_events.  Will stop when it reaches 0.")
+                    self.log_warning(
+                        fl_ctx, f"{n} items remained in in_events.  Will stop when it reaches 0.", local_logging=True
+                    )
                 fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=event_to_post, private=True, sticky=False)
                 fl_ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=EventScope.FEDERATION, private=True, sticky=False)
 
@@ -170,7 +172,9 @@ class FedEventRunner(Widget):
                     self.engine.fire_event(event_type=event_type, fl_ctx=fl_ctx)
                 except BaseException as e:
                     if self.asked_to_stop:
-                        self.log_warning(fl_ctx, f"event {event_to_post} fired unsuccessfully during END_RUN")
+                        self.log_warning(
+                            fl_ctx, f"event {event_to_post} fired unsuccessfully during END_RUN", local_logging=True
+                        )
                     else:
                         raise e
 

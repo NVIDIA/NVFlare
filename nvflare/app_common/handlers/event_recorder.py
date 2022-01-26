@@ -206,6 +206,7 @@ class EventRecorder(FLComponent):
             formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             output_file_handler.setFormatter(formatter)
             self.logger.addHandler(output_file_handler)
+            self.logger.propagate = False
             self._log_handler_added = True
         event_stats = self.event_stats.get(event_type, None)
         if not event_stats:

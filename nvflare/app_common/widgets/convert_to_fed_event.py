@@ -42,9 +42,9 @@ class ConvertToFedEvent(Widget):
                 return
             data = fl_ctx.get_prop(FLContextKey.EVENT_DATA, None)
             if data is None:
-                self.log_error(fl_ctx, "Missing event data.")
+                self.log_error(fl_ctx, "Missing event data.", local_logging=True)
                 return
             if not isinstance(data, Shareable):
-                self.log_error(fl_ctx, f"Expect data to be shareable but got {type(data)}")
+                self.log_error(fl_ctx, f"Expect data to be shareable but got {type(data)}", local_logging=True)
                 return
             self.fire_fed_event(self.fed_event_prefix + event_type, data, fl_ctx)
