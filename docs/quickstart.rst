@@ -83,6 +83,7 @@ The following quickstart guides walk you through some of these examples:
    :maxdepth: 1
 
    examples/hello_pt
+   examples/hello_pt_tb
    examples/hello_numpy
    examples/hello_tf2
    examples/hello_cross_val
