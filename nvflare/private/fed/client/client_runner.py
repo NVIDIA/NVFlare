@@ -22,7 +22,6 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ReservedKey, Rese
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.local_logger import LocalLogger
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.defs import TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -270,9 +269,6 @@ class ClientRunner(FLComponent):
 
     def run(self, app_root, args):
         with self.engine.new_context() as fl_ctx:
-            # initialize the LocalLogger to keep all the local handlers.
-            LocalLogger.initialize()
-
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)

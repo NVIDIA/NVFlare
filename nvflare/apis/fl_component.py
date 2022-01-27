@@ -16,7 +16,6 @@ import logging
 import traceback
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
-from nvflare.apis.utils.local_logger import LocalLogger
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
@@ -30,7 +29,6 @@ class FLComponent(object):
         """FLComponent base class."""
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
-        self.local_logger = LocalLogger.get_logger(self._name + ".local")
 
     def _fire(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
@@ -113,7 +111,7 @@ class FLComponent(object):
         """
         pass
 
-    def log_info(self, fl_ctx: FLContext, msg: str, fire_event=False, local_logging=False):
+    def log_info(self, fl_ctx: FLContext, msg: str, fire_event=False):
         """Logs a message with logger.info.
 
         These log_XXX methods are implemented because we want to have a unified way of logging messages.
@@ -125,20 +123,15 @@ class FLComponent(object):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
-        if local_logging:
-            logger = self.local_logger
-        else:
-            logger = self.logger
-
         log_msg = generate_log_message(fl_ctx, msg)
-        logger.info(log_msg)
+        self.logger.info(log_msg)
 
         if fire_event:
             self._fire_log_event(
                 event_type=EventType.INFO_LOG_AVAILABLE, log_tag=LogMessageTag.INFO, log_msg=log_msg, fl_ctx=fl_ctx
             )
 
-    def log_warning(self, fl_ctx: FLContext, msg: str, fire_event=True, local_logging=False):
+    def log_warning(self, fl_ctx: FLContext, msg: str, fire_event=True):
         """Logs a message with logger.warning.
 
         Args:
@@ -146,13 +139,8 @@ class FLComponent(object):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
-        if local_logging:
-            logger = self.local_logger
-        else:
-            logger = self.logger
-
         log_msg = generate_log_message(fl_ctx, msg)
-        logger.warning(log_msg)
+        self.logger.warning(log_msg)
         if fire_event:
             self._fire_log_event(
                 event_type=EventType.WARNING_LOG_AVAILABLE,
@@ -161,7 +149,7 @@ class FLComponent(object):
                 fl_ctx=fl_ctx,
             )
 
-    def log_error(self, fl_ctx: FLContext, msg: str, fire_event=True, local_logging=False):
+    def log_error(self, fl_ctx: FLContext, msg: str, fire_event=True):
         """Logs a message with logger.error.
 
         Args:
@@ -169,19 +157,14 @@ class FLComponent(object):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
-        if local_logging:
-            logger = self.local_logger
-        else:
-            logger = self.logger
-
         log_msg = generate_log_message(fl_ctx, msg)
-        logger.error(log_msg)
+        self.logger.error(log_msg)
         if fire_event:
             self._fire_log_event(
                 event_type=EventType.ERROR_LOG_AVAILABLE, log_tag=LogMessageTag.ERROR, log_msg=log_msg, fl_ctx=fl_ctx
             )
 
-    def log_debug(self, fl_ctx: FLContext, msg: str, fire_event=False, local_logging=False):
+    def log_debug(self, fl_ctx: FLContext, msg: str, fire_event=False):
         """Logs a message with logger.debug.
 
         Args:
@@ -189,19 +172,14 @@ class FLComponent(object):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
-        if local_logging:
-            logger = self.local_logger
-        else:
-            logger = self.logger
-
         log_msg = generate_log_message(fl_ctx, msg)
-        logger.debug(log_msg)
+        self.logger.debug(log_msg)
         if fire_event:
             self._fire_log_event(
                 event_type=EventType.DEBUG_LOG_AVAILABLE, log_tag=LogMessageTag.DEBUG, log_msg=log_msg, fl_ctx=fl_ctx
             )
 
-    def log_critical(self, fl_ctx: FLContext, msg: str, fire_event=True, local_logging=False):
+    def log_critical(self, fl_ctx: FLContext, msg: str, fire_event=True):
         """Logs a message with logger.critical.
 
         Args:
@@ -209,13 +187,8 @@ class FLComponent(object):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
-        if local_logging:
-            logger = self.local_logger
-        else:
-            logger = self.logger
-
         log_msg = generate_log_message(fl_ctx, msg)
-        logger.critical(log_msg)
+        self.logger.critical(log_msg)
         if fire_event:
             self._fire_log_event(
                 event_type=EventType.CRITICAL_LOG_AVAILABLE,
@@ -224,7 +197,7 @@ class FLComponent(object):
                 fl_ctx=fl_ctx,
             )
 
-    def log_exception(self, fl_ctx: FLContext, msg: str, fire_event=False, local_logging=False):
+    def log_exception(self, fl_ctx: FLContext, msg: str, fire_event=False):
         """Logs exception message with logger.error.
 
         Args:
@@ -232,13 +205,8 @@ class FLComponent(object):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event. Unused.
         """
-        if local_logging:
-            logger = self.local_logger
-        else:
-            logger = self.logger
-
         log_msg = generate_log_message(fl_ctx, msg)
-        logger.error(log_msg)
+        self.logger.error(log_msg)
         traceback.print_exc()
 
         if fire_event:
