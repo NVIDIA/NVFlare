@@ -14,6 +14,7 @@
 
 import logging
 import os
+import time
 from logging import LogRecord
 from threading import Lock
 from typing import List, Optional
@@ -21,15 +22,18 @@ from typing import List, Optional
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import LogMessageTag
+from nvflare.apis.fl_constant import LogMessageTag, FLContextKey, EventScope, FedEventHeader
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver, create_analytic_dxo, send_analytic_dxo
 from nvflare.widgets.widget import Widget
+from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
 
 
 class LogAnalyticsSender(Widget, logging.StreamHandler):
+    FED_EVENT_TOPIC = "fed.event"
+
     def __init__(self, log_level=None):
         """Sends the log record.
 
@@ -72,7 +76,19 @@ class LogAnalyticsSender(Widget, logging.StreamHandler):
                 tag=LogMessageTag.LOG_RECORD, value=record, data_type=AnalyticsDataType.LOG_RECORD
             )
             with self.engine.new_context() as fl_ctx:
-                send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=AppEventType.LOGGING_EVENT_TYPE)
+                # send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=AppEventType.LOGGING_EVENT_TYPE)
+
+                event_data = dxo.to_shareable()
+                event_data.set_header(FedEventHeader.EVENT_TYPE, FED_EVENT_PREFIX + AppEventType.LOGGING_EVENT_TYPE)
+                event_data.set_header(FedEventHeader.ORIGIN, fl_ctx.get_identity_name())
+                event_data.set_header(FedEventHeader.TIMESTAMP, time.time())
+
+                fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=event_data, private=True, sticky=False)
+                fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, value=EventScope.LOCAL, private=True, sticky=False)
+                fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
+
+                self.engine.fire_and_forget_aux_request(topic=LogAnalyticsSender.FED_EVENT_TOPIC, request=event_data, fl_ctx=fl_ctx)
+
             self.flush()
 
 
