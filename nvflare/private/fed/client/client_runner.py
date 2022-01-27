@@ -147,9 +147,16 @@ class ClientRunner(FLComponent):
                 reply = executor.execute(task.name, task.data, fl_ctx, self.task_abort_signal)
             finally:
                 with self.task_lock:
+                    if self.task_abort_signal is None:
+                        task_aborted = True
+                    else:
+                        task_aborted = False
+
                     self.task_abort_signal = None
                     self.current_task = None
                     self.current_executor = None
+                    if task_aborted:
+                        return make_reply(ReturnCode.TASK_ABORTED)
 
             if not isinstance(reply, Shareable):
                 self.log_error(
