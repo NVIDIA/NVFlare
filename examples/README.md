@@ -31,3 +31,5 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvidia.g
    * Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./prostate/README.md)
    * Example of training a multi-institutional prostate segmentation model using [FedAvg](https://arxiv.org/abs/1602.05629) and [FedProx](https://arxiv.org/abs/1812.06127).
+* [Federated Analysis](./federated_analysis/README.md)
+  * Example of gathering local data summary statistics to compute the global dataset statistics. 
