@@ -14,8 +14,8 @@
 
 import argparse
 
+from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
-from nvflare.fuel.hci.client.lib import AdminClient
 
 
 def main():
@@ -93,7 +93,7 @@ def main():
         client_cert=client_cert,
         client_key=client_key,
         require_login=args.with_login,
-        credential_type=args.cred_type,
+        credential_type=CredentialType.PASSWORD if args.cred_type == "password" else CredentialType.CERT,
         debug=args.with_debug,
     )
 

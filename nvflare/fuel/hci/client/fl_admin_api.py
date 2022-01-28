@@ -877,3 +877,11 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     None,
                 )
             time.sleep(interval)
+
+    def login(self, username: str):
+        result = super().login(username=username)
+        return FLAdminAPIResponse(status=result["status"], details=result["details"])
+
+    def login_with_password(self, username: str, password: str):
+        result = super().login_with_password(username=username, password=password)
+        return FLAdminAPIResponse(status=result["status"], details=result["details"])

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List
+from typing import List, Optional
 
 
 def repeat_to_length(string_to_expand, length):
@@ -36,7 +36,7 @@ class Table(object):
             headers: headers of the table
     """
 
-    def __init__(self, headers: List[str]):
+    def __init__(self, headers: Optional[List[str]] = None):
         self.rows = []
         if headers and len(headers) > 0:
             new_headers = []
