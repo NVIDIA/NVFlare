@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Sub_worker process to start the multi-processes client."""
+
 import logging
 import argparse
 import copy
@@ -32,7 +34,14 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 
 
 class EventRelayer(FLComponent):
+    """To relay the event from the worker_process."""
     def __init__(self, conn, local_rank):
+        """To init the EventRelayer.
+
+        Args:
+            conn: worker_process connection.
+            local_rank: process local rank
+        """
         super().__init__()
         self.conn = conn
         self.local_rank = local_rank
@@ -40,6 +49,13 @@ class EventRelayer(FLComponent):
         self.event_lock = threading.Lock()
 
     def relay_event(self, run_manager, data):
+        """To relay the event.
+
+        Args:
+            run_manager: Client_Run_Manager
+            data: event data
+
+        """
         with run_manager.new_context() as fl_ctx:
             event_type = data[CommunicationMetaData.EVENT_TYPE]
             fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
@@ -50,6 +66,13 @@ class EventRelayer(FLComponent):
             self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        """To handle the event.
+
+        Args:
+            event_type: event_type
+            fl_ctx: FLContext
+
+        """
         event_site = fl_ctx.get_prop(FLContextKey.EVENT_ORIGIN_SITE)
 
         new_fl_ctx = FLContext()
@@ -74,6 +97,7 @@ class EventRelayer(FLComponent):
 
 
 def main():
+    """Sub_worker process program."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     # parser.add_argument("--parent_port", type=str, help="Parent listen port", required=True)
@@ -153,6 +177,15 @@ def _create_connection(listen_port):
 
 
 def execute(run_manager, local_rank, exe_conn, executor):
+    """To execute the event task and pass to worker_process.
+
+    Args:
+        run_manager: Client_Run_Manager
+        local_rank: provcess local rank
+        exe_conn: execution connection
+        executor: local executor
+
+    """
     try:
         abort_signal = None
         while True:
@@ -187,6 +220,14 @@ def execute(run_manager, local_rank, exe_conn, executor):
 
 
 def handle_event(run_manager, local_rank, exe_conn):
+    """To handle the event.
+
+    Args:
+        run_manager: Client_run_manager
+        local_rank: process local rank
+        exe_conn: execute connection
+
+    """
     try:
         while True:
             data = exe_conn.recv()

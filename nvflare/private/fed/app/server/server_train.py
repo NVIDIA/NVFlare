@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Provides a command line interface for federated server"""
+"""Provides a command line interface for federated server."""
 
 import argparse
 import logging
@@ -30,6 +30,7 @@ from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 
 def main():
+    """FL Server program starting point."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
 
@@ -120,6 +121,13 @@ def main():
 
 
 def security_check(secure_train, args):
+    """To check the security content if running in security mode.
+
+    Args:
+        secure_train: True/False
+        args: command args
+
+    """
     # initialize the SecurityContentService.
     # must do this before initializing other services since it may be needed by them!
     startup = os.path.join(args.workspace, "startup")
@@ -150,6 +158,14 @@ def security_check(secure_train, args):
 
 
 def secure_content_check(args):
+    """To check the security contents.
+
+    Args:
+        args: command args
+
+    Returns: the insecure content list
+
+    """
     insecure_list = []
     data, sig = SecurityContentService.load_json(args.fed_server)
     if sig != LoadResult.OK:
@@ -175,6 +191,12 @@ def secure_content_check(args):
 
 
 def remove_restart_file(args):
+    """To remove the restart.fl file.
+
+    Args:
+        args: command args
+
+    """
     restart_file = os.path.join(args.workspace, "restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
@@ -184,6 +206,18 @@ def remove_restart_file(args):
 
 
 def create_admin_server(fl_server, server_conf=None, args=None, secure_train=False, app_validator=None):
+    """To create the admin server.
+
+    Args:
+        fl_server: fl_server
+        server_conf: server config
+        args: command args
+        secure_train: True/False
+        app_validator: application validator
+
+    Returns: admin server
+
+    """
     # sai = ServerEngine(fl_server, args)
     users = {}
     # Create a default user admin:admin for the POC insecure use case.
