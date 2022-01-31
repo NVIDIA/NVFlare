@@ -21,18 +21,18 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.aggregators.accumulate_model_aggregator import AccumulateWeightedAggregator
+from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.app_constant import AppConstants
 
 
 class TestAggregator:
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
+    @pytest.mark.parametrize("aggregator", [InTimeAccumulateWeightedAggregator])
     @pytest.mark.parametrize(
         "received,expected",
         [
             [
                 {"client1": {"weight": 0.5, "iter_number": 1, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}}},
-                {"var1": np.array([1.0, 1.5, 0.55, 0.05])},
+                {"var1": np.array([2.0, 3.0, 1.1, 0.1])},
             ],
             [
                 {"client1": {"weight": 1.0, "iter_number": 1, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}}},
@@ -40,17 +40,35 @@ class TestAggregator:
             ],
             [
                 {
-                    "client1": {"weight": 0.5, "iter_number": 3, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}},
+                    "client1": {"weight": 0.5, "iter_number": 1, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}},
                     "client2": {"weight": 1.0, "iter_number": 1, "aggr_data": {"var1": np.array([1.0, 1.0, 2.1, 0.5])}},
                 },
-                {"var1": np.array([1.0, 1.375, 0.9375, 0.1625])},
+                {
+                    "var1": np.array(
+                        [
+                            (0.5 * 2.0 + 1.0 * 1.0) / (0.5 + 1),
+                            (0.5 * 3.0 + 1.0 * 1.0) / (0.5 + 1),
+                            (0.5 * 1.1 + 1.0 * 2.1) / (0.5 + 1),
+                            (0.5 * 0.1 + 1.0 * 0.5) / (0.5 + 1),
+                        ]
+                    )
+                },
             ],
             [
                 {
-                    "client1": {"weight": 1.0, "iter_number": 5, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}},
-                    "client2": {"weight": 0.5, "iter_number": 4, "aggr_data": {"var1": np.array([1.0, 1.0, 2.1, 0.5])}},
+                    "client1": {"weight": 1.0, "iter_number": 2, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}},
+                    "client2": {"weight": 1.0, "iter_number": 4, "aggr_data": {"var1": np.array([1.0, 1.0, 2.1, 0.5])}},
                 },
-                {"var1": np.array([4.0 / 3, 17.0 / 9, 9.7 / 9, 1.0 / 6])},
+                {
+                    "var1": np.array(
+                        [
+                            (2 * 2.0 + 4 * 1.0) / (2 + 4),
+                            (2 * 3.0 + 4 * 1.0) / (2 + 4),
+                            (2 * 1.1 + 4 * 2.1) / (2 + 4),
+                            (2 * 0.1 + 4 * 0.5) / (2 + 4),
+                        ]
+                    )
+                },
             ],
         ],
     )
@@ -78,7 +96,7 @@ class TestAggregator:
         result = agg.aggregate(fl_ctx)
         np.testing.assert_allclose(result["DXO"]["data"]["var1"], expected["var1"])
 
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
+    @pytest.mark.parametrize("aggregator", [InTimeAccumulateWeightedAggregator])
     @pytest.mark.parametrize("shape", [(4), (6, 6)])
     @pytest.mark.parametrize("n_clients", [10, 50, 100])
     def test_accum_aggregator_random(self, aggregator, shape, n_clients):
@@ -103,15 +121,15 @@ class TestAggregator:
                     MetaKey.NUM_STEPS_CURRENT_ROUND: iter_number,
                 },
             )
-            weighted_sum = weighted_sum + weights * iter_number * aggregation_weights[client_name]
-            sum_of_weights = sum_of_weights + iter_number
+            weighted_sum = weighted_sum + (weights * iter_number * aggregation_weights[client_name])
+            sum_of_weights = sum_of_weights + (iter_number * aggregation_weights[client_name])
             agg.accept(dxo.update_shareable(s), fl_ctx)
 
         result = agg.aggregate(fl_ctx)
         result_dxo = from_shareable(result)
         np.testing.assert_allclose(result_dxo.data["var1"], weighted_sum / sum_of_weights)
 
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
+    @pytest.mark.parametrize("aggregator", [InTimeAccumulateWeightedAggregator])
     def test_accum_aggregator_accept(self, aggregator):
         aggregation_weights = {f"client_{i}": random.random() for i in range(2)}
         agg = aggregator(aggregation_weights=aggregation_weights)
