@@ -123,18 +123,22 @@ for example
   cat ./workspaces/poc_workspace/server/run_2/cross_site_val/cross_site_val.json
 ```
 
-### 3.4: Advanced FL algorithms (FedProx and FedOpt)
+### 3.4: Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
 
 Next, let's try some different FL algorithms on a more heterogeneous split:
 
-FedProx (https://arxiv.org/abs/1812.06127), adds a regularizer to the CIFAR10Trainer loss (`fedproxloss_mu`)`:
+[FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss used in `CIFAR10Learner` (`fedproxloss_mu`)`:
 ```
 ./run_poc.sh 8 cifar10_fedprox 6 0.1
 ```
-FedOpt (https://arxiv.org/abs/2003.00295), uses a new ShareableGenerator to update the global model on the server using a PyTorch optimizer. 
+[FedOpt](https://arxiv.org/abs/2003.00295) uses a new ShareableGenerator to update the global model on the server using a PyTorch optimizer. 
 Here SGD with momentum and cosine learning rate decay:
 ```
 ./run_poc.sh 8 cifar10_fedopt 7 0.1
+```
+[SCAFFOLD](https://arxiv.org/abs/1910.06378) uses a slightly modified version of the CIFAR-10 Learner implementation, namely the `CIFAR10ScaffoldLearner`, which adds a correction term during local training following the [implementation](https://github.com/Xtra-Computing/NIID-Bench) as described in [Li et al.](https://arxiv.org/abs/2102.02079)
+```
+./run_poc.sh 8 cifar10_scaffold 8 0.1
 ```
 
 ### 3.5 Secure aggregation using homomorphic encryption
@@ -147,7 +151,7 @@ Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on t
 
 FedAvg with HE: 
 ```
-./run_secure.sh 8 cifar10_fedavg_he 8 1.0
+./run_secure.sh 8 cifar10_fedavg_he 9 1.0
 ```
 
 > **_NOTE:_** Currently, FedOpt is not supported with HE as it would involve running the optimizer on encrypted values.
@@ -173,8 +177,8 @@ that HE does not impact the performance accuracy of FedAvg significantly while a
 | Config	| Alpha	| 	Val score	| 
 | ----------- | ----------- |  ----------- |
 | cifar10_central | 1.0	| 	0.8798	| 
-| cifar10_fedavg  | 1.0	| 	0.8873	| 
-| cifar10_fedavg_he | 1.0	| 	0.8864	|
+| cifar10_fedavg  | 1.0	| 	0.8854	| 
+| cifar10_fedavg_he | 1.0	| 	0.8897	|
 
 ![Central vs. FedAvg](./figs/central_vs_fedavg_he.png)
 
@@ -185,33 +189,33 @@ This can be observed in the resulting performance of the FedAvg algorithms.
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
-| cifar10_fedavg |	1.0 |	0.8873 |
-| cifar10_fedavg |	0.5 |	0.8726 |
-| cifar10_fedavg |	0.3 |	0.8315 |
-| cifar10_fedavg |	0.1 |	0.7726 |
+| cifar10_fedavg |	1.0 |	0.8854 |
+| cifar10_fedavg |	0.5 |	0.8633 |
+| cifar10_fedavg |	0.3 |	0.8350 |
+| cifar10_fedavg |	0.1 |	0.7733 |
 
 ![Impact of client data heterogeneity](./figs/fedavg_alpha.png)
 
-### 4.3 FedProx vs. FedOpt
+### 4.3 FedAvg vs. FedProx vs. FedOpt vs. SCAFFOLD
 
-Finally, we are comparing an `alpha` setting of 0.1, causing a high client data heterogeneity and its 
-impact on more advanced FL algorithms, namely FedProx and FedOpt. Both achieve a better performance compared to FedAvg 
-with the same `alpha` setting but FedOpt shows a better convergence rate by utilizing SGD with momentum
-to update the global model on the server, and achieves a better performance with the same amount of training steps.
+Finally, we compare an `alpha` setting of 0.1, causing a high client data heterogeneity and its 
+impact on more advanced FL algorithms, namely FedProx, FedOpt, and SCAFFOLD. FedProx and SCAFFOLD achieve better performance compared to FedAvg and FedProx with the same `alpha` setting. However, FedOpt and SCAFFOLD show markedly better convergence rates. SCAFFOLD achieves that by adding a correction term when updating the client models, while FedOpt utilizes SGD with momentum
+to update the global model on the server. Both achieve better performance with the same number of training steps as FedAvg/FedProx.
 
 | Config           |	Alpha |	Val score |
-|------------------| ----------- |  ----------- |
-| cifar10_fedavg   |	0.1 |	0.7726 |
-| cifar10_fedprox  |	0.1 |	0.7512 |
-| cifar10_fedopt   |	0.1 |	0.7986 |
+|------------------| ----------- |  ---------- |
+| cifar10_fedavg   |	0.1 |	0.7733 |
+| cifar10_fedprox  |	0.1 |	0.7615 |
+| cifar10_fedopt   |	0.1 |	0.8013 |
+| cifar10_scaffold |	0.1 |	0.8222 |
 
-![FedProx vs. FedOpt](./figs/fedopt_fedprox.png)
+![FedProx vs. FedOpt](./figs/fedopt_fedprox_scaffold.png)
 
 
 ## 5. Streaming TensorBoard metrics to the server
 
 In a real-world scenario, the researcher won't have access to the TensorBoard events of the individual clients. In order to visualize the training performance in a central place, `AnalyticsSender`, `ConvertToFedEvent` on the client, and `TBAnalyticsReceiver` on the server can be used. For an example using FedAvg and metric streaming during training, run:
 ```
-./run_poc.sh 8 cifar10_fedavg_stream_tb 9 1.0
+./run_poc.sh 8 cifar10_fedavg_stream_tb 10 1.0
 ```
 Using this configuration, a `tb_events` folder will be created under the `run_*` folder of the server that includes all the TensorBoard event values of the different clients.
