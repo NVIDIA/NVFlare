@@ -17,16 +17,15 @@ import os.path
 
 from nvflare.apis.dxo import from_shareable, DataKind
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from pt_constants import PTConstants
+from nvflare.widgets.widget import Widget
 
 
-class ValidationJsonGenerator(FLComponent):
+class ValidationJsonGenerator(Widget):
 
-    def __init__(self, results_dir=AppConstants.CROSS_VAL_DIR, json_file_name=PTConstants.CrossValResultsJsonFilename):
+    def __init__(self, results_dir=AppConstants.CROSS_VAL_DIR, json_file_name="cross_val_results.json"):
         """Catches VALIDATION_RESULT_RECEIVED event and generates a results.json containing accuracy of each
         validated model.
 

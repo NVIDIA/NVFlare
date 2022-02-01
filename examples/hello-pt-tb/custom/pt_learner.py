@@ -27,7 +27,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.model import make_model_learnable, model_learnable_to_dxo
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable, model_learnable_to_dxo
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
@@ -186,6 +186,9 @@ class PTLearner(Learner):
             if not dxo.data_kind == DataKind.WEIGHTS:
                 self.log_exception(fl_ctx, f"DXO is of type {dxo.data_kind} but expected type WEIGHTS.")
                 return make_reply(ReturnCode.BAD_TASK_DATA)
+
+            if isinstance(dxo.data, ModelLearnable):
+                dxo.data = dxo.data[ModelLearnableKey.WEIGHTS]
 
             # Extract weights and ensure they are tensor.
             model_owner = data.get_header(AppConstants.MODEL_OWNER, "?")

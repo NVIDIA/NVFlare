@@ -105,8 +105,11 @@ Then, use these Admin commands to run the experiment:
     > start_app all
 
 
-With ``AnalyticsSender`` and ``ConvertToFedEvent`` configured on the client, and ``TBAnalyticsReceiver`` configured on the server, the clients will stream
-TensorBoard events to the server in the folder ``server/run_1/tb_events``. Under ``tb_events`` there will be a separate folder for each client's TensorBoard events.
+On the client side, the ``AnalyticsSender`` works as a TensorBoard SummaryWriter. Instead of writing to TB files, it actually generates NVFLARE events of type ``analytix_log_stats``.
+The ``ConvertToFedEvent`` widget will turn the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``, which will be delivered to the server side.
+
+On the server side, the ``TBAnalyticsReceiver`` is configured to process ``fed.analytix_log_stats`` events, which writes received TB data into appropriate TB files on the server
+(defaults to ``server/run_1/tb_events``).
 
 To view training metrics that are being streamed to the server, run:
 
