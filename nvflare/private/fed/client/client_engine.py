@@ -34,11 +34,19 @@ from .client_status import ClientStatus
 
 
 class ClientEngine(ClientEngineInternalSpec):
-    """
-    ClientEngine runs in the client parent process.
-    """
+    """ClientEngine runs in the client parent process."""
 
     def __init__(self, client, client_name, sender, args, rank, workers=5):
+        """To init the ClientEngine.
+
+        Args:
+            client: FL client object
+            client_name: client name
+            sender: sender object
+            args: command args
+            rank: local process rank
+            workers: number of workers
+        """
         self.client = client
         self.client_name = client_name
         self.sender = sender
@@ -75,22 +83,6 @@ class ClientEngine(ClientEngineInternalSpec):
         # thread.start()
 
         return "validate process started."
-
-    # def client_status(self):
-    #     if self.rank == 0:
-    #         self.logger.info("check client status.")
-    #         client_name = self.client.uid
-    #         token = self.client.token
-    #         message = "client name: {}".format(client_name)
-    #         message += "\ttoken: {}".format(token)
-    #
-    #         message += "\tstatus: {}".format(self.client_executor.check_status(self.client))
-    #         # if self.client.status == ClientStatus.TRAINING_STOPPED:
-    #         #     message += '\tlocal epochs: {}'.format(self.client.model_manager.fitter.num_epochs)
-    #
-    #         return message
-    #     else:
-    #         return ""
 
     def get_engine_status(self):
         app_name = "?"

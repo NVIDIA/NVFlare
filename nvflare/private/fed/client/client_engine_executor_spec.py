@@ -18,13 +18,10 @@ from nvflare.apis.fl_context import FLContext
 
 
 class ClientEngineExecutorSpec(ClientEngineSpec):
-    """
-    The ClientEngineExecutorSpec defines the ClientEngine APIs running in the child process.
-    """
+    """The ClientEngineExecutorSpec defines the ClientEngine APIs running in the child process."""
 
     def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        """
-        Send the request to the Server.
+        """Send the request to the Server.
 
         If reply is received, make sure to set peer_ctx into the reply shareable!
 
@@ -40,23 +37,19 @@ class ClientEngineExecutorSpec(ClientEngineSpec):
         pass
 
     def build_component(self, config_dict):
-        """
-        Build a component from the config_dict.
-        Args:
-            config_dict:
+        """Build a component from the config_dict.
 
-        Returns:
+        Args:
+            config_dict: config dict
 
         """
 
     def abort_app(self, run_number: int, fl_ctx: FLContext):
-        """
-        Abort the running FL App on the client.
+        """Abort the running FL App on the client.
+
         Args:
             run_number: current_rumbre
             fl_ctx: FLContext
-
-        Returns:
 
         """
         pass

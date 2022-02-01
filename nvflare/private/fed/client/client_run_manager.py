@@ -33,6 +33,11 @@ from .fed_client import FederatedClient
 
 class ClientRunInfo(object):
     def __init__(self, run_number):
+        """To init the ClientRunInfo.
+
+        Args:
+            run_number: run number
+        """
         self.run_number = run_number
         self.current_task_name = ""
         self.start_time = None
@@ -40,9 +45,7 @@ class ClientRunInfo(object):
 
 
 class ClientRunManager(ClientEngineExecutorSpec):
-    """
-    ClientRunManager provides the ClientEngine APIs implementation running in the child process.
-    """
+    """ClientRunManager provides the ClientEngine APIs implementation running in the child process."""
 
     def __init__(
         self,
@@ -54,6 +57,17 @@ class ClientRunManager(ClientEngineExecutorSpec):
         handlers: Optional[List[FLComponent]] = None,
         conf: ClientJsonConfigurator = None,
     ) -> None:
+        """To init the ClientRunManager.
+
+        Args:
+            client_name: client name
+            run_num: run numbre
+            workspace: workspacee
+            client: FL client object
+            components: available FL components
+            handlers: available handlers
+            conf: ClientJsonConfigurator object
+        """
         super().__init__()
 
         self.client = client

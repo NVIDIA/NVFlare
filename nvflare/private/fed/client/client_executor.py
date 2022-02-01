@@ -30,6 +30,12 @@ from .client_status import ClientStatus, get_status_message
 
 class ClientExecutor(object):
     def __init__(self, uid, startup) -> None:
+        """To init the ClientExecutor.
+
+        Args:
+            uid: client name
+            startup: startup folder
+        """
         pipe_path = startup + "/comm"
         if not os.path.exists(pipe_path):
             os.makedirs(pipe_path)
@@ -38,92 +44,101 @@ class ClientExecutor(object):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-        """
-        start_train method to start the FL client training.
-        :param client: the FL client object.
-        :param args: admin command arguments for starting the FL client training.
-        :param app_root: the root folder of the running APP.
-        :return:
-        """
-        pass
+        """start_train method to start the FL client training.
 
-    def start_mgpu_train(self, client, args, app_root, gpu_number, app_custom_folder, listen_port):
-        """
-        start the FL client training using multi-GPU.
-        :param client: the FL client object.
-        :param args: admin command arguments for starting the FL client training.
-        :param app_root: the root folder of the running APP.
-        :param gpu_number: number of GPUs to run FL training
-        :return:
+        Args:
+            client: the FL client object
+            args: admin command arguments for starting the FL client training
+            app_root: the root folder of the running APP
+            app_custom_folder: FL application custom folder
+            listen_port: port to listen the command.
+
         """
         pass
 
     def check_status(self, client):
-        """
-        check the status of the running client.
-        :param client: the FL client object.
-        :return: running FL client status message.
+        """To check the status of the running client.
+
+        Args:
+            client: the FL client object
+
+        Returns:  running FL client status message
+
         """
         pass
 
     def abort_train(self, client):
-        """
-        To abort the running client.
-        :param client: the FL client object.
-        :return: N/A
+        """To abort the running client.
+
+        Args:
+            client: the FL client object
+
+        Returns: N/A
+
         """
         pass
 
     def abort_task(self, client):
-        """
-        To abort the client executing task.
-        :param client: the FL client object.
-        :return: N/A
+        """To abort the client executing task.
+
+        Args:
+            client: the FL client object
+
+        Returns: N/A
+
         """
         pass
 
     def get_run_info(self):
-        """
-        To get the run_info from the InfoCollector.
-        Returns:
+        """To get the run_info from the InfoCollector.
+
+        Returns: current run info
 
         """
         pass
 
     def get_errors(self):
-        """
-        To get the error_info from the InfoCollector.
-        Returns:
+        """To get the error_info from the InfoCollector.
+
+        Returns: current errors
 
         """
         pass
 
     def reset_errors(self):
-        """
-        To reset the error_info for the InfoCollector.
-        Returns:
+        """To reset the error_info for the InfoCollector.
+
+        Returns: N/A
 
         """
         pass
 
     def send_aux_command(self, shareable: Shareable):
-        """
-        To send the aux command to child process.
-        Returns:
+        """To send the aux command to child process.
+
+        Args:
+            shareable: aux message Shareable
+
+        Returns: N/A
 
         """
         pass
 
     def cleanup(self):
+        """Finalize cleanup."""
         self.pipe.clear()
 
 
 class ProcessExecutor(ClientExecutor):
-    """
-    Run the Client executor in a child process.
-    """
+    """Run the Client executor in a child process."""
 
     def __init__(self, uid, startup):
+        """To init the ProcessExecutor.
+
+        Args:
+            uid: client name
+            startup: startup folder
+        """
         ClientExecutor.__init__(self, uid, startup)
         # self.client = client
         self.startup = startup

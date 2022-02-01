@@ -21,6 +21,13 @@ from .admin_commands import AdminCommands
 
 class CommandAgent(object):
     def __init__(self, federated_client, listen_port, client_runner) -> None:
+        """To init the CommandAgent.
+
+        Args:
+            federated_client: FL client object
+            listen_port: port to listen the command
+            client_runner: ClientRunner object
+        """
         self.federated_client = federated_client
         self.listen_port = int(listen_port)
         self.client_runner = client_runner
