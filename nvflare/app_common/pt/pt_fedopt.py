@@ -27,24 +27,6 @@ from nvflare.app_common.shareablegenerators.full_model_shareable_generator impor
 
 
 class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
-    """ShareableGenerator to implement the FedOpt algorithm proposed in
-    Reddi, Sashank, et al. "Adaptive federated optimization." arXiv preprint arXiv:2003.00295 (2020).
-    This SharableGenerator will update the global model using the specified
-    PyTorch optimizer and learning rate scheduler.
-
-    Args:
-        optimizer_args: dictionary of optimizer arguments, e.g.
-            {'path': 'torch.optim.SGD', 'args': {'lr': 1.0}} (default).
-        lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, e.g.
-            {'path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}} (default: None).
-        source_model: either a valid torch model object or a component ID of a torch model object
-        device: specify the device to run server-side optimization, e.g. "cpu" or "cuda:0"
-            (will default to cuda if available and no device is specified).
-
-    Todo:
-        * write server-side lr to tensorboard
-    """
-
     def __init__(
         self,
         optimizer_args: dict = None,
@@ -52,6 +34,24 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         source_model="model",
         device=None,
     ):
+        """Implement the FedOpt algorithm.
+
+        The algorithm is proposed in Reddi, Sashank, et al. "Adaptive federated optimization." arXiv preprint arXiv:2003.00295 (2020).
+        This SharableGenerator will update the global model using the specified
+        PyTorch optimizer and learning rate scheduler.
+
+        Args:
+            optimizer_args: dictionary of optimizer arguments, e.g.
+                {'path': 'torch.optim.SGD', 'args': {'lr': 1.0}} (default).
+            lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, e.g.
+                {'path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}} (default: None).
+            source_model: either a valid torch model object or a component ID of a torch model object
+            device: specify the device to run server-side optimization, e.g. "cpu" or "cuda:0"
+                (will default to cuda if available and no device is specified).
+
+        Raises:
+            TypeError: when any of input arguments does not have correct type
+        """
         super().__init__()
         if not optimizer_args:
             self.logger("No optimizer_args provided. Using FedOpt with SGD and lr 1.0")
@@ -173,7 +173,7 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         return self.model.state_dict()
 
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> Learnable:
-        """Convert Shareable to Learnable while doing a FedOpt update step
+        """Convert Shareable to Learnable while doing a FedOpt update step.
 
         Supporting data_kind == DataKind.WEIGHT_DIFF
 
@@ -184,7 +184,6 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         Returns:
             Model: Updated global ModelLearnable.
         """
-
         # check types
         dxo = from_shareable(shareable)
 

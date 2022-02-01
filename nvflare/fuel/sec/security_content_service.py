@@ -40,7 +40,7 @@ class SecurityContentManager(object):
         """Content manager used by SecurityContentService to load secure content.
 
         Args:
-            content_folder ([type]): the folder path that includes signature file
+            content_folder (str): the folder path that includes signature file
             signature_filename (str, optional): the signature file (pickled dictionary). Defaults to "signature.pkl".
             root_cert (str, optional): root CA certificate filename. Defaults to "rootCA.pem".
         """

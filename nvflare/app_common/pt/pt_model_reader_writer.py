@@ -21,6 +21,7 @@ from nvflare.app_common.pt.pt_fed_utils import feed_vars
 
 class PTModelReaderWriter(ModelProcessor):
     def __init__(self):
+        """Perform the actual read/write operation for PyTorch-based models."""
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
@@ -42,7 +43,7 @@ class PTModelReaderWriter(ModelProcessor):
         return local_model_dict
 
     def apply_model(self, network, multi_processes: bool, model_params: dict, fl_ctx: FLContext, options=None):
-        """Set the local model according to model_data
+        """Set the local model according to model_data.
 
         Args:
             model_params: model data information

@@ -31,46 +31,6 @@ from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
 
 
 class PTFileModelPersistor(ModelPersistor):
-
-    """
-    This Model Persistor tries to load PT model data in following three ways:
-
-    1. Load from a specified source checkpoint file
-    2. Load from a location from the app folder
-    3. Load from a torch model object
-
-    The Persistor tries method 1 first if the source_ckpt_file_full_name is specified;
-    If source_ckpt_file_full_name is not specified, it tries the method 2;
-    If no checkpoint location is specified in the app folder, it tries method 3.
-
-    Method 2 - Load from a location from the app folder
-    It is assumed that the app folder must contain the environments.json file. Among other things, this
-    JSON file must specify where to find the checkpoint file. It does so with two JSON elements:
-
-        APP_CKPT_DIR - this element specifies the folder (within the app) where the checkpoint file resides.
-        APP_CKPT - this element specified the base file name of the checkpoint
-
-    Here is an example of the environments.json content:
-
-        {
-            "APP_CKPT_DIR": "model",
-            "APP_CKPT": "pretrained_model.pt"
-        }
-
-    In this example, the checkpoint file is located in the "model" folder within the app and is named
-    pretrained_model.pt.
-
-    Method 3 - Load from a torch model object. In this case, the 'model' arg must be a valid torch
-    model, or the component ID of a valid torch model included in the "components" section of
-    your config_fed_server.json.
-
-    If all 3 methods fail, system_panic() is called.
-
-    If checkpoint folder name is specified, then global model and best global model will be saved to it;
-    Otherwise they will be saved directly in the app folder.
-
-    """
-
     def __init__(
         self,
         exclude_vars=None,
@@ -79,15 +39,52 @@ class PTFileModelPersistor(ModelPersistor):
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_file_full_name=None,
     ):
-        """
+        """Persist pytorch-based model to/from file system.
 
+        This Model Persistor tries to load PT model data in following three ways:
+
+        1. Load from a specified source checkpoint file
+        2. Load from a location from the app folder
+        3. Load from a torch model object
+
+        The Persistor tries method 1 first if the source_ckpt_file_full_name is specified;
+        If source_ckpt_file_full_name is not specified, it tries the method 2;
+        If no checkpoint location is specified in the app folder, it tries method 3.
+
+        Method 2 - Load from a location from the app folder
+        It is assumed that the app folder must contain the environments.json file. Among other things, this
+        JSON file must specify where to find the checkpoint file. It does so with two JSON elements:
+
+            APP_CKPT_DIR - this element specifies the folder (within the app) where the checkpoint file resides.
+            APP_CKPT - this element specified the base file name of the checkpoint
+
+        Here is an example of the environments.json content:
+
+            {
+                "APP_CKPT_DIR": "model",
+                "APP_CKPT": "pretrained_model.pt"
+            }
+
+        In this example, the checkpoint file is located in the "model" folder within the app and is named
+        pretrained_model.pt.
+
+        Method 3 - Load from a torch model object. In this case, the 'model' arg must be a valid torch
+        model, or the component ID of a valid torch model included in the "components" section of
+        your config_fed_server.json.
+
+        If all 3 methods fail, system_panic() is called.
+
+        If checkpoint folder name is specified, then global model and best global model will be saved to it;
+        Otherwise they will be saved directly in the app folder.
         Args:
-            exclude_vars: regex expression specifying weight vars to be excluded from training; optional
-            model: torch model object or component id of the model object; optional
-            global_model_file_name: file name for saving global model
-            best_global_model_file_name: file name for saving best global model
-            source_ckpt_file_full_name: full file name for source model checkpoint file
+            exclude_vars (str, optional): regex expression specifying weight vars to be excluded from training. Defaults to None.
+            model (str, optional): torch model object or component id of the model object. Defaults to None.
+            global_model_file_name (str, optional): file name for saving global model. Defaults to DefaultCheckpointFileName.GLOBAL_MODEL.
+            best_global_model_file_name (str, optional): file name for saving best global model. Defaults to DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+            source_ckpt_file_full_name (str, optional): full file name for source model checkpoint file. Defaults to None.
 
+        Raises:
+            ValueError: when source_ckpt_file_full_name does not exist
         """
         super().__init__()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
@@ -179,7 +176,6 @@ class PTFileModelPersistor(ModelPersistor):
         Returns:
             Model: a Learnable/Model object
         """
-
         src_file_name = None
         if self.source_ckpt_file_full_name:
             src_file_name = self.source_ckpt_file_full_name

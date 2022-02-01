@@ -26,11 +26,11 @@ class HEPTModelReaderWriter(PTModelReaderWriter):
         Needed to extract local parameter shape to reshape decrypted vectors.
 
         Args:
-            network ([type]): network object to read/write
+            network (pytorch.nn): network object to read/write
             multi_processes (bool): is the workflow in multi_processes environment
             model_params (dict): which parameters to read/write
             fl_ctx (FLContext): FL system-wide contenxt
-            options ([type], optional): additional information on how to process read/write. Defaults to None.
+            options (dict, optional): additional information on how to process read/write. Defaults to None.
 
         Raises:
             RuntimeError: unable to reshape the network layers or mismatch between network layers and model_params

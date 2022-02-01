@@ -43,7 +43,7 @@ class PTFileModelLocator(ModelLocator):
         self.model_persistor: PTFileModelPersistor = engine.get_component(self.pt_persistor_id)
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
-        """Returns the list of model names that should be included from server in cross site validation.add()
+        """Returns the list of model names that should be included from server in cross site validation.add().
 
         Args:
             fl_ctx (FLContext): FL Context object.
@@ -55,7 +55,7 @@ class PTFileModelLocator(ModelLocator):
         return list(self.model_inventory.keys())
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
-        """Call to locate and load the model weights of "model_name"
+        """Call to locate and load the model weights of model_name.
 
         Args:
             model_name: name of the model
