@@ -87,7 +87,9 @@ class WorkspaceBuilder(Builder):
 
 class DistributionBuilder(Builder):
     def __init__(self, zip_password=False):
-        """Creates the zip files containing the archives for each startup kit. It will add password protection if the
+        """Build the zip files for each folder.
+
+        Creates the zip files containing the archives for each startup kit. It will add password protection if the
         argument (zip_password) is true.
 
         Args:

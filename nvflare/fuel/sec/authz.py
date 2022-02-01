@@ -27,8 +27,7 @@ def _validate_value(type_def: dict, value):
 
 
 def validate_policy_config(config: dict) -> str:
-    """
-    Validates that an authorization policy configuration has the right syntax.
+    """Validates that an authorization policy configuration has the right syntax.
 
     Args:
         config: configuration dictionary to validate
@@ -235,25 +234,28 @@ def _eval_int(space: dict, keys: [str]):
 
 
 class Policy(object):
-    """
-    Authorization policy definition with methods to access information about the policy. Init creates the internal
-    representation of the policy from a config dictionary.
-
-    Policy evaluation result:
-
-    For bool type of rules or rights:
-
-        True - the rule is satisfied or the right is granted
-        False - the rule is not satisfied; the right iis not granted
-        None - the rule or right is not applicable (precondition not met)
-
-    For int type or rules or rights:
-
-        Number - the value of the evaluation
-        None - the rule or right is not applicable (precondition not met)
-    """
-
     def __init__(self, conf: dict):
+        """The authorization policy definition.
+
+        Authorization policy definition with methods to access information about the policy. Init creates the internal
+        representation of the policy from a config dictionary.
+
+        Policy evaluation result:
+
+        For bool type of rules or rights:
+
+            True - the rule is satisfied or the right is granted
+            False - the rule is not satisfied; the right iis not granted
+            None - the rule or right is not applicable (precondition not met)
+
+        For int type or rules or rights:
+
+            Number - the value of the evaluation
+            None - the rule or right is not applicable (precondition not met)
+
+        Args:
+            conf (dict): the configuration dictionary with keys=groups, users, rights, rules, sites, orgs
+        """
         self.config = conf
         self.preconf_valuators = {"selfOrg": self._eval_precond_self_org}
 
@@ -399,11 +401,13 @@ class Policy(object):
 
 
 class AuthzContext(object):
-    """
-    Base class to contain context data for authorization.
-    """
-
     def __init__(self, user_name: str, site_names: List[str]):
+        """Base class to contain context data for authorization.
+
+        Args:
+            user_name (str): user name to be checked
+            site_names (List[str]): site names to be checked against
+        """
         self.user_name = user_name
         self.site_names = site_names
         self.attrs = {}
@@ -416,11 +420,8 @@ class AuthzContext(object):
 
 
 class Authorizer(object):
-    """
-    Base class containing the authorization policy.
-    """
-
     def __init__(self):
+        """Base class containing the authorization policy."""
         self.policy = None
         self.last_load_time = None
 

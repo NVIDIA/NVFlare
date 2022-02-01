@@ -20,11 +20,8 @@ from nvflare.apis.fl_context import FLContext
 
 
 class ModelLocator(FLComponent):
-    def __init__(self):
-        super(ModelLocator, self).__init__()
-
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
-        """List the name of the models
+        """List the name of the models.
 
         Args:
             fl_ctx (FLContext): FL Context object
@@ -35,7 +32,7 @@ class ModelLocator(FLComponent):
         pass
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
-        """Locate a single model by it's name
+        """Locate a single model by it's name.
 
         Args:
             model_name (str): Name of the model.

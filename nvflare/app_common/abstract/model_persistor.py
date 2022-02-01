@@ -30,8 +30,7 @@ class ModelPersistor(LearnablePersistor, ABC):
 
     @abstractmethod
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
-        """
-            initialize and load the model.
+        """Initialize and load the model.
 
         Args:
             fl_ctx: FLContext
@@ -44,8 +43,7 @@ class ModelPersistor(LearnablePersistor, ABC):
 
     @abstractmethod
     def save_model(self, model: ModelLearnable, fl_ctx: FLContext):
-        """
-            persist the model object
+        """Persist the model object.
 
         Args:
             model: Model object to be saved
@@ -55,8 +53,8 @@ class ModelPersistor(LearnablePersistor, ABC):
         pass
 
     def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
-        """
-            Get the model inventory of the ModelPersister
+        """Get the model inventory of the ModelPersister.
+
         Args:
             fl_ctx: FLContext
 
@@ -66,13 +64,4 @@ class ModelPersistor(LearnablePersistor, ABC):
         pass
 
     def get_model(self, model_file, fl_ctx: FLContext) -> object:
-        """
-
-        Args:
-            model_file:
-            fl_ctx:
-
-        Returns:
-
-        """
         pass

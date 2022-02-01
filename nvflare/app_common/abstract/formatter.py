@@ -19,12 +19,9 @@ from nvflare.apis.fl_context import FLContext
 
 
 class Formatter(FLComponent):
-    def __init__(self) -> None:
-        super(Formatter, self).__init__()
-
     @abstractmethod
     def format(self, fl_ctx: FLContext) -> str:
-        """Format the data into human readable string for
+        """Format the data into human readable string.
 
         Args:
             fl_ctx (FLContext): FL Context object.

@@ -23,8 +23,7 @@ from nvflare.app_common.abstract.learnable import Learnable
 class ShareableGenerator(FLComponent, ABC):
     @abstractmethod
     def learnable_to_shareable(self, model: Learnable, fl_ctx: FLContext) -> Shareable:
-        """
-            generate the initial Shareable from the Learnable object.
+        """Generate the initial Shareable from the Learnable object.
 
         Args:
             model: model object
@@ -38,8 +37,7 @@ class ShareableGenerator(FLComponent, ABC):
 
     @abstractmethod
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> Learnable:
-        """
-            construct the Learnable object from Shareable
+        """Construct the Learnable object from Shareable.
 
         Args:
             shareable: shareable

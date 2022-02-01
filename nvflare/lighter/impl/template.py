@@ -20,7 +20,9 @@ from nvflare.lighter.utils import load_yaml
 
 
 class TemplateBuilder(Builder):
-    """Loads the content of the template_file and the authz_def (section of template file with fixed authorization
+    """Load template file.
+
+    Loads the content of the template_file and the authz_def (section of template file with fixed authorization
     definitions) into two key-value pairs in the build context.
     """
 

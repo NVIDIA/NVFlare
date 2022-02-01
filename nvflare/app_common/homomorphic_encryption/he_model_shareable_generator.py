@@ -30,13 +30,12 @@ from nvflare.app_common.shareablegenerators.full_model_shareable_generator impor
 
 class HEModelShareableGenerator(FullModelShareableGenerator):
     def __init__(self, tenseal_context_file="server_context.tenseal"):
-        """
-            ShareableGenerator converts between Shareable and Learnable objects with homomorphic encryption (HE)
-            support using TenSEAL https://github.com/OpenMined/TenSEAL.
+        """This ShareableGenerator converts between Shareable and Learnable objects.
+
+        This conversion is done with homomorphic encryption (HE) support using TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
             tenseal_context_file: tenseal context files containing decryption keys and parameters
-
         """
         super().__init__()
         self.tenseal_context = None
@@ -132,8 +131,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
         return base_model
 
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> ModelLearnable:
-        """
-            Updates the global model in `Learnable` in encrypted space.
+        """Updates the global model in `Learnable` in encrypted space.
 
         Args:
             shareable: shareable
@@ -141,7 +139,6 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
 
         Returns:
             Learnable object
-
         """
         self.log_info(fl_ctx, "shareable_to_learnable...")
         try:

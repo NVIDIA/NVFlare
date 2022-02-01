@@ -42,15 +42,19 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
         expected_data_kind="WEIGHT_DIFF",
         expected_algorithm=he.HE_ALGORITHM_CKKS,
     ):
-        """
-            In time aggregator for `Shareables` encrypted using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
+        """In time aggregator for `Shareables` encrypted using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
-            exclude_vars: variable names that should be excluded from aggregation (use regular expression)
-            aggregation_weights: dictionary of client aggregation `{"client1": 1.0, "client2": 2.0, "client3": 3.0}`;
-                                 defaults to a weight of 1.0 if not specified. Will be ignored if weigh_by_local_iter: False (default for HE)
-            weigh_by_local_iter: If true, multiply client weights on first in encryption space
-                                 (default: `False` which is recommended for HE, first multiply happens in `HEModelEncryptor`)
+            exclude_vars ([list], optional): variable names that should be excluded from aggregation (use regular expression). Defaults to None.
+            aggregation_weights ([dict], optional): dictionary of client aggregation. Defaults to None.
+            tenseal_context_file (str, optional): [description]. Defaults to "server_context.tenseal".
+            weigh_by_local_iter (bool, optional): If true, multiply client weights on first in encryption space
+                                 (default: `False` which is recommended for HE, first multiply happens in `HEModelEncryptor`)].
+            expected_data_kind (str, optional): the data_kind this aggregator can process. Defaults to "WEIGHT_DIFF".
+            expected_algorithm ([str], optional): the HE algorithm it can process. Defaults to he.HE_ALGORITHM_CKKS.
+
+        Raises:
+            ValueError: mismatched data_kind or HE algorithm
         """
         super().__init__()
         self.tenseal_context = None
@@ -87,16 +91,14 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
         self.merged_encrypted_layers = dict()  # thread-safety is handled by workflow
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        """
-        Accepts and adds the client updates to current average in HE encrypted space.
+        """Accepts and adds the client updates to current average in HE encrypted space.
 
         Args:
-            shareable:
-            fl_ctx:
+            shareable: a shareable from client
+            fl_ctx: FL Contenxt associated with this shareable
 
         Returns:
-            The first boolean indicates if this shareable is accepted.
-            The second bollean indicates if aggregate can be called.
+            bool to indicate if this shareable is accepted.
         """
         dxo = from_shareable(shareable)
         if dxo.data_kind != DataKind.WEIGHT_DIFF:

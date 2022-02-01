@@ -22,8 +22,7 @@ from nvflare.apis.shareable import Shareable
 class Aggregator(FLComponent, ABC):
     @abstractmethod
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        """
-            accept the shareable submitted by the client.
+        """Accept the shareable submitted by the client.
 
         Args:
             shareable: submitted Shareable object
@@ -37,8 +36,7 @@ class Aggregator(FLComponent, ABC):
 
     @abstractmethod
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        """
-            perform the aggregation for all the received Shareable from the clients.
+        """Perform the aggregation for all the received Shareable from the clients.
 
         Args:
             fl_ctx: FLContext
