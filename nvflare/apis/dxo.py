@@ -47,10 +47,15 @@ class DXO(object):
         """
 
         Args:
-            data_kind:
+            data_kind: data_kind name
             data: clear-text data
             meta: None or dict
         """
+        if data is None:
+            data = {}
+        if meta is None:
+            meta = {}
+
         self.data_kind = data_kind
         self.data = data
         self.meta = meta
