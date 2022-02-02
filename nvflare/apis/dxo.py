@@ -56,6 +56,9 @@ class DXO(object):
         if meta is None:
             meta = {}
 
+        if not (isinstance(data, dict) and isinstance(meta, dict)):
+            raise ValueError(f"data and meta must be dict, but got data: {type(data)}, meta: {type(meta)}")
+
         self.data_kind = data_kind
         self.data = data
         self.meta = meta
