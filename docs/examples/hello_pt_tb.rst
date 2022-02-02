@@ -40,14 +40,14 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
    :linenos:
    :caption: config_fed_client.json
 
-Take a look at the components section at line 24. The first component is the ``pt_learner`` which contains the initialization, training, and validation logic.
+Take a look at the components section of the client config at line 24. The first component is the ``pt_learner`` which contains the initialization, training, and validation logic.
 ``pt_learner.py`` is where we will add our TensorBoard streaming changes.
 
 Next we have the :class:`AnalyticsSender<nvflare.app_common.widgets.streaming.AnalyticsSender>`, which implements some common methods that follow the signatures from the PyTorch SummaryWriter.
 This makes it easy for the ``pt_learner`` to log metrics and send events.
 
 Finally, we have the :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>`, which converts local events to federated events.
-This changes the ``analytix_log_stats`` events to be federated events, which can then be streamed from the clients to the server.
+This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``, which will then be streamed from the clients to the server.
 
 .. literalinclude:: ../../examples/hello-pt-tb/config/config_fed_server.json
    :language: json
