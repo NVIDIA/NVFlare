@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
         if expected_data_kind not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
-            raise ValueError(f"{expected_data_kind=} not in WEIGHT_DIFF or WEIGHTS")
+            raise ValueError(f"expected_data_kind={expected_data_kind} not in WEIGHT_DIFF or WEIGHTS")
         self.expected_data_kind = expected_data_kind
         self.expected_algorithm = expected_algorithm
         if self.expected_algorithm != he.HE_ALGORITHM_CKKS:

@@ -16,7 +16,7 @@ alpha=$4
 
 if test -z "${n_clients}" || test -z "${config}" || test -z "${run}" || test -z "${alpha}"
 then
-      echo "Usage: ./run_secure.sh [n_clients] [config] [run] [alpha], e.g. ./run_secure.sh 8 cifar10_fedavg 1 0.1"
+      echo "Usage: ./run_poc.sh [n_clients] [config] [run] [alpha], e.g. ./run_poc.sh 8 cifar10_fedavg 1 0.1"
       exit 1
 fi
 

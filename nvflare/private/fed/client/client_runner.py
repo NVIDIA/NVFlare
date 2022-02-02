@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -65,15 +65,11 @@ class ClientRunner(FLComponent):
         self.current_task = None
         self.asked_to_stop = False
         self.task_lock = threading.Lock()
+        self.end_run_fired = False
+        self.end_run_lock = threading.Lock()
 
-        engine.register_aux_message_handler(
-            topic=ReservedTopic.END_RUN,
-            message_handle_func=self._handle_end_run
-        )
-        engine.register_aux_message_handler(
-            topic=ReservedTopic.ABORT_ASK,
-            message_handle_func=self._handle_abort_task
-        )
+        engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
+        engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         engine = fl_ctx.get_engine()
@@ -81,9 +77,7 @@ class ClientRunner(FLComponent):
 
         if not isinstance(task.data, Shareable):
             self.log_error(
-                fl_ctx,
-                'got invalid task data in assignment: expect Shareable, but got {}'.format(
-                    type(task.data))
+                fl_ctx, "got invalid task data in assignment: expect Shareable, but got {}".format(type(task.data))
             )
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
@@ -93,7 +87,7 @@ class ClientRunner(FLComponent):
 
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
-            self.log_error(fl_ctx, 'missing peer context in Server task assignment')
+            self.log_error(fl_ctx, "missing peer context in Server task assignment")
             return make_reply(ReturnCode.MISSING_PEER_CONTEXT)
 
         if not isinstance(peer_ctx, FLContext):
@@ -111,9 +105,7 @@ class ClientRunner(FLComponent):
 
         executor = self.task_table.get(task.name)
         if not executor:
-            self.log_error(
-                fl_ctx,
-                "bad task assignment: no executor available for task {}".format(task.name))
+            self.log_error(fl_ctx, "bad task assignment: no executor available for task {}".format(task.name))
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
@@ -125,18 +117,13 @@ class ClientRunner(FLComponent):
                 try:
                     task_data = f.process(task_data, fl_ctx)
                 except BaseException:
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in Task Data Filter {}".format(type(f))
-                    )
+                    self.log_exception(fl_ctx, "processing error in Task Data Filter {}".format(type(f)))
                     return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
 
             if not isinstance(task_data, Shareable):
                 self.log_error(
-                    fl_ctx,
-                    'task data was converted to wrong type: expect Shareable but got {}'.format(
-                        type(task_data)
-                    ))
+                    fl_ctx, "task data was converted to wrong type: expect Shareable but got {}".format(type(task_data))
+                )
                 return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
 
             task.data = task_data
@@ -149,9 +136,7 @@ class ClientRunner(FLComponent):
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
         self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
         try:
-            self.log_info(
-                fl_ctx,
-                "invoking task executor {}".format(type(executor)))
+            self.log_info(fl_ctx, "invoking task executor {}".format(type(executor)))
 
             with self.task_lock:
                 self.task_abort_signal = Signal()
@@ -162,28 +147,31 @@ class ClientRunner(FLComponent):
                 reply = executor.execute(task.name, task.data, fl_ctx, self.task_abort_signal)
             finally:
                 with self.task_lock:
+                    if self.task_abort_signal is None:
+                        task_aborted = True
+                    else:
+                        task_aborted = False
+
                     self.task_abort_signal = None
                     self.current_task = None
                     self.current_executor = None
+                    if task_aborted:
+                        return make_reply(ReturnCode.TASK_ABORTED)
 
             if not isinstance(reply, Shareable):
                 self.log_error(
                     fl_ctx,
-                    'bad result generated by executor {}: must be Shareable but got {}'.format(
+                    "bad result generated by executor {}: must be Shareable but got {}".format(
                         type(executor), type(reply)
-                    )
+                    ),
                 )
                 return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
         except RuntimeError as e:
-            self.log_exception(
-                fl_ctx,
-                f"Critical RuntimeError happened with Exception {e}: Aborting the RUN!")
+            self.log_exception(fl_ctx, f"Critical RuntimeError happened with Exception {e}: Aborting the RUN!")
             self.asked_to_stop = True
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
         except BaseException:
-            self.log_exception(
-                fl_ctx,
-                "processing error in task executor {}".format(type(executor)))
+            self.log_exception(fl_ctx, "processing error in task executor {}".format(type(executor)))
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
@@ -199,18 +187,13 @@ class ClientRunner(FLComponent):
                 try:
                     reply = f.process(reply, fl_ctx)
                 except BaseException:
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in Task Result Filter {}".format(type(f))
-                    )
+                    self.log_exception(fl_ctx, "processing error in Task Result Filter {}".format(type(f)))
                     return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
             if not isinstance(reply, Shareable):
                 self.log_error(
-                    fl_ctx,
-                    'task result was converted to wrong type: expect Shareable but got {}'.format(
-                        type(reply)
-                    ))
+                    fl_ctx, "task result was converted to wrong type: expect Shareable but got {}".format(type(reply))
+                )
 
                 return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
@@ -222,8 +205,7 @@ class ClientRunner(FLComponent):
 
         if not isinstance(reply, Shareable):
             self.log_error(
-                fl_ctx,
-                'task processing error: expects result to be Shareable, but got {}'.format(type(reply))
+                fl_ctx, "task processing error: expects result to be Shareable, but got {}".format(type(reply))
             )
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
@@ -268,7 +250,7 @@ class ClientRunner(FLComponent):
                 task_reply = self._process_task(task, fl_ctx)
 
                 assert isinstance(task_reply, Shareable)
-                self.log_debug(fl_ctx, 'firing event EventType.BEFORE_SEND_TASK_RESULT')
+                self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
                 self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
                 # set the cookie in the reply!
@@ -294,13 +276,15 @@ class ClientRunner(FLComponent):
 
     def run(self, app_root, args):
         with self.engine.new_context() as fl_ctx:
+            self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
-            fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.run_abort_signal,
-                            private=True, sticky=True)
+            fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.run_abort_signal, private=True, sticky=True)
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             self.fire_event(EventType.START_RUN, fl_ctx)
             self.log_info(fl_ctx, "client runner started")
+        with self.end_run_lock:
+            self.end_run_fired = False
 
         try:
             self._try_run()
@@ -311,9 +295,7 @@ class ClientRunner(FLComponent):
             # in case any task is still running, abort it
             self._abort_current_task()
 
-            with self.engine.new_context() as fl_ctx:
-                self.fire_event(EventType.END_RUN, fl_ctx)
-                self.log_info(fl_ctx, "current RUN ended")
+            self.end_run_events_sequence("run method")
 
     def _abort_current_task(self):
         with self.task_lock:
@@ -321,8 +303,8 @@ class ClientRunner(FLComponent):
             if task_abort_signal:
                 # set task_abort_signal to None to prevent triggering again
                 self.task_abort_signal = None
-                task_name = ''
-                task_id = ''
+                task_name = ""
+                task_id = ""
                 task = self.current_task
                 if task:
                     task_name = task.name
@@ -333,14 +315,10 @@ class ClientRunner(FLComponent):
                     fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
 
                     task_abort_signal.trigger(True)
-                    self.log_info(
-                        fl_ctx,
-                        "triggered task_abort_signal to stop task '{}'".format(task_name))
+                    self.log_info(fl_ctx, "triggered task_abort_signal to stop task '{}'".format(task_name))
 
                     self.fire_event(EventType.ABORT_TASK, fl_ctx)
-                    self.log_info(
-                        fl_ctx,
-                        "fired ABORT_TASK event to abort current task {}".format(task_name))
+                    self.log_info(fl_ctx, "fired ABORT_TASK event to abort current task {}".format(task_name))
 
     def abort_task(self, task_names=None):
         has_task_to_abort = False
@@ -352,15 +330,24 @@ class ClientRunner(FLComponent):
                         has_task_to_abort = True
                     else:
                         self.log_info(
-                            fl_ctx,
-                            "Ignored abort_task request since current task '{}' is not target".format(name))
+                            fl_ctx, "Ignored abort_task request since current task '{}' is not target".format(name)
+                        )
                 else:
-                    self.log_info(
-                        fl_ctx,
-                        "Ignored abort_task request since there is no current task")
+                    self.log_info(fl_ctx, "Ignored abort_task request since there is no current task")
 
         if has_task_to_abort:
             self._abort_current_task()
+
+    def end_run_events_sequence(self, requester):
+        with self.engine.new_context() as fl_ctx:
+            self.log_info(fl_ctx, f"{requester} requests end run events sequence")
+            with self.end_run_lock:
+                if not self.end_run_fired:
+                    self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+                    self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
+                    self.fire_event(EventType.END_RUN, fl_ctx)
+                    self.log_info(fl_ctx, "END_RUN fired")
+                    self.end_run_fired = True
 
     def abort(self):
         """
@@ -369,9 +356,12 @@ class ClientRunner(FLComponent):
         Returns:
 
         """
-        self._abort_current_task()
         with self.engine.new_context() as fl_ctx:
-            self.fire_event(EventType.END_RUN, fl_ctx)
+            self.log_info(fl_ctx, "ABORT (RUN) command received")
+        self._abort_current_task()
+        self.run_abort_signal.trigger("ABORT (RUN) triggered")
+        self.asked_to_stop = True
+        self.end_run_events_sequence("ABORT (RUN)")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
@@ -384,37 +374,24 @@ class ClientRunner(FLComponent):
                     current_task_name = "None"
                 collector.set_info(
                     group_name="ClientRunner",
-                    info={"run_number": self.run_num,
-                          "current_task_name": current_task_name,
-                          "status": "started"
-                          },
+                    info={"run_number": self.run_num, "current_task_name": current_task_name, "status": "started"},
                 )
         elif event_type == EventType.FATAL_TASK_ERROR:
-            reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default='')
-            self.log_error(fl_ctx,
-                           "Aborting current task due to FATAL_TASK_ERROR received: {}".format(reason))
+            reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
+            self.log_error(fl_ctx, "Aborting current task due to FATAL_TASK_ERROR received: {}".format(reason))
             self._abort_current_task()
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
-            reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default='')
-            self.log_error(fl_ctx,
-                           "Aborting current RUN due to FATAL_SYSTEM_ERROR received: {}".format(reason))
+            reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
+            self.log_error(fl_ctx, "Aborting current RUN due to FATAL_SYSTEM_ERROR received: {}".format(reason))
             self.abort()
 
-    def _handle_end_run(self,
-                        topic: str,
-                        request: Shareable,
-                        fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx,
-                      "received aux request from Server to end current RUN")
+    def _handle_end_run(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        self.log_info(fl_ctx, "received aux request from Server to end current RUN")
         self.abort()
         return make_reply(ReturnCode.OK)
 
-    def _handle_abort_task(self,
-                           topic: str,
-                           request: Shareable,
-                           fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx,
-                      "received aux request from Server to abort current task")
-        task_names = request.get('task_names', None)
+    def _handle_abort_task(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        self.log_info(fl_ctx, "received aux request from Server to abort current task")
+        task_names = request.get("task_names", None)
         self.abort_task(task_names)
         return make_reply(ReturnCode.OK)

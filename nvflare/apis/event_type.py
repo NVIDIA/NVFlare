@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ class EventType(object):
     Built-in system events.
     """
 
+    ABOUT_TO_START_RUN = "_about_to_start_run"
     START_RUN = "_start_run"
+    ABOUT_TO_END_RUN = "_about_to_end_run"
     END_RUN = "_end_run"
     START_WORKFLOW = "_start_workflow"
     END_WORKFLOW = "_end_workflow"
@@ -40,8 +42,9 @@ class EventType(object):
     BEFORE_SEND_TASK_RESULT = "_before_send_task_result"
     AFTER_SEND_TASK_RESULT = "_after_send_task_result"
 
-    DEBUG_LOG_AVAILABLE = "_debug_log_available"
+    CRITICAL_LOG_AVAILABLE = "_critical_log_available"
     ERROR_LOG_AVAILABLE = "_error_log_available"
     EXCEPTION_LOG_AVAILABLE = "_exception_log_available"
-    INFO_LOG_AVAILABLE = "_info_log_available"
     WARNING_LOG_AVAILABLE = "_warning_log_available"
+    INFO_LOG_AVAILABLE = "_info_log_available"
+    DEBUG_LOG_AVAILABLE = "_debug_log_available"

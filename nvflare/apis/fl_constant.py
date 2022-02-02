@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,13 @@ class ReturnCode(object):
     TASK_DATA_FILTER_ERROR = "TASK_DATA_FILTER_ERROR"
     TASK_RESULT_FILTER_ERROR = "TASK_RESULT_FILTER_ERROR"
     TASK_UNKNOWN = "TASK_UNKNOWN"
+    TASK_UNSUPPORTED = "TASK_UNSUPPORTED"
     TOPIC_UNKNOWN = "TOPIC_UNKNOWN"
+    MODEL_UNRECOGNIZED = "MODEL_UNRECOGNIZED"
+    VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
+    EMPTY_RESULT = "EMPTY_RESULT"
+
+    SERVER_NOT_READY = "SERVER_NOT_READY"
 
 
 class MachineStatus(Enum):
@@ -169,3 +175,4 @@ class LogMessageTag(object):
     INFO = "log/info"
     WARNING = "log/warning"
     CRITICAL = "log/critical"
+    LOG_RECORD = "log_record"

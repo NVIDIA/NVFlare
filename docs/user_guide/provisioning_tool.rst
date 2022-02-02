@@ -290,17 +290,18 @@ From the cases shown previously, implementing your own Builders only requires th
 
 Bundled builders
 ================
-The following is the list of bundled builders included by default in the NVIDIA FLARE package.  They are provided as a convenient tool.  As
-mentioned previously, developers are encouraged to add / modify / remove builders based on their own requirements:
+The following is the list of bundled builders included by default in the NVIDIA FLARE package.  They are provided as a
+convenient tool.  As mentioned previously, developers are encouraged to add / modify / remove builders based on their
+own requirements:
 
-    - CertBuilder
-    - HEBuilder
-    - SignatureBuilder
-    - TemplateBuilder
-    - StaticFileBuilder
-    - WorkspaceBuilder
-    - DistributionBuilder
-    - AuthPolicyBuilder
+    - :class:`WorkspaceBuilder<nvflare.lighter.impl.workspace.WorkspaceBuilder>`
+    - :class:`TemplateBuilder<nvflare.lighter.impl.template.TemplateBuilder>`
+    - :class:`StaticFileBuilder<nvflare.lighter.impl.static_file.StaticFileBuilder>`
+    - :class:`AuthPolicyBuilder<nvflare.lighter.impl.auth_policy.AuthPolicyBuilder>`
+    - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
+    - :class:`HEBuilder<nvflare.lighter.impl.he.HEBuilder>`
+    - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
+    - :class:`DistributionBuilder<nvflare.lighter.impl.workspace.DistributionBuilder>`
 
 ::
 
@@ -386,6 +387,18 @@ The following is an example of the default project.yml file.
 
 .. literalinclude:: ../../nvflare/lighter/project.yml
   :language: yaml
+
+.. note::
+
+   For each participant, the ``enable_byoc`` flag can be set to enable loading of code in the custom folder of applications.
+   If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
+
+   There is also a setting for ``allow_byoc`` in the rules for authorization groups (in AuthPolicyBuilder). This controls
+   whether or not applications containing custom code will be allowed to be uploaded and deployed to the participants
+   of the orgs of that rule group.
+
+   Here, ``byoc`` is referring to the custom code in the custom folder in an FL application. Code already in the python path
+   through other means is not considered ``byoc`` for these purposes.
 
 *****************************
 Provision commandline options

@@ -4,7 +4,6 @@ server=$2
 
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-# export CUDA_VISIBLE_DEVICES=
 echo "WORKSPACE set to $DIR/.."
 mkdir -p $DIR/../transfer
 export PYTHONPATH=/local/custom:$PYTHONPATH
@@ -25,7 +24,7 @@ start_fl() {
     exit
   fi
   lst=$SECONDS
-((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false multi_gpu=false uid=${client} cross_site_validate=false config_folder=config host=${server} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
+((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false uid=${client} config_folder=config host=${server} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
   pid=`cat $DIR/../pid.fl`
 }
 

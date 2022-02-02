@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,10 +20,25 @@ from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
-    def __init__(self, enable_byoc=False, config_folder="", docker_image=""):
+    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image=""):
+        """Uses the information from project.yml through study to go through the participants and write the contents of
+        each file with the template, and replacing with the appropriate values from project.yml.
+
+        Usually, two main categories of files are created in all FL participants, static and dynamic. Static files
+        have similar contents among different participants, with small differences.  For example, the differences in
+        sub_start.sh are client name and python module.  Those are basically static files.  This builder uses template
+        file and string replacement to generate those static files for each participant.
+
+        Args:
+            enable_byoc: for each participant, true to enable loading of code in the custom folder of applications
+            config_folder: usually "config"
+            app_validator: optional path to an app validator to verify that uploaded app has the expected structure
+            docker_image: when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
+        """
         self.enable_byoc = enable_byoc
         self.config_folder = config_folder
         self.docker_image = docker_image
+        self.app_validator = app_validator
 
     def _write(self, file_full_path, content, mode, exe=False):
         mode = mode + "w"
@@ -46,6 +61,8 @@ class StaticFileBuilder(Builder):
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
         config["enable_byoc"] = server.enable_byoc
+        if self.app_validator:
+            config["app_validator"] = {"path": self.app_validator}
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
         replacement_dict = {
             "admin_port": admin_port,

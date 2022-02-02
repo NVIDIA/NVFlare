@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.app_root = app_root
         self.server_config_file_name = server_config_file_name
 
-        self.config_validator = None
+        self.app_validator = None
         self.enable_byoc = False
 
     def start_config(self, config_ctx: ConfigContext):
@@ -92,6 +92,10 @@ class FLServerStarterConfiger(JsonConfigurator):
             self.enable_byoc = element
             return
 
+        if path == "app_validator" and isinstance(element, dict):
+            self.app_validator = self.build_component(element)
+            return
+
     def finalize_config(self, config_ctx: ConfigContext):
         secure_train = False
         if self.cmd_vars.get("secure_train"):
@@ -101,10 +105,10 @@ class FLServerStarterConfiger(JsonConfigurator):
 
         build_ctx = {
             "secure_train": secure_train,
-            "app_validator": self.config_validator,
+            "app_validator": self.app_validator,
             "server_config": self.config_data["servers"],
             "server_host": self.cmd_vars.get("host", None),
-            "enable_byoc": self.enable_byoc
+            "enable_byoc": self.enable_byoc,
         }
 
         deployer = ServerDeployer()

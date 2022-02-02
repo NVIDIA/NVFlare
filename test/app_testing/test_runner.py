@@ -1,14 +1,27 @@
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
 import importlib
 import os
 import sys
 import time
 import traceback
-
-import yaml
-
 from test.app_testing.admin_controller import AdminController
 from test.app_testing.site_launcher import SiteLauncher
+
+import yaml
 
 
 def get_module_class_from_full_path(full_path):
@@ -23,7 +36,6 @@ def read_yaml(yaml_file_path):
         print(f"Yaml file doesnt' exist at {yaml_file_path}")
         return None
 
-    data = None
     with open(yaml_file_path, "rb") as f:
         data = yaml.safe_load(f)
 
@@ -37,13 +49,9 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description="Run NVFlare tests")
         parser.add_argument("--poc", "-p", type=str, help="Poc Directory")
         parser.add_argument("--n_clients", "-n", type=int, help="Number of clients.")
-        parser.add_argument(
-            "--app_path", "-ap", type=str, help="Directory for the apps."
-        )
+        parser.add_argument("--app_path", "-ap", type=str, help="Directory for the apps.")
         parser.add_argument("--yaml", "-y", type=str, help="Yaml test config path.")
-        parser.add_argument(
-            "--cleanup", "-c", action="store_true", help="Whether to cleanup "
-        )
+        parser.add_argument("--cleanup", "-c", action="store_true", help="Whether to cleanup ")
 
         args = parser.parse_args()
 
@@ -51,7 +59,7 @@ if __name__ == "__main__":
 
         test_apps = read_yaml(args.yaml)
 
-        print(f"{test_apps=}")
+        print(f"test_apps = {test_apps}")
 
         site_launcher = SiteLauncher(poc_directory=args.poc, app_path=args.app_path)
 
@@ -61,9 +69,7 @@ if __name__ == "__main__":
         admin_controller = AdminController(app_path=args.app_path)
         admin_controller.initialize()
 
-        admin_controller.ensure_clients_started(
-            num_clients=args.n_clients
-        )
+        admin_controller.ensure_clients_started(num_clients=args.n_clients)
 
         print(f"Server status: {admin_controller.server_status()}.")
 
@@ -94,12 +100,8 @@ if __name__ == "__main__":
                 for validator_module in validators:
 
                     # Create validator instance
-                    module_name, class_name = get_module_class_from_full_path(
-                        validator_module
-                    )
-                    app_validator_cls = getattr(
-                        importlib.import_module(module_name), class_name
-                    )
+                    module_name, class_name = get_module_class_from_full_path(validator_module)
+                    app_validator_cls = getattr(importlib.import_module(module_name), class_name)
                     app_validator = app_validator_cls()
 
                     app_validate_res = app_validator.validate_results(

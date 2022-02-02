@@ -17,3 +17,6 @@
 
 # FedAvg + HE
 ./run_secure.sh 8 cifar10_fedavg_he 8 1.0
+
+# FedAvg with TensorBoard streaming
+./run_secure.sh 8 cifar10_fedavg_stream_tb 9 1.0

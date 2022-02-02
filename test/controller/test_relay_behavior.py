@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,8 +20,9 @@ import pytest
 
 from nvflare.apis.controller_spec import SendOrder, TaskCompletionStatus
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-from .controller_test import TestController, create_client, create_task, get_ready, launch_task
+
 from ..utils import skip_if_quick
+from .controller_test import TestController, create_client, create_task, get_ready, launch_task
 
 
 def _process_task_request_test_cases():

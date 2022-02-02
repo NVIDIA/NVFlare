@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,11 +14,10 @@
 
 """Provides a command line interface for a federated client trainer"""
 
-import traceback
-
 import argparse
 import os
 import sys
+import traceback
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
@@ -36,6 +35,7 @@ from nvflare.private.fed.client.command_agent import CommandAgent
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
 
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
@@ -57,7 +57,6 @@ def main():
         args.client_config = os.path.join(config_folder, "config_fed_client.json")
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
-    args.log_config = None
 
     try:
         remove_restart_file(args)
@@ -90,12 +89,19 @@ def main():
                 )
             )
 
-        workspace = os.path.join("/tmp/fl", client_name)  # TODO: find a way to replace "/tmp/fl"
+        startup = args.startup
+        app_root = os.path.join(args.workspace, "run_" + str(run_number), "app_" + client_name)
+
+        app_log_config = os.path.join(app_root, config_folder, "log.config")
+        if os.path.exists(app_log_config):
+            args.log_config = app_log_config
+        else:
+            args.log_config = os.path.join(startup, "log.config")
 
         conf = FLClientStarterConfiger(
-            app_root=workspace,
+            app_root=startup,
             client_config_file_name=args.fed_client,
-            log_config_file_name=os.path.join(workspace, "log.config"),
+            log_config_file_name=args.log_config,
             kv_list=args.set,
         )
         conf.configure()
@@ -109,8 +115,6 @@ def main():
         federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
-
-        app_root = os.path.join(args.workspace, "run_" + str(run_number), "app_" + client_name)
 
         client_config_file_name = os.path.join(app_root, args.client_config)
         conf = ClientJsonConfigurator(
@@ -181,7 +185,7 @@ def remove_restart_file(args):
 
 if __name__ == "__main__":
     """
-    This is the program when starting the child process for running the NVFlare executor.
+    This is the program when starting the child process for running the NVIDIA FLARE executor.
     """
 
     main()

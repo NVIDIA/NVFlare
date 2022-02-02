@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,10 @@ from abc import ABC, abstractmethod
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable
+
+
+from ..model_desc import ModelDescriptor
+from .learnable_persistor import LearnablePersistor
 
 
 class ModelPersistor(LearnablePersistor, ABC):
@@ -53,6 +57,29 @@ class ModelPersistor(LearnablePersistor, ABC):
 
         Returns:
             None
+
+        """
+        pass
+
+    def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
+        """
+            Get the model inventory of the ModelPersister
+        Args:
+            fl_ctx: FLContext
+
+        Returns: { model_kind: ModelDescriptor }
+
+        """
+        pass
+
+    def get_model(self, model_file, fl_ctx: FLContext) -> object:
+        """
+
+        Args:
+            model_file:
+            fl_ctx:
+
+        Returns:
 
         """
         pass

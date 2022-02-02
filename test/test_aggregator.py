@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,16 +17,15 @@ import random
 import numpy as np
 import pytest
 
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
-
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.app_common.aggregators.accumulate_model_aggregator import AccumulateWeightedAggregator
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 
 # from nvflare.app_common.app_constant import AppConstants, AppShareableKey, AppShareableValue, ShareableContentType
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 
 
 class TestAggregator:

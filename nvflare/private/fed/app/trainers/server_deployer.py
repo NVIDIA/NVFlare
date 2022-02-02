@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ class ServerDeployer:
     def build(self, build_ctx):
         self.server_config = build_ctx["server_config"]
         self.secure_train = build_ctx["secure_train"]
-        self.config_validator = build_ctx["app_validator"]
+        self.app_validator = build_ctx["app_validator"]
         self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
 
@@ -60,7 +60,7 @@ class ServerDeployer:
             heart_beat_timeout=heart_beat_timeout,
             args=args,
             secure_train=secure_train,
-            enable_byoc=self.enable_byoc
+            enable_byoc=self.enable_byoc,
         )
         return first_server, services
 

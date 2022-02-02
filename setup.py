@@ -19,7 +19,17 @@ from datetime import datetime
 
 from setuptools import find_packages, setup
 
-nvfl_version = os.environ.get("NVFL_VERSION", "1.1.0")
+# read the contents of your README file
+this_directory = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
+    long_description = f.read()
+
+with open(os.path.join(this_directory, "nvflare", "__init__.py"), encoding="utf-8") as f:
+    for line in f.readlines():
+        if "__version__" in line:
+            init_version = line.split("=")[1].strip().strip('"')
+
+nvfl_version = os.environ.get("NVFL_VERSION", init_version)
 yymmdd = datetime.today().strftime("%y%m%d")
 nvfl_nightly_version = f"{nvfl_version}.dev{yymmdd}"
 
@@ -30,17 +40,13 @@ else:
     package_name = "nvflare-nightly"
     version = nvfl_nightly_version
 
-# read the contents of your README file
-this_directory = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
-    long_description = f.read()
 
 if os.path.exists(os.path.join(this_directory, "nvflare", "poc.zip")):
     os.remove(os.path.join(this_directory, "nvflare", "poc.zip"))
 shutil.make_archive(base_name="poc", format="zip", root_dir=os.path.join(this_directory, "nvflare"), base_dir="poc")
 shutil.move("poc.zip", os.path.join(this_directory, "nvflare", "poc.zip"))
 
-python_version = os.environ.get("PY_VERSION", "3.8")
+python_version = os.environ.get("PY_VERSION", "3.7")
 setup(
     name=package_name,
     version=version,
@@ -66,7 +72,7 @@ setup(
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    python_requires=">=3.8",
+    python_requires=">=3.7",
     # install_requires=list(pkutils.parse_requirements("requirements.txt")),
     install_requires=[
         "PyYAML",

@@ -8,7 +8,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "np_model_persistor.NPModelPersistor",
+      "path": "test.app_testing.np.np_model_persistor.NPModelPersistor",
       "args": {}
     },
     {
@@ -25,12 +25,12 @@
     },
     {
       "id": "model_locator",
-      "path": "np_model_locator.NPModelLocator",
+      "path": "test.app_testing.np.np_model_locator.NPModelLocator",
       "args": {}
     },
     {
       "id": "formatter",
-      "path": "np_formatter.NPFormatter",
+      "path": "test.app_testing.np.np_formatter.NPFormatter",
       "args": {}
     }
   ],

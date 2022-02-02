@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ class ClientEngine(ClientEngineInternalSpec):
     """
     ClientEngine runs in the client parent process.
     """
+
     def __init__(self, client, client_name, sender, args, rank, workers=5):
         self.client = client
         self.client_name = client_name
@@ -44,7 +45,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.args = args
         self.rank = rank
         self.client.process = None
-        self.client_executor = ProcessExecutor(client.client_name)
+        self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
 
         self.run_number = -1
         self.status = MachineStatus.STOPPED

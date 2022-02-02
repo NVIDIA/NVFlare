@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 
 import argparse
 import os
-import shutil
 import sys
-import time
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
@@ -66,9 +64,7 @@ def main():
         os.chdir(args.workspace)
         AuditService.initialize(audit_file_name="audit.log")
 
-        if rank == 0:
-            workspace = create_workspace(args)
-        time.sleep(rank * 2)
+        workspace = os.path.join(args.workspace, "startup")
 
         # trainer = WorkFlowFactory().create_client_trainer(train_configs, envs)
         conf = FLClientStarterConfiger(
@@ -76,7 +72,7 @@ def main():
             # wf_config_file_name="config_train.json",
             client_config_file_name=args.fed_client,
             # env_config_file_name="environment.json",
-            log_config_file_name=workspace + "/log.config",
+            log_config_file_name="log.config",
             kv_list=args.set,
         )
         conf.configure()
@@ -173,18 +169,6 @@ def remove_restart_file(args):
         os.remove(restart_file)
 
 
-def create_workspace(args):
-    kv_vars = parse_vars(args.set)
-    workspace = "/tmp/fl/" + kv_vars.get("uid")
-
-    if os.path.exists(workspace):
-        shutil.rmtree(workspace)
-    startup = os.path.join(args.workspace, "startup")
-    shutil.copytree(startup, workspace)
-
-    return workspace
-
-
 def create_admin_agent(
     client_args, client_id, req_processors, secure_train, server_args, federated_client, args, is_multi_gpu, rank
 ):
@@ -213,7 +197,7 @@ def create_admin_agent(
 
 if __name__ == "__main__":
     """
-    This is the main program when starting the NVFlare client process.
+    This is the main program when starting the NVIDIA FLARE client process.
     """
     # # For MacOS, it needs to use 'spawn' for creating multi-process.
     # if os.name == 'posix':

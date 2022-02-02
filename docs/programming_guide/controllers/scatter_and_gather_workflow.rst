@@ -7,7 +7,7 @@ of NVIDIA FLARE with a Server aggregating results from Clients that have produce
 
 At the core, the control_flow of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
 
-.. image:: resources/fed_sag_round.png
+.. image:: ../resources/fed_sag_round.png
     :height: 400px
 
 Trainer
@@ -30,6 +30,8 @@ A :class:`LearnablePersistor<nvflare.app_common.abstract.learnable_persistor.Lea
 and save a ``Learnable``. ``Learnable`` is a subset of the model file (which can contain other data like LR schedule)
 which is to be learned, like the model weights.
 
+.. _aggregator:
+
 Aggregator
 ^^^^^^^^^^
 :class:`Aggregators<nvflare.app_common.abstract.aggregator.Aggregator>` define the aggregation algorithm to aggregate the ``Shareable``.
@@ -37,6 +39,6 @@ For example, a simple aggregator would be just average all the ``Shareable`` of 
 
 Below is the signature for an aggregator.
 
-.. literalinclude:: ../../nvflare/app_common/abstract/aggregator.py
+.. literalinclude:: ../../../nvflare/app_common/abstract/aggregator.py
     :language: python
     :lines: 22-

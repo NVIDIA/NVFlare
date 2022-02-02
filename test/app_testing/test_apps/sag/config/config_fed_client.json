@@ -6,7 +6,7 @@
         "train"
       ],
       "executor": {
-        "path": "np_trainer.NPTrainer",
+        "path": "test.app_testing.np.np_trainer.NPTrainer",
         "args": {}
       }
     }

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ def main():
     current_path = os.getcwd()
     custom_folder_path = os.path.join(current_path, args.custom_folder)
     sys.path.append(custom_folder_path)
-    print(f"Path list for python codes loading: {sys.path=}")
+    print("Path list (sys.path) for python codes loading: {}".format(sys.path))
 
     # main project file
     project_file = args.project_file

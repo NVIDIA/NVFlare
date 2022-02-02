@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,9 +33,14 @@ from pt_constants import PTConstants
 
 
 class Cifar10Trainer(Executor):
-
-    def __init__(self, lr=0.01, epochs=5, train_task_name=AppConstants.TASK_TRAIN,
-                 submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL, exclude_vars=None):
+    def __init__(
+        self,
+        lr=0.01,
+        epochs=5,
+        train_task_name=AppConstants.TASK_TRAIN,
+        submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
+        exclude_vars=None,
+    ):
         super(Cifar10Trainer, self).__init__()
 
         self._train_task_name = train_task_name
@@ -48,25 +53,27 @@ class Cifar10Trainer(Executor):
         self.loss = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
         self.lr = lr
-        self.transforms = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ])
+        self.transforms = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ]
+        )
         self.epochs = epochs
         self.exclude_vars = exclude_vars
 
         # Cifar10 dataset for training.
-        self.train_dataset = torchvision.datasets.CIFAR10(root='~/data', transform=self.transforms,
-                                                          download=True, train=True)
-        self.train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=4, shuffle=True
+        self.train_dataset = torchvision.datasets.CIFAR10(
+            root="~/data", transform=self.transforms, download=True, train=True
         )
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=4, shuffle=True)
         self.n_iterations = len(self.train_loader)
 
         # # Setup the persistence manager to save PT model.
         self.default_train_conf = {"train": {"model": type(self.model).__name__}}
-        self.persistence_manager = PTModelPersistenceFormatManager(data=self.model.state_dict(),
-                                                                   default_train_conf=self.default_train_conf)
+        self.persistence_manager = PTModelPersistenceFormatManager(
+            data=self.model.state_dict(), default_train_conf=self.default_train_conf
+        )
 
     def local_train(self, fl_ctx, weights):
         # Set the model weights
@@ -85,10 +92,11 @@ class Cifar10Trainer(Executor):
                 cost.backward()
                 self.optimizer.step()
 
-                running_loss += (cost.cpu().detach().numpy()/images.size()[0])
+                running_loss += cost.cpu().detach().numpy() / images.size()[0]
                 if i % 3000 == 0:
-                    self.log_info(fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, "
-                                          f"Loss: {running_loss/3000}")
+                    self.log_info(
+                        fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, " f"Loss: {running_loss/3000}"
+                    )
                     running_loss = 0.0
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -119,8 +127,11 @@ class Cifar10Trainer(Executor):
                 new_weights = self.model.state_dict()
                 new_weights = {k: v.cpu().numpy() for k, v in new_weights.items()}
 
-                outgoing_dxo = DXO(data_kind=DataKind.WEIGHTS, data=new_weights,
-                                   meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self.n_iterations})
+                outgoing_dxo = DXO(
+                    data_kind=DataKind.WEIGHTS,
+                    data=new_weights,
+                    meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self.n_iterations},
+                )
                 return outgoing_dxo.to_shareable()
             elif task_name == self._submit_model_task_name:
                 # Load local model
@@ -141,7 +152,7 @@ class Cifar10Trainer(Executor):
 
     def save_local_model(self, fl_ctx: FLContext):
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
-        models_dir = os.path.join(run_dir, 'models')
+        models_dir = os.path.join(run_dir, "models")
         if not os.path.exists(models_dir):
             os.makedirs(models_dir)
         model_path = os.path.join(models_dir, PTConstants.PTLocalModelName)
@@ -152,12 +163,13 @@ class Cifar10Trainer(Executor):
 
     def load_local_model(self, fl_ctx: FLContext):
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
-        models_dir = os.path.join(run_dir, 'models')
+        models_dir = os.path.join(run_dir, "models")
         if not os.path.exists(models_dir):
             return None
         model_path = os.path.join(models_dir, PTConstants.PTLocalModelName)
 
-        self.persistence_manager = PTModelPersistenceFormatManager(data=torch.load(model_path),
-                                                                   default_train_conf=self.default_train_conf)
+        self.persistence_manager = PTModelPersistenceFormatManager(
+            data=torch.load(model_path), default_train_conf=self.default_train_conf
+        )
         ml = self.persistence_manager.to_model_learnable(exclude_vars=self.exclude_vars)
         return ml

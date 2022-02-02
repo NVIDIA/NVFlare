@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 import argparse
 import logging
 import os
-import shutil
 import sys
 
 from nvflare.fuel.common.excepts import ConfigError
@@ -63,15 +62,14 @@ def main():
     try:
         os.chdir(args.workspace)
 
-        create_workspace(args)  # YC: is this still useful?
-
         # trainer = WorkFlowFactory().create_server_trainer(train_configs, envs)
+        startup = os.path.join(args.workspace, "startup")
         conf = FLServerStarterConfiger(
-            app_root="/tmp/fl_server",
+            app_root="startup",
             # wf_config_file_name="config_train.json",
             server_config_file_name=args.fed_server,
             # env_config_file_name="environment.json",
-            log_config_file_name="/tmp/fl_server/log.config",
+            log_config_file_name="log.config",
             kv_list=args.set,
         )
         log_level = os.environ.get("FL_LOG_LEVEL", "")
@@ -103,7 +101,7 @@ def main():
                 server_conf=first_server,
                 args=args,
                 secure_train=secure_train,
-                app_validator=deployer.config_validator,
+                app_validator=deployer.app_validator,
             )
             admin_server.start()
 
@@ -118,7 +116,6 @@ def main():
     except ConfigError as ex:
         print("ConfigError:", str(ex))
     finally:
-        # shutil.rmtree("/tmp/fl_server")
         pass
 
 
@@ -217,16 +214,9 @@ def create_admin_server(fl_server, server_conf=None, args=None, secure_train=Fal
     return admin_server
 
 
-def create_workspace(args):
-    if os.path.exists("/tmp/fl_server"):
-        shutil.rmtree("/tmp/fl_server")
-    startup = os.path.join(args.workspace, "startup")
-    shutil.copytree(startup, "/tmp/fl_server")
-
-
 if __name__ == "__main__":
     """
-    This is the main program when starting the NVFlare server process.
+    This is the main program when starting the NVIDIA FLARE server process.
     """
 
     main()

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@ from typing import Optional
 
 from nvflare.apis.dxo import DXO, DataKind
 
-DATA_TYPE_KEY = "analytics_data_type"
-KWARGS_KEY = "analytics_kwargs"
+_DATA_TYPE_KEY = "analytics_data_type"
+_KWARGS_KEY = "analytics_kwargs"
 
 
 class AnalyticsDataType(Enum):
@@ -26,10 +26,11 @@ class AnalyticsDataType(Enum):
     SCALAR = "SCALAR"
     IMAGE = "IMAGE"
     TEXT = "TEXT"
+    LOG_RECORD = "LOG_RECORD"
 
 
 class AnalyticsData:
-    def __init__(self, tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict]):
+    def __init__(self, tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict] = None):
         """This class defines AnalyticsData format.
 
             It is a wrapper to provide from / to DXO conversion.
@@ -39,6 +40,18 @@ class AnalyticsData:
             data_type (AnalyticDataType): type of the analytic data.
             kwargs (optional, dict): additional arguments to be passed.
         """
+        if not isinstance(tag, str):
+            raise TypeError(f"expect tag to be an instance of str, but got {type(tag)}.")
+        if not isinstance(data_type, AnalyticsDataType):
+            raise TypeError(f"expect data_type to be an instance of AnalyticsDataType, but got {type(data_type)}.")
+        if kwargs and not isinstance(kwargs, dict):
+            raise TypeError(f"expect kwargs to be an instance of dict, but got {type(kwargs)}.")
+        if data_type == AnalyticsDataType.SCALAR and not isinstance(value, float):
+            raise TypeError(f"expect value to be an instance of float, but got {type(value)}")
+        elif data_type == AnalyticsDataType.SCALARS and not isinstance(value, dict):
+            raise TypeError(f"expect value to be an instance of dict, but got {type(value)}")
+        elif data_type == AnalyticsDataType.TEXT and not isinstance(value, str):
+            raise TypeError(f"expect value to be an instance of str, but got {type(value)}")
         self.tag = tag
         self.value = value
         self.data_type = data_type
@@ -47,8 +60,8 @@ class AnalyticsData:
     def to_dxo(self):
         """Converts the AnalyticsData to DXO object."""
         dxo = DXO(data_kind=DataKind.ANALYTIC, data={self.tag: self.value})
-        dxo.set_meta_prop(DATA_TYPE_KEY, self.data_type)
-        dxo.set_meta_prop(KWARGS_KEY, self.kwargs)
+        dxo.set_meta_prop(_DATA_TYPE_KEY, self.data_type)
+        dxo.set_meta_prop(_KWARGS_KEY, self.kwargs)
         return dxo
 
     @classmethod
@@ -59,16 +72,14 @@ class AnalyticsData:
             dxo (DXO): The DXO object to convert.
         """
         if not isinstance(dxo, DXO):
-            raise TypeError(f"dxo is not of type DXO, instead it has type {type(dxo)}.")
+            raise TypeError(f"expect dxo to be an instance of DXO, but got {type(dxo)}.")
 
         if len(dxo.data) != 1:
             raise ValueError("dxo does not have the correct format for AnalyticsData.")
 
         tag, value = list(dxo.data.items())[0]
 
-        data_type = dxo.get_meta_prop(DATA_TYPE_KEY)
-        kwargs = dxo.get_meta_prop(KWARGS_KEY)
-        if not isinstance(data_type, AnalyticsDataType):
-            raise ValueError(f"data_type {data_type} is not supported.")
+        data_type = dxo.get_meta_prop(_DATA_TYPE_KEY)
+        kwargs = dxo.get_meta_prop(_KWARGS_KEY)
 
         return cls(tag, value, data_type, kwargs)

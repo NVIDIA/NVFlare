@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 import copy
 import pickle
+from typing import List
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 
@@ -68,7 +69,7 @@ class DXO(object):
             self.meta = {}
         self.meta[key] = value
 
-    def remove_meta_props(self, keys: [str]):
+    def remove_meta_props(self, keys: List[str]):
         if self.meta and keys:
             for k in keys:
                 self.meta.pop(k, None)

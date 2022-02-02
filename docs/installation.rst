@@ -6,7 +6,7 @@ Installation
 Python Version
 --------------
 
-NVIDIA FLARE requires `Python 3.8.10 <https://www.python.org/downloads/release/python-3810/>`_.
+NVIDIA FLARE requires Python 3.8.  It may work with Python 3.7 but currently is not compatible with Python 3.9 and above.
 
 Install NVIDIA FLARE in virtual environments
 --------------------------------------------

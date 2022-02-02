@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -66,3 +66,6 @@ class AppEventType(object):
     CROSS_VAL_INIT = "_cross_val_init"
     VALIDATION_RESULT_RECEIVED = "_validation_result_received"
     RECEIVE_BEST_MODEL = "_receive_best_model"
+
+    ANALYTIC_EVENT_TYPE = "analytix_log_stats"
+    LOGGING_EVENT_TYPE = "analytix_logging"

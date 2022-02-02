@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -107,13 +107,33 @@ class Communicator:
 
         return state_message
 
+    def get_client_ip(self):
+        """Return localhost IP.
+
+        More robust than ``socket.gethostbyname(socket.gethostname())``. See
+        https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
+        for more details.
+
+        :return: The host IP.
+        """
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = "127.0.0.1"
+        finally:
+            s.close()
+        return ip
+
     def client_registration(self, client_name, servers, project_name):
         """
         Client's meta data used to authenticate and communicate.
 
         :return: a ClientLogin message.
         """
-        local_ip = socket.gethostbyname(socket.gethostname())
+        local_ip = self.get_client_ip()
+
         login_message = fed_msg.ClientLogin(client_name=client_name, client_ip=local_ip)
         # login_message = fed_msg.ClientLogin(
         #     client_id=None, token=None, client_ip=local_ip)

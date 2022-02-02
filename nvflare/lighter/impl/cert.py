@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -39,6 +39,10 @@ def serialize_cert(cert):
 
 class CertBuilder(Builder):
     def __init__(self):
+        """Handles building (creating and self-signing) the root CA certificates, creating server, client and
+        admin certificates, and having them signed by the root CA for secure communication. If the state folder has
+        information about previously generated certs, it loads them back and reuses them.
+        """
         self.root_cert = None
         self.persistent_state = dict()
 

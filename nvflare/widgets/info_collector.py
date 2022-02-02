@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -71,6 +71,7 @@ class InfoCollector(Widget):
         elif event_type == EventType.END_RUN:
             self.engine = None
         elif event_type in (
+            EventType.CRITICAL_LOG_AVAILABLE,
             EventType.ERROR_LOG_AVAILABLE,
             EventType.WARNING_LOG_AVAILABLE,
             EventType.EXCEPTION_LOG_AVAILABLE,
@@ -103,7 +104,9 @@ class InfoCollector(Widget):
 
             analytic_data = AnalyticsData.from_dxo(dxo)
 
-            if event_type == EventType.ERROR_LOG_AVAILABLE:
+            if event_type == EventType.CRITICAL_LOG_AVAILABLE:
+                key = "critical"
+            elif event_type == EventType.ERROR_LOG_AVAILABLE:
                 key = "error"
             elif event_type == EventType.WARNING_LOG_AVAILABLE:
                 key = "warning"

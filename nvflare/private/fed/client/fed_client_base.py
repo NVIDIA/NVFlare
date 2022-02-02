@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -149,7 +149,8 @@ class FederatedClientBase:
         try:
             self.logger.info("Starting to send aux messagee.")
             message = self.communicator.auxCommunicate(
-                self.servers, project_name, self.token, fl_ctx, self.client_name, shareable, topic, timeout)
+                self.servers, project_name, self.token, fl_ctx, self.client_name, shareable, topic, timeout
+            )
 
             return message
         except FLCommunicationError as e:
@@ -213,8 +214,10 @@ class FederatedClientBase:
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
-            messages = pool.map(partial(self.send_aux_message, topic=topic, shareable=shareable,
-                                        timeout=timeout, fl_ctx=fl_ctx), tuple(self.servers))
+            messages = pool.map(
+                partial(self.send_aux_message, topic=topic, shareable=shareable, timeout=timeout, fl_ctx=fl_ctx),
+                tuple(self.servers),
+            )
             if messages is not None and messages[0] is not None:
                 # Only handle single server communication for now.
                 return messages

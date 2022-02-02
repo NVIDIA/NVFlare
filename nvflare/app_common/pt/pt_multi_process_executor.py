@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 import sys
 
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
 
 
@@ -26,5 +27,6 @@ class PTMultiProcessExecutor(MultiProcessExecutor):
             f"{sys.executable} -m torch.distributed.run --nproc_per_node="
             + str(self.num_of_processes)
             + " --nnodes=1 --node_rank=0"
-            + ' --master_addr="localhost" --master_port=1234'
+            + ' --master_addr="localhost" --master_port='
+            + str(get_open_ports(1)[0])
         )

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,8 +52,7 @@ class RunManager:
         self.add_handler(self.aux_runner)
 
         self.fl_ctx_mgr = FLContextManager(
-            engine=engine, identity_name=server_name, run_num=run_num,
-            public_stickers={}, private_stickers={}
+            engine=engine, identity_name=server_name, run_num=run_num, public_stickers={}, private_stickers={}
         )
 
         self.workspace = workspace

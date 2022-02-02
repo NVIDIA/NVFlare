@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from typing import Dict, Tuple
 
 
 class AppValidationKey(object):
@@ -23,7 +24,7 @@ class AppValidationKey(object):
 
 class AppValidator(ABC):
     @abstractmethod
-    def validate(self, app_folder: str) -> (str, {}):
+    def validate(self, app_folder: str) -> Tuple[str, Dict]:
         """
         Validate and/or clean the content of specified application folder.
 

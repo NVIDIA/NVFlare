@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ from .client_runner import ClientRunnerConfig
 
 
 class _ExecutorDef(object):
-
     def __init__(self):
         self.tasks = []
         self.executor = None
@@ -34,11 +33,7 @@ FL_MODULES = ["server", "client", "aggregators", "handlers", "pt", "app", "app_c
 
 
 class ClientJsonConfigurator(FedJsonConfigurator):
-    def __init__(
-        self,
-        config_file_name: str,
-        exclude_libs=True
-    ):
+    def __init__(self, config_file_name: str, exclude_libs=True):
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
@@ -47,7 +42,8 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             config_file_name=config_file_name,
             base_pkgs=base_pkgs,
             module_names=module_names,
-            exclude_libs=exclude_libs)
+            exclude_libs=exclude_libs,
+        )
 
         self.runner_config = None
         self.executors = []
@@ -62,7 +58,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         # executors
         if re.search(r"^executors\.#[0-9]+$", path):
             self.current_exe = _ExecutorDef()
-            node.props['data'] = self.current_exe
+            node.props["data"] = self.current_exe
             node.exit_cb = self._process_executor_def
             return
 
@@ -82,7 +78,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         return t
 
     def _process_executor_def(self, node: Node):
-        e = node.props['data']
+        e = node.props["data"]
         assert isinstance(e, _ExecutorDef)
         self.validate_tasks(e.tasks)
 
@@ -95,7 +91,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         FedJsonConfigurator.finalize_config(self, config_ctx)
 
         if len(self.executors) <= 0:
-            raise ConfigError('executors are not specified')
+            raise ConfigError("executors are not specified")
 
         task_table = {}
         for e in self.executors:
@@ -109,5 +105,5 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             task_data_filters=self.data_filter_table,
             task_result_filters=self.result_filter_table,
             components=self.components,
-            handlers=self.handlers
+            handlers=self.handlers,
         )

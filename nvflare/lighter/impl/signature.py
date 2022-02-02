@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,10 @@ from nvflare.lighter.utils import sign_all
 
 
 class SignatureBuilder(Builder):
+    """Creates signatures for all the files signed with the root CA for the startup kits so that they
+    can be cryptographically verified to ensure any tampering is detected. This builder writes the signature.pkl file.
+    """
+
     def build(self, study: Study, ctx: dict):
         server = study.get_participants_by_type("server")
         dest_dir = self.get_kit_dir(server, ctx)

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -399,10 +399,6 @@ def start_server_training(server, args, app_root, run_number):
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
-    if os.path.exists(os.path.join(app_root, args.env)):
-        env_config = args.env
-    else:
-        env_config = "/tmp/fl_server/environment.json"
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)
 

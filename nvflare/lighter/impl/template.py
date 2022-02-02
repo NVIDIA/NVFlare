@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,10 @@ from nvflare.lighter.utils import load_yaml
 
 
 class TemplateBuilder(Builder):
+    """Loads the content of the template_file and the authz_def (section of template file with fixed authorization
+    definitions) into two key-value pairs in the build context.
+    """
+
     def initialize(self, ctx):
         resource_dir = self.get_resources_dir(ctx)
         template_file = ctx.get("template_file")

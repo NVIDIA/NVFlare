@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -90,7 +90,8 @@ class PercentilePrivacy(Filter):
         cutoff = np.percentile(a=all_abs_values, q=self.percentile, overwrite_input=False)
         self.log_info(
             fl_ctx,
-            f"Max abs delta_w: {np.max(all_abs_values)}, Min abs delta_w: {np.min(all_abs_values)}, {cutoff=}, scale: {total_steps}.",
+            f"Max abs delta_w: {np.max(all_abs_values)}, Min abs delta_w: {np.min(all_abs_values)},"
+            f"cutoff: {cutoff}, scale: {total_steps}.",
         )
 
         for name in delta_w:

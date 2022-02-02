@@ -53,7 +53,7 @@ General
 
     A :ref:`Task <tasks>` is a piece of work (Python code) that is assigned by the :ref:`Controller <controllers>` to
     client workers. Depending on how the Task is assigned (broadcast, send, or relay), the task will be performed by one
-    or more clients.  The logic to be performed in a Task is defined in an :ref:`Executor <executors>`.
+    or more clients.  The logic to be performed in a Task is defined in an :ref:`Executor <executor>`.
 
 #. What is Learnable?
 
@@ -126,6 +126,7 @@ Operational
     or startup kits, that allow all participants to join the NVIDIA FLARE system from across different locations.  This
     mutual-trust is a mandatory feature of Open Provision API as every participant authenticates others by the
     information inside the configuration.  The configurations usually include, but are not limited to:
+
         - network discovery, such as domain names, port numbers or IP addresses
         - credentials for authentication, such as certificates of participants and root authority
         - authorization policy, such as roles, rights and rules
@@ -189,6 +190,14 @@ Operational
 
     The :ref:`Admin client <admin_commands>` is used to orchestrate the FL study, including starting and stopping server
     and clients, deploying applications, and managing FL experiments.
+
+#. Why am I getting an error about my custom files not being found?
+
+    Make sure that BYOC is enabled. BYOC is always enabled in POC mode, but disabled by default in secure mode when
+    provisioning.  Either through the UI tool or though yml, make sure the ``enable_byoc`` flag is set for each participant.
+    If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
+    There is also a setting for ``allow_byoc`` through the authorization rule groups. This controls whether or not apps
+    containing BYOC code will be allowed to be uploaded and deployed.
 
 ********
 Security

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,18 @@ from nvflare.lighter.spec import Builder, Study
 
 class AuthPolicyBuilder(Builder):
     def __init__(self, orgs, roles, groups, disabled):
+        """Creates and writes authorization.json to the server's startup directory with the authorization policy
+        defining the groups each org is in and the admin client roles which controls the allowed rights. The
+        participant information from project.yml is included in authorization.json with what orgs, groups, and roles
+        are associated with each participant. This builder also checks for errors if the arguments are specified
+        incorrectly.
+
+        Args:
+            orgs: authorization configuration for orgs (it may be helpful to build this section with the UI)
+            roles: authorization configuration for roles (it may be helpful to build this section with the UI)
+            groups: authorization configuration for groups (it may be helpful to build this section with the UI)
+            disabled: if true, all users are super with all privileges
+        """
         self.orgs = orgs
         self.roles = roles
         self.groups = groups
