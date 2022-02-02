@@ -39,6 +39,8 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                                 (when processing DXO of `DataKind.COLLECTION`).
         """
         super().__init__()
+        self.logger.debug(f"expected data kind: {expected_data_kind}")
+        self.logger.debug(f"exclude vars: {exclude_vars}")
         self.logger.debug(f"aggregation weights control: {aggregation_weights}")
 
         self._single_dxo_key = ""
@@ -55,38 +57,46 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             self.expected_data_kind = {self._single_dxo_key: expected_data_kind}
 
         # Check exclude_vars
-        if isinstance(exclude_vars, dict):
-            exclude_vars_dict = dict()  # build default dict for expected entries not specified by the user
-            for k, v in exclude_vars.items():
-                if not isinstance(v, str):
-                    raise ValueError(f"exclude_vars[{k}] = {v} not a string but {type(v)}! Expected type regex string.")
-                if k not in self.expected_data_kind:
-                    exclude_vars_dict[k] = None
-                else:
-                    exclude_vars_dict[k] = v
-            self.exclude_vars = exclude_vars_dict
-        else:
-            self.exclude_vars = {self._single_dxo_key: exclude_vars}
+        exclude_vars_dict = dict()
+        for k in self.expected_data_kind.keys():
+            if isinstance(exclude_vars, dict):
+                if k in exclude_vars:
+                    if not isinstance(exclude_vars[k], str):
+                        raise ValueError(
+                            f"exclude_vars[{k}] = {exclude_vars[k]} not a string but {type(exclude_vars[k])}! "
+                            f"Expected type regex string."
+                        )
+                    exclude_vars_dict[k] = exclude_vars[k]
+            else:
+                exclude_vars_dict[k] = exclude_vars  # assume same exclude vars for each entry of DXO collection.
+        if self._single_dxo_key in self.expected_data_kind:
+            exclude_vars_dict[self._single_dxo_key] = exclude_vars
+        self.exclude_vars = exclude_vars_dict
 
         # Check aggregation weights
         aggregation_weights = aggregation_weights or {}
         aggregation_weights_dict = dict()
-        for key in self.expected_data_kind.keys():
-            if key in aggregation_weights:
+        for k in self.expected_data_kind.keys():
+            if k in aggregation_weights:
                 aggregation_weights_dict[k] = aggregation_weights[k]
             else:
-                aggregation_weights_dict[self._single_dxo_key] = aggregation_weights
+                aggregation_weights_dict[
+                    k
+                ] = aggregation_weights  # assume same aggregation weights for each entry of DXO collection.
+        if self._single_dxo_key in self.expected_data_kind:
+            aggregation_weights_dict[self._single_dxo_key] = aggregation_weights
         self.aggregation_weights = aggregation_weights_dict
 
         # Set up DXO aggregators
         self.dxo_aggregators = dict()
-        for key in self.expected_data_kind.keys():
+        for k in self.expected_data_kind.keys():
             self.dxo_aggregators.update(
                 {
-                    key: DXOAggregator(
-                        exclude_vars=self.exclude_vars[key],
-                        aggregation_weights=self.aggregation_weights[key],
-                        name_postfix=key,
+                    k: DXOAggregator(
+                        exclude_vars=self.exclude_vars[k],
+                        aggregation_weights=self.aggregation_weights[k],
+                        expected_data_kind=self.expected_data_kind[k],
+                        name_postfix=k,
                     )
                 }
             )
