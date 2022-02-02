@@ -15,7 +15,6 @@
 from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable
 
 
@@ -24,10 +23,6 @@ from .learnable_persistor import LearnablePersistor
 
 
 class ModelPersistor(LearnablePersistor, ABC):
-    def __init__(self):
-        """Abstract class for ModelPersistor to save or load models."""
-        super().__init__()
-
     def load(self, fl_ctx: FLContext):
         return self.load_model(fl_ctx)
 
