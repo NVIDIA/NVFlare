@@ -68,7 +68,8 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                         )
                     exclude_vars_dict[k] = exclude_vars[k]
             else:
-                exclude_vars_dict[k] = exclude_vars  # assume same exclude vars for each entry of DXO collection.
+                # assume same exclude vars for each entry of DXO collection.
+                exclude_vars_dict[k] = exclude_vars
         if self._single_dxo_key in self.expected_data_kind:
             exclude_vars_dict[self._single_dxo_key] = exclude_vars
         self.exclude_vars = exclude_vars_dict
@@ -80,9 +81,8 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             if k in aggregation_weights:
                 aggregation_weights_dict[k] = aggregation_weights[k]
             else:
-                aggregation_weights_dict[
-                    k
-                ] = aggregation_weights  # assume same aggregation weights for each entry of DXO collection.
+                # assume same aggregation weights for each entry of DXO collection.
+                aggregation_weights_dict[k] = aggregation_weights
         if self._single_dxo_key in self.expected_data_kind:
             aggregation_weights_dict[self._single_dxo_key] = aggregation_weights
         self.aggregation_weights = aggregation_weights_dict
