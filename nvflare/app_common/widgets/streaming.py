@@ -36,7 +36,6 @@ def send_analytic_dxo(
         dxo (DXO): analytic data in dxo.
         fl_ctx (FLContext): fl context info.
         event_type (str): Event type.
-
     """
     if not isinstance(comp, FLComponent):
         raise TypeError(f"expect comp to be an instance of FLComponent, but got {type(comp)}")
@@ -60,7 +59,6 @@ def create_analytic_dxo(tag: str, value, data_type: AnalyticsDataType, **kwargs)
 
     Returns:
         A DXO object that contains the analytic data.
-
     """
     data = AnalyticsData(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
     dxo = data.to_dxo()
@@ -106,7 +104,6 @@ class AnalyticsSender(Widget):
             scalar (float): Value to send.
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
-
         """
         self._add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, kwargs=kwargs)
 
@@ -118,7 +115,6 @@ class AnalyticsSender(Widget):
             scalars (dict): Key-value pair storing the tag and corresponding values.
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
-
         """
         self._add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, kwargs=kwargs)
 
@@ -130,7 +126,6 @@ class AnalyticsSender(Widget):
             text (str): String to send.
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
-
         """
         self._add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, global_step=global_step, kwargs=kwargs)
 
@@ -142,7 +137,6 @@ class AnalyticsSender(Widget):
             image: Image to send.
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
-
         """
         self._add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, global_step=global_step, kwargs=kwargs)
 
@@ -165,7 +159,6 @@ class AnalyticsReceiver(Widget, ABC):
 
         Args:
             events (optional, List[str]): A list of event that this receiver will handle.
-
         """
         super().__init__()
         if events is None:
@@ -180,7 +173,6 @@ class AnalyticsReceiver(Widget, ABC):
 
         Args:
             fl_ctx (FLContext): fl context.
-
         """
         pass
 
@@ -192,7 +184,6 @@ class AnalyticsReceiver(Widget, ABC):
             fl_ctx (FLContext): fl context.
             shareable (Shareable): the received message.
             record_origin (str): the sender of this message / record.
-
         """
         pass
 
