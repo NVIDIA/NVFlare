@@ -57,7 +57,7 @@ class FullModelShareableGenerator(ShareableGenerator):
             if dxo.data is not None:
                 model_diff = dxo.data
                 for v_name, v_value in model_diff.items():
-                    weights[v_name] += v_value
+                    weights[v_name] = weights[v_name] + v_value
         elif dxo.data_kind == DataKind.WEIGHTS:
             weights = dxo.data
             if not weights:
