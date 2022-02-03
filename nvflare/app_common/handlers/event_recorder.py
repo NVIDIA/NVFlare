@@ -91,6 +91,11 @@ class EventRecorder(FLComponent):
     _KEY_EVENT_REQ = "event_req"
 
     def __init__(self, log_file_name=None):
+        """A component to record all system-wide events.
+
+        Args:
+            log_file_name (str, optional): the log filename to save recorded events. Defaults to None.
+        """
         super().__init__()
 
         all_ctx_reqs = {
@@ -243,6 +248,7 @@ class EventRecorder(FLComponent):
 
 class ServerEventRecorder(EventRecorder):
     def __init__(self):
+        """Server-specific event recorder."""
         super().__init__()
 
         task_data_filter_reqs = _EventReq(
@@ -307,6 +313,7 @@ class ServerEventRecorder(EventRecorder):
 
 class ClientEventRecorder(EventRecorder):
     def __init__(self):
+        """Client-specific event recorder."""
         super().__init__()
 
         task_data_filter_reqs = _EventReq(

@@ -24,7 +24,8 @@ from nvflare.app_common.app_constant import AppConstants
 
 class InTimeAccumulateWeightedAggregator(Aggregator):
     def __init__(self, exclude_vars=None, aggregation_weights=None, expected_data_kind=DataKind.WEIGHT_DIFF):
-        """Perform accumulated weighted aggregation
+        """Perform accumulated weighted aggregation.
+
         It computes
         weighted_sum = sum(shareable*n_iteration*aggregation_weights) and
         sum_of_weights = sum(n_iteration)
@@ -34,8 +35,9 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         weighted_sum / sum_of_weights
 
         Args:
-            exclude_vars ([type], optional): regex to match excluded vars during aggregation. Defaults to None.
-            aggregation_weights ([type], optional): dictionary to map client name to its aggregation weights. Defaults to None.
+            exclude_vars (str, optional): regex to match excluded vars during aggregation. Defaults to None.
+            aggregation_weights (dict, optional): dictionary to map client name to its aggregation weights. Defaults to None.
+            expected_data_kind (DataKind, optional): the data_kind this aggregator can process.  Defaults to WEIGHT_DIFF
         """
         super().__init__()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
@@ -57,7 +59,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.history = []
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        """Store shareable and update aggregator's internal state
+        """Store shareable and update aggregator's internal state.
 
         Args:
             shareable: information from client
@@ -170,7 +172,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         return True
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        """Called when workflow determines to generate shareable to send back to clients
+        """Called when workflow determines to generate shareable to send back to clients.
 
         Args:
             fl_ctx (FLContext): context provided by workflow
@@ -178,7 +180,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         Returns:
             Shareable: the weighted mean of accepted shareables from clients
         """
-
         self.log_debug(fl_ctx, "Start aggregation")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, f"aggregating {len(self.history)} update(s) at round {current_round}")

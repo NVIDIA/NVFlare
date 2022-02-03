@@ -48,7 +48,7 @@ class CrossSiteModelEval(Controller):
         participating_clients=None,
         wait_for_clients_timeout=300,
     ):
-        """Cross Site Model Validation workflow
+        """Cross Site Model Validation workflow.
 
         Args:
             task_check_period (float, optional): How often to check for new tasks or tasks being finished.
@@ -451,7 +451,7 @@ class CrossSiteModelEval(Controller):
                 self.log_exception(fl_ctx, reason)
 
     def _save_validation_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
-        """Saves shareable to given directory within the app_dir
+        """Saves shareable to given directory within the app_dir.
 
         Args:
             name (str): Name of shareable

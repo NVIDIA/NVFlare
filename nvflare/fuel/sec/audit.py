@@ -18,11 +18,12 @@ from datetime import datetime
 
 
 class Auditor(object):
-    """
-    Manages the audit file to log events.
-    """
-
     def __init__(self, audit_file_name: str):
+        """Manages the audit file to log events.
+
+        Args:
+            audit_file_name (str): the location to save audit log file
+        """
         assert isinstance(audit_file_name, str), "audit_file_name must be str"
         if os.path.exists(audit_file_name):
             assert os.path.isfile(audit_file_name), "audit_file_name is not a valid file"
@@ -54,9 +55,7 @@ class Auditor(object):
 
 
 class AuditService(object):
-    """
-    Service for interacting with Auditor to add events to log.
-    """
+    """Service for interacting with Auditor to add events to log."""
 
     the_auditor = None
 

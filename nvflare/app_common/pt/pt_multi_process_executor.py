@@ -19,9 +19,6 @@ from nvflare.app_common.executors.multi_process_executor import MultiProcessExec
 
 
 class PTMultiProcessExecutor(MultiProcessExecutor):
-    def __init__(self, executor_id=None, num_of_processes=1, components=None):
-        super().__init__(executor_id, num_of_processes, components)
-
     def get_multi_process_command(self) -> str:
         return (
             f"{sys.executable} -m torch.distributed.run --nproc_per_node="

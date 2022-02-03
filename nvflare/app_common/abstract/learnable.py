@@ -18,12 +18,8 @@ import pickle
 
 
 class Learnable(dict):
-    def __init__(self) -> None:
-        super().__init__()
-
     def to_bytes(self) -> bytes:
-        """
-            method to serialize the Learnable object into bytes.
+        """Method to serialize the Learnable object into bytes.
 
         Returns:
             object serialized in bytes.
@@ -33,8 +29,7 @@ class Learnable(dict):
 
     @classmethod
     def from_bytes(cls, data: bytes):
-        """
-            method to convert the object bytes into Learnable object.
+        """Method to convert the object bytes into Learnable object.
 
         Args:
             data: a bytes object

@@ -24,7 +24,7 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
 
 
-class AccuItem(object):
+class _AccuItem(object):
     def __init__(self, client, data, steps):
         self.client = client
         self.data = data
@@ -33,6 +33,21 @@ class AccuItem(object):
 
 class AccumulateWeightedAggregator(Aggregator):
     def __init__(self, exclude_vars=None, aggregation_weights=None, expected_data_kind="WEIGHT_DIFF"):
+        """Fed average aggregator.
+
+        This aggregator performs weighted arithmetic average among received shareables from clients.
+
+        Args:
+            exclude_vars (list, optional): if not specified (None), all layers are included;
+                    if list of variable/layer names, only specified variables are excluded;
+                    if string containing regular expression (e.g. "conv"), only matched variables are being excluded.
+                    Defaults to None.
+            aggregation_weights (dict, optional): a mapping from client names to weights. Defaults to None.
+            expected_data_kind (str, optional): the data_kind this aggregator can process. Defaults to "WEIGHT_DIFF".
+
+        Raises:
+            ValueError: if data_kind is neither WEIGHT_DIFF nor WEIGHTS
+        """
         super().__init__()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
         self.aggregation_weights = aggregation_weights or {}
@@ -86,7 +101,7 @@ class AccumulateWeightedAggregator(Aggregator):
 
         if contribution_round == current_round:
             if not self._client_in_accumulator(client_name):
-                self.accumulator.append(AccuItem(client_name, data, n_iter))
+                self.accumulator.append(_AccuItem(client_name, data, n_iter))
                 accepted = True
             else:
                 self.log_info(
@@ -108,11 +123,16 @@ class AccumulateWeightedAggregator(Aggregator):
         return any(client_name == item.client for item in self.accumulator)
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        """
-        Aggregate model variables.
+        """Aggregate model variables.
+
         This function is not thread-safe.
 
-        :return Return True to indicates the current model is the best model so far.
+
+        Args:
+            fl_ctx (FLContext): System-wide FL Context
+
+        Returns:
+            Shareable: Return True to indicates the current model is the best model so far.
         """
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, "aggregating {} updates at round {}".format(len(self.accumulator), current_round))
@@ -130,7 +150,7 @@ class AccumulateWeightedAggregator(Aggregator):
         for v_name in vars_to_aggregate:
             n_local_iters, np_vars = [], []
             for item in self.accumulator:
-                assert isinstance(item, AccuItem)
+                assert isinstance(item, _AccuItem)
                 client_name = item.client
                 data = item.data
                 n_iter = item.steps

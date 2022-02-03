@@ -21,13 +21,22 @@ from nvflare.app_common.pt.pt_model_reader_writer import PTModelReaderWriter
 
 class HEPTModelReaderWriter(PTModelReaderWriter):
     def apply_model(self, network, multi_processes: bool, model_params: dict, fl_ctx: FLContext, options=None):
-        """
-            Write global model back to local model.
-            Needed to extract local parameter shape to reshape decrypted vectors.
+        """Write global model back to local model.
+
+        Needed to extract local parameter shape to reshape decrypted vectors.
 
         Args:
-        :param model_params: a ModelData message
-        :return: True if the local model changed
+            network (pytorch.nn): network object to read/write
+            multi_processes (bool): is the workflow in multi_processes environment
+            model_params (dict): which parameters to read/write
+            fl_ctx (FLContext): FL system-wide contenxt
+            options (dict, optional): additional information on how to process read/write. Defaults to None.
+
+        Raises:
+            RuntimeError: unable to reshape the network layers or mismatch between network layers and model_params
+
+        Returns:
+            list: a list of parameters been processed
         """
         try:
             # net = self.fitter.net

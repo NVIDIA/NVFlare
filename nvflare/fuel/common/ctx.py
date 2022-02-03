@@ -16,11 +16,8 @@ import threading
 
 
 class SimpleContext(object):
-    """
-    A simple context containing a props dictionary of key value pairs and convenience methods.
-    """
-
     def __init__(self):
+        """A simple context containing a props dictionary of key value pairs and convenience methods."""
         self.props = {}
 
     def set_prop(self, key, value):
@@ -41,17 +38,12 @@ class SimpleContext(object):
 
 
 class BaseContext(SimpleContext):
-    """
-    A SimpleContext with threading locks.
-    """
-
     def __init__(self):
-        SimpleContext.__init__(self)
-        self.asked_to_stop = False
-        self._update_lock = threading.Lock()
+        """A SimpleContext with threading locks.
 
-    def ask_to_stop(self):
-        self.asked_to_stop = True
+        This context class enables thread-safe set/get on top of SimpleContext."""
+        SimpleContext.__init__(self)
+        self._update_lock = threading.Lock()
 
     def set_prop(self, key, value):
         with self._update_lock:

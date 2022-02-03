@@ -41,7 +41,9 @@ class ScatterAndGather(Controller):
         train_timeout: int = 0,
         ignore_result_error: bool = True,
     ):
-        """FederatedAveraging Workflow. The ScatterAndGather workflow defines Federated training on all clients.
+        """The controller for FederatedAveraging Workflow.
+
+        The ScatterAndGather workflow defines Federated training on all clients.
         The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.
         Each clients sends it's updated weights after local training which is aggregated (aggregator_id). The
         shareable generator is used to convert the aggregated weights to shareable and shareable back to weights.
@@ -53,11 +55,16 @@ class ScatterAndGather(Controller):
             start_round (int, optional): Start round for training. Defaults to 0.
             wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
                 contributions received. Defaults to 10.
-            train_timeout (int, optional): Time to wait for clients to do local training.
             aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator".
             persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
+            train_timeout (int, optional): Time to wait for clients to do local training.
+            ignore_result_error (bool, optional): whether this controller can proceed if result has errors. Defaults to True.
+
+        Raises:
+            TypeError: when any of input arguments does not have correct type
+            ValueError: when any of input arguments is out of range
         """
         Controller.__init__(self)
 

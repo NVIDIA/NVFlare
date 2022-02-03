@@ -39,7 +39,9 @@ def serialize_cert(cert):
 
 class CertBuilder(Builder):
     def __init__(self):
-        """Handles building (creating and self-signing) the root CA certificates, creating server, client and
+        """Build certificate chain for every participant.
+
+        Handles building (creating and self-signing) the root CA certificates, creating server, client and
         admin certificates, and having them signed by the root CA for secure communication. If the state folder has
         information about previously generated certs, it loads them back and reuses them.
         """

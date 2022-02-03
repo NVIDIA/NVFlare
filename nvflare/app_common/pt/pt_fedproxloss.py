@@ -17,25 +17,28 @@ from torch.nn.modules.loss import _Loss
 
 
 class PTFedProxLoss(_Loss):
-    """Compute FedProx loss: a loss penalizing the deviation from global model
-
-    Args:
-        mu: weighting parameter
-        input (nn.Module): the local pytorch model
-        target (nn.Module): the copy of global pytorch model when local clients received it
-                            at the beginning of each local round
-
-    Returns:
-        FedProx loss term
-    """
-
     def __init__(self, mu: float = 0.01) -> None:
+        """Compute FedProx loss: a loss penalizing the deviation from global model.
+
+        Args:
+            mu: weighting parameter
+        """
         super().__init__()
         if mu < 0.0:
             raise ValueError("mu should be no less than 0.0")
         self.mu = mu
 
     def forward(self, input, target) -> torch.Tensor:
+        """Forward pass in training.
+
+        Args:
+            input (nn.Module): the local pytorch model
+            target (nn.Module): the copy of global pytorch model when local clients received it
+                                at the beginning of each local round
+
+        Returns:
+            FedProx loss term
+        """
         prox_loss: torch.Tensor = 0.0
         for param, ref in zip(input.named_parameters(), target.named_parameters()):
             prox_loss += (self.mu / 2) * torch.sum((param[1] - ref[1]) ** 2)

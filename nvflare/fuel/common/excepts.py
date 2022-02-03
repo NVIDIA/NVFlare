@@ -14,8 +14,6 @@
 
 
 class ConfigError(Exception):
-    """
-    Raised when configuration parsing error happens.
-    """
+    """Raised when configuration parsing error happens."""
 
     pass

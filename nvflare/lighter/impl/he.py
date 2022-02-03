@@ -27,7 +27,9 @@ class HEBuilder(Builder):
         scale_bits=40,
         scheme="CKKS",
     ):
-        """Generates Tenseal homomorphic encryption context for server and client and writes them to server and client
+        """Build Homomorphic related contents.
+
+        Generates Tenseal homomorphic encryption context for server and client and writes them to server and client
         participant folders.
 
         Args:
@@ -36,7 +38,6 @@ class HEBuilder(Builder):
             scale_bits: defaults to 40.
             scheme: defaults to "CKKS".
         """
-
         self._context = None
         self.scheme_type_mapping = {
             "CKKS": ts.SCHEME_TYPE.CKKS,

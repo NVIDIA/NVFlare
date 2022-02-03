@@ -15,8 +15,8 @@
 
 class ModelDescriptor:
     def __init__(self, name: str, location: str, model_format: str, props: dict = None) -> None:
-        """
-        The class to describe the model.
+        """The class to describe the model.
+
         Args:
             name: model name
             location: model location

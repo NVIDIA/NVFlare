@@ -24,7 +24,7 @@ from nvflare.apis.shareable import Shareable
 
 class ExcludeVars(Filter):
     def __init__(self, exclude_vars: Union[List[str], str, None] = None):
-        """Exclude/Remove variables from Shareable
+        """Exclude/Remove variables from Shareable.
 
         Args:
             exclude_vars (Union[List[str], str, None] , optional): variables/layer names to be excluded.
@@ -61,7 +61,7 @@ class ExcludeVars(Filter):
             self.skip = True
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """Called by upper layer to remove variables in weights/weight_diff dictionary
+        """Called by upper layer to remove variables in weights/weight_diff dictionary.
 
         When the return code of shareable is not ReturnCode.OK, this
         function will not perform any process and returns the shareable back.

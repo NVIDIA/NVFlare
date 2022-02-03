@@ -22,7 +22,7 @@ from nvflare.app_common.app_constant import AppConstants
 
 class FullModelShareableGenerator(ShareableGenerator):
     def learnable_to_shareable(self, ml: ModelLearnable, fl_ctx: FLContext) -> Shareable:
-        """Convert Learnable to Shareable
+        """Convert Learnable to Shareable.
 
         Args:
             model (Learnable): model to be converted
@@ -35,7 +35,7 @@ class FullModelShareableGenerator(ShareableGenerator):
         return dxo.to_shareable()
 
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> ModelLearnable:
-        """Convert Shareable to Learnable
+        """Convert Shareable to Learnable.
 
         Supporting TYPE == TYPE_WEIGHT_DIFF or TYPE_WEIGHTS
 

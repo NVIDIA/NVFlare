@@ -4,7 +4,7 @@ profile = "black"
 multi_line_output = 3
 line_length = 120
 skip = [".git", ".eggs", "venv", ".venv", "versioneer.py", "_version.py", "conf.py", "nvflare/__init__.py"]
-skip_glob = [ "nvflare/private/**", "*.pyi", "**/*_pb2*" ]
+skip_glob = [ "*.pyi", "**/*_pb2*" ]
 
 [tool.black]
 line-length = 120
@@ -25,7 +25,6 @@ exclude = '''
     | buck-out
     | build
     | dist
-    | nvflare/private
   )/
   | .pb2.
 )
