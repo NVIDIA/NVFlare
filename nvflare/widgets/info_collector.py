@@ -133,7 +133,7 @@ class InfoCollector(Widget):
         # Do not use the InfoCollector itself for thread safety - multiple calls to
         # this method (from parallel admin commands) are possible at the same time!
         with self.engine.new_context() as fl_ctx:
-            assert isinstance(fl_ctx, FLContext)
+            assert isinstance(fl_ctx, FLContext), "fl_ctx must be FLContext but got {}".format(type(fl_ctx))
             coll = GroupInfoCollector()
             fl_ctx.set_prop(key=self.CTX_KEY_STATS_COLLECTOR, value=coll, sticky=False, private=True)
 

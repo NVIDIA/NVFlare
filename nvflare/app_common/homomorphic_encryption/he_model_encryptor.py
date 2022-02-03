@@ -66,11 +66,19 @@ class HEModelEncryptor(Filter):
         # choose which layers to encrypt
         if encrypt_layers is not None:
             if not (isinstance(encrypt_layers, list) or isinstance(encrypt_layers, str)):
-                raise ValueError("Provide a list of layer names or a string for regex matching")
+                raise ValueError(
+                    "Must provide a list of layer names or a string for regex matching, but got {}".format(
+                        type(encrypt_layers)
+                    )
+                )
         if isinstance(encrypt_layers, list):
             for encrypt_layer in encrypt_layers:
                 if not isinstance(encrypt_layer, str):
-                    raise ValueError("encrypt_layers needs to be a list of layer names to encrypt.")
+                    raise ValueError(
+                        "encrypt_layers needs to be a list of layer names to encrypt, but found element of type {}".format(
+                            type(encrypt_layer)
+                        )
+                    )
             self.encrypt_layers = encrypt_layers
             self.logger.info(f"Encrypting {len(encrypt_layers)} layers")
         elif isinstance(encrypt_layers, str):

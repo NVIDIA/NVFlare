@@ -25,6 +25,7 @@ from multiprocessing.connection import Client
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+
 from .client_status import ClientStatus, get_status_message
 
 
@@ -185,7 +186,8 @@ class ProcessExecutor(ClientExecutor):
         command = (
             f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
             + args.workspace
-            + " -w " + self.startup
+            + " -w "
+            + self.startup
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )

@@ -215,12 +215,20 @@ class PTFileModelPersistor(ModelPersistor):
             self.save_model_file(self._best_ckpt_save_path)
 
     def save_model_file(self, save_path: str):
-        assert isinstance(self.persistence_manager, PTModelPersistenceFormatManager)
+        assert isinstance(
+            self.persistence_manager, PTModelPersistenceFormatManager
+        ), "self.persistence_manager must be PTModelPersistenceFormatManager but got {}".format(
+            type(self.persistence_manager)
+        )
         save_dict = self.persistence_manager.to_persistence_dict()
         torch.save(save_dict, save_path)
 
     def save_model(self, ml: ModelLearnable, fl_ctx: FLContext):
-        assert isinstance(self.persistence_manager, PTModelPersistenceFormatManager)
+        assert isinstance(
+            self.persistence_manager, PTModelPersistenceFormatManager
+        ), "self.persistence_manager must be PTModelPersistenceFormatManager but got {}".format(
+            type(self.persistence_manager)
+        )
         self.persistence_manager.update(ml)
         self.save_model_file(self._ckpt_save_path)
 

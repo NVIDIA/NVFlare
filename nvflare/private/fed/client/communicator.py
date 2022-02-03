@@ -27,7 +27,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata, make_context_data, make_shareeable_data
+from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareeable_data, shareable_to_modeldata
 
 
 class Communicator:

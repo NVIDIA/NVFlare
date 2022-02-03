@@ -159,7 +159,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def set_run_number(self, conn: Connection, args: List[str]):
         num = int(args[1])
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
         conn.append_string(engine.set_run_number(num))
         self._set_run_number_clients(conn, num)
 
@@ -181,7 +183,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def delete_run_number(self, conn: Connection, args: List[str]):
         num = int(args[1])
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
 
         engine_info = engine.get_engine_info()
 
@@ -214,7 +218,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return False, None
 
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
         if engine.get_run_number() < 0:
             conn.append_error("Please set a run number.")
             return False, None
@@ -335,7 +341,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def start_app(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
 
         target_type = args[1]
         if target_type == self.TARGET_TYPE_SERVER:
@@ -368,7 +376,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     # Abort App
     def _abort_clients(self, conn, clients: List[str]) -> bool:
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
 
         err = engine.abort_app_on_clients(clients)
         if err:
@@ -387,7 +397,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def abort_app(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
 
         target_type = args[1]
         if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
@@ -416,7 +428,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def abort_task(self, conn, clients: List[str]) -> str:
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
 
         err = engine.abort_app_on_clients(clients)
         if err:
@@ -464,7 +478,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def shutdown(self, conn: Connection, args: List[str]):
         target_type = args[1]
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
 
         if target_type == self.TARGET_TYPE_SERVER:
             if engine.get_clients():
@@ -505,7 +521,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def remove_client(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
         clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
         err = engine.remove_clients(clients)
         if err:
@@ -516,7 +534,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     # Restart
     def _restart_clients(self, conn, clients) -> str:
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
         engine.remove_clients(clients)
         message = new_message(conn, topic=TrainingTopic.RESTART, body="")
         replies = self.send_request_to_clients(conn, message)
@@ -524,7 +544,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def restart(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
 
         target_type = args[1]
         if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
@@ -585,7 +607,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def check_status(self, conn: Connection, args: List[str]):
         # TODO:: Need more discussion on what status to be shown
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        assert isinstance(
+            engine, ServerEngineInternalSpec
+        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
         dest = args[1]
         if dest == self.TARGET_TYPE_SERVER:
             engine_info = engine.get_engine_info()
@@ -603,7 +627,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if clients:
                 table = conn.append_table(["Client", "Token", "Last Connect Time"])
                 for c in clients:
-                    assert isinstance(c, Client)
+                    assert isinstance(c, Client), "c must be Client but got {}".format(type(c))
                     table.add_row([c.name, str(c.token), time.asctime(time.localtime(c.last_connect_time))])
         elif dest == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=TrainingTopic.CHECK_STATUS, body="")

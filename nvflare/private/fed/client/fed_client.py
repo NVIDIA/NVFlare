@@ -24,8 +24,9 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.private.event import fire_event
-from .fed_client_base import FederatedClientBase
+
 from ..utils.numproto import proto_to_bytes
+from .fed_client_base import FederatedClientBase
 
 
 class FederatedClient(FederatedClientBase):

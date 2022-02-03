@@ -47,7 +47,7 @@ class Message(object):
         if not headers:
             return
 
-        assert isinstance(headers, dict)
+        assert isinstance(headers, dict), "headers must be dict but got {}".format(type(headers))
         if len(headers) > 0:
             self.headers.update(headers)
 

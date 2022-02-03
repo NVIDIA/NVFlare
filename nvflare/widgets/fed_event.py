@@ -158,7 +158,7 @@ class FedEventRunner(Widget):
                 continue
 
             with self.engine.new_context() as fl_ctx:
-                assert isinstance(fl_ctx, FLContext)
+                assert isinstance(fl_ctx, FLContext), "fl_ctx must be FLContext but got {}".format(type(fl_ctx))
 
                 if self.asked_to_stop:
                     self.log_warning(fl_ctx, f"{n} items remained in in_events.  Will stop when it reaches 0.")
@@ -180,7 +180,9 @@ class ServerFedEventRunner(FedEventRunner):
         FedEventRunner.__init__(self, topic)
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
-        assert isinstance(self.engine, ServerEngineSpec)
+        assert isinstance(self.engine, ServerEngineSpec), "self.engine must be ServerEngineSpec but got {}".format(
+            type(self.engine)
+        )
         self.engine.fire_and_forget_aux_request(
             topic=self.topic,
             targets=targets,
@@ -205,5 +207,7 @@ class ClientFedEventRunner(FedEventRunner):
             self.log_warning(fl_ctx, "Engine in not ready, skip the aux event firing.", local_logging=True)
             return
 
-        assert isinstance(self.engine, ClientEngineSpec)
+        assert isinstance(self.engine, ClientEngineSpec), "self.engine must be ClientEngineSpec but got {}".format(
+            type(self.engine)
+        )
         self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx)

@@ -95,7 +95,7 @@ class FedAdminAgent(object):
         assert isinstance(sender, Sender), "sender must be Sender"
 
         auditor = AuditService.get_auditor()
-        assert isinstance(auditor, Auditor), "auditor must be Auditor but got {}".format(type(auditor))
+        assert isinstance(auditor, Auditor), "auditor must be an instance of Auditor, but got {}".format(type(auditor))
 
         self.name = client_name
         self.sender = sender
@@ -186,7 +186,7 @@ class FedAdminAgent(object):
                             ), "processor for topic {} failed to produce valid reply".format(topic)
                     except BaseException as e:
                         traceback.print_exc()
-                        reply = error_reply("exception_occurred")
+                        reply = error_reply("exception_occurred: {}".format(e))
                 else:
                     reply = error_reply("invalid_request")
 

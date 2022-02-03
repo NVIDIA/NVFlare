@@ -26,9 +26,11 @@ class ComponentCallerProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(engine, ClientEngineInternalSpec)
+        assert isinstance(
+            engine, ClientEngineInternalSpec
+        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
         caller = engine.get_widget(WidgetID.COMPONENT_CALLER)
-        assert isinstance(caller, ComponentCaller)
+        assert isinstance(caller, ComponentCaller), "caller must be ComponentCaller, but got {}".format(type(caller))
         run_info = engine.get_current_run_info()
         if not run_info or run_info.run_number < 0:
             result = {"error": "app not running"}

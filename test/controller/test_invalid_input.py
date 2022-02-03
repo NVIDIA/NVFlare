@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+import re
 
 from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_context import FLContext
@@ -93,7 +94,7 @@ def _get_send_test_cases():
                 "task_assignment_timeout": 3,
             },
             ValueError,
-            "task_assignment_timeout need to be less than or equal to task.timeout.",
+            re.escape("task_assignment_timeout (3) needs to be less than or equal to task.timeout (2)."),
         ],
     ]
     return test_cases
@@ -133,7 +134,7 @@ def _get_relay_test_cases():
                 "task_assignment_timeout": 3,
             },
             ValueError,
-            "task_assignment_timeout need to be less than or equal to task.timeout.",
+            re.escape("task_assignment_timeout (3) needs to be less than or equal to task.timeout (2)."),
         ],
         [
             {
@@ -142,7 +143,7 @@ def _get_relay_test_cases():
                 "task_result_timeout": 3,
             },
             ValueError,
-            "task_result_timeout need to be less than or equal to task.timeout.",
+            re.escape("task_result_timeout (3) needs to be less than or equal to task.timeout (2)."),
         ],
         [
             {"task": create_task("__test"), "fl_ctx": FLContext(), "dynamic_targets": False},

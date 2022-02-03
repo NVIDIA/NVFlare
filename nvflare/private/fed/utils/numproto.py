@@ -59,7 +59,7 @@ def bytes_to_proto(data: bytes) -> NDArray:
     Returns:
         Returns an NDArray protobuf message.
     """
-    assert isinstance(data, bytes)
+    assert isinstance(data, bytes), "data must be bytes but got {}".format(type(data))
     return NDArray(ndarray=data)
 
 

@@ -41,17 +41,19 @@ class AnalyticsData:
             kwargs (optional, dict): additional arguments to be passed.
         """
         if not isinstance(tag, str):
-            raise TypeError(f"expect tag to be an instance of str, but got {type(tag)}.")
+            raise TypeError("expect tag to be an instance of str, but got {}.".format(type(tag)))
         if not isinstance(data_type, AnalyticsDataType):
-            raise TypeError(f"expect data_type to be an instance of AnalyticsDataType, but got {type(data_type)}.")
+            raise TypeError(
+                "expect data_type to be an instance of AnalyticsDataType, but got {}.".format(type(data_type))
+            )
         if kwargs and not isinstance(kwargs, dict):
-            raise TypeError(f"expect kwargs to be an instance of dict, but got {type(kwargs)}.")
+            raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
         if data_type == AnalyticsDataType.SCALAR and not isinstance(value, float):
-            raise TypeError(f"expect value to be an instance of float, but got {type(value)}")
+            raise TypeError("expect value to be an instance of float, but got {}.".format(type(value)))
         elif data_type == AnalyticsDataType.SCALARS and not isinstance(value, dict):
-            raise TypeError(f"expect value to be an instance of dict, but got {type(value)}")
+            raise TypeError("expect value to be an instance of dict, but got {}.".format(type(value)))
         elif data_type == AnalyticsDataType.TEXT and not isinstance(value, str):
-            raise TypeError(f"expect value to be an instance of str, but got {type(value)}")
+            raise TypeError("expect value to be an instance of str, but got {}.".format(type(value)))
         self.tag = tag
         self.value = value
         self.data_type = data_type
@@ -72,10 +74,14 @@ class AnalyticsData:
             dxo (DXO): The DXO object to convert.
         """
         if not isinstance(dxo, DXO):
-            raise TypeError(f"expect dxo to be an instance of DXO, but got {type(dxo)}.")
+            raise TypeError("expect dxo to be an instance of DXO, but got {}.".format(type(dxo)))
 
         if len(dxo.data) != 1:
-            raise ValueError("dxo does not have the correct format for AnalyticsData.")
+            raise ValueError(
+                "dxo does not have the correct format for AnalyticsData; expected dxo.data to be length 1, but got {}".format(
+                    len(dxo.data)
+                )
+            )
 
         tag, value = list(dxo.data.items())[0]
 

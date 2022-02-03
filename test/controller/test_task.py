@@ -22,12 +22,12 @@ def _get_create_task_cases():
         [
             {"timeout": -1},
             ValueError,
-            "timeout must >= 0.",
+            "timeout must be >= 0, but got -1.",
         ],
         [
             {"timeout": 1.1},
             TypeError,
-            "timeout must be an instance of int.",
+            "timeout must be an int, but got <class 'float'>.",
         ],
         [
             {"before_task_sent_cb": list()},

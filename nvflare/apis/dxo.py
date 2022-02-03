@@ -156,4 +156,4 @@ def from_bytes(data: bytes) -> DXO:
     if isinstance(x, DXO):
         return x
     else:
-        raise ValueError(f"Data bytes are from type {type(x)} and do not represent a valid DXO instance.")
+        raise ValueError("Data bytes are from type {} and do not represent a valid DXO instance.".format(type(x)))

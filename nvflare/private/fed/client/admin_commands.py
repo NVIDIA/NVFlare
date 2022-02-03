@@ -16,7 +16,7 @@
 
 from nvflare.apis.fl_constant import FLContextKey, AdminCommandNames
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.private.fed.client.client_status import get_status_message
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
@@ -146,7 +146,9 @@ class ShowStatsCommand(CommandProcessor):
         if not collector:
             result = {"error": "no info collector"}
         else:
-            assert isinstance(collector, InfoCollector)
+            assert isinstance(
+                collector, InfoCollector
+            ), "collector must be an instance of InfoCollector, but got {}".format(type(collector))
 
             result = collector.get_run_stats()
 
@@ -180,7 +182,9 @@ class ShowErrorsCommand(CommandProcessor):
         if not collector:
             result = {"error": "no info collector"}
         else:
-            assert isinstance(collector, InfoCollector)
+            assert isinstance(
+                collector, InfoCollector
+            ), "collector must be an instance of InfoCollector, but got {}".format(type(collector))
 
             result = collector.get_errors()
 
@@ -300,6 +304,7 @@ class AdminCommands(object):
             command_processor: AdminCommand processor
 
         """
-        assert isinstance(command_processor, CommandProcessor)
-
+        if not isinstance(command_processor, CommandProcessor):
+            raise TypeError("command_processor must be an instance of CommandProcessor, but got {}".format(type(command_processor)))
+        
         AdminCommands.commands.append(command_processor)

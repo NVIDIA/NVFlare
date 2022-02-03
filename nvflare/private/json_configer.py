@@ -50,10 +50,12 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         """
         JsonObjectProcessor.__init__(self)
 
-        assert isinstance(num_passes, int), "num_passes must be int"
-        assert num_passes > 0, "num_passes must > 0"
+        assert isinstance(num_passes, int), "num_passes must be int but got {}".format(type(num_passes))
+        assert num_passes > 0, "num_passes must > 0 but got {}".format(num_passes)
 
-        assert isinstance(config_file_name, str), "config_file_name must be str"
+        assert isinstance(config_file_name, str), "config_file_name must be str but got {}".format(
+            type(config_file_name)
+        )
         assert os.path.isfile(config_file_name), "config_file_name {} is not a valid file".format(config_file_name)
         assert os.path.exists(config_file_name), "config_file_name {} does not exist".format(config_file_name)
 

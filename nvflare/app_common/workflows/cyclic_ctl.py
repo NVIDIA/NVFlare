@@ -48,15 +48,15 @@ class CyclicController(Controller):
         """
         super().__init__()
         if not isinstance(num_rounds, int):
-            raise TypeError("num_rounds must be int.")
+            raise TypeError("num_rounds must be int but got {}".format(type(num_rounds)))
         if not isinstance(task_assignment_timeout, int):
-            raise TypeError("task_assignment_timeout must be int.")
+            raise TypeError("task_assignment_timeout must be int but got {}".format(type(task_assignment_timeout)))
         if not isinstance(persistor_id, str):
-            raise TypeError("persistor_id must be a string.")
+            raise TypeError("persistor_id must be a string but got {}".format(type(persistor_id)))
         if not isinstance(shareable_generator_id, str):
-            raise TypeError("shareable_generator_id must be a string.")
+            raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
         if not isinstance(task_name, str):
-            raise TypeError("task_name must be a string.")
+            raise TypeError("task_name must be a string but got {}".format(type(task_name)))
         self.num_rounds = num_rounds
         self.persistor_id = persistor_id
         self.shareable_generator_id = shareable_generator_id
@@ -68,10 +68,13 @@ class CyclicController(Controller):
         self.persistor = fl_ctx.get_engine().get_component(self.persistor_id)
         self.shareable_generator = fl_ctx.get_engine().get_component(self.shareable_generator_id)
         if not isinstance(self.persistor, LearnablePersistor):
-            self.system_panic(f"Persistor {self.persistor_id} must be a Persistor instance", fl_ctx)
+            self.system_panic(
+                f"Persistor {self.persistor_id} must be a Persistor instance, but got {type(self.persistor)}", fl_ctx
+            )
         if not isinstance(self.shareable_generator, ShareableGenerator):
             self.system_panic(
-                f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance", fl_ctx
+                f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance, but got {type(self.shareable_generator)}",
+                fl_ctx,
             )
         self.last_learnable = self.persistor.load(fl_ctx)
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.last_learnable, private=True, sticky=True)
