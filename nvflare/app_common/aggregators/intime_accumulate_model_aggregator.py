@@ -22,21 +22,21 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class InTimeAccumulateWeightedAggregator(Aggregator):
-    def __init__(self, expected_data_kind=DataKind.WEIGHT_DIFF, exclude_vars=None, aggregation_weights=None):
+    def __init__(self, exclude_vars=None, aggregation_weights=None, expected_data_kind=DataKind.WEIGHT_DIFF):
         """Perform accumulated weighted aggregation
         It parses the shareable and aggregates the contained DXO(s).
 
         Args:
-            expected_data_kind: DataKind or dict of keys and matching DataKind entries
-                                (when processing DXO of `DataKind.COLLECTION`).
-                                Only the keys in the dict will be processed.
             exclude_vars ([type], optional): regex to match excluded vars during aggregation. Defaults to None.
                                 Can be one string or a dict of keys with regex strings corresponding to each aggregated
                                 DXO when processing a DXO of `DataKind.COLLECTION`.
             aggregation_weights ([type], optional): dictionary to map contributor name to its aggregation weights.
                                 Defaults to None.
                                 Can be one dict or a dict of dicts corresponding to each aggregated DXO
-                                (when processing DXO of `DataKind.COLLECTION`).
+                                when processing DXO of `DataKind.COLLECTION`.
+            expected_data_kind: DataKind or dict of keys and matching DataKind entries
+                                when processing DXO of `DataKind.COLLECTION`.
+                                Only the keys in the dict will be processed.
         """
         super().__init__()
         self.logger.debug(f"expected data kind: {expected_data_kind}")
