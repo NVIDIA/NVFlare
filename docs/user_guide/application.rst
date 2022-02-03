@@ -64,6 +64,9 @@ Example:
     task_result_filters, "What filters to apply to data leaving client, :ref:`filters`"
     components, All of the Components to use
 
+
+.. _custom_code:
+
 ***********
 Custom code
 ***********
@@ -92,6 +95,8 @@ the client config should have the following in order to configure it as an Execu
     Configuration of Executor Tasks is ignored here.
 
 Please follow :ref:`quickstart:Quickstart` to learn more.
+
+.. _troubleshooting_byoc:
 
 Troubleshooting BYOC
 ====================
