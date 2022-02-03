@@ -18,11 +18,12 @@ from nvflare.fuel.hci.cmd_arg_utils import ArgValidator
 
 
 class ShellCommandValidator(object):
-    """
-    Base class for validators to be called by command executors for shell commands.
-    """
-
     def __init__(self, arg_validator: ArgValidator):
+        """Base class for validators to be called by command executors for shell commands.
+
+        Args:
+            arg_validator: instance of ArgValidator
+        """
         self.arg_validator = arg_validator
 
     def validate(self, args: List[str]):
@@ -34,11 +35,8 @@ class ShellCommandValidator(object):
 
 
 class TailValidator(ShellCommandValidator):
-    """
-    Validator for the tail command.
-    """
-
     def __init__(self):
+        """Validator for the tail command."""
         val = ArgValidator("tail")
         val.add_argument("-c", type=int, help="output the last C bytes")
         val.add_argument("-n", type=int, help="output the last N lines")
@@ -47,11 +45,8 @@ class TailValidator(ShellCommandValidator):
 
 
 class HeadValidator(ShellCommandValidator):
-    """
-    Validator for the head command.
-    """
-
     def __init__(self):
+        """Validator for the head command."""
         val = ArgValidator("head")
         val.add_argument("-c", type=int, help="print the first C bytes of each file")
         val.add_argument("-n", type=int, help="print the first N lines instead of the first 10")
@@ -60,11 +55,8 @@ class HeadValidator(ShellCommandValidator):
 
 
 class GrepValidator(ShellCommandValidator):
-    """
-    Validator for the grep command.
-    """
-
     def __init__(self):
+        """Validator for the grep command."""
         val = ArgValidator("grep")
         val.add_argument("-n", action="store_true", help="print line number with output lines")
         val.add_argument("-i", action="store_true", help="ignore case distinctions")
@@ -75,11 +67,8 @@ class GrepValidator(ShellCommandValidator):
 
 
 class CatValidator(ShellCommandValidator):
-    """
-    Validator for the cat command.
-    """
-
     def __init__(self):
+        """Validator for the cat command."""
         val = ArgValidator("cat")
         val.add_argument("-n", action="store_true", help="number all output lines")
         val.add_argument("-b", action="store_true", help="number nonempty output lines, overrides -n")
@@ -90,11 +79,8 @@ class CatValidator(ShellCommandValidator):
 
 
 class LsValidator(ShellCommandValidator):
-    """
-    Validator for the ls command.
-    """
-
     def __init__(self):
+        """Validator for the ls command."""
         val = ArgValidator("ls")
         val.add_argument("-a", action="store_true")
         val.add_argument("-l", action="store_true", help="use a long listing format")

@@ -23,9 +23,7 @@ from .constants import ConnProps
 
 
 class CommandFilter(object):
-    """
-    Base class for filters to run before or after commands.
-    """
+    """Base class for filters to run before or after commands."""
 
     def pre_command(self, conn: Connection, args: List[str]) -> bool:
         """Code to execute before executing a command.
@@ -43,20 +41,27 @@ class CommandFilter(object):
 
 
 class ServerCommandRegister(CommandRegister):
-    """Runs filters and executes commands by calling their handler function. This is the main command register used by
-    AdminServer."""
-
     def __init__(self, app_ctx):
+        """Runs filters and executes commands by calling their handler function.
+
+        This is the main command register used by AdminServer.
+
+        Args:
+            app_ctx: app context
+        """
         CommandRegister.__init__(self, app_ctx)
         self.filters = []
         self.closed = False
 
     def add_filter(self, cmd_filter: CommandFilter):
-        assert isinstance(cmd_filter, CommandFilter), "cmd_filter must be CommandFilter"
+        assert isinstance(cmd_filter, CommandFilter), "cmd_filter must be CommandFilter but got {}.".format(
+            type(cmd_filter)
+        )
         self.filters.append(cmd_filter)
 
     def _do_command(self, conn: Connection, command: str):
-        """
+        """Executes command.
+
         Getting the command from the command registry, invoke filters and call the handler function, passing along conn
         and the args split from the command.
         """

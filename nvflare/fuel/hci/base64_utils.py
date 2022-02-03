@@ -28,8 +28,7 @@ def b64str_to_bytes(b64str: str) -> bytes:
 
 
 def binary_file_to_b64str(file_name) -> str:
-    """
-    Encode content of a binary file to a Base64-encoded ASCII string.
+    """Encode content of a binary file to a Base64-encoded ASCII string.
 
     Args:
         file_name: the binary file to be processed
@@ -42,8 +41,7 @@ def binary_file_to_b64str(file_name) -> str:
 
 
 def b64str_to_binary_file(b64str: str, file_name):
-    """
-    Decode a base64-encoded string and write it into a binary file.
+    """Decode a base64-encoded string and write it into a binary file.
 
     Args:
         b64str: the base64-encoded ASCII string
@@ -59,8 +57,7 @@ def b64str_to_binary_file(b64str: str, file_name):
 
 
 def text_file_to_b64str(file_name) -> str:
-    """
-    Encode content of a text file to a Base64-encoded ASCII string.
+    """Encode content of a text file to a Base64-encoded ASCII string.
 
     Args:
         file_name: name of the text file
@@ -74,8 +71,7 @@ def text_file_to_b64str(file_name) -> str:
 
 
 def b64str_to_text_file(b64str: str, file_name):
-    """
-    Decode a base64-encoded string and write result into a text file.
+    """Decode a base64-encoded string and write result into a text file.
 
     Args:
         b64str: base64-encoded string

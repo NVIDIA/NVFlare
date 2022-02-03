@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Constants for file transfer command module.
-"""
+"""Constants for file transfer command module."""
 
 SERVER_MODULE_NAME = "file_transfer"
 SERVER_CMD_UPLOAD_TEXT = "_upload_text_file"

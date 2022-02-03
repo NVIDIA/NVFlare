@@ -23,11 +23,8 @@ from nvflare.fuel.utils.time_utils import time_to_string
 
 
 class Session(object):
-    """
-    Object keeping track of an admin client session with token and time data.
-    """
-
     def __init__(self):
+        """Object keeping track of an admin client session with token and time data."""
         self.user_name = None
         self.start_time = None
         self.last_active_time = None
@@ -38,11 +35,13 @@ class Session(object):
 
 
 class SessionManager(CommandModule):
-    """
-    CommandModule handling session management.
-    """
-
     def __init__(self, idle_timeout=3600, monitor_interval=5):
+        """Session manager.
+
+        Args:
+            idle_timeout: session idle timeout
+            monitor_interval: interval for obtaining updates when monitoring
+        """
         if monitor_interval <= 0:
             monitor_interval = 5
 
@@ -83,8 +82,7 @@ class SessionManager(CommandModule):
         self.monitor.join(timeout=10)
 
     def create_session(self, user_name):
-        """
-        Creates new session with a new session token.
+        """Creates new session with a new session token.
 
         Args:
             user_name: user name for session
@@ -132,9 +130,9 @@ class SessionManager(CommandModule):
         )
 
     def handle_list_sessions(self, conn: Connection, args: List[str]):
-        """
-        Lists sessions and the details in a table. Not registered by default but can be registered in FedAdminServer
-        with cmd_reg.register_module(sess_mgr).
+        """Lists sessions and the details in a table.
+
+        Not registered by default but can be registered in FedAdminServer with ``cmd_reg.register_module(sess_mgr)``.
         """
         sess_list = list(self.sessions.values())
         sess_list.sort(key=lambda x: x.user_name, reverse=False)

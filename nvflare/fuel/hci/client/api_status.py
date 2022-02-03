@@ -16,9 +16,7 @@ from enum import Enum
 
 
 class APIStatus(str, Enum):
-    """
-    Constants for the valid status options for the status of FLAdminAPIResponse.
-    """
+    """Constants for the valid status options for the status of FLAdminAPIResponse."""
 
     SUCCESS = "SUCCESS"  # command issues successfully
     ERROR_PROTOCOL = (

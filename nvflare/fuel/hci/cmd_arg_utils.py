@@ -43,11 +43,12 @@ def join_args(segs: List[str]) -> str:
 
 
 class ArgValidator(argparse.ArgumentParser):
-    """
-    Validator for admin shell commands that uses argparse to check arguments and get usage through print_help.
-    """
-
     def __init__(self, name):
+        """Validator for admin shell commands that uses argparse to check arguments and get usage through print_help.
+
+        Args:
+            name: name of the program to pass to ArgumentParser
+        """
         argparse.ArgumentParser.__init__(self, prog=name, add_help=False)
         self.err = ""
 

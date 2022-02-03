@@ -27,13 +27,10 @@ CERT_LOGIN_CMD_NAME = "_cert_login"
 
 
 class Authenticator(object):
-    """
-    Base class for authenticating credentials.
-    """
+    """Base class for authenticating credentials."""
 
     def authenticate(self, user_name: str, credential: str, credential_type: str) -> bool:
-        """
-        Authenticate a specified user with the provided credential.
+        """Authenticate a specified user with the provided credential.
 
         Args:
             user_name: user login name
@@ -47,11 +44,12 @@ class Authenticator(object):
 
 
 class SimpleAuthenticator(Authenticator):
-    """
-    Authenticator to use in the LoginModule for authenticating admin clients for login.
-    """
-
     def __init__(self, users):
+        """Authenticator to use in the LoginModule for authenticating admin clients for login.
+
+        Args:
+            users: user information
+        """
         self.users = users
 
     def authenticate_password(self, user_name: str, pwd: str):
@@ -74,16 +72,24 @@ class SimpleAuthenticator(Authenticator):
 
 
 class LoginModule(CommandModule, CommandFilter):
-    """
-    CommandModule containing the login commands to handle login and logout of admin clients, as well as the
-    CommandFilter pre_command to check that a client is logged in with a valid session.
-    """
-
     def __init__(self, authenticator: Authenticator, sess_mgr: SessionManager):
-        if authenticator:
-            assert isinstance(authenticator, Authenticator), "authenticator must be Authenticator"
+        """Login module.
 
-        assert isinstance(sess_mgr, SessionManager), "sess_mgr must be SessionManager"
+        CommandModule containing the login commands to handle login and logout of admin clients, as well as the
+        CommandFilter pre_command to check that a client is logged in with a valid session.
+
+        Args:
+            authenticator: Authenticator
+            sess_mgr: SessionManager
+        """
+        if authenticator:
+            assert isinstance(authenticator, Authenticator), "authenticator must be Authenticator but got {}.".format(
+                type(authenticator)
+            )
+
+        assert isinstance(sess_mgr, SessionManager), "sess_mgr must be SessionManager but got {}.".format(
+            type(sess_mgr)
+        )
 
         self.authenticator = authenticator
         self.session_mgr = sess_mgr

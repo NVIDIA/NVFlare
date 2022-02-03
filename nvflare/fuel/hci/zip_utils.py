@@ -18,8 +18,8 @@ from zipfile import ZipFile
 
 
 def get_all_file_paths(directory):
-    """
-    Get all file paths in the directory.
+    """Get all file paths in the directory.
+
     Args:
         directory: directory to get all paths for
 
@@ -38,12 +38,12 @@ def get_all_file_paths(directory):
 
 
 def _zip_directory(root_dir: str, folder_name: str, writer):
-    """
-    Create a zip archive file for the specified directory.
+    """Create a zip archive file for the specified directory.
 
     Args:
         root_dir: root path that contains the folder to be zipped
         folder_name: path to the folder to be zipped, relative to root_dir
+        writer: file to write to
     """
     dir_name = os.path.join(root_dir, folder_name)
     assert os.path.exists(dir_name), 'directory "{}" does not exist'.format(dir_name)
@@ -60,8 +60,7 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
 
 
 def zip_directory_to_file(root_dir: str, folder_name: str, output_file_name: str):
-    """
-    Create a zip archive file for the specified directory.
+    """Create a zip archive file for the specified directory.
 
     Args:
         root_dir: root path that contains the folder to be zipped
@@ -78,8 +77,7 @@ def zip_directory_to_bytes(root_dir: str, folder_name: str):
 
 
 def _unzip_all(reader, output_dir_name: str):
-    """
-    Decompress a zip archive file and extract all files to the specified output directory.
+    """Decompress a zip archive file and extract all files to the specified output directory.
 
     Args:
         reader: the input zip reader
@@ -94,8 +92,7 @@ def _unzip_all(reader, output_dir_name: str):
 
 
 def unzip_all_from_file(zip_file_name: str, output_dir_name: str):
-    """
-    Decompress a zip archive file and extract all files to the specified output directory.
+    """Decompress a zip archive file and extract all files to the specified output directory.
 
     Args:
         zip_file_name: the input zip archive file

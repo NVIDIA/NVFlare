@@ -21,8 +21,8 @@ from nvflare.fuel.utils.class_utils import instantiate_class
 class ComponentBuilder:
     @abstractmethod
     def get_module_scanner(self):
-        """
-        Provide the package module scanner.
+        """Provide the package module scanner.
+
         Returns: module_scanner
 
         """
@@ -33,7 +33,7 @@ class ComponentBuilder:
             return None
 
         if not isinstance(config_dict, dict):
-            raise ConfigError("component config must be dict")
+            raise ConfigError("component config must be dict but got {}.".format(type(config_dict)))
 
         if config_dict.get("disabled") is True:
             return None
@@ -60,7 +60,7 @@ class ComponentBuilder:
         if "path" in config_dict.keys():
             path_spec = config_dict["path"]
             if not isinstance(path_spec, str):
-                raise ConfigError("path spec must be str")
+                raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
 
             if len(path_spec) <= 0:
                 raise ConfigError("path spec must not be empty")
@@ -76,7 +76,7 @@ class ComponentBuilder:
             class_name = config_dict["name"]
 
             if not isinstance(class_name, str):
-                raise ConfigError("class name must be str")
+                raise ConfigError("class name must be str but got {}.".format(type(class_name)))
 
             if len(class_name) <= 0:
                 raise ConfigError("class name must not be empty")

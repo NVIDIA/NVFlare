@@ -26,8 +26,9 @@ from .reg import ServerCommandRegister
 
 
 class _MsgHandler(socketserver.BaseRequestHandler):
-    """
-    Message handler used by the AdminServer to receive admin commands, validate, then process and do command through the
+    """Message handler.
+
+    Used by the AdminServer to receive admin commands, validate, then process and do command through the
     ServerCommandRegister.
     """
 
@@ -76,10 +77,6 @@ def initialize_hci():
 
 
 class AdminServer(socketserver.ThreadingTCPServer):
-    """
-    Base class of FedAdminServer to create a server that can receive commands.
-    """
-
     # faster re-binding
     allow_reuse_address = True
 
@@ -99,13 +96,25 @@ class AdminServer(socketserver.ThreadingTCPServer):
         server_key=None,
         accepted_client_cns=None,
     ):
+        """Base class of FedAdminServer to create a server that can receive commands.
 
+        Args:
+            cmd_reg: CommandRegister
+            host: the IP address of the admin server
+            port: port number of admin server
+            ca_cert: the root CA's cert file name
+            server_cert: server's cert, signed by the CA
+            server_key: server's private key file
+            accepted_client_cns: list of accepted Common Names from client, if specified
+        """
         socketserver.TCPServer.__init__(self, (host, port), _MsgHandler, False)
 
         self.use_ssl = False
         if ca_cert and server_cert:
             if accepted_client_cns:
-                assert isinstance(accepted_client_cns, list), "accepted_client_cns must be list"
+                assert isinstance(accepted_client_cns, list), "accepted_client_cns must be list but got {}.".format(
+                    accepted_client_cns
+                )
 
             ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             ctx.verify_mode = ssl.CERT_REQUIRED
