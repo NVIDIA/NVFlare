@@ -19,6 +19,7 @@ from nvflare.apis.responder import Responder
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
+
 from .server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
@@ -27,13 +28,24 @@ FL_MODULES = ["server", "client", "aggregators", "handlers", "pt", "app", "app_c
 
 class WorkFlow:
     def __init__(self, id, responder: Responder):
-        super().__init__()
+        """Workflow is a responder with ID.
+
+        Args:
+            id: identification
+            responder (Responder): A responder
+        """
         self.id = id
         self.responder = responder
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
     def __init__(self, config_file_name: str, exclude_libs=True):
+        """This class parses server config from json file.
+
+        Args:
+            config_file_name (str): json file to parse
+            exclude_libs (bool): whether to exclude libs
+        """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 

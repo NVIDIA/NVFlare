@@ -34,7 +34,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     APP_STAGING_PATH = "app_staging_path"
 
-    def __init__(self) -> None:
+    def __init__(self):
+        """A class for training commands."""
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -519,7 +520,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         engine.remove_clients(clients)
         message = new_message(conn, topic=TrainingTopic.RESTART, body="")
         replies = self.send_request_to_clients(conn, message)
-        return self.process_replies_to_string(conn, replies)
+        return self._process_replies_to_string(conn, replies)
 
     def restart(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
@@ -580,10 +581,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         conn.append_string("admin command timeout has been set to: {}".format(timeout))
         conn.append_success("")
 
-    # Check Status
-    # Need more discussion on what status to be shown
-    # Show EngineStatus
+    # Check status
     def check_status(self, conn: Connection, args: List[str]):
+        # TODO:: Need more discussion on what status to be shown
         engine = conn.app_ctx
         assert isinstance(engine, ServerEngineInternalSpec)
         dest = args[1]

@@ -36,18 +36,29 @@ from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
+from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
 
 class ServerEngine(ServerEngineInternalSpec):
-    def __init__(self, server, args, client_manager, workers=3):
+    def __init__(self, server, args, client_manager: ClientManager, workers=3):
+        """Server engine.
+
+        Args:
+            server: server
+            args: arguments
+            client_manager (ClientManager): client manager.
+            workers: number of worker threads.
+        """
+        # TODO:: clean up the server function / requirement here should be BaseServer
         self.server = server
         self.args = args
         self.run_number = -1
         self.run_manager = None
         self.conf = None
+        # TODO:: does this class need client manager?
         self.client_manager = client_manager
 
         self.widgets = {
@@ -252,9 +263,6 @@ class ServerEngine(ServerEngineInternalSpec):
                     invalid_inputs.append(item)
         return clients, invalid_inputs
 
-    def get_all_taskname(self) -> str:
-        return self.server.server_name
-
     def get_app_data(self, app_name: str) -> Tuple[str, object]:
         if self.run_number == -1:
             return "Please set a FL run number.", None
@@ -339,10 +347,9 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def _remove_dead_client(self, token):
         client = self.server.client_manager.remove_client(token)
-        # self.tokens.pop(token, None)
         self.server.remove_client_data(token)
         if self.server.admin_server:
-            self.server.admin_server.client_dead(client.name)
+            self.server.admin_server.client_dead(token)
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.run_manager.aux_runner.register_aux_message_handler(topic, message_handle_func)

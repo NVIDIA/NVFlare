@@ -22,9 +22,6 @@ from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 class ServerCommandModules:
     cmd_modules = [ShellCommandModule(), SystemCommandModule(), TrainingCommandModule(), InfoCollectorCommandModule()]
 
-    def __init__(self) -> None:
-        super().__init__()
-
     @staticmethod
     def register_cmd_module(cmd_module: CommandModule):
         ServerCommandModules.cmd_modules.append(cmd_module)

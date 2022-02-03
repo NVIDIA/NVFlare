@@ -21,8 +21,8 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -33,11 +33,22 @@ class ServerRunnerConfig(object):
         heartbeat_timeout: int,
         task_request_interval: int,
         workflows: [],
-        task_data_filters: dict,  # task_name => list of filters
-        task_result_filters: dict,  # task_name => list of filters
-        handlers=None,  # list of event handlers
-        components=None,  # dict of extra python objects: id => object
+        task_data_filters: dict,
+        task_result_filters: dict,
+        handlers=None,
+        components=None,
     ):
+        """Configuration for ServerRunner.
+
+        Args:
+            heartbeat_timeout (int): Client heartbeat timeout in seconds
+            task_request_interval (int): Task request interval in seconds
+            workflows (list): A list of workflow
+            task_data_filters (dict):  A dict of  {task_name: list of filters apply to data (pre-process)}
+            task_result_filters (dict): A dict of {task_name: list of filters apply to result (post-process}
+            handlers (list, optional):  A list of event handlers
+            components (dict, optional):  A dict of extra python objects {id: object}
+        """
         self.heartbeat_timeout = heartbeat_timeout
         self.task_request_interval = task_request_interval
         self.workflows = workflows
@@ -49,6 +60,13 @@ class ServerRunnerConfig(object):
 
 class ServerRunner(FLComponent):
     def __init__(self, config: ServerRunnerConfig, run_num: int, engine: ServerEngineSpec):
+        """Server runner class.
+
+        Args:
+            config (ServerRunnerConfig): configuration of server runner
+            run_num (int): The number to distinguish each experiment
+            engine (ServerEngineSpec): server engine
+        """
         FLComponent.__init__(self)
         self.run_num = run_num
         self.config = config
@@ -163,21 +181,20 @@ class ServerRunner(FLComponent):
         return SpecialTaskName.TRY_AGAIN, "", task
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> (str, str, Shareable):
-        """
-        Called by the Engine when a task request is received from a client.
+        """Process task request from a client.
 
-        NOTE: the Engine must create a new fl_ctx and:
+        NOTE: the Engine will create a new fl_ctx and call this method:
 
             with engine.new_context() as fl_ctx:
                 name, id, data = runner.process_task_request(client, fl_ctx)
                 ...
 
         Args:
-            client:
-            fl_ctx:
+            client (Client): client object
+            fl_ctx (FLContext): FL context
 
-        Returns: task name, task id, and task data
-
+        Returns:
+            A tuple of (task name, task id, and task data)
         """
         engine = fl_ctx.get_engine()
         assert isinstance(engine, ServerEngineSpec)
@@ -297,23 +314,19 @@ class ServerRunner(FLComponent):
             return self._task_try_again()
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
-        """
-        Called by the Engine when a task result is received from a client.
+        """Process task result submitted from a client.
 
-        NOTE: the Engine must create a new fl_ctx and:
+        NOTE: the Engine will create a new fl_ctx and call this method:
 
             with engine.new_context() as fl_ctx:
                 name, id, data = runner.process_submission(client, fl_ctx)
 
         Args:
-            client:
-            task_name:
-            task_id:
-            result:
-            fl_ctx:
-
-        Returns:
-
+            client: Client object
+            task_name: task name
+            task_id: task id
+            result: task result
+            fl_ctx: FLContext
         """
         self.log_info(fl_ctx, "got result from client for task: name={}, id={}".format(task_name, task_id))
 
