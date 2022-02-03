@@ -25,6 +25,7 @@ from nvflare.fuel.utils.wfconf import _EnvUpdater
 
 class ConfigContext(object):
     def __init__(self):
+        """To init thee ConfigContext."""
         self.config_json = None
         self.pass_num = 0
 
@@ -38,6 +39,15 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         exclude_libs=True,
         num_passes=1,
     ):
+        """To init the JsonConfigurator.
+
+        Args:
+            config_file_name: config filename
+            base_pkgs: base packages need to be scanned
+            module_names: module names need to be scanned
+            exclude_libs: True/False to exclude the libs folder
+            num_passes: number of passes to parsing the config
+        """
         JsonObjectProcessor.__init__(self)
 
         assert isinstance(num_passes, int), "num_passes must be int"
