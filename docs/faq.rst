@@ -296,6 +296,11 @@ Server related questions
     When restarting the FL server, you can find the previous training round number from the previous log. Then you can choose to
     train from scratch or continuously using previous training model.
 
+#. Why does my FL server keep crashing after a certain round?
+
+    Check that the amount of memory being consumed is not increasing in a way that it exceeds the available resources.
+    If the process consumes too much memory, the operating system may kill it.
+
 #. Does the federated learning server need a GPU?
 
     No, there is no need to have GPU on the server side for the FL server to deploy. However, certain handlers may require
