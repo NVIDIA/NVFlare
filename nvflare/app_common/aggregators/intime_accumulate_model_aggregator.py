@@ -39,9 +39,9 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                                 Only the keys in the dict will be processed.
         """
         super().__init__()
-        self.logger.debug(f"expected data kind: {expected_data_kind}")
         self.logger.debug(f"exclude vars: {exclude_vars}")
         self.logger.debug(f"aggregation weights control: {aggregation_weights}")
+        self.logger.debug(f"expected data kind: {expected_data_kind}")
 
         self._single_dxo_key = ""
 
