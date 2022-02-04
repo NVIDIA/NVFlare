@@ -126,7 +126,6 @@ class AdminMessageSender(Sender):
 
         """
         if self.rank == 0:
-            # self.send_client_reply(message)
             for taskname in tuple(self.servers):
                 try:
                     with self._set_up_channel(self.servers[taskname]) as channel:
@@ -135,7 +134,6 @@ class AdminMessageSender(Sender):
                         reply = admin_msg.Reply()
                         reply.client_name = self.client_name
                         reply.message.CopyFrom(message_to_proto(message))
-                        # reply.message = message_to_proto(message)
                         stub.SendResult(reply)
                 except BaseException:
                     pass

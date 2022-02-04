@@ -27,7 +27,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec):
 
         Args:
             topic: topic of the request
-            request: request to be sent
+            request: request Shareable to be sent
             timeout: number of secs to wait for reply. 0 means fire-and-forget.
             fl_ctx: fl context
 
@@ -48,7 +48,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec):
         """Abort the running FL App on the client.
 
         Args:
-            run_number: current_rumbre
+            run_number: current_run_number
             fl_ctx: FLContext
 
         """

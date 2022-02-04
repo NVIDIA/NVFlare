@@ -139,39 +139,6 @@ class ClientEngine(ClientEngineInternalSpec):
     def get_client_name(self):
         return self.client.client_name
 
-    # def wait_training_process_finish(self):
-    #     self.client.process.join()
-    #
-    #     # _cross_validation(self.client, self.args)
-    #     self.client.status = ClientStatus.STOPPED
-
-    # def start_mgpu_client(self, run_number, gpu_number):
-    #     status = self.client.status
-    #     if status == ClientStatus.STARTING or status == ClientStatus.STARTED:
-    #         return "Client already in training."
-    #
-    #     app_root = os.path.join(self.args.app, "run_" + str(run_number), "app_" + self.client.uid)
-    #     if not os.path.exists(app_root):
-    #         return "Client app does not exist. Please deploy it before start client."
-    #
-    #     app_custom_folder = os.path.join(app_root, "custom")
-    #     try:
-    #         sys.path.index(app_custom_folder)
-    #     except ValueError:
-    #         self.remove_custom_path()
-    #         sys.path.append(app_custom_folder)
-    #
-    #     self.logger.info("Starting client training. rank: {}".format(self.rank))
-    #
-    #     open_port = self._get_open_port()
-    #     self._write_token_file(run_number, open_port)
-    #
-    #     self.client_executor.start_mgpu_train(
-    #         self.client, self.args, app_root, gpu_number, app_custom_folder, open_port
-    #     )
-    #
-    #     return "Start the client..."
-
     def _write_token_file(self, run_number, open_port):
         token_file = os.path.join(self.args.workspace, "client_token.txt")
         if os.path.exists(token_file):

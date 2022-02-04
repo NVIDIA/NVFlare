@@ -31,35 +31,6 @@ class ClientInfoProcessor(RequestProcessor):
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         assert isinstance(engine, ClientEngineInternalSpec)
-        # run_info = engine.get_current_run_info()
-        # run_num = -1
-        # if not run_info or run_info.run_number < 0:
-        #     result = {
-        #         'error': 'app not running',
-        #     }
-        # else:
-        #     collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
-        #     if not collector:
-        #         result = {
-        #             'error': 'no info collector'
-        #         }
-        #     else:
-        #         assert isinstance(collector, InfoCollector)
-        #         run_num = run_info.run_number
-        #
-        #         if req.topic == InfoCollectorTopic.SHOW_STATS:
-        #             result = collector.get_run_stats()
-        #         elif req.topic == InfoCollectorTopic.SHOW_ERRORS:
-        #             result = collector.get_errors()
-        #         elif req.topic == InfoCollectorTopic.RESET_ERRORS:
-        #             collector.reset_errors()
-        #             result = {
-        #                 'status': 'OK'
-        #             }
-        #         else:
-        #             result = {
-        #                 'error': 'invalid topic {}'.format(req.topic)
-        #             }
 
         if req.topic == InfoCollectorTopic.SHOW_STATS:
             result = engine.get_current_run_info()

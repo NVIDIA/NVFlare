@@ -65,7 +65,7 @@ class ClientRunner(FLComponent):
         Args:
             config: ClientRunnerConfig
             run_num: run number
-            engine: Clientengine
+            engine: ClientEngine object
             task_fetch_interval:  fetch task interval
         """
         FLComponent.__init__(self)

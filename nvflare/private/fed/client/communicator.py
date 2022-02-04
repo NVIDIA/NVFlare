@@ -46,7 +46,7 @@ class Communicator:
             secure_train: True/False to indicate if secure train
             retry_timeout: retry timeout in seconds
             client_state_processors: Client state processor filters
-            compression: communicate compreession algorithm
+            compression: communicate compression algorithm
         """
         self.ssl_args = ssl_args
         self.secure_train = secure_train
@@ -100,7 +100,7 @@ class Communicator:
         return channel
 
     def get_client_state(self, project_name, token, fl_ctx: FLContext):
-        """Client's meta data used to authenticate and communicate.
+        """Client's metadata used to authenticate and communicate.
 
         Args:
             project_name: FL study project name
@@ -112,10 +112,6 @@ class Communicator:
         """
         state_message = fed_msg.ClientState(token=token)
         state_message.meta.project.name = project_name
-        # if self.client_state_processors and app_ctx:
-        #     for t in self.client_state_processors:
-        #         state_message = t.process(state_message, app_ctx)
-        # state_message.meta.run_number = self.run_number
         state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
 
         context_data = make_context_data(fl_ctx)
@@ -144,7 +140,7 @@ class Communicator:
         return ip
 
     def client_registration(self, client_name, servers, project_name):
-        """Client's meta data used to authenticate and communicate.
+        """Client's metadata used to authenticate and communicate.
 
         Args:
             client_name: client name
@@ -307,7 +303,7 @@ class Communicator:
             topic: aux message topic
             timeout: aux communication timeout
 
-        Returns: servre response message
+        Returns: server response message
 
         """
         client_state = self.get_client_state(project_name, token, fl_ctx)
