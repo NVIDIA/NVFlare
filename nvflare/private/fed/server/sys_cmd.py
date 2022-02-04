@@ -24,9 +24,6 @@ from nvflare.private.fed.server.cmd_utils import CommandUtil
 
 
 class SystemCommandModule(CommandModule, CommandUtil):
-    def __init__(self, allowed_commands=None):
-        self.allowed_commands = allowed_commands
-
     def get_spec(self):
         return CommandModuleSpec(
             name="sys",

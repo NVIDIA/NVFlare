@@ -98,9 +98,7 @@ class _Client(object):
         self.last_heard_time = time.time()
         ref_id = reply.get_ref_id()
         with self.waiter_lock:
-            # print("accept_reply waiter_lock ID: {}".format(ref_id))
             w = self.waiters.pop(ref_id, None)
-            # print("accept_reply waiter_lock ID Done.....")
 
         if w:
             assert isinstance(w, _Waiter)
@@ -110,9 +108,7 @@ class _Client(object):
     def cancel_waiter(self, waiter: _Waiter):
         req = waiter.req
         with self.waiter_lock:
-            # print("cancel waiter_lock ID: {}".format(req.id))
             waiter = self.waiters.pop(req.id, None)
-            # print("cancel waiter_lock ID done .....")
 
         if waiter:
             with self.req_lock:
@@ -122,6 +118,13 @@ class _Client(object):
 
 class ClientReply(object):
     def __init__(self, client_token: str, req: Message, reply: Message):
+        """Client reply.
+
+        Args:
+            client_token (str): client token
+            req (Message): request
+            reply (Message): reply
+        """
         self.client_token = client_token
         self.request = req
         self.reply = reply
@@ -135,24 +138,6 @@ class _ClientReq(object):
 
 
 class FedAdminServer(AdminServer):
-    """
-    The FedAdminServer is the framework for developing admin commands.
-
-    Args:
-        fed_admin_interface: the Fed Server's admin interface
-        users: a dict of user name => pwd hash
-        cmd_modules: a list of CommandModules
-        file_upload_dir: the directory for uploaded files
-        file_download_dir: the directory for files to be downloaded
-        allowed_shell_cmds: list of shell commands allowed. If not specified, all allowed.
-        host: the IP address of the admin server
-        port: port number of admin server
-        ca_cert_file_name: the root CA's cert file name
-        server_cert_file_name: server's cert, signed by the CA
-        server_key_file_name: server's private key file
-        accepted_client_cns: list of accepted Common Names from client, if specified
-    """
-
     def __init__(
         self,
         fed_admin_interface,
@@ -169,6 +154,23 @@ class FedAdminServer(AdminServer):
         accepted_client_cns=None,
         app_validator=None,
     ):
+        """The FedAdminServer is the framework for developing admin commands.
+
+        Args:
+            fed_admin_interface: the server's federated admin interface
+            users: a dict of {username: pwd hash}
+            cmd_modules: a list of CommandModules
+            file_upload_dir: the directory for uploaded files
+            file_download_dir: the directory for files to be downloaded
+            allowed_shell_cmds: list of shell commands allowed. If not specified, all allowed.
+            host: the IP address of the admin server
+            port: port number of admin server
+            ca_cert_file_name: the root CA's cert file name
+            server_cert_file_name: server's cert, signed by the CA
+            server_key_file_name: server's private key file
+            accepted_client_cns: list of accepted Common Names from client, if specified
+            app_validator: Application folder validator.
+        """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
         self.sai = fed_admin_interface
         self.allowed_shell_cmds = allowed_shell_cmds
@@ -179,7 +181,7 @@ class FedAdminServer(AdminServer):
         cmd_reg.register_module(login_module)
 
         # register filters - order is important!
-        # login_module is also a filter that determines user name or authenticated
+        # login_module is also a filter that determines if user is authenticated
         cmd_reg.add_filter(login_module)
 
         # next is the authorization filter and command module
@@ -191,7 +193,9 @@ class FedAdminServer(AdminServer):
 
         # audit filter records commands to audit trail
         auditor = AuditService.get_auditor()
-        assert isinstance(auditor, Auditor), "auditor must be Auditor but got {}".format(type(auditor))
+        # TODO:: clean this up
+        if not isinstance(auditor, Auditor):
+            raise TypeError("auditor must be Auditor but got {}".format(type(auditor)))
         audit_filter = CommandAudit(auditor)
         cmd_reg.add_filter(audit_filter)
 
@@ -227,16 +231,16 @@ class FedAdminServer(AdminServer):
 
         self.clients = {}  # token => _Client
         self.client_lock = threading.Lock()
-        self.timeout = 10.0  # default admin command timeout
+        self.timeout = 10.0
 
     def client_heartbeat(self, token):
-        """
-        This method is called by the Fed Engine to indicate the client is alive.
+        """Receive client heartbeat.
+
         Args:
-            token:
+            token: the session token of the client
 
         Returns:
-
+            Client.
         """
         with self.client_lock:
             client = self.clients.get(token)
@@ -246,23 +250,17 @@ class FedAdminServer(AdminServer):
             client.last_heard_time = time.time()
             return client
 
-    def client_dead(self, client_token):
-        """
-        This method is called by the Fed Engine to indicate the client is dead.
+    def client_dead(self, token):
+        """Remove dead client.
 
         Args:
-            client_token: the session token of the client
-
-        Returns:
-
+            token: the session token of the client
         """
         with self.client_lock:
-            self.clients.pop(client_token, None)
+            self.clients.pop(token, None)
 
     def get_client_tokens(self) -> []:
-        """
-        Get tokens of existing clients.
-        """
+        """Get tokens of existing clients."""
         result = []
         with self.client_lock:
             for token in self.clients.keys():
@@ -287,19 +285,21 @@ class FedAdminServer(AdminServer):
         return self.send_requests(reqs, timeout_secs)
 
     def send_requests(self, requests: dict, timeout_secs=2.0) -> [ClientReply]:
-        """
-        This method is to be used by a Command Handler to send requests to Clients.
-        Hence it is run in the Command Handler's handling thread.
-        This is a blocking call - returned only after all responses are received or timeout.
+        """Send requests to clients.
+
+        NOTE::
+
+            This method is to be used by a Command Handler to send requests to Clients.
+            Hence, it is run in the Command Handler's handling thread.
+            This is a blocking call - returned only after all responses are received or timeout.
 
         Args:
-            requests: a dict of requests: client token => req message or list of msgs
+            requests: A dict of requests: {client token: request or list of requests}
             timeout_secs: how long to wait for reply before timeout
 
-        Returns: a list of ClientReply
-
+        Returns:
+            A list of ClientReply
         """
-
         assert isinstance(requests, dict), "requests must be a dict"
 
         if len(requests) <= 0:
@@ -375,54 +375,16 @@ class FedAdminServer(AdminServer):
 
         return result
 
-    def send_to_all_clients(self, req: Message, timeout_secs=2.0) -> [ClientReply]:
-        """
-        This method is to be used by a Command Handler to send a request to all Clients.
-        Hence it is run in the Command Handler's handling thread.
-        This is a blocking call - returned only after all responses are received or timeout.
-
-        Args:
-            req: the request to be sent
-            timeout_secs: how long to wait for reply before timeout
-
-        Returns: a list of ClientReply
-
-        """
-        assert isinstance(req, Message), "req must be a Message"
-        return self.send_requests_to_all_clients([req], timeout_secs)
-
-    def send_requests_to_all_clients(self, reqs: [Message], timeout_secs=2.0) -> [ClientReply]:
-        """
-        Send multiple request messages to all clients and wait for replies
-
-        Args:
-            reqs: requests to be sent
-            timeout_secs: how long to wait for reply before timeout
-
-        Returns: a list of ClientReply
-
-        """
-        if len(reqs) <= 0:
-            return []
-
-        client_reqs = []
-        with self.client_lock:
-            for _, client in self.clients.items():
-                for req in reqs:
-                    client_reqs.append(_ClientReq(client, req))
-
-        return self._send_client_reqs(client_reqs, timeout_secs)
-
     def accept_reply(self, client_token, reply: Message):
-        """
-        This method is to be called by the FL Engine after a client response is received.
-        Hence it is called from the FL Engine's message processing thread.
+        """Accept client reply.
+
+        NOTE::
+            This method is to be called by the FL Engine after a client's reply is received.
+            Hence, it is called from the FL Engine's message processing thread.
 
         Args:
             client_token: session token of the client
             reply: the reply message
-
-        Returns:
         """
         client = self.client_heartbeat(client_token)
 
@@ -432,16 +394,18 @@ class FedAdminServer(AdminServer):
         client.accept_reply(reply)
 
     def get_outgoing_requests(self, client_token, max_reqs=0):
-        """
-        This method is called by FL Engine to get outgoing messages to the client, so it
-        can send them to the client.
+        """Get outgoing request from a client.
+
+        NOTE::
+            This method is called by FL Engine to get outgoing messages to the client, so it
+            can send them to the client.
 
         Args:
             client_token: session token of the client
             max_reqs: max number of requests. 0 means unlimited.
 
         Returns:
-
+            outgoing requests. A list of Message.
         """
         with self.client_lock:
             client = self.clients.get(client_token)

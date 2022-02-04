@@ -14,33 +14,31 @@
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.private.aux_runner import AuxRunner
 
 
 class ServerAuxRunner(AuxRunner):
-
-    """
-    Note: The ServerEngine must create a new ServerAuxRunner object for each RUN, and make sure
-    it is added as an event handler!
-
-    """
-
     def __init__(self):
+        """This class is for auxiliary channel communication on server side.
+
+        Note: The ServerEngine must create a new ServerAuxRunner object for each RUN, and make sure
+              it is added as an event handler.
+        """
         AuxRunner.__init__(self)
 
     def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        """
+        """Send request through auxiliary channel.
 
         Args:
-            targets: list of client names that the request will be sent to
-            topic: topic of the request
-            request: request data
-            timeout: how long to wait for result. 0 means fire-and-forget
-            fl_ctx: the FL context
+            targets (list): list of client names that the request will be sent to
+            topic (str): topic of the request
+            request (Shareable): request
+            timeout (float): how long to wait for result. 0 means fire-and-forget
+            fl_ctx (FLContext): the FL context
 
-        Returns: a dict of results
-
+        Returns:
+            A dict of results
         """
         if not isinstance(request, Shareable):
             raise ValueError("invalid request type: expect Shareable but got {}".format(type(request)))

@@ -33,8 +33,8 @@ class CommandUtil(object):
     SITE_SERVER = "server"
 
     def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
-        """
-        Validate specified args and determine and set target type and target names in conn.
+        """Validate specified args and determine and set target type and target names in the Connection.
+
         The args must be like this:
 
             target_type client_names ...
@@ -42,11 +42,11 @@ class CommandUtil(object):
         where target_type is one of 'all', 'client', 'server'
 
         Args:
-            conn:
-            args:
+            conn: A Connection object.
+            args: Specified arguments.
 
-        Returns: error message if error found
-
+        Returns:
+            An error message. It is empty "" if no error found.
         """
         # return target type and a list of target names
         if len(args) < 1:
@@ -158,14 +158,11 @@ class CommandUtil(object):
             return replies
 
     def process_replies_to_table(self, conn: Connection, replies):
-        """
-        Display the responses in a table format.
+        """Process the clients' replies and put in a table format.
+
         Args:
-            conn:
+            conn: A Connection object.
             replies: replies from clients
-
-        Returns:
-
         """
         if not replies:
             conn.append_string("no responses from clients")
@@ -184,15 +181,15 @@ class CommandUtil(object):
 
             table.add_row([client_name, resp])
 
-    def process_replies_to_string(self, conn: Connection, replies) -> str:
-        """
-        Display thee responses in String format.
+    def _process_replies_to_string(self, conn: Connection, replies) -> str:
+        """Process the clients replies and put in a string format.
+
         Args:
-            conn:
+            conn: A Connection object.
             replies: replies from clients
 
         Returns:
-
+            A string response.
         """
         engine = conn.app_ctx
         response = "no responses from clients"
