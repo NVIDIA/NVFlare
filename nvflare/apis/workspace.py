@@ -12,29 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Workspace folder structure:
-
-WSROOT
-    startup (optional)
-        provisioned content
-    runs
-        1
-            config (required)
-                config_fed_client.json
-                config_fed_server.json
-                ...
-            custom (optional)
-                custom python code
-            whatever (app defined)
-
-"""
 
 import os
 
 
-class Workspace(object):
+class Workspace:
     def __init__(self, root_dir: str, name: str, config_folder: str):
+        """Define a workspace.
+
+        NOTE::
+
+            Workspace folder structure:
+
+                Workspace ROOT
+                    startup (optional)
+                        provisioned content
+                    runs
+                        1
+                            config (required)
+                                configurations
+                            custom (optional)
+                                custom python code
+                            other_folder (app defined)
+
+        Args:
+            root_dir: root directory.
+            name: name of the workspace.
+            config_folder: where to find required config inside an app.
+        """
         self.root_dir = root_dir
         self.name = name
         self.config_folder = config_folder
