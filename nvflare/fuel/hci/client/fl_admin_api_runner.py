@@ -60,8 +60,9 @@ class FLAdminAPIRunner:
         poc=False,
         debug=False,
     ):
-        """Initializes and logs into an FLAdminAPI instance. The default locations for certs, keys, and directories
-        are used.
+        """Initializes and logs into an FLAdminAPI instance.
+
+        The default locations for certs, keys, and directories are used.
 
         Args:
             host: string for
@@ -71,7 +72,6 @@ class FLAdminAPIRunner:
             poc: whether to run in poc mode without SSL certs
             debug: whether to turn on debug mode
         """
-
         assert isinstance(host, str), "host must be str"
         assert isinstance(port, int), "port must be int"
         assert isinstance(username, str), "username must be str"
@@ -127,8 +127,10 @@ class FLAdminAPIRunner:
         shutdown_on_error=False,
         shutdown_at_end=False,
     ):
-        """An example script to upload, deploy, and start a specified app(app folder must be in upload_dir already).
-        Prints the command to be executed first so it is easy to follow along as the commands run.
+        """An example script to upload, deploy, and start a specified app.
+
+        Note that the app folder must be in upload_dir already. Prints the command to be executed first so it is easy
+        to follow along as the commands run.
 
         Args:
             run_number: run number to use

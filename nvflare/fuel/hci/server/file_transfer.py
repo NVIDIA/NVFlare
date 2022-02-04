@@ -38,11 +38,14 @@ def upload_folder_authz_func_signature(folder_path: str) -> (str, AuthzContext):
 
 
 class FileTransferModule(CommandModule):
-    """
-    Command module for file transfers.
-    """
-
     def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None):
+        """Command module for file transfers.
+
+        Args:
+            upload_dir:
+            download_dir:
+            upload_folder_authz_func:
+        """
         assert os.path.isdir(upload_dir), "upload_dir {} is not a valid dir".format(upload_dir)
 
         assert os.path.isdir(download_dir), "download_dir {} is not a valid dir".format(download_dir)

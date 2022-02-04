@@ -14,11 +14,13 @@
 
 
 class EndPoint(object):
-    """
-    Object with put and get functions.
-    """
-
     def __init__(self, get_func, put_func):
+        """Object with put and get functions.
+
+        Args:
+            get_func: get function
+            put_func: put function
+        """
         self.get_func = get_func
         self.put_func = put_func
 
@@ -30,11 +32,12 @@ class EndPoint(object):
 
 
 class Pipe(object):
-    """
-    Base class for communication.
-    """
-
     def __init__(self, name):
+        """Base class for communication.
+
+        Args:
+            name: name of pipe
+        """
         self.name = name
         self.x = EndPoint(self.x_get, self.x_put)
         self.y = EndPoint(self.y_get, self.y_put)

@@ -67,9 +67,7 @@ def _split_data(data: str):
 
 
 def _process_one_line(line: str, process_json_func):
-    """
-    Validate and process one line, which should be a str containing a JSON document.
-    """
+    """Validate and process one line, which should be a str containing a JSON document."""
     json_data = validate_proto(line)
     process_json_func(json_data)
 
@@ -101,11 +99,13 @@ def receive_and_process(sock, process_json_func):
 
 
 class Connection(BaseContext):
-    """
-    Object containing connection information and buffer to build and send a line with socket passed in at init.
-    """
-
     def __init__(self, sock, server):
+        """Object containing connection information and buffer to build and send a line with socket passed in at init.
+
+        Args:
+            sock: sock for the connection
+            server: server for the connection
+        """
         BaseContext.__init__(self)
         self.sock = sock
         self.server = server
@@ -117,9 +117,7 @@ class Connection(BaseContext):
         self.buffer = Buffer()
 
     def _send_line(self, line: str, all_end=False):
-        """
-        If not self.ended, send line with sock.
-        """
+        """If not ``self.ended``, send line with sock."""
         if self.ended:
             return
 

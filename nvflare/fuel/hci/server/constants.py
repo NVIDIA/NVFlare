@@ -14,9 +14,7 @@
 
 
 class ConnProps(object):
-    """
-    Constants for connection properties.
-    """
+    """Constants for connection properties."""
 
     EVENT_ID = "_eventId"
     USER_NAME = "_userName"

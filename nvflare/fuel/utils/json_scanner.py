@@ -18,11 +18,12 @@ from nvflare.fuel.common.excepts import ConfigError
 
 
 class Node(object):
-    """
-    A JSON element with additional data.
-    """
-
     def __init__(self, element):
+        """A JSON element with additional data.
+
+        Args:
+            element: element to create Node object for
+        """
         self.parent = None
         self.element = element
         self.level = 0
@@ -63,30 +64,25 @@ def _child_node(node: Node, key, pos, element) -> Node:
 
 
 class JsonObjectProcessor(object):
-    """
-    JsonObjectProcessor is used to process JSON elements by the scan_json() function.
-
-    """
+    """JsonObjectProcessor is used to process JSON elements by the scan_json() function."""
 
     def process_element(self, node: Node):
-        """
-        This method is called by the scan() function for each JSON element scanned.
+        """This method is called by the scan() function for each JSON element scanned.
 
         Args:
             node: the node representing the JSON element
-
-        Returns:
-
         """
         pass
 
 
 class JsonScanner(object):
-    """
-    Scanner for processing JSON data.
-    """
-
     def __init__(self, json_data: dict, location=None):
+        """Scanner for processing JSON data.
+
+        Args:
+            json_data: dictionary containing json data to scan
+            location: location to provide in error messages
+        """
         assert isinstance(json_data, dict), "json_data must be dict"
         self.location = location
         self.data = json_data

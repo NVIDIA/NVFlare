@@ -17,6 +17,11 @@ import threading
 
 class Queue(object):
     def __init__(self, name):
+        """Queue object with basic functions.
+
+        Args:
+            name: name of queue
+        """
         self.name = name
         self.items = []
         self._update_lock = threading.Lock()
@@ -63,6 +68,12 @@ class Queue(object):
 
 class Channel(object):
     def __init__(self, src, dest):
+        """Channel object.
+
+        Args:
+            src: source
+            dest: destination
+        """
         self.src = src
         self.dest = dest
         self.req = Queue("req")

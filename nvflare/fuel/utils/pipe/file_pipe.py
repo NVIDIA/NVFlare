@@ -20,11 +20,13 @@ from .pipe import Pipe
 
 
 class FilePipe(Pipe):
-    """
-    Implementation of communication through the file system.
-    """
-
     def __init__(self, root_path: str, name: str):
+        """Implementation of communication through the file system.
+
+        Args:
+            root_path: root path
+            name: name of pipe
+        """
         assert os.path.exists(root_path), 'root path "{}" does not exist'.format(root_path)
         pipe_path = os.path.join(root_path, name)
 

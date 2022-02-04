@@ -21,16 +21,17 @@ from .reg import CommandFilter
 
 
 class CommandAudit(CommandFilter):
-    """
-    Command filter for auditing by adding events.
-
-    This filter needs to be registered after the login filter because it needs the user name established
-    by the login filter.
-    """
-
     def __init__(self, auditor: Auditor):
+        """Command filter for auditing by adding events.
+
+        This filter needs to be registered after the login filter because it needs the username established
+        by the login filter.
+
+        Args:
+            auditor: instance of Auditor
+        """
         CommandFilter.__init__(self)
-        assert isinstance(auditor, Auditor), "auditor must be Auditor"
+        assert isinstance(auditor, Auditor), "auditor must be Auditor but got {}".format(type(auditor))
         self.auditor = auditor
 
     def pre_command(self, conn: Connection, args: List[str]):

@@ -87,11 +87,12 @@ class AuthorizationService(object):
 
 
 class AuthzFilter(CommandFilter):
-    """
-    Filter for authorization of admin commands.
-    """
-
     def __init__(self, authorizer: Authorizer):
+        """Filter for authorization of admin commands.
+
+        Args:
+            authorizer: instance of Authorizer
+        """
         CommandFilter.__init__(self)
         assert isinstance(authorizer, Authorizer), "authorizer must be Authorizer but got {}".format(type(authorizer))
         self.authorizer = authorizer
@@ -142,6 +143,11 @@ class AuthzFilter(CommandFilter):
 
 class AuthzCommandModule(CommandModule):
     def __init__(self, authorizer: Authorizer):
+        """Authorization command module.
+
+        Args:
+            authorizer: instance of Authorizer
+        """
         assert isinstance(authorizer, Authorizer), "authorizer must be Authorizer but got {}".format(type(authorizer))
         self.authorizer = authorizer
 
