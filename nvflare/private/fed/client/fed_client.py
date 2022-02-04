@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The client of the federated training process"""
+"""The client of the federated training process."""
+
 import pickle
 from typing import List, Optional
 
@@ -28,9 +29,7 @@ from ..utils.numproto import proto_to_bytes
 
 
 class FederatedClient(FederatedClientBase):
-    """
-    Federated client-side implementation.
-    """
+    """Federated client-side implementation."""
 
     def __init__(
         self,
@@ -45,6 +44,20 @@ class FederatedClient(FederatedClientBase):
         compression=None,
         enable_byoc=False,
     ):
+        """To init FederatedClient.
+
+        Args:
+            client_name: client name
+            client_args: client config args
+            secure_train: True/False to indicate secure train
+            server_args: server config args
+            retry_timeout: retry timeout seconds
+            client_state_processors: Client state processor filters
+            handlers: handlers
+            executors: executors
+            compression: communication compression algorithm
+            enable_byoc: True/False to allow byoc
+        """
         # We call the base implementation directly.
         super().__init__(
             client_name=client_name,

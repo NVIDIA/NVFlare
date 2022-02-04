@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""NumPy ndarray to protobuf serialization and deserialization"""
+"""NumPy ndarray to protobuf serialization and deserialization."""
+
 from io import BytesIO
 
 import numpy as np
@@ -22,8 +23,10 @@ from nvflare.private.fed.protos.federated_pb2 import NDArray
 
 def ndarray_to_proto(nda: np.ndarray) -> NDArray:
     """Serializes a numpy array into an NDArray protobuf message.
+
     Args:
         nda (np.ndarray): numpy array to serialize.
+
     Returns:
         Returns an NDArray protobuf message.
     """
@@ -35,8 +38,10 @@ def ndarray_to_proto(nda: np.ndarray) -> NDArray:
 
 def proto_to_ndarray(nda_proto: NDArray) -> np.ndarray:
     """Deserializes an NDArray protobuf message into a numpy array.
+
     Args:
         nda_proto (NDArray): NDArray protobuf message to deserialize.
+
     Returns:
         Returns a numpy.ndarray.
     """
@@ -47,8 +52,10 @@ def proto_to_ndarray(nda_proto: NDArray) -> np.ndarray:
 
 def bytes_to_proto(data: bytes) -> NDArray:
     """Serializes a bytes into an NDArray protobuf message.
+
     Args:
         data : bytes data
+
     Returns:
         Returns an NDArray protobuf message.
     """
@@ -58,8 +65,10 @@ def bytes_to_proto(data: bytes) -> NDArray:
 
 def proto_to_bytes(nda_proto: NDArray) -> bytes:
     """Deserializes an NDArray protobuf message into bytes.
+
     Args:
         nda_proto (NDArray): bytes.
+
     Returns:
         Returns bytes.
     """

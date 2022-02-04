@@ -34,6 +34,12 @@ FL_MODULES = ["server", "client", "aggregators", "handlers", "pt", "app", "app_c
 
 class ClientJsonConfigurator(FedJsonConfigurator):
     def __init__(self, config_file_name: str, exclude_libs=True):
+        """To init the ClientJsonConfigurator.
+
+        Args:
+            config_file_name: config file name
+            exclude_libs: True/False to exclude the libs folder
+        """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 

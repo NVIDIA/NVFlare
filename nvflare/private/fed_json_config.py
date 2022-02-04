@@ -21,12 +21,21 @@ from nvflare.private.json_configer import JsonConfigurator, ConfigContext, Confi
 
 class FilterChain(object):
     def __init__(self):
+        """To init the FilterChain."""
         self.tasks = []
         self.filters = []
 
 
 class FedJsonConfigurator(JsonConfigurator):
     def __init__(self, config_file_name: str, base_pkgs: [str], module_names: [str], exclude_libs=True):
+        """To init the FedJsonConfigurator.
+
+        Args:
+            config_file_name: config filename
+            base_pkgs: base packages need to be scanned
+            module_names: module names need to be scanned
+            exclude_libs: True/False to exclude the libs folder
+        """
         JsonConfigurator.__init__(
             self,
             config_file_name=config_file_name,

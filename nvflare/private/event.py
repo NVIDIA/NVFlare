@@ -24,15 +24,14 @@ _MAX_EVENT_DEPTH = 20
 
 
 def fire_event(event: str, handlers: list, ctx: FLContext):
-    """
-    Fires the specified event and invokes the list of handlers.
+    """Fires the specified event and invokes the list of handlers.
 
     Args:
         event: the event to be fired
         handlers: handlers to be invoked
         ctx: context for cross-component data sharing
 
-    Returns:
+    Returns: N/A
 
     """
     event_id = str(uuid.uuid4())

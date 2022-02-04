@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Provides a command line interface for a federated client trainer"""
+"""Provides a command line interface for a federated client trainer."""
 
 import argparse
 import os
@@ -33,6 +33,7 @@ from nvflare.private.fed.client.command_agent import CommandAgent
 
 
 def main():
+    """Worker_process start program."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
@@ -175,6 +176,12 @@ def main():
 
 
 def remove_restart_file(args):
+    """To remove the restart.fl file.
+
+    Args:
+        args: command args
+
+    """
     restart_file = os.path.join(args.workspace, "restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)

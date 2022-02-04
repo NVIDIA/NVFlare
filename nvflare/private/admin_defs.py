@@ -29,6 +29,12 @@ class ReturnCode(object):
 
 class Message(object):
     def __init__(self, topic: str, body):
+        """To init a Message.
+
+        Args:
+            topic: message topic
+            body: message body.
+        """
         self.id = str(uuid.uuid4())
         self.topic = topic
         self.body = body

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The client of the federated training process"""
+"""The client of the federated training process."""
 
 import logging
 import threading
@@ -33,8 +33,8 @@ from .communicator import Communicator
 
 
 class FederatedClientBase:
-    """
-    Federated client-side base implementation.
+    """Federated client-side base implementation.
+
     This class provide the tools function which will be used in both FedClient and FedClientLite.
     """
 
@@ -49,6 +49,18 @@ class FederatedClientBase:
         handlers: Optional[List[FLComponent]] = None,
         compression=None,
     ):
+        """To init FederatedClientBase.
+
+        Args:
+            client_name: client name
+            client_args: client config args
+            secure_train: True/False to indicate secure train
+            server_args: server config args
+            retry_timeout: retry timeout
+            client_state_processors: client state processor filters
+            handlers: handlers
+            compression: communication compression algorithm
+        """
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.client_name = client_name
@@ -75,12 +87,12 @@ class FederatedClientBase:
         self.status = ClientStatus.NOT_STARTED
 
     def client_register(self, project_name):
-        """
-        Register the client to the FL server and get the FL token.
+        """Register the client to the FL server and get the FL token.
+
         Args:
             project_name: FL server project name
 
-        Returns:
+        Returns: N/A
 
         """
         if not self.token:
@@ -100,12 +112,14 @@ class FederatedClientBase:
                 self.communicator.heartbeat_done = True
 
     def fetch_execute_task(self, project_name, fl_ctx: FLContext):
-        """
-        Get registered with the remote server via channel,
-        and fetch the server's model parameters.
+        """Get registered with the remote server via channel, and fetch the server's model parameters.
 
-        :param project_name: server identifier string
-        :return: a CurrentTask message from server
+        Args:
+            project_name: FL study project name
+            fl_ctx: FLContext
+
+        Returns:  a CurrentTask message from server
+
         """
         try:
             self.logger.info("Starting to fetch execute task.")
@@ -117,12 +131,17 @@ class FederatedClientBase:
             # self.communicator.heartbeat_done = True
 
     def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
-        """
-        Read local model and push to self.server[task_name] channel.
+        """Read local model and push to self.server[task_name] channel.
+
         This function makes and sends a Contribution Message.
 
-        :param project_name: should be one of the keys of `self.server`
-        :param shareable: Shareable object to submit to server
+        Args:
+            project_name: FL study project name
+            shareable: Shareable object
+            fl_ctx: FLContext
+
+        Returns: reply message
+
         """
         try:
             self.logger.info("Starting to push execute result.")
@@ -137,14 +156,19 @@ class FederatedClientBase:
             # self.communicator.heartbeat_done = True
 
     def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """
-        Read local model and push to self.server[task_name] channel.
+        """Read local model and push to self.server[task_name] channel.
+
         This function makes and sends a Contribution Message.
 
-        :param topic: should be message topic
-        :param timeout: timeout
-        :param project_name: should be one of the keys of `self.server`
-        :param shareable: Shareable object to submit to server
+        Args:
+            project_name: FL study project name
+            topic: aux topic name
+            shareable: Shareable object
+            timeout: communication timeout
+            fl_ctx: FLContext
+
+        Returns: reply message
+
         """
         try:
             self.logger.info("Starting to send aux messagee.")
@@ -165,9 +189,7 @@ class FederatedClientBase:
             self.communicator.heartbeat_done = True
 
     def heartbeat(self):
-        """
-        Sends a heartbeat from the client to the server.
-        """
+        """Sends a heartbeat from the client to the server."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
@@ -177,9 +199,7 @@ class FederatedClientBase:
                 pool.terminate()
 
     def pull_task(self, fl_ctx: FLContext):
-        """
-        Fetch remote models and update the local client's session.
-        """
+        """Fetch remote models and update the local client's session."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
@@ -196,9 +216,7 @@ class FederatedClientBase:
                 pool.terminate()
 
     def push_results(self, shareable: Shareable, fl_ctx: FLContext):
-        """
-        Push the local model to multiple servers.
-        """
+        """Push the local model to multiple servers."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
@@ -208,9 +226,7 @@ class FederatedClientBase:
                 pool.terminate()
 
     def aux_send(self, topic, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """
-        Push the local model to multiple servers.
-        """
+        """Push the local model to multiple servers."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
@@ -228,9 +244,7 @@ class FederatedClientBase:
                 pool.terminate()
 
     def register(self):
-        """
-        Push the local model to multiple servers.
-        """
+        """Push the local model to multiple servers."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
@@ -240,35 +254,27 @@ class FederatedClientBase:
                 pool.terminate()
 
     def run_heartbeat(self):
-        """
-        Periodically runs the heartbeat.
-        """
-        # while not self.heartbeat_done:
-        #     time.sleep(60)
-        #     self.heartbeat()
-
+        """Periodically runs the heartbeat."""
         self.heartbeat()
-
-        # self.communicator.heartbeat_done = True
 
     def start_heartbeat(self):
         heartbeat_thread = threading.Thread(target=self.run_heartbeat)
-        # heartbeat_thread.daemon = True
         heartbeat_thread.start()
 
     def quit_remote(self, task_name, fl_ctx: FLContext):
-        """
-        Sending the last message to the server before leaving.
+        """Sending the last message to the server before leaving.
 
-        :param task_name: server task identifier
-        :return: server's reply to the last message
+        Args:
+            task_name: task name
+            fl_ctx: FLContext
+
+        Returns: N/A
+
         """
         return self.communicator.quit_remote(self.servers, task_name, self.token, fl_ctx)
 
     def close(self):
-        """
-        Quit the remote federated server, close the local session.
-        """
+        """Quit the remote federated server, close the local session."""
         self.logger.info("Shutting down client")
 
         return 0

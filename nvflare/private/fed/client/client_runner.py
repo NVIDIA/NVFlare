@@ -36,6 +36,15 @@ class ClientRunnerConfig(object):
         handlers=None,  # list of event handlers
         components=None,  # dict of extra python objects: id => object
     ):
+        """To init ClientRunnerConfig.
+
+        Args:
+            task_table: task_name: Executor dict
+            task_data_filters: task_name => list of data filters
+            task_result_filters: task_name => list of result filters
+            handlers: list of event handlers
+            components: dict of extra python objects: id => object
+        """
         self.task_table = task_table
         self.task_data_filters = task_data_filters
         self.task_result_filters = task_result_filters
@@ -51,6 +60,14 @@ class ClientRunner(FLComponent):
         engine: ClientEngineSpec,
         task_fetch_interval: int = 5,  # fetch task every 5 secs
     ):
+        """To init the ClientRunner.
+
+        Args:
+            config: ClientRunnerConfig
+            run_num: run number
+            engine: ClientEngine object
+            task_fetch_interval:  fetch task interval
+        """
         FLComponent.__init__(self)
         self.task_table = config.task_table
         self.task_data_filters = config.task_data_filters
@@ -350,10 +367,9 @@ class ClientRunner(FLComponent):
                     self.end_run_fired = True
 
     def abort(self):
-        """
-        Abort the current run
+        """To Abort the current run.
 
-        Returns:
+        Returns: N/A
 
         """
         with self.engine.new_context() as fl_ctx:

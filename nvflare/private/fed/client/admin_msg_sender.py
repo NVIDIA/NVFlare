@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""This is the FLAdmin Client to send the request message to the admin server."""
+
 import threading
 from multiprocessing.dummy import Pool as ThreadPool
 
@@ -27,6 +29,7 @@ lock = threading.Lock()
 
 
 class AdminMessageSender(Sender):
+    """AdminMessageSender to send the request message to the admin server."""
     def __init__(
         self,
         client_name,
@@ -38,6 +41,18 @@ class AdminMessageSender(Sender):
         is_multi_gpu=False,
         rank=0,
     ):
+        """To init the AdminMessageSender.
+
+        Args:
+            client_name: client name
+            root_cert: root certificate
+            ssl_cert: SSL certificate
+            private_key: private key
+            server_args: server args
+            secure: True/False
+            is_multi_gpu: True/False
+            rank: local process rank
+        """
         self.client_name = client_name
         self.root_cert = root_cert
         self.ssl_cert = ssl_cert
@@ -50,12 +65,18 @@ class AdminMessageSender(Sender):
         self.pool = ThreadPool(len(self.servers))
 
     def send_reply(self, message: Message):
+        """Call to send the request message.
+
+        Args:
+            message: request message
+
+        """
         if self.rank == 0:
             # self.send_client_reply(message)
             for taskname in tuple(self.servers):
-                self.send_client_reply(message, taskname)
+                self._send_client_reply(message, taskname)
 
-    def send_client_reply(self, message, taskname):
+    def _send_client_reply(self, message, taskname):
         try:
             with self._set_up_channel(self.servers[taskname]) as channel:
                 stub = admin_service.AdminCommunicatingStub(channel)
@@ -69,32 +90,20 @@ class AdminMessageSender(Sender):
             pass
 
     def retrieve_requests(self) -> [Message]:
+        """Send the message to retrieve pending requests from the Server.
+
+        Returns: list of messages.
+
+        """
         messages = []
         if self.rank == 0:
-            items = self.pool.map(self.retrieve_client_requests, tuple(self.servers))
+            items = self.pool.map(self._retrieve_client_requests, tuple(self.servers))
             for item in items:
                 messages.extend(item)
 
-        # if self.multi_gpu:
-        #     # with lock:
-        #     #     from mpi4py import MPI
-        #     #     comm = MPI.COMM_WORLD
-        #     #     messages = comm.bcast(messages, root=0)
-        #     with lock:
-        #         from mpi4py import MPI
-        #
-        #         comm = MPI.COMM_WORLD
-        #         size = comm.Get_size()
-        #
-        #         if self.rank == 0:
-        #             for i in range(1, size):
-        #                 comm.send(messages, dest=i, tag=i)
-        #         else:
-        #             messages = comm.recv(source=0, tag=self.rank)
-
         return messages
 
-    def retrieve_client_requests(self, taskname):
+    def _retrieve_client_requests(self, taskname):
         try:
             message_list = []
             with self._set_up_channel(self.servers[taskname]) as channel:
@@ -110,8 +119,13 @@ class AdminMessageSender(Sender):
         return message_list
 
     def send_result(self, message: Message):
+        """Send the processor results to server.
+
+        Args:
+            message: message
+
+        """
         if self.rank == 0:
-            # self.send_client_reply(message)
             for taskname in tuple(self.servers):
                 try:
                     with self._set_up_channel(self.servers[taskname]) as channel:
@@ -120,17 +134,18 @@ class AdminMessageSender(Sender):
                         reply = admin_msg.Reply()
                         reply.client_name = self.client_name
                         reply.message.CopyFrom(message_to_proto(message))
-                        # reply.message = message_to_proto(message)
                         stub.SendResult(reply)
                 except BaseException:
                     pass
 
     def _set_up_channel(self, channel_dict):
-        """
-        Connect client to the server.
+        """Connect client to the server.
 
-        :param channel_dict: grpc channel parameters
-        :return: an initialised grpc channel
+        Args:
+            channel_dict: grpc channel parameters
+
+        Returns: an initialised grpc channel
+
         """
         if self.secure:
             with open(self.root_cert, "rb") as f:

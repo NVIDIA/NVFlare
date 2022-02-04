@@ -30,6 +30,12 @@ from .client_status import ClientStatus, get_status_message
 
 class ClientExecutor(object):
     def __init__(self, uid, startup) -> None:
+        """To init the ClientExecutor.
+
+        Args:
+            uid: client name
+            startup: startup folder
+        """
         pipe_path = startup + "/comm"
         if not os.path.exists(pipe_path):
             os.makedirs(pipe_path)
@@ -38,92 +44,101 @@ class ClientExecutor(object):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-        """
-        start_train method to start the FL client training.
-        :param client: the FL client object.
-        :param args: admin command arguments for starting the FL client training.
-        :param app_root: the root folder of the running APP.
-        :return:
-        """
-        pass
+        """start_train method to start the FL client training.
 
-    def start_mgpu_train(self, client, args, app_root, gpu_number, app_custom_folder, listen_port):
-        """
-        start the FL client training using multi-GPU.
-        :param client: the FL client object.
-        :param args: admin command arguments for starting the FL client training.
-        :param app_root: the root folder of the running APP.
-        :param gpu_number: number of GPUs to run FL training
-        :return:
+        Args:
+            client: the FL client object
+            args: admin command arguments for starting the FL client training
+            app_root: the root folder of the running APP
+            app_custom_folder: FL application custom folder
+            listen_port: port to listen the command.
+
         """
         pass
 
     def check_status(self, client):
-        """
-        check the status of the running client.
-        :param client: the FL client object.
-        :return: running FL client status message.
+        """To check the status of the running client.
+
+        Args:
+            client: the FL client object
+
+        Returns:  running FL client status message
+
         """
         pass
 
     def abort_train(self, client):
-        """
-        To abort the running client.
-        :param client: the FL client object.
-        :return: N/A
+        """To abort the running client.
+
+        Args:
+            client: the FL client object
+
+        Returns: N/A
+
         """
         pass
 
     def abort_task(self, client):
-        """
-        To abort the client executing task.
-        :param client: the FL client object.
-        :return: N/A
+        """To abort the client executing task.
+
+        Args:
+            client: the FL client object
+
+        Returns: N/A
+
         """
         pass
 
     def get_run_info(self):
-        """
-        To get the run_info from the InfoCollector.
-        Returns:
+        """To get the run_info from the InfoCollector.
+
+        Returns: current run info
 
         """
         pass
 
     def get_errors(self):
-        """
-        To get the error_info from the InfoCollector.
-        Returns:
+        """To get the error_info from the InfoCollector.
+
+        Returns: current errors
 
         """
         pass
 
     def reset_errors(self):
-        """
-        To reset the error_info for the InfoCollector.
-        Returns:
+        """To reset the error_info for the InfoCollector.
+
+        Returns: N/A
 
         """
         pass
 
     def send_aux_command(self, shareable: Shareable):
-        """
-        To send the aux command to child process.
-        Returns:
+        """To send the aux command to child process.
+
+        Args:
+            shareable: aux message Shareable
+
+        Returns: N/A
 
         """
         pass
 
     def cleanup(self):
+        """Finalize cleanup."""
         self.pipe.clear()
 
 
 class ProcessExecutor(ClientExecutor):
-    """
-    Run the Client executor in a child process.
-    """
+    """Run the Client executor in a child process."""
 
     def __init__(self, uid, startup):
+        """To init the ProcessExecutor.
+
+        Args:
+            uid: client name
+            startup: startup folder
+        """
         ClientExecutor.__init__(self, uid, startup)
         # self.client = client
         self.startup = startup
@@ -164,8 +179,6 @@ class ProcessExecutor(ClientExecutor):
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
 
-        # self.retrieve_cross_validate_setting(client, app_root)
-
         command_options = ""
         for t in args.set:
             command_options += " " + t
@@ -189,78 +202,6 @@ class ProcessExecutor(ClientExecutor):
             target=self.wait_training_process_finish, args=(client, args, app_root, app_custom_folder)
         )
         thread.start()
-
-    # def retrieve_cross_validate_setting(self, client, app_root):
-    #     if client.config_folder == "":
-    #         client_config = "config_fed_client.json"
-    #     else:
-    #         client_config = client.config_folder + "/config_fed_client.json"
-    #     client_config = os.path.join(app_root, client_config)
-    #     conf = Configurator(
-    #         app_root=app_root,
-    #         cmd_vars={},
-    #         env_config={},
-    #         wf_config_file_name=client_config,
-    #         base_pkgs=[],
-    #         module_names=[],
-    #     )
-    #     conf.configure()
-    #     client.cross_site_validate = conf.wf_config_data.get("cross_validate", False)
-
-    # def start_mgpu_train(self, client, args, app_root, gpu_number, app_custom_folder, listen_port):
-    #     self.listen_port = listen_port
-    #
-    #     new_env = os.environ.copy()
-    #     new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
-    #
-    #     # self.retrieve_cross_validate_setting(client, app_root)
-    #
-    #     if client.platform == "PT":
-    #         command = (
-    #             f"{sys.executable} -m torch.distributed.launch --nproc_per_node="
-    #             + str(gpu_number)
-    #             + " --nnodes=1 --node_rank=0 "
-    #             + '--master_addr="localhost" --master_port=1234 '
-    #             + "-m nvflare.private.fed.app.client.worker_process -m "
-    #             + args.workspace
-    #             + " -s fed_client.json "
-    #             " --set secure_train="
-    #             + str(client.secure_train)
-    #             + " print_conf=True use_gpu=True multi_gpu=True uid="
-    #             + client.client_name
-    #             + " config_folder="
-    #             + client.config_folder
-    #         )
-    #         # use os.setsid to create new process group ID
-    #         process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
-    #     else:
-    #         command = (
-    #             "mpirun -np "
-    #             + str(gpu_number)
-    #             + " -H localhost:"
-    #             + str(gpu_number)
-    #             + " -bind-to none -map-by slot -x NCCL_DEBUG=DEBUG -x LD_LIBRARY_PATH -x PATH "
-    #             "-mca pml ob1 -mca btl ^openib --allow-run-as-root "
-    #             f"{sys.executable} -u -m nvmidl.apps.fed_learn.client.worker_process -m "
-    #             + args.workspace
-    #             + " -s fed_client.json --set secure_train="
-    #             + str(client.secure_train)
-    #             + " multi_gpu=true uid="
-    #             + client.client_name
-    #             + " config_folder="
-    #             + client.config_folder
-    #         )
-    #         process = subprocess.Popen(shlex.split(command, " "), env=new_env)
-    #     client.process = process
-    #     client.multi_gpu = True
-    #     # self.pool = multiprocessing.Pool(processes=1)
-    #     # result = self.pool.apply_async(self.call_mpirun, (client, args, app_root))
-    #
-    #     client.status = ClientStatus.STARTED
-    #     thread = threading.Thread(
-    #         target=self.wait_training_process_finish, args=(client, args, app_root, app_custom_folder)
-    #     )
-    #     thread.start()
 
     def check_status(self, client):
         try:
@@ -391,7 +332,7 @@ class ProcessExecutor(ClientExecutor):
             if time.time() - start > 15:
                 break
 
-        self.logger.info("waiting for process to finish")
+        self.logger.info("waiting for process to finish.")
         client.process.wait()
         returncode = client.process.returncode
         self.logger.info(f"process finished with execution code: {returncode}")
