@@ -48,7 +48,8 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
 
     if handlers:
         for h in handlers:
-            assert isinstance(h, FLComponent), "h must be FLComponent but got {}".format(type(h))
+            if not isinstance(h, FLComponent):
+                raise TypeError("handler must be FLComponent but got {}".format(type(h)))
             try:
                 # since events could be recursive (a handler fires another event) on the same fl_ctx,
                 # we need to reset these key values into the fl_ctx

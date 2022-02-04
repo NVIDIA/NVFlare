@@ -85,9 +85,8 @@ class ClientAuxRunner(AuxRunner):
 
         # send regular request
         engine = fl_ctx.get_engine()
-        assert isinstance(
-            engine, ClientEngineExecutorSpec
-        ), "engine must be ClientEngineExecutorSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineExecutorSpec):
+            raise TypeError("engine must be ClientEngineExecutorSpec, but got {}".format(type(engine)))
 
         reply = engine.aux_send(topic=topic, request=req_to_send, timeout=timeout, fl_ctx=fl_ctx)
 

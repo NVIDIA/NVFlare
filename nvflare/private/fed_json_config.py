@@ -163,7 +163,8 @@ class FedJsonConfigurator(JsonConfigurator):
 
         data_filter_table = {}
         for c in self.task_data_filter_chains:
-            assert isinstance(c, FilterChain), "c must be FilterChain but got {}".format(type(c))
+            if not isinstance(c, FilterChain):
+                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
             for t in c.tasks:
                 if t in data_filter_table:
                     raise ConfigError("multiple data filter chains defined for task {}".format(t))
@@ -172,7 +173,8 @@ class FedJsonConfigurator(JsonConfigurator):
 
         result_filter_table = {}
         for c in self.task_result_filter_chains:
-            assert isinstance(c, FilterChain), "c must be FilterChain but got {}".format(type(c))
+            if not isinstance(c, FilterChain):
+                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
             for t in c.tasks:
                 if t in result_filter_table:
                     raise ConfigError("multiple data filter chains defined for task {}".format(t))

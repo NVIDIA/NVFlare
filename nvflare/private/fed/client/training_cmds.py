@@ -28,9 +28,8 @@ class StartAppProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
 
         run_number = int(req.get_header(RequestHeader.RUN_NUM))
         result = engine.start_app(run_number)
@@ -45,9 +44,8 @@ class AbortAppProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         run_number = int(req.get_header(RequestHeader.RUN_NUM))
         result = engine.abort_app(run_number)
         if not result:
@@ -61,9 +59,8 @@ class AbortTaskProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         run_number = int(req.get_header(RequestHeader.RUN_NUM))
         result = engine.abort_task(run_number)
         if not result:
@@ -77,9 +74,8 @@ class ShutdownClientProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         result = engine.shutdown()
         if not result:
             result = "OK"
@@ -92,9 +88,8 @@ class RestartClientProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         result = engine.restart()
         if not result:
             result = "OK"
@@ -107,9 +102,8 @@ class DeployProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         run_number = req.get_header(RequestHeader.RUN_NUM)
         app_name = req.get_header(RequestHeader.APP_NAME)
         client_name = engine.get_client_name()
@@ -125,9 +119,8 @@ class DeleteRunNumberProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         run_number = int(req.get_header(RequestHeader.RUN_NUM))
         result = engine.delete_run(run_number)
         if not result:
@@ -142,9 +135,8 @@ class ClientStatusProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         result = engine.get_engine_status()
         # run_info = engine.get_current_run_info()
         # if not run_info or run_info.run_number < 0:
@@ -168,9 +160,8 @@ class SetRunNumberProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(
-            engine, ClientEngineInternalSpec
-        ), "engine must be ClientEngineInternalSpec, but got {}".format(type(engine))
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
 
         run_number = int(req.get_header(RequestHeader.RUN_NUM))
         result = engine.set_run_number(run_number)

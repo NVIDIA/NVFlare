@@ -31,6 +31,7 @@ lock = threading.Lock()
 
 class AdminMessageSender(Sender):
     """AdminMessageSender to send the request message to the admin server."""
+
     def __init__(
         self,
         client_name,

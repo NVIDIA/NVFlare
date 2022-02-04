@@ -95,7 +95,6 @@ class ExcludeVars(Filter):
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return shareable
 
-        assert isinstance(dxo, DXO), "dxo must be DXO but got {}".format(type(dxo))
         if dxo.data is None:
             self.log_debug(fl_ctx, "no data to filter")
             return shareable

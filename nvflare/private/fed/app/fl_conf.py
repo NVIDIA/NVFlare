@@ -32,6 +32,7 @@ FL_MODULES = ["server", "client", "app"]
 
 class FLServerStarterConfiger(JsonConfigurator):
     """FL Server startup configer."""
+
     def __init__(
         self,
         app_root: str,
@@ -149,6 +150,7 @@ class FLServerStarterConfiger(JsonConfigurator):
 
 class FLClientStarterConfiger(JsonConfigurator):
     """FL Client startup configer."""
+
     def __init__(
         self,
         app_root: str,

@@ -14,7 +14,6 @@
 
 """Sub_worker process to start the multi-processes client."""
 
-import logging
 import argparse
 import copy
 import logging
@@ -36,6 +35,7 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 
 class EventRelayer(FLComponent):
     """To relay the event from the worker_process."""
+
     def __init__(self, conn, local_rank):
         """To init the EventRelayer.
 

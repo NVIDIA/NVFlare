@@ -53,8 +53,7 @@ class ClientRequestProcessors:
     def register_cmd_module(request_processor):
         from .admin import RequestProcessor
 
-        assert isinstance(
-            request_processor, RequestProcessor
-        ), "request_processor must be RequestProcessor, but got {}".format(type(request_processor))
+        if not isinstance(request_processor, RequestProcessor):
+            raise TypeError("request_processor must be RequestProcessor, but got {}".format(type(request_processor)))
 
         ClientRequestProcessors.request_processors.append(request_processor)

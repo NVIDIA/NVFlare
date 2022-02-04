@@ -106,9 +106,10 @@ class Controller(Responder, ControllerSpec, ABC):
         """
         collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
         if collector:
-            assert isinstance(
-                collector, GroupInfoCollector
-            ), "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
+            if not isinstance(collector, GroupInfoCollector):
+                raise TypeError(
+                    "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
+                )
             collector.set_info(
                 group_name=self._name,
                 info={

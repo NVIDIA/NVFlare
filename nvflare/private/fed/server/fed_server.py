@@ -71,9 +71,7 @@ class BaseServer(ABC):
         # self.cmd_modules = cmd_modules
 
         self.client_manager = ClientManager(
-            project_name=self.project_name,
-            min_num_clients=self.min_num_clients,
-            max_num_clients=self.max_num_clients
+            project_name=self.project_name, min_num_clients=self.min_num_clients, max_num_clients=self.max_num_clients
         )
 
         self.grpc_server = None
@@ -441,12 +439,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     # fire_event(EventType.BEFORE_PROCESS_SUBMISSION, self.handlers, fl_ctx)
 
-                    assert isinstance(shareable, Shareable)
                     # task_id = shared_fl_context.get_cookie(FLContextKey.TASK_ID)
                     task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-                    self.server_runner.process_submission(
-                        client, contribution_task_name, task_id, shareable, fl_ctx
-                    )
+                    self.server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
                     # fire_event(EventType.AFTER_PROCESS_SUBMISSION, self.handlers, fl_ctx)
 

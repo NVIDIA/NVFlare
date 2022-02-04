@@ -87,6 +87,12 @@ class CrossSiteModelEval(Controller):
         if not isinstance(cleanup_models, bool):
             raise TypeError("cleanup_models must be bool but got {}".format(type(cleanup_models)))
 
+        if participating_clients:
+            if not isinstance(participating_clients, list):
+                raise TypeError("participating_clients must be a list but got {}".format(type(participating_clients)))
+            if not all(isinstance(x, str) for x in participating_clients):
+                raise TypeError("participating_clients must be strings")
+
         if submit_model_timeout < 0:
             raise ValueError("submit_model_timeout must be greater than or equal to 0.")
         if validation_timeout < 0:
@@ -124,11 +130,6 @@ class CrossSiteModelEval(Controller):
         if not self._participating_clients:
             clients = engine.get_clients()
             self._participating_clients = [c.name for c in clients]
-        else:
-            assert isinstance(
-                self._participating_clients, list
-            ), "participating_clients must be a list but got {}".format(type(self._participating_clients))
-            assert all(isinstance(x, str) for x in self._participating_clients), "participating_clients must be strings"
 
         # Create shareable dirs for models and results
         workspace: Workspace = engine.get_workspace()
@@ -507,9 +508,8 @@ class CrossSiteModelEval(Controller):
             if self._formatter:
                 collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
                 if collector:
-                    assert isinstance(
-                        collector, GroupInfoCollector
-                    ), "collector must be GroupInfoCollector but got {}".format(type(collector))
+                    if not isinstance(collector, GroupInfoCollector):
+                        raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
 
                     fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, self._val_results, private=True, sticky=False)
                     val_info = self._formatter.format(fl_ctx)

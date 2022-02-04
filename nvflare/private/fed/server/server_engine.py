@@ -68,7 +68,9 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.engine_info = EngineInfo()
 
-        assert workers >= 1, "workers must >= 1 but got {}".format(workers)
+        if not workers >= 1:
+            raise ValueError("workers must >= 1 but got {}".format(workers))
+
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
         self.logger = logging.getLogger(self.__class__.__name__)

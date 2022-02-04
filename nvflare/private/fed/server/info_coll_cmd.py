@@ -69,9 +69,8 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
     def authorize_info_collection(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        assert isinstance(
-            engine, ServerEngineInternalSpec
-        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
         if not collector:
@@ -96,9 +95,8 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
     def show_stats(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        assert isinstance(
-            engine, ServerEngineInternalSpec
-        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         target_type = args[1]
         if target_type == self.TARGET_TYPE_SERVER:
@@ -116,9 +114,8 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
     def show_errors(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        assert isinstance(
-            engine, ServerEngineInternalSpec
-        ), "engine must be ServerEngineInternalSpec but got {}".format(type(engine))
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         target_type = args[1]
         if target_type == self.TARGET_TYPE_SERVER:

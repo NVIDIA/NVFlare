@@ -86,7 +86,8 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
     def _process_executor_def(self, node: Node):
         e = node.props["data"]
-        assert isinstance(e, _ExecutorDef), "e must be _ExecutorDef but got {}".format(type(e))
+        if not isinstance(e, _ExecutorDef):
+            raise TypeError("e must be _ExecutorDef but got {}".format(type(e)))
         self.validate_tasks(e.tasks)
 
         if not isinstance(e.executor, Executor):

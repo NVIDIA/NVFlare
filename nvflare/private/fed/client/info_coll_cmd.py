@@ -30,7 +30,8 @@ class ClientInfoProcessor(RequestProcessor):
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
-        assert isinstance(engine, ClientEngineInternalSpec)
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
 
         if req.topic == InfoCollectorTopic.SHOW_STATS:
             result = engine.get_current_run_info()

@@ -244,9 +244,8 @@ class ScatterAndGather(Controller):
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
             if collector:
-                assert isinstance(
-                    collector, GroupInfoCollector
-                ), "collector must be GroupInfoCollector but got {}".format(type(collector))
+                if not isinstance(collector, GroupInfoCollector):
+                    raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
 
                 collector.add_info(
                     group_name=self._name,

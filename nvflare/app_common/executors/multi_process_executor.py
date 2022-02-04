@@ -320,7 +320,6 @@ class MultiProcessExecutor(Executor):
 
         # wait for all relay threads to join!
         for t in self.relay_threads:
-            assert isinstance(t, threading.Thread), "t must be threading.Thread but got {}".format(type(t))
             if t.is_alive():
                 t.join()
 
