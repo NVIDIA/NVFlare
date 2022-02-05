@@ -17,6 +17,7 @@ from typing import List
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.abstract.model import ModelLearnableKey
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
 
@@ -67,7 +68,8 @@ class PTFileModelLocator(ModelLocator):
         if model_name not in list(self.model_inventory.keys()):
             raise ValueError(f"model inventory does not contain: {model_name}")
 
-        weights = self.model_persistor.get_model(model_name, fl_ctx)
+        model_learnable = self.model_persistor.get_model(model_name, fl_ctx)
+        weights = model_learnable.get(ModelLearnableKey.WEIGHTS)
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
 
         return dxo
