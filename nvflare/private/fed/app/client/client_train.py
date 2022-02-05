@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Provides a command line interface for a federated client """
+"""Provides a command line interface for a federated client."""
 
 import argparse
 import os
@@ -29,6 +29,7 @@ from nvflare.private.fed.client.client_engine import ClientEngine
 
 
 def main():
+    """Start program of the FL client."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
 
@@ -123,6 +124,13 @@ def main():
 
 
 def security_check(secure_train, args):
+    """To check the security content if running in security mode.
+
+    Args:
+        secure_train: True/False
+        args: command args
+
+    """
     # initialize the SecurityContentService.
     # must do this before initializing other services since it may be needed by them!
     startup = os.path.join(args.workspace, "startup")
@@ -141,6 +149,14 @@ def security_check(secure_train, args):
 
 
 def secure_content_check(args):
+    """To check the security contents.
+
+    Args:
+        args: command args
+
+    Returns: the insecure content list
+
+    """
     insecure_list = []
     data, sig = SecurityContentService.load_json(args.fed_client)
     if sig != LoadResult.OK:
@@ -161,6 +177,12 @@ def secure_content_check(args):
 
 
 def remove_restart_file(args):
+    """To remove the restart.fl file.
+
+    Args:
+        args: command args
+
+    """
     restart_file = os.path.join(args.workspace, "restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
@@ -172,6 +194,22 @@ def remove_restart_file(args):
 def create_admin_agent(
     client_args, client_id, req_processors, secure_train, server_args, federated_client, args, is_multi_gpu, rank
 ):
+    """To create the admin client.
+
+    Args:
+        client_args: start client command args
+        client_id: client name
+        req_processors: request processors
+        secure_train: True/False
+        server_args: FL server args
+        federated_client: FL client object
+        args: command args
+        is_multi_gpu: True/False
+        rank: client rank process number
+
+    Returns: admin client
+
+    """
     sender = AdminMessageSender(
         client_name=federated_client.token,
         root_cert=client_args["ssl_root_cert"],

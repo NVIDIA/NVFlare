@@ -24,14 +24,15 @@ from .client_engine_executor_spec import ClientEngineExecutorSpec
 
 
 class ClientAuxRunner(AuxRunner):
+    """ClientAuxRunner to send the aux messages to the server.
 
-    """
     Note: The ClientEngine must create a new ClientAuxRunner object for each RUN, and make sure
     it is added as an event handler!
 
     """
 
     def __init__(self):
+        """To init the ClientAuxRunner."""
         AuxRunner.__init__(self)
         self.abort_signal = None
         self.sender = None

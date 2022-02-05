@@ -20,11 +20,12 @@ from .reg import ServerCommandRegister
 
 
 class BuiltInCmdModule(CommandModule):
-    """
-    Built in CommandModule with the ability to list commands.
-    """
-
     def __init__(self, reg: ServerCommandRegister):
+        """Built in CommandModule with the ability to list commands.
+
+        Args:
+            reg: ServerCommandRegister
+        """
         self.reg = reg
 
     def get_spec(self):

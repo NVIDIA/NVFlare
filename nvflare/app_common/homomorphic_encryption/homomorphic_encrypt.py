@@ -20,12 +20,11 @@ from nvflare.fuel.sec.security_content_service import LoadResult, SecurityConten
 
 
 def load_tenseal_context_from_workspace(ctx_file_name: str, fl_ctx: FLContext):
-    """
-    Loads homomorphic encryption (HE) context from TenSEAL (https://github.com/OpenMined/TenSEAL) containing encryption keys and parameters.
+    """Loads homomorphic encryption (HE) context from TenSEAL (https://github.com/OpenMined/TenSEAL) containing encryption keys and parameters.
 
     Args:
         ctx_file_name: filepath of TensSEAL context file
-        fl_ctx:
+        fl_ctx: FL context
 
     Returns:
         TenSEAL context
@@ -46,10 +45,7 @@ def load_tenseal_context_from_workspace(ctx_file_name: str, fl_ctx: FLContext):
 
 
 def count_encrypted_layers(encrypted_layers: dict):
-    """
-    Count number of encrypted layers homomorphic encryption (HE) layers/variables.
-
-    """
+    """Count number of encrypted layers homomorphic encryption (HE) layers/variables."""
     n_total = len(encrypted_layers)
     n_encrypted = 0
     for e in encrypted_layers.keys():

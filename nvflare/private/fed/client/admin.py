@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""The FedAdmin to communicate with the Admin server."""
+
 import threading
 import time
 import traceback
@@ -22,59 +24,74 @@ from nvflare.private.admin_defs import Message, error_reply, ok_reply
 
 
 class Sender(object):
-    """
-    The Sender object integrate the agent with the underline messaging system.
+    """The Sender object integrate the agent with the underline messaging system.
+
     Make sure its methods are exception-proof!
     """
 
     def send_reply(self, reply: Message):
-        """
-        Send the reply to the requester.
-        :param reply:
-        :return:
+        """Send the reply to the requester.
+
+        Args:
+            reply: reply message
+
         """
         pass
 
     def retrieve_requests(self) -> [Message]:
-        """
-        Send the message to retrieve pending requests from the Server
-        :return:
+        """Send the message to retrieve pending requests from the Server.
+
+        Returns: list of messages.
+
         """
         pass
 
     def send_result(self, message: Message):
-        """
-        Send the processor results to server.
-        :param reply:
-        :return:
+        """Send the processor results to server.
+
+        Args:
+            message: message
+
         """
         pass
 
 
 class RequestProcessor(object):
-    """
-    The RequestProcessor is responsible for processing a request.
-    """
+    """The RequestProcessor is responsible for processing a request."""
 
     def get_topics(self) -> [str]:
-        """
-        Get topics that this processor will handle
-        :return: list of topics
+        """Get topics that this processor will handle.
+
+        Returns: list of topics
+
         """
         pass
 
     def process(self, req: Message, app_ctx) -> Message:
-        """
-        Called to process the specified request
-        :param req:
-        :param app_ctx:
-        :return: a reply message
+        """Called to process the specified request.
+
+        Args:
+            req: request message
+            app_ctx: application context
+
+        Returns: repely message
+
         """
         pass
 
 
 class FedAdminAgent(object):
+    """FedAdminAgent communicate with the FedAdminServer."""
     def __init__(self, client_name, sender: Sender, app_ctx, req_poll_interval=0.5, process_poll_interval=0.1):
+        """Init the FedAdminAgent.
+
+        Args:
+            client_name: client name
+            sender: Sender object
+            app_ctx: application context
+            req_poll_interval: request polling interval
+            process_poll_interval: process polling interval
+        """
         assert isinstance(sender, Sender), "sender must be Sender"
 
         auditor = AuditService.get_auditor()
@@ -94,6 +111,12 @@ class FedAdminAgent(object):
         self.asked_to_stop = False
 
     def register_processor(self, processor: RequestProcessor):
+        """To register the RequestProcessor.
+
+        Args:
+            processor: RequestProcessor
+
+        """
         assert isinstance(processor, RequestProcessor), "processor must be RequestProcessor"
 
         topics = processor.get_topics()
@@ -102,6 +125,7 @@ class FedAdminAgent(object):
             self.processors[topic] = processor
 
     def start(self):
+        """To start the FedAdminAgent."""
         if self.retrieve_reqs_thread is None:
             self.retrieve_reqs_thread = threading.Thread(target=_start_retriever, args=(self,))
 
@@ -172,10 +196,7 @@ class FedAdminAgent(object):
             time.sleep(self.process_poll_interval)
 
     def shutdown(self):
-        """
-        To be called by the Client Engine to gracefully shutdown the agent.
-        :return:
-        """
+        """To be called by the Client Engine to gracefully shutdown the agent."""
         self.asked_to_stop = True
 
         if self.retrieve_reqs_thread and self.retrieve_reqs_thread.is_alive():

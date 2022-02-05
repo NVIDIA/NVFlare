@@ -20,11 +20,8 @@ from .table import Table
 
 
 class Buffer(object):
-    """
-    Buffer to append to for :class:`nvflare.fuel.hci.conn.Connection`.
-    """
-
     def __init__(self):
+        """Buffer to append to for :class:`nvflare.fuel.hci.conn.Connection`."""
         self.output = {"time": "{}".format(datetime.now()), "data": []}
 
     def append_table(self, headers: List[str]) -> Table:
@@ -70,8 +67,7 @@ def make_error(data: str):
 
 
 def validate_proto(line: str):
-    """
-    Validate that the line being received is of the expected format.
+    """Validate that the line being received is of the expected format.
 
     Args:
         line: str containing a JSON document

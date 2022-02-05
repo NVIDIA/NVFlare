@@ -40,6 +40,7 @@ class WorkerComponentBuilder(ComponentBuilder):
     FL_MODULES = ["client", "app"]
 
     def __init__(self) -> None:
+        """Component to build workers."""
         super().__init__()
         self.module_scanner = ModuleScanner(WorkerComponentBuilder.FL_PACKAGES, WorkerComponentBuilder.FL_MODULES, True)
 
@@ -49,10 +50,12 @@ class WorkerComponentBuilder(ComponentBuilder):
 
 class MultiProcessExecutor(Executor):
     def __init__(self, executor_id=None, num_of_processes=1, components=None):
-        """
+        """Manage the multi-process execution life cycle.
+
         Arguments:
             executor_id: executor component ID
             num_of_processes: number of processes to create
+            components: a dictionary for component classes to their arguments
         """
         super().__init__()
         self.executor_id = executor_id
@@ -81,10 +84,10 @@ class MultiProcessExecutor(Executor):
 
     @abstractmethod
     def get_multi_process_command(self) -> str:
-        """
-        Provide the command for starting multi-process execution.
-        Returns: multi-process starting command
+        """Provide the command for starting multi-process execution.
 
+        Returns:
+            multi-process starting command
         """
         return ""
 

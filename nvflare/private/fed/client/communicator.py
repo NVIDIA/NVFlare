@@ -39,6 +39,15 @@ class Communicator:
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
     ):
+        """To init the Communicator.
+
+        Args:
+            ssl_args: SSL args
+            secure_train: True/False to indicate if secure train
+            retry_timeout: retry timeout in seconds
+            client_state_processors: Client state processor filters
+            compression: communicate compression algorithm
+        """
         self.ssl_args = ssl_args
         self.secure_train = secure_train
 
@@ -52,12 +61,14 @@ class Communicator:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def set_up_channel(self, channel_dict, token=None):
-        """
-        Connect client to the server.
+        """Connect client to the server.
 
-        :param channel_dict: grpc channel parameters
-        :param token: client token
-        :return: an initialised grpc channel
+        Args:
+            channel_dict: grpc channel parameters
+            token: client token
+
+        Returns: an initialised grpc channel
+
         """
         if self.secure_train:
             with open(self.ssl_args["ssl_root_cert"], "rb") as f:
@@ -89,17 +100,18 @@ class Communicator:
         return channel
 
     def get_client_state(self, project_name, token, fl_ctx: FLContext):
-        """
-        Client's meta data used to authenticate and communicate.
+        """Client's metadata used to authenticate and communicate.
 
-        :return: a ClientState message.
+        Args:
+            project_name: FL study project name
+            token: FL client token
+            fl_ctx: FLContext
+
+        Returns: a ClientState message
+
         """
         state_message = fed_msg.ClientState(token=token)
         state_message.meta.project.name = project_name
-        # if self.client_state_processors and app_ctx:
-        #     for t in self.client_state_processors:
-        #         state_message = t.process(state_message, app_ctx)
-        # state_message.meta.run_number = self.run_number
         state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
 
         context_data = make_context_data(fl_ctx)
@@ -114,7 +126,8 @@ class Communicator:
         https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
         for more details.
 
-        :return: The host IP.
+        Returns: The host IP
+
         """
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -127,10 +140,15 @@ class Communicator:
         return ip
 
     def client_registration(self, client_name, servers, project_name):
-        """
-        Client's meta data used to authenticate and communicate.
+        """Client's metadata used to authenticate and communicate.
 
-        :return: a ClientLogin message.
+        Args:
+            client_name: client name
+            servers: FL servers
+            project_name: FL study project name
+
+        Returns: FL token
+
         """
         local_ip = self.get_client_ip()
 
@@ -174,12 +192,16 @@ class Communicator:
         return token
 
     def getTask(self, servers, project_name, token, fl_ctx: FLContext):
-        """
-        Get registered with the remote server via channel,
-        and fetch the server's model parameters.
+        """Get registered with the remote server via channel, and fetch the server's model parameters.
 
-        :param project_name: server identifier string
-        :return: a CurrentTask message from server
+        Args:
+            servers: FL servers
+            project_name: FL study project name
+            token: FL client token
+            fl_ctx: FLContext
+
+        Returns: a CurrentTask message from server
+
         """
         global_model, retry = None, self.retry
         with self.set_up_channel(servers[project_name]) as channel:
@@ -220,8 +242,8 @@ class Communicator:
         return None
 
     def submitUpdate(self, servers, project_name, token, fl_ctx: FLContext, client_name, shareable, execute_task_name):
-        """
-        Submit the task execution result back to the server.
+        """Submit the task execution result back to the server.
+
         Args:
             servers: FL servers
             project_name: server project name
@@ -269,8 +291,8 @@ class Communicator:
         return server_msg
 
     def auxCommunicate(self, servers, project_name, token, fl_ctx: FLContext, client_name, shareable, topic, timeout):
-        """
-        send the aux communication message to the server
+        """To send the aux communication message to the server.
+
         Args:
             servers: FL servers
             project_name: server project name
@@ -281,7 +303,7 @@ class Communicator:
             topic: aux message topic
             timeout: aux communication timeout
 
-        Returns: servre response message
+        Returns: server response message
 
         """
         client_state = self.get_client_state(project_name, token, fl_ctx)
@@ -317,11 +339,16 @@ class Communicator:
         return server_msg
 
     def quit_remote(self, servers, task_name, token, fl_ctx: FLContext):
-        """
-        Sending the last message to the server before leaving.
+        """Sending the last message to the server before leaving.
 
-        :param task_name: server task identifier
-        :return: server's reply to the last message
+        Args:
+            servers: FL servers
+            task_name: project name
+            token: FL client token
+            fl_ctx: FLContext
+
+        Returns: server's reply to the last message
+
         """
         server_message, retry = None, self.retry
         with self.set_up_channel(servers[task_name]) as channel:
@@ -387,11 +414,18 @@ class Communicator:
         return contrib
 
     def grpc_error_handler(self, service, grpc_error, action, start_time, retry, verbose=False):
-        """
-        Handling grpc exceptions
-        :param action:
-        :param start_time:
-        :param service:
+        """Handling grpc exceptions.
+
+        Args:
+            service: FL service
+            grpc_error: grpc error
+            action: action to take
+            start_time: communication start time
+            retry: retry number
+            verbose: verbose to error print out
+
+        Returns: N/A
+
         """
         status_code = None
         if isinstance(grpc_error, grpc.Call):

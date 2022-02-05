@@ -35,8 +35,7 @@ def get_class(class_path):
 
 
 def instantiate_class(class_path, init_params):
-    """
-    Method for creating an instance for the class.
+    """Method for creating an instance for the class.
 
     Args:
         class_path: full path of the class
@@ -44,7 +43,6 @@ def instantiate_class(class_path, init_params):
         arguments. The transform name will be appended to `medical.common.transforms` to make a
         full name of the transform to be built.
     """
-
     c = get_class(class_path)
     try:
         if init_params:
@@ -77,6 +75,13 @@ def get_config_classname(config_dict: dict):
 
 class ModuleScanner:
     def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
+        """Scanner to look for and load specified module names.
+
+        Args:
+            base_pkgs: base packages to look for modules in
+            module_names: module names to load
+            exclude_libs: excludes modules containing .libs if True. Defaults to True.
+        """
         self.base_pkgs = base_pkgs
         self.module_names = module_names
         self.exclude_libs = exclude_libs

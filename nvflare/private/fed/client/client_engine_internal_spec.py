@@ -16,33 +16,21 @@ from nvflare.apis.client_engine_spec import ClientEngineSpec
 
 
 class ClientEngineInternalSpec(ClientEngineSpec):
-    """
-    The ClientEngineInternalSpec defines the ClientEngine APIs running in the parent process.
-    """
+    """The ClientEngineInternalSpec defines the ClientEngine APIs running in the parent process."""
 
     def get_engine_status(self):
         pass
 
-    # def get_current_run_info(self) -> ClientRunInfo:
-    #     """
-    #     Return info of the current run.
-    #
-    #     Returns: current run info, or None if app not running.
-    #
-    #     """
-    #     pass
-
     def get_client_name(self) -> str:
-        """
-        Get the ClientEngine client_name
+        """Get the ClientEngine client_name.
+
         Returns: the client_name
 
         """
         pass
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
-        """
-        Deploy the app to specified run
+        """Deploy the app to specified run.
 
         Args:
             app_name: FL_app name
@@ -56,11 +44,10 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         pass
 
     def start_app(self, run_number: int) -> str:
-        """
-        Start the app for the specified run
+        """Start the app for the specified run.
 
         Args:
-            run_number:
+            run_number: run_number
 
         Returns: error if any
 
@@ -68,8 +55,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         pass
 
     def abort_app(self, run_number: int) -> str:
-        """
-        Abort the app execution in current run.
+        """Abort the app execution in current run.
 
         Returns: error if any
 
@@ -77,8 +63,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         pass
 
     def abort_task(self, run_number: int) -> str:
-        """
-        Abort the client current executing task.
+        """Abort the client current executing task.
 
         Returns: error if any
 
@@ -86,11 +71,10 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         pass
 
     def delete_run(self, run_num: int) -> str:
-        """
-        Delete the specified run
+        """Delete the specified run.
 
         Args:
-            run_num:
+            run_num: run_number
 
         Returns: error if any
 
@@ -98,8 +82,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         pass
 
     def shutdown(self) -> str:
-        """
-        Shutdown the FL client
+        """Shutdown the FL client.
 
         Returns: error if any
 
@@ -107,8 +90,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         pass
 
     def restart(self) -> str:
-        """
-        Restart the FL client.
+        """Restart the FL client.
 
         Returns: error if any
 
@@ -116,31 +98,9 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         pass
 
     def set_run_number(self, run_num: int) -> str:
-        """
-        Set the client run_number
+        """Set the client run_number.
 
         Returns: error if any
 
         """
         pass
-
-    # def aux_send(self,
-    #              topic: str,
-    #              request: Shareable,
-    #              timeout: float,
-    #              fl_ctx: FLContext) -> Shareable:
-    #     """
-    #     Send the request to the Server.
-    #
-    #     If reply is received, make sure to set peer_ctx into the reply shareable!
-    #
-    #     Args:
-    #         topic: topic of the request
-    #         request: request to be sent
-    #         timeout: number of secs to wait for reply. 0 means fire-and-forget.
-    #         fl_ctx: fl context
-    #
-    #     Returns: a reply.
-    #
-    #     """
-    #     pass

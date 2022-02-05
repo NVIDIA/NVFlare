@@ -16,23 +16,22 @@ from nvflare.private.admin_defs import Message
 
 
 class ResultProcessor(object):
-    """
-    The RequestProcessor is responsible for processing a request.
-    """
+    """The RequestProcessor is responsible for processing a request."""
 
     def get_topics(self) -> [str]:
-        """
-        Get topics that this processor will handle
-        :return: list of topics
+        """Get topics that this processor will handle.
+
+        Returns
+            A list of topics
         """
         pass
 
     def process(self, client_name, req: Message):
-        """
-        Called to process the specified request
-        :param req:
-        :param app_ctx:
-        :return: a reply message
+        """Called to process the specified request.
+
+        Args:
+            client_name: client name
+            req (Message): request
         """
         pass
 
@@ -42,7 +41,6 @@ class ValidateResultProcessor(ResultProcessor):
         return ["validate"]
 
     def process(self, client_name, message: Message):
-
         print(
             "Got the client: {} processor result. topic: {} \tbody: {}".format(
                 client_name, message.topic, str(message.body)

@@ -34,11 +34,19 @@ from .client_status import ClientStatus
 
 
 class ClientEngine(ClientEngineInternalSpec):
-    """
-    ClientEngine runs in the client parent process.
-    """
+    """ClientEngine runs in the client parent process."""
 
     def __init__(self, client, client_name, sender, args, rank, workers=5):
+        """To init the ClientEngine.
+
+        Args:
+            client: FL client object
+            client_name: client name
+            sender: sender object
+            args: command args
+            rank: local process rank
+            workers: number of workers
+        """
         self.client = client
         self.client_name = client_name
         self.sender = sender
@@ -75,22 +83,6 @@ class ClientEngine(ClientEngineInternalSpec):
         # thread.start()
 
         return "validate process started."
-
-    # def client_status(self):
-    #     if self.rank == 0:
-    #         self.logger.info("check client status.")
-    #         client_name = self.client.uid
-    #         token = self.client.token
-    #         message = "client name: {}".format(client_name)
-    #         message += "\ttoken: {}".format(token)
-    #
-    #         message += "\tstatus: {}".format(self.client_executor.check_status(self.client))
-    #         # if self.client.status == ClientStatus.TRAINING_STOPPED:
-    #         #     message += '\tlocal epochs: {}'.format(self.client.model_manager.fitter.num_epochs)
-    #
-    #         return message
-    #     else:
-    #         return ""
 
     def get_engine_status(self):
         app_name = "?"
@@ -146,39 +138,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def get_client_name(self):
         return self.client.client_name
-
-    # def wait_training_process_finish(self):
-    #     self.client.process.join()
-    #
-    #     # _cross_validation(self.client, self.args)
-    #     self.client.status = ClientStatus.STOPPED
-
-    # def start_mgpu_client(self, run_number, gpu_number):
-    #     status = self.client.status
-    #     if status == ClientStatus.STARTING or status == ClientStatus.STARTED:
-    #         return "Client already in training."
-    #
-    #     app_root = os.path.join(self.args.app, "run_" + str(run_number), "app_" + self.client.uid)
-    #     if not os.path.exists(app_root):
-    #         return "Client app does not exist. Please deploy it before start client."
-    #
-    #     app_custom_folder = os.path.join(app_root, "custom")
-    #     try:
-    #         sys.path.index(app_custom_folder)
-    #     except ValueError:
-    #         self.remove_custom_path()
-    #         sys.path.append(app_custom_folder)
-    #
-    #     self.logger.info("Starting client training. rank: {}".format(self.rank))
-    #
-    #     open_port = self._get_open_port()
-    #     self._write_token_file(run_number, open_port)
-    #
-    #     self.client_executor.start_mgpu_train(
-    #         self.client, self.args, app_root, gpu_number, app_custom_folder, open_port
-    #     )
-    #
-    #     return "Start the client..."
 
     def _write_token_file(self, run_number, open_port):
         token_file = os.path.join(self.args.workspace, "client_token.txt")

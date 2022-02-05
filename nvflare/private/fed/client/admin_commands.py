@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""FL Admin commands."""
+
 from nvflare.apis.fl_constant import FLContextKey, AdminCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, ReservedHeaderKey
@@ -21,51 +23,98 @@ from nvflare.widgets.widget import WidgetID
 
 
 class CommandProcessor(object):
-    """
-    The CommandProcessor is responsible for processing a command from parent process.
-    """
+    """The CommandProcessor is responsible for processing a command from parent process."""
 
     def get_command_name(self) -> str:
-        """
-        Get command name that this processor will handle
-        :return: name of the command
+        """Get command name that this processor will handle.
+
+        Returns: name of the command
+
         """
         pass
 
     def process(self, data: Shareable, fl_ctx: FLContext):
-        """
-        Called to process the specified command
-        :param data:
-        :param fl_ctx:
-        :return: command processing result
+        """Called to process the specified command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Return: reply message
+
         """
         pass
 
 
 class CheckStatusCommand(CommandProcessor):
+    """To implement the check_status command."""
     def get_command_name(self) -> str:
+        """To get thee command name.
+
+        Returns: AdminCommandNames.CHECK_STATUSv
+
+        """
         return AdminCommandNames.CHECK_STATUS
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the check_status command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: status message
+
+        """
         engine = fl_ctx.get_engine()
         federated_client = engine.client
         return get_status_message(federated_client.status)
 
 
 class AbortCommand(CommandProcessor):
+    """To implement the abort command."""
     def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.ABORT
+
+        """
         return AdminCommandNames.ABORT
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: abort command message
+
+        """
         client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         return client_runner.abort()
 
 
 class AbortTaskCommand(CommandProcessor):
+    """To implement the abort_task command."""
     def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.ABORT_TASK
+
+        """
         return AdminCommandNames.ABORT_TASK
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort_task command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: abort_task command message
+
+        """
         client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         if client_runner:
             client_runner.abort_task()
@@ -73,10 +122,25 @@ class AbortTaskCommand(CommandProcessor):
 
 
 class ShowStatsCommand(CommandProcessor):
+    """To implement the show_stats command."""
     def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SHOW_STATS
+
+        """
         return AdminCommandNames.SHOW_STATS
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort_task command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: show_stats command message
+
+        """
         engine = fl_ctx.get_engine()
         collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
         if not collector:
@@ -92,10 +156,25 @@ class ShowStatsCommand(CommandProcessor):
 
 
 class ShowErrorsCommand(CommandProcessor):
+    """To implement the show_errors command."""
     def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SHOW_ERRORS
+
+        """
         return AdminCommandNames.SHOW_ERRORS
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the show_errors command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: show_errors command message
+
+        """
         engine = fl_ctx.get_engine()
         collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
         if not collector:
@@ -112,19 +191,49 @@ class ShowErrorsCommand(CommandProcessor):
 
 
 class ResetErrorsCommand(CommandProcessor):
+    """To implement the reset_errors command."""
     def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.RESET_ERRORS
+
+        """
         return AdminCommandNames.RESET_ERRORS
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the reset_errors command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: reset_errors command message
+
+        """
         engine = fl_ctx.get_engine()
         engine.reset_errors()
 
 
 class AuxCommand(CommandProcessor):
+    """To implement the Aux communication command."""
     def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.AUX_COMMAND
+
+        """
         return AdminCommandNames.AUX_COMMAND
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the Aux communication command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: Aux communication command message
+
+        """
         engine = fl_ctx.get_engine()
 
         topic = data.get_header(ReservedHeaderKey.TOPIC)
@@ -132,17 +241,30 @@ class AuxCommand(CommandProcessor):
 
 
 class ByeCommand(CommandProcessor):
+    """To implement the ShutdownCommand."""
     def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SHUTDOWN
+
+        """
         return AdminCommandNames.SHUTDOWN
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the Shutdown command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: Shutdown command message
+
+        """
         return None
 
 
 class AdminCommands(object):
-    """
-    AdminCommands contains all the commands for processing the commands from the parent process.
-    """
+    """AdminCommands contains all the commands for processing the commands from the parent process."""
 
     commands = [
         CheckStatusCommand(),
@@ -157,6 +279,14 @@ class AdminCommands(object):
 
     @staticmethod
     def get_command(command_name):
+        """Call to return the AdminCommand object.
+
+        Args:
+            command_name: AdminCommand name
+
+        Returns: AdminCommand object
+
+        """
         for command in AdminCommands.commands:
             if command_name == command.get_command_name():
                 return command
@@ -164,6 +294,12 @@ class AdminCommands(object):
 
     @staticmethod
     def register_command(command_processor: CommandProcessor):
+        """Call to register the AdminCommand processor.
+
+        Args:
+            command_processor: AdminCommand processor
+
+        """
         assert isinstance(command_processor, CommandProcessor)
 
         AdminCommands.commands.append(command_processor)

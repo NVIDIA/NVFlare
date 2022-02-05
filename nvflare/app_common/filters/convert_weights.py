@@ -25,7 +25,7 @@ class ConvertWeights(Filter):
     DIFF_TO_WEIGHTS = "diff_to_weights"
 
     def __init__(self, direction: str):
-        """Convert WEIGHTS to WEIGHT_DIFF or vice versa
+        """Convert WEIGHTS to WEIGHT_DIFF or vice versa.
 
         Args:
             direction (str): control conversion direction.  Either weights_to_diff or diff_to_weights.
@@ -67,7 +67,7 @@ class ConvertWeights(Filter):
         return dxo.data
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """Called by runners to perform weight conversion
+        """Called by runners to perform weight conversion.
 
         When the return code of shareable is not ReturnCode.OK, this
         function will not perform any process and returns the shareable back.

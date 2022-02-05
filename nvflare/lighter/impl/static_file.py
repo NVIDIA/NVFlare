@@ -21,7 +21,9 @@ from nvflare.lighter.utils import sh_replace
 
 class StaticFileBuilder(Builder):
     def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image=""):
-        """Uses the information from project.yml through study to go through the participants and write the contents of
+        """Build all static files from template.
+
+        Uses the information from project.yml through study to go through the participants and write the contents of
         each file with the template, and replacing with the appropriate values from project.yml.
 
         Usually, two main categories of files are created in all FL participants, static and dynamic. Static files

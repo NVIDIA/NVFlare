@@ -40,8 +40,7 @@ class HEModelEncryptor(Filter):
         aggregation_weights=None,
         weigh_by_local_iter=True,
     ):
-        """
-            filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
+        """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
             tenseal_context_file: tenseal context files containing encryption keys and parameters
@@ -148,8 +147,7 @@ class HEModelEncryptor(Filter):
         return params, encryption_dict
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """
-            filter process apply to the Shareable object.
+        """Filter process apply to the Shareable object.
 
         Args:
             shareable: shareable

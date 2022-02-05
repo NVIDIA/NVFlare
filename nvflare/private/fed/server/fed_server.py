@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""federated server for aggregating and sharing federated model"""
-
 import logging
 import pickle
 import threading
 import time
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from concurrent import futures
 from threading import Lock
 from typing import List, Optional
@@ -32,20 +30,21 @@ import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey, make_reply, ReturnCode
+from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
+
+from ..utils.fed_utils import shareable_to_modeldata
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
 from .server_status import ServerStatus
-from ..utils.fed_utils import shareable_to_modeldata
 
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", 1024 * 1024 * 1024),
@@ -53,11 +52,7 @@ GRPC_DEFAULT_OPTIONS = [
 ]
 
 
-class BaseServer:
-    """
-    Base FL server, provides the clients management, server deployment.
-    """
-
+class BaseServer(ABC):
     def __init__(
         self,
         project_name=None,
@@ -66,7 +61,8 @@ class BaseServer:
         heart_beat_timeout=600,
         handlers: Optional[List[FLComponent]] = None,
     ):
-        self.project_name = project_name  # should uniquely define a tlt workflow
+        """Base server that provides the clients management and server deployment."""
+        self.project_name = project_name
         self.min_num_clients = max(min_num_clients, 1)
         self.max_num_clients = max(max_num_clients, 1)
 
@@ -75,7 +71,9 @@ class BaseServer:
         # self.cmd_modules = cmd_modules
 
         self.client_manager = ClientManager(
-            project_name=self.project_name, min_num_clients=self.min_num_clients, max_num_clients=self.max_num_clients
+            project_name=self.project_name,
+            min_num_clients=self.min_num_clients,
+            max_num_clients=self.max_num_clients
         )
 
         self.grpc_server = None
@@ -99,11 +97,7 @@ class BaseServer:
         pass
 
     def close(self):
-        """
-        shutdown the server.
-
-        :return:
-        """
+        """Shutdown the server."""
         try:
             if self.lock:
                 self.lock.release()
@@ -112,20 +106,12 @@ class BaseServer:
         try:
             if self.grpc_server:
                 self.grpc_server.stop(0)
-            # if self.handlers:
-            #     for h in self.handlers:
-            #         h.shutdown(self.fl_ctx)
-            # if self.admin_server:
-            #     self.admin_server.stop()
         finally:
             self.logger.info("server off")
             return 0
 
     def deploy(self, grpc_args=None, secure_train=False):
-        """
-        start a grpc server and listening the designated port.
-        :param grpc_args:
-        """
+        """Start a grpc server and listening the designated port."""
         num_server_workers = grpc_args.get("num_server_workers", 1)
         num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
@@ -193,10 +179,9 @@ class BaseServer:
                 delete.append(token)
         for token in delete:
             client = self.client_manager.remove_client(token)
-            # self.tokens.pop(token, None)
             self.remove_client_data(token)
             if self.admin_server:
-                self.admin_server.client_dead(client.name)
+                self.admin_server.client_dead(token)
             self.logger.info(
                 "Remove the dead Client. Name: {}\t Token: {}.  Total clients: {}".format(
                     client.name, token, len(self.client_manager.get_clients())
@@ -209,10 +194,6 @@ class BaseServer:
 
 
 class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):
-    """
-    Federated server services
-    """
-
     def __init__(
         self,
         project_name=None,
@@ -226,14 +207,20 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         secure_train=False,
         enable_byoc=False,
     ):
-        """
+        """Federated server services.
 
-        :param project_name: server project name.
-        :param min_num_clients: minimum number of contributors at each round.
-        :param max_num_clients: maximum number of contributors at each round.
+        Args:
+            project_name: server project name.
+            min_num_clients: minimum number of contributors at each round.
+            max_num_clients: maximum number of contributors at each round.
+            wait_after_min_clients: wait time after minimum clients responded.
+            cmd_modules: command modules.
+            heart_beat_timeout: heartbeat timeout
+            handlers: A list of handler
+            args: arguments
+            secure_train: whether to use secure communication
+            enable_byoc: whether to enable custom components
         """
-        # assert model_log_dir is not None, "model_log_dir must be specified to save checkpoint"
-
         self.logger = logging.getLogger("FederatedServer")
 
         BaseServer.__init__(
@@ -261,7 +248,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # Additional fields for CurrentTask meta_data in GetModel API.
         self.current_model_meta_data = {}
 
-        self.engine = ServerEngine(self, args, self.client_manager)
+        self.engine = ServerEngine(server=self, args=args, client_manager=self.client_manager)
         self.run_manager = None
         self.server_runner = None
 
@@ -271,7 +258,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.enable_byoc = enable_byoc
 
     def get_current_model_meta_data(self):
-        """Get the model meta data, which usually contains additional fields"""
+        """Get the model metadata, which usually contains additional fields."""
         s = Struct()
         for k, v in self.current_model_meta_data.items():
             s.update({k: v})
@@ -279,55 +266,39 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     @property
     def task_meta_info(self):
-        """
-        the model_meta_info uniquely defines the current model,
-        it is used to reject outdated client's update.
+        """Task meta information.
 
-        :return: model meta data object
+        The model_meta_info uniquely defines the current model,
+        it is used to reject outdated client's update.
         """
         meta_info = fed_msg.MetaData()
         meta_info.created.CopyFrom(self.round_started)
         meta_info.project.name = self.project_name
         return meta_info
 
-    # def register_processor(self, processor: ResultProcessor):
-    #     # assert isinstance(processor, ResultProcessor), 'processor must be ResultProcessor'
-    #
-    #     topics = processor.get_topics()
-    #     for topic in topics:
-    #         assert topic not in self.processors, "duplicate processors for topic {}".format(topic)
-    #         self.processors[topic] = processor
-    #
     def remove_client_data(self, token):
         self.tokens.pop(token, None)
 
     def reset_tokens(self):
-        """
-        restart the token set, so that each client can take a token
+        """Reset the token set.
+
+        After resetting, each client can take a token
         and start fetching the current global model.
         This function is not thread-safe.
         """
-        # last_time = self.round_started.seconds
-        # self.round_started.GetCurrentTime()
-        # now_time = self.round_started.seconds
-        # reset_duration = now_time - last_time
-        # self.logger.info("Round time: %s second(s).", reset_duration if reset_duration > 0 else "less than a")
-
         self.tokens = dict()
         for client in self.get_all_clients().keys():
             self.tokens[client] = self.task_meta_info
 
     def Register(self, request, context):
-        """
-        register new clients on the fly.
+        """Register new clients on the fly.
+
         Each client must get registered before getting the global model.
         The server will expect updates from the registered clients
         for multiple federated rounds.
 
         This function does not change min_num_clients and max_num_clients.
         """
-        # fire_event(EventType.CLIENT_REGISTER, self.handlers, self.fl_ctx)
-
         token = self.client_manager.authenticate(request, context)
         if token:
             self.tokens[token] = self.task_meta_info
@@ -337,8 +308,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             return fed_msg.FederatedSummary(comment="New client registered", token=token)
 
     def Quit(self, request, context):
-        """
-        existing client quits the federated training process.
+        """Existing client quits the federated training process.
+
         Server will stop sharing the global model with the client,
         further contribution will be rejected.
 
@@ -358,9 +329,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         return fed_msg.FederatedSummary(comment="Removed client")
 
     def GetTask(self, request, context):
-        """
-        process client's request of the current global model
-        """
+        """Process client's request."""
         # # fl_ctx = self.fl_ctx.clone_sticky()
         # if not self.run_manager:
         #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server training stopped")
@@ -419,10 +388,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 return task
 
     def SubmitUpdate(self, request, context):
-        """
-        handling client's submission of the federated updates
-        running aggregation if there are enough updates
-        """
+        """Handle client's submission of the federated updates."""
         # if not self.run_manager:
         #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
@@ -475,15 +441,14 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     # fire_event(EventType.BEFORE_PROCESS_SUBMISSION, self.handlers, fl_ctx)
 
-                    if self.save_contribution(client_contrib_id, contribution):
-                        assert isinstance(shareable, Shareable)
-                        # task_id = shared_fl_context.get_cookie(FLContextKey.TASK_ID)
-                        task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-                        self.server_runner.process_submission(
-                            client, contribution_task_name, task_id, shareable, fl_ctx
-                        )
+                    assert isinstance(shareable, Shareable)
+                    # task_id = shared_fl_context.get_cookie(FLContextKey.TASK_ID)
+                    task_id = shareable.get_cookie(FLContextKey.TASK_ID)
+                    self.server_runner.process_submission(
+                        client, contribution_task_name, task_id, shareable, fl_ctx
+                    )
 
-                        # fire_event(EventType.AFTER_PROCESS_SUBMISSION, self.handlers, fl_ctx)
+                    # fire_event(EventType.AFTER_PROCESS_SUBMISSION, self.handlers, fl_ctx)
 
             response_comment = "Received from {} ({} Bytes, {} seconds)".format(
                 contribution.client.client_name,
@@ -499,10 +464,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             return summary_info
 
     def AuxCommunicate(self, request, context):
-        """
-        handling client's submission of the federated updates
-        running aggregation if there are enough updates
-        """
+        """Handle auxiliary channel communication."""
         # if not self.run_manager:
         #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
@@ -590,14 +552,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         response = admin_msg.Empty()
         return response
 
-    def save_contribution(self, client_contrib_id, data):
-        """
-        save the client's current contribution.
-
-        :return: True iff it is successfully saved
-        """
-        return True
-
     def start_run(self, run_number, run_root, conf, args):
         # self.status = ServerStatus.STARTING
 
@@ -671,11 +625,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.logger.info("Server app stopped.\n\n")
 
     def close(self):
-        """
-        shutdown the server.
-
-        :return:
-        """
+        """Shutdown the server."""
         self.logger.info("shutting down server")
-
         return super().close()

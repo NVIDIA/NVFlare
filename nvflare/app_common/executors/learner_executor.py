@@ -31,6 +31,14 @@ class LearnerExecutor(Executor):
         submit_model_task=AppConstants.TASK_SUBMIT_MODEL,
         validate_task=AppConstants.TASK_VALIDATION,
     ):
+        """Key component to run learner on clients.
+
+        Args:
+            learner_id (str): id pointing to the learner object
+            train_task (str, optional): label to dispatch train task. Defaults to AppConstants.TASK_TRAIN.
+            submit_model_task (str, optional): label to dispatch submit model task. Defaults to AppConstants.TASK_SUBMIT_MODEL.
+            validate_task (str, optional): label to dispatch validation task. Defaults to AppConstants.TASK_VALIDATION.
+        """
         super().__init__()
         self.learner_id = learner_id
         self.learner = None

@@ -23,11 +23,13 @@ from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
+
 from .cmd_utils import CommandUtil
 
 
 class InfoCollectorCommandModule(CommandModule, CommandUtil):
-    """
+    """This class is for server side info collector commands.
+
     NOTE: we only support Server side info collector commands for now,
     due to the complexity of client-side process/child-process architecture.
     """

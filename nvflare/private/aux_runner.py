@@ -28,6 +28,7 @@ class AuxRunner(FLComponent):
     TOPIC_BULK = "__runner.bulk__"
 
     def __init__(self):
+        """To init the AuxRunner."""
         FLComponent.__init__(self)
         self.run_num = None
         self.topic_table = {
@@ -40,8 +41,7 @@ class AuxRunner(FLComponent):
             self.run_num = fl_ctx.get_run_number()
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
-        """
-        Register aux message handling function with specified topics.
+        """Register aux message handling function with specified topics.
 
         This method should be called by ServerEngine's register_aux_message_handler method.
 
@@ -49,7 +49,7 @@ class AuxRunner(FLComponent):
             topic: the topic to be handled by the func
             message_handle_func: the func to handle the message. Must follow aux_message_handle_func_signature.
 
-        Returns:
+        Returns: N/A
 
         Exception is raised when:
             a handler is already registered for the topic;
@@ -78,7 +78,8 @@ class AuxRunner(FLComponent):
             self.topic_table[topic] = message_handle_func
 
     def _process_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        """
+        """Call to process the request.
+
         NOTE: peer_ctx props must have been set into the PEER_PROPS header of the request by Engine.
 
         Args:
@@ -86,7 +87,7 @@ class AuxRunner(FLComponent):
             request: message to be handled
             fl_ctx: fl context
 
-        Returns:
+        Returns: reply message
 
         """
         handler_f = self.topic_table.get(topic, None)
@@ -124,17 +125,16 @@ class AuxRunner(FLComponent):
         return reply
 
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        """
-        This method is to be called by the Engine when an aux message is received from peer.
+        """This method is to be called by the Engine when an aux message is received from peer.
 
         NOTE: peer_ctx props must have been set into the PEER_PROPS header of the request by Engine.
 
         Args:
-            topic:
-            request:
-            fl_ctx:
+            topic: message topic
+            request: request message
+            fl_ctx: FLContext
 
-        Returns:
+        Returns: reply message
 
         """
         valid_reply = self._process_request(topic, request, fl_ctx)

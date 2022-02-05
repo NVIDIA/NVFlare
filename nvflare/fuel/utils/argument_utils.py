@@ -16,7 +16,9 @@ from distutils.util import strtobool
 
 
 def parse_var(s):
-    """Returns (key, value) tuple from string with equals sign with the portion before the first equals sign as the key
+    """Parse string variable into key-value tuple.
+
+    Returns (key, value) tuple from string with equals sign with the portion before the first equals sign as the key
     and the rest as the value.
 
     Args:

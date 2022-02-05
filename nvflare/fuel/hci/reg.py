@@ -16,9 +16,15 @@ from typing import List
 
 
 class CommandSpec(object):
-    """Specification of a command within a CommandModuleSpec to register into CommandRegister as a CommandEntry.
 
-    Args:
+    valid_confirms = ["none", "yesno", "auth"]
+
+    def __init__(
+        self, name: str, description: str, usage: str, handler_func, authz_func=None, visible=True, confirm=None
+    ):
+        """Specification of a command within a CommandModuleSpec to register into CommandRegister as a CommandEntry.
+
+        Args:
             name: command name
             description: command description text
             usage: string to show usage of the command
@@ -26,13 +32,7 @@ class CommandSpec(object):
             authz_func: authorization function to run to get a tuple of (valid, authz_ctx) in AuthzFilter
             visible: whether the command is visible or not
             confirm: whether the command needs confirmation to execute
-    """
-
-    valid_confirms = ["none", "yesno", "auth"]
-
-    def __init__(
-        self, name: str, description: str, usage: str, handler_func, authz_func=None, visible=True, confirm=None
-    ):
+        """
         self.name = name
         self.description = description
         self.usage = usage
@@ -47,30 +47,21 @@ class CommandSpec(object):
 
 
 class CommandModuleSpec(object):
-    """
-    Specification for a command module containing a list of commands in the form of CommandSpec.
+    def __init__(self, name: str, cmd_specs: List[CommandSpec]):
+        """Specification for a command module containing a list of commands in the form of CommandSpec.
 
-    Args:
+        Args:
             name: becomes the scope name of the commands in cmd_specs when registered in CommandRegister
             cmd_specs: list of CommandSpec objects with
-    """
-
-    def __init__(self, name: str, cmd_specs: List[CommandSpec]):
+        """
         self.name = name
         self.cmd_specs = cmd_specs
 
 
 class CommandModule(object):
-    """
-    Base class containing CommandModuleSpec.
-    """
+    """Base class containing CommandModuleSpec."""
 
     def get_spec(self) -> CommandModuleSpec:
-        """
-
-        Returns: CommandModuleSpec
-
-        """
         pass
 
     def close(self):
@@ -78,10 +69,10 @@ class CommandModule(object):
 
 
 class CommandEntry(object):
-    """
-    Contains information about a command. This is registered in Scope within CommandRegister
+    def __init__(self, scope, name, desc, usage, handler, authz_func, visible, confirm):
+        """Contains information about a command. This is registered in Scope within CommandRegister.
 
-    Args:
+        Args:
             scope: scope for this command
             name: command name
             desc: command description text
@@ -90,9 +81,7 @@ class CommandEntry(object):
             authz_func: authorization function to run to get a tuple of (valid, authz_ctx) in AuthzFilter
             visible: whether the command is visible or not
             confirm: whether the command needs confirmation to execute
-    """
-
-    def __init__(self, scope, name, desc, usage, handler, authz_func, visible, confirm):
+        """
         self.scope = scope
         self.name = name
         self.desc = desc
@@ -104,11 +93,12 @@ class CommandEntry(object):
 
 
 class _Scope(object):
-    """
-    A container grouping CommandEntry objects inside CommandRegister.
-    """
-
     def __init__(self, name: str):
+        """A container grouping CommandEntry objects inside CommandRegister.
+
+        Args:
+            name: name of scope grouping commands
+        """
         self.name = name
         self.entries = {}
 
@@ -121,13 +111,15 @@ class _Scope(object):
 
 
 class CommandRegister(object):
-    """
-    Object containing the commands in scopes once they have been registered. ServerCommandRegister is derived from this
-    class and calls the handler of the command through process_command and _do_command. This is also used to register
-    commands for the admin client.
-    """
-
     def __init__(self, app_ctx):
+        """Object containing the commands in scopes once they have been registered.
+
+        ServerCommandRegister is derived from this class and calls the handler of the command through
+        ``process_command`` and ``_do_command``. This is also used to register commands for the admin client.
+
+        Args:
+            app_ctx: app context
+        """
         self.app_ctx = app_ctx
         self.scopes = {}
         self.cmd_map = {}

@@ -25,9 +25,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 
 class LoadResult(Enum):
-    """
-    Constants for different results when loading secure content.
-    """
+    """Constants for different results when loading secure content."""
 
     OK = "ok"
     NOT_MANAGED = "notManaged"
@@ -38,11 +36,14 @@ class LoadResult(Enum):
 
 
 class SecurityContentManager(object):
-    """
-    Content manager used by SecurityContentService to load secure content.
-    """
-
     def __init__(self, content_folder, signature_filename="signature.pkl", root_cert="rootCA.pem"):
+        """Content manager used by SecurityContentService to load secure content.
+
+        Args:
+            content_folder (str): the folder path that includes signature file
+            signature_filename (str, optional): the signature file (pickled dictionary). Defaults to "signature.pkl".
+            root_cert (str, optional): root CA certificate filename. Defaults to "rootCA.pem".
+        """
         self.content_folder = content_folder
         signature_path = os.path.join(self.content_folder, signature_filename)
         rootCA_cert_path = os.path.join(self.content_folder, root_cert)
@@ -92,9 +93,7 @@ class SecurityContentManager(object):
 
 
 class SecurityContentService(object):
-    """
-    Uses SecurityContentManager to load secure content.
-    """
+    """Uses SecurityContentManager to load secure content."""
 
     security_content_manager = None
 

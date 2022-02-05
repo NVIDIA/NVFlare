@@ -21,10 +21,12 @@ function print_style_fail_msg() {
     echo "Please run ${green}./runtest.sh${noColor} to check errors and fix them." 
 } 
 
-grep -V
-echo "set to +e"
+# grep -V
+# echo "set to +e"
 set +e
-grep -r --include "*.py" -L "# Copyright (c) \(2021\|2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved." nvflare test > no_license.lst
+folders_to_check_license="nvflare test"
+
+grep -r --include "*.py" -L "# Copyright (c) \(2021\|2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved." ${folders_to_check_license} > no_license.lst
 if [ -s no_license.lst ]; then
     # The file is not-empty.
     cat no_license.lst
@@ -33,14 +35,14 @@ if [ -s no_license.lst ]; then
     rm -f no_license.lst
     exit 1
 else
-    echo "All Python files in nvflare have license header"
+    echo "All Python files in folder (${folders_to_check_license}) have license header"
     rm -f no_license.lst
 fi
 
-export PWD=$(pwd) && echo $PWD
-export PYTHONPATH=$PWD:$PYTHONPATH && echo $PYTHONPATH
+# export PWD=$(pwd) && echo $PWD
+export PYTHONPATH=$(pwd):$PYTHONPATH && echo "PYTHONPATH is ${PYTHONPATH}"
 
-set -e
+# set -e
 
 # now only flake8
 python3 -m flake8 nvflare
@@ -68,8 +70,11 @@ else
     echo "${green}passed!${noColor}"
 fi
 # set -e
-echo "Done with flake tests"
+echo "Done with isort/black code style checks"
 
+python3 -m pydocstyle --convention=google nvflare
+
+set -e
 echo "Running unit tests"
 pytest --numprocesses=auto test
 echo "Done with unit tests"

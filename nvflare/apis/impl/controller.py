@@ -591,7 +591,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
         Args:
             task (Task): the task to be cancelled
-            completion_status ([type], optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.
+            completion_status (str, optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.
             fl_ctx (Optional[FLContext], optional): FLContext associated with this cancellation. Defaults to None.
         """
         task.completion_status = completion_status
@@ -600,7 +600,7 @@ class Controller(Responder, ControllerSpec, ABC):
         """Cancel all standing tasks in this controller.
 
         Args:
-            completion_status ([type], optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.
+            completion_status (str, optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.
             fl_ctx (Optional[FLContext], optional): FLContext associated with this cancellation. Defaults to None.
         """
         with self._task_lock:
@@ -611,7 +611,7 @@ class Controller(Responder, ControllerSpec, ABC):
         """Ask all clients to abort the execution of the specified task.
 
         Args:
-            task ([type]): the task to be aborted
+            task (str): the task to be aborted
             fl_ctx (FLContext): FLContext associated with this action
         """
         self.log_info(fl_ctx, "asked all clients to abort task {}".format(task.name))

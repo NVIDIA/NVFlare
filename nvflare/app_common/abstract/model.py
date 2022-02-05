@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
+"""The Learnable in the deep learning domain is usually called Model by researchers.
 
-The Learnable in the deep learning domain is usually called Model by researchers.
 This import simply lets you call the Learnable 'Model'.
-
+Model Learnable is a dict that contains two items: weights and meta info
 """
 from nvflare.apis.dxo import DXO, DataKind
 
@@ -24,24 +23,18 @@ from .learnable import Learnable as ModelLearnable
 
 
 class ModelLearnableKey(object):
-
-    """
-    Model Learnable is a dict that contains two items: weights and meta info
-    """
-
     WEIGHTS = "weights"
     META = "meta"
 
 
 def validate_model_learnable(model_learnable: ModelLearnable) -> str:
-    """
-    Check whether the specified model is a valid Model Shareable
+    """Check whether the specified model is a valid Model Shareable.
 
     Args:
-        model: model to be validated
+        model_learnable (ModelLearnable): model to be validated
 
-    Returns: error text
-
+    Returns:
+        str: error text or empty string if no error
     """
     if not isinstance(model_learnable, ModelLearnable):
         return "invalid model learnable: expect Model type but got {}".format(type(model_learnable))

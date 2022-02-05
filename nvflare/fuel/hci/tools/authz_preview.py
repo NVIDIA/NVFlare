@@ -22,20 +22,19 @@ from nvflare.fuel.sec.authz import Policy, validate_policy_config
 
 
 class Commander(cmd.Cmd):
-    """
-    Command line prompt helper tool for getting information for authorization configurations.
-    Args:
-            policy: authorization policy object
-    """
-
     def __init__(self, policy: Policy):
+        """Command line prompt helper tool for getting information for authorization configurations.
+
+        Args:
+            policy: authorization policy object
+        """
         cmd.Cmd.__init__(self)
         self.policy = policy
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = ">"
 
     def do_bye(self, arg):
-        """exit from the client"""
+        """Exits from the client."""
         return True
 
     def emptyline(self):
@@ -187,9 +186,7 @@ class Commander(cmd.Cmd):
 
 
 def main():
-    """
-    Tool to help preview and see the details of an authorization policy with command line commands.
-    """
+    """Tool to help preview and see the details of an authorization policy with command line commands."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", "-p", type=str, help="authz policy file", required=False, default="")
     parser.add_argument("--defs", "-d", type=str, help="authz definition file", required=False, default="")

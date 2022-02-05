@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""FL Server / Client startup config."""
+
 import logging
 import logging.config
 import os
@@ -28,6 +30,7 @@ FL_MODULES = ["server", "client", "app"]
 
 
 class FLServerStarterConfiger(JsonConfigurator):
+    """FL Server startup configer."""
     def __init__(
         self,
         app_root: str,
@@ -36,7 +39,15 @@ class FLServerStarterConfiger(JsonConfigurator):
         kv_list=None,
         logging_config=True,
     ):
+        """Init the FLServerStarterConfiger.
 
+        Args:
+            app_root: application root
+            server_config_file_name: server config filename
+            log_config_file_name: log config filename
+            kv_list: key value pair list
+            logging_config: True/False
+        """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
@@ -68,6 +79,12 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.enable_byoc = False
 
     def start_config(self, config_ctx: ConfigContext):
+        """Start the config process.
+
+        Args:
+            config_ctx: config context
+
+        """
         super().start_config(config_ctx)
 
         # loading server specifications
@@ -83,6 +100,13 @@ class FLServerStarterConfiger(JsonConfigurator):
             raise ValueError("Server config error: '{}'".format(self.server_config_file_name))
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
+        """Process the config element.
+
+        Args:
+            config_ctx: config context
+            node: element node
+
+        """
         # JsonConfigurator.process_config_element(self, config_ctx, node)
 
         element = node.element
@@ -97,6 +121,12 @@ class FLServerStarterConfiger(JsonConfigurator):
             return
 
     def finalize_config(self, config_ctx: ConfigContext):
+        """Finalize the config process.
+
+        Args:
+            config_ctx: config context
+
+        """
         secure_train = False
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]
@@ -117,6 +147,7 @@ class FLServerStarterConfiger(JsonConfigurator):
 
 
 class FLClientStarterConfiger(JsonConfigurator):
+    """FL Client startup configer."""
     def __init__(
         self,
         app_root: str,
@@ -125,7 +156,15 @@ class FLClientStarterConfiger(JsonConfigurator):
         kv_list=None,
         logging_config=True,
     ):
+        """Init the FLClientStarterConfiger.
 
+        Args:
+            app_root: application root
+            client_config_file_name: client config filename
+            log_config_file_name: log config filename
+            kv_list: key value pair list
+            logging_config: True/False
+        """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
@@ -155,6 +194,13 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.enable_byoc = False
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
+        """Process config element.
+
+        Args:
+            config_ctx: config context
+            node: element node
+
+        """
         # JsonConfigurator.process_config_element(self, config_ctx, node)
 
         element = node.element
@@ -165,6 +211,12 @@ class FLClientStarterConfiger(JsonConfigurator):
             return
 
     def start_config(self, config_ctx: ConfigContext):
+        """Start the config process.
+
+        Args:
+            config_ctx: config context
+
+        """
         super().start_config(config_ctx)
 
         try:
@@ -179,6 +231,12 @@ class FLClientStarterConfiger(JsonConfigurator):
             raise ValueError("Client config error: '{}'".format(self.client_config_file_name))
 
     def finalize_config(self, config_ctx: ConfigContext):
+        """Finalize the config process.
+
+        Args:
+            config_ctx: config context
+
+        """
         secure_train = False
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]

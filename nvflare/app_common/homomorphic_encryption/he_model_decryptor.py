@@ -33,8 +33,7 @@ from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
 
 class HEModelDecryptor(Filter):
     def __init__(self, tenseal_context_file="client_context.tenseal"):
-        """
-            filter to decrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
+        """Filter to decrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
             tenseal_context_file: tenseal context files containing decryption keys and parameters
@@ -83,7 +82,7 @@ class HEModelDecryptor(Filter):
         return params
 
     def to_ckks_vector(self, params, encrypted_layers, fl_ctx: FLContext):
-        """convert encrypted arrays to CKKS vector"""
+        """Convert encrypted arrays to CKKS vector."""
         if encrypted_layers is None:
             raise ValueError("encrypted_layers is None!")
         start_time = time.time()
@@ -106,8 +105,7 @@ class HEModelDecryptor(Filter):
         return result
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """
-            filter process apply to the Shareable object.
+        """Filter process apply to the Shareable object.
 
         Args:
             shareable: shareable

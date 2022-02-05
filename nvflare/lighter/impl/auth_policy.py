@@ -20,7 +20,9 @@ from nvflare.lighter.spec import Builder, Study
 
 class AuthPolicyBuilder(Builder):
     def __init__(self, orgs, roles, groups, disabled):
-        """Creates and writes authorization.json to the server's startup directory with the authorization policy
+        """Build authorization.json.
+
+        Creates and writes authorization.json to the server's startup directory with the authorization policy
         defining the groups each org is in and the admin client roles which controls the allowed rights. The
         participant information from project.yml is included in authorization.json with what orgs, groups, and roles
         are associated with each participant. This builder also checks for errors if the arguments are specified

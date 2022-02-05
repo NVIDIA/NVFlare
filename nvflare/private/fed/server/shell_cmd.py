@@ -177,9 +177,6 @@ class _FileCmdExecutor(_CommandExecutor):
 
 
 class ShellCommandModule(CommandModule):
-    def __init__(self):
-        CommandModule.__init__(self)
-
     def get_spec(self):
         pwd_exe = _NoArgCmdExecutor("pwd")
         ls_exe = _FileCmdExecutor(

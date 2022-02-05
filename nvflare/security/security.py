@@ -60,6 +60,15 @@ ACTION_EXPLANATION = {
 
 class FLAuthzContext(AuthzContext):
     def __init__(self, user_name: str, site_names: List[str], actions: List[str]):
+        """System-wide authorization context.
+
+        Information about the authorization, such as roles, users, sites and actions
+
+        Args:
+            user_name (str): admin's user name
+            site_names (List[str]): all the sites to be checked
+            actions (List[str]): associated actions
+        """
         AuthzContext.__init__(self, user_name=user_name, site_names=site_names)
         self.actions = actions
 
@@ -86,6 +95,12 @@ def action_checker_signature(user_name, site_name):
 
 class FLAuthorizer(Authorizer):
     def __init__(self):
+        """System-wide authorization class.
+
+        Examine if a user has certain rights on a specific site
+        based on authorization.json file.
+
+        """
         Authorizer.__init__(self)
         self.action_checkers = {
             Action.UPLOAD: self._user_can_upload,
@@ -98,8 +113,8 @@ class FLAuthorizer(Authorizer):
         }
 
     def evaluate_user_right_on_site(self, right_name: str, user_name: str, site_name: str):
-        """
-        Check whether a user has a right in an org.
+        """Check whether a user has a right in an org.
+
         Super user has all rights in all orgs.
         Args:
             right_name: right to be evaluated
@@ -127,16 +142,6 @@ class FLAuthorizer(Authorizer):
         return super(FLAuthorizer, self).evaluate_user_right_on_site(right_name, user_name, site_name)
 
     def _any_bool_rights(self, right_names: List[str], user_name: str, site_name: str):
-        """
-        Check whether the user has any of the specified right
-        Args:
-            right_names:
-            user_name:
-            site_name:
-
-        Returns:
-
-        """
         if not self.policy:
             return None, "policy not defined"
 

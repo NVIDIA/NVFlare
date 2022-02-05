@@ -23,7 +23,7 @@ from nvflare.apis.shareable import Shareable
 
 class PercentilePrivacy(Filter):
     def __init__(self, percentile=10, gamma=0.01):
-        """Implementation of "largest percentile to share" privacy preserving policy
+        """Implementation of "largest percentile to share" privacy preserving policy.
 
         Shokri and Shmatikov, Privacy-preserving deep learning, CCS '15
 
@@ -32,7 +32,6 @@ class PercentilePrivacy(Filter):
               Allowed range 0..100.  Defaults to 10.
             gamma (float, optional): The upper limit to truncate abs values of weight diff. Defaults to 0.01.  Any weight diff with abs<gamma will become 0.
         """
-
         super().__init__()
 
         # must be in 0..100, only update abs diff greater than percentile
@@ -41,8 +40,9 @@ class PercentilePrivacy(Filter):
         self.gamma = gamma  # truncate absolute value of delta W
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """Compute the percentile on the abs delta_W,
-        only share the params where absolute delta_W greater than
+        """Compute the percentile on the abs delta_W.
+
+        Only share the params where absolute delta_W greater than
         the percentile value
 
         Args:
@@ -52,7 +52,6 @@ class PercentilePrivacy(Filter):
         Returns:
             Shareable: a shareable containing the truncated weight diff
         """
-
         self.log_debug(fl_ctx, "inside filter")
 
         rc = shareable.get_return_code()

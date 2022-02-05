@@ -24,7 +24,15 @@ from nvflare.apis.client import Client
 
 class ClientManager:
     def __init__(self, project_name=None, min_num_clients=2, max_num_clients=10):
+        """Manages client adding and removing.
+
+        Args:
+            project_name: project name
+            min_num_clients: minimum number of clients allowed.
+            max_num_clients: maximum number of clients allowed.
+        """
         self.project_name = project_name
+        # TODO:: remove min num clients
         self.min_num_clients = min_num_clients
         self.max_num_clients = max_num_clients
         self.clients = dict()  # token => Client
@@ -44,7 +52,6 @@ class ClientManager:
 
         # new client will join the current round immediately
         with self.lock:
-            # self._set_instance_name(client)
             self.clients.update({client.token: client})
             self.logger.info(
                 "Client: New client {} joined. Sent token: {}.  Total clients: {}".format(
@@ -54,13 +61,13 @@ class ClientManager:
         return client.token
 
     def remove_client(self, token):
-        """
-        Remove a registered client through the token.
+        """Remove a registered client.
+
         Args:
             token: client token
 
-        Returns: removed Client object
-
+        Returns:
+            The removed Client object
         """
         with self.lock:
             client = self.clients.pop(token)
@@ -70,27 +77,21 @@ class ClientManager:
             return client
 
     def login_client(self, client_login, context):
-        """
-        validate the client state message
-
-        :param context: gRPC connection context
-        :return: client id if it's a valid client
-        """
         if not self.is_valid_task(client_login.meta.project):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
         return self.authenticated_client(client_login, context)
 
     def validate_client(self, client_state, context, allow_new=False):
-        """
-        validate the client state message
+        """Validate the client state message.
 
-        :param client_state: A ClientState message received by server
-        :param context: gRPC connection context
-        :param allow_new: whether to allow new client. Its task should
-            still match server's.
-        :return: client id if it's a valid client
-        """
+        Args:
+            client_state: A ClientState message received by server
+            context: gRPC connection context
+            allow_new: whether to allow new client. Note that its task should still match server's.
 
+        Returns:
+             client id if it's a valid client
+        """
         token = client_state.token
         if not token:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Could not read client uid from the payload")
@@ -105,12 +106,15 @@ class ClientManager:
             client = self.clients.get(token)
         return client
 
-    def authenticated_client(self, client_login, context):
-        """
-        Use SSL certificate for authenticate the client.
-        :param client_login:
-        :param context:
-        :return:
+    def authenticated_client(self, client_login, context) -> Client:
+        """Use SSL certificate for authenticate the client.
+
+        Args:
+            client_login: client login request
+            context: gRPC connection context
+
+        Returns:
+            Client object.
         """
         client = self.clients.get(client_login.token)
         if not client:
@@ -137,25 +141,35 @@ class ClientManager:
             client = Client(client_name, str(uuid.uuid4()))
         return client
 
-    def is_from_authorized_client(self, client_id):
-        """
-        simple authentication of the client.
+    def is_from_authorized_client(self, token):
+        """Check if a client is authorized.
 
-        :return: True indicates it is a recognised client
+        Args:
+            token: client token
+
+        Returns:
+            True if it is a recognised client
         """
-        return client_id in self.clients
+        return token in self.clients
 
     def is_valid_task(self, task):
-        """
-        check whether the requested task matches the server's task
+        """Check whether the requested task matches the server's project_name.
+
+        Returns:
+            True if task name is the same as server's project name.
         """
         return task.name == self.project_name
 
-    def heartbeat(self, token, client_id, context):
-        """
-        update the heartbeat of the client.
-        :param token: client ID token
-        :return: If a new client needs to be created.
+    def heartbeat(self, token, client_name, context):
+        """Update the heartbeat of the client.
+
+        Args:
+            token: client token
+            client_name: client name
+            context: grpc context
+
+        Returns:
+            If a new client needs to be created.
         """
         with self.lock:
             client = self.clients.get(token)
@@ -166,31 +180,31 @@ class ClientManager:
                 return False
             else:
                 for _token, _client in self.clients.items():
-                    if _client.name == client_id:
+                    if _client.name == client_name:
                         context.abort(
                             grpc.StatusCode.FAILED_PRECONDITION,
-                            "Client ID already registered as a client: {}".format(client_id),
+                            "Client ID already registered as a client: {}".format(client_name),
                         )
                         self.logger.info(
                             "Failed to re-activate dead client:{} with token: {}. Client already exist.".format(
-                                client_id, _token
+                                client_name, _token
                             )
                         )
                         return False
 
-                client = Client(client_id, token)
+                client = Client(client_name, token)
                 client.last_connect_time = time.time()
                 # self._set_instance_name(client)
                 self.clients.update({token: client})
-                self.logger.info("Re-activate dead client:{} with token: {}".format(client_id, token))
+                self.logger.info("Re-activate dead client:{} with token: {}".format(client_name, token))
 
                 return True
-        # return self.clients
 
     def get_clients(self):
-        """
-        get the list of registered clients.
-        :return:
+        """Get the list of registered clients.
+
+        Returns:
+            A dict of {client_token: client}
         """
         return self.clients
 

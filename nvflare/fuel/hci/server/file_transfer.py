@@ -33,11 +33,14 @@ from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_by
 
 
 class FileTransferModule(CommandModule):
-    """
-    Command module for file transfers.
-    """
-
     def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None):
+        """Command module for file transfers.
+
+        Args:
+            upload_dir:
+            download_dir:
+            upload_folder_authz_func:
+        """
         if not os.path.isdir(upload_dir):
             raise ValueError("upload_dir {} is not a valid dir".format(upload_dir))
 

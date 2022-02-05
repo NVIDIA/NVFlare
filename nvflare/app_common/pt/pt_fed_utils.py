@@ -29,7 +29,7 @@ from nvflare.app_common.app_constant import ModelFormat
 
 
 def feed_vars(model: nn.Module, model_params):
-    """feed variable values from model_params to pytorch state_dict.
+    """Feed variable values from model_params to pytorch state_dict.
 
     Args:
         model (nn.Module): the local pytorch model
@@ -72,6 +72,15 @@ class PTModelPersistenceFormatManager(object):
     PERSISTENCE_KEY_META_PROPS = "meta_props"
 
     def __init__(self, data: dict, default_train_conf=None):
+        """Manage the format for model persistence.
+
+        Args:
+            data (dict): either the dictionary mapping variables to values or a dict of dict.
+            default_train_conf (dict, optional): configuration for train. Defaults to None.
+
+        Raises:
+            TypeError: when data is not a dictionary
+        """
         if not isinstance(data, dict):
             raise TypeError("data must be a dict but got {}".format(type(data)))
 
@@ -146,16 +155,11 @@ class PTModelPersistenceFormatManager(object):
         return persistence_dict
 
     def update(self, ml: ModelLearnable):
-        """
-        Update the persistence data with the learned values
+        """Update the persistence data with the learned values.
 
         Args:
-            ml:
-
-        Returns:
-
+            ml (ModelLearnable): updated information to be merged into existing ModelLearnable
         """
-
         err = validate_model_learnable(ml)
         if err:
             raise ValueError(err)

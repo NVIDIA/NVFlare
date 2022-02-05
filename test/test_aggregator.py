@@ -20,16 +20,13 @@ import pytest
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.aggregators.accumulate_model_aggregator import AccumulateWeightedAggregator
-from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
-
-# from nvflare.app_common.app_constant import AppConstants, AppShareableKey, AppShareableValue, ShareableContentType
 from nvflare.app_common.app_constant import AppConstants
 
 
 class TestAggregator:
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator, InTimeAccumulateWeightedAggregator])
+    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
     @pytest.mark.parametrize(
         "received,expected",
         [
@@ -81,7 +78,7 @@ class TestAggregator:
         result = agg.aggregate(fl_ctx)
         np.testing.assert_allclose(result["DXO"]["data"]["var1"], expected["var1"])
 
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator, InTimeAccumulateWeightedAggregator])
+    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
     @pytest.mark.parametrize("shape", [(4), (6, 6)])
     @pytest.mark.parametrize("n_clients", [10, 50, 100])
     def test_accum_aggregator_random(self, aggregator, shape, n_clients):
@@ -114,7 +111,7 @@ class TestAggregator:
         result_dxo = from_shareable(result)
         np.testing.assert_allclose(result_dxo.data["var1"], weighted_sum / sum_of_weights)
 
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator, InTimeAccumulateWeightedAggregator])
+    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
     def test_accum_aggregator_accept(self, aggregator):
         aggregation_weights = {f"client_{i}": random.random() for i in range(2)}
         agg = aggregator(aggregation_weights=aggregation_weights)
