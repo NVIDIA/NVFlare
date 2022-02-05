@@ -70,6 +70,8 @@ class PTFileModelLocator(ModelLocator):
 
         model_learnable = self.model_persistor.get_model(model_name, fl_ctx)
         weights = model_learnable.get(ModelLearnableKey.WEIGHTS)
+        if weights is None:
+            raise ValueError(f"model {model_name} does not have required model weights.")
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
 
         return dxo
