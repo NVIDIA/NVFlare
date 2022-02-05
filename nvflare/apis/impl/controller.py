@@ -67,7 +67,7 @@ def _check_inputs(task: Task, fl_ctx: FLContext, targets: Union[List[Client], Li
 
 class Controller(Responder, ControllerSpec, ABC):
     def __init__(self, task_check_period=0.5):
-        """Manage life cycles of tasks and their destinations
+        """Manage life cycles of tasks and their destinations.
 
         Args:
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
@@ -82,14 +82,13 @@ class Controller(Responder, ControllerSpec, ABC):
         self._task_check_period = task_check_period
 
     def initialize_run(self, fl_ctx: FLContext):
-        """Called by runners to initialize controller with information in fl_ctx
+        """Called by runners to initialize controller with information in fl_ctx.
 
         Note: Controller subclasses must not overwrite this method.
 
         Args:
             fl_ctx (FLContext): FLContext information
         """
-
         self._engine = fl_ctx.get_engine()
         self.start_controller(fl_ctx)
         self._task_monitor.start()
@@ -99,7 +98,7 @@ class Controller(Responder, ControllerSpec, ABC):
         return "", "", None
 
     def _set_stats(self, fl_ctx: FLContext):
-        """Called to set stats into InfoCollector
+        """Called to set stats into InfoCollector.
 
         Args:
             fl_ctx (FLContext): info collector is retrieved from fl_ctx with InfoCollector.CTX_KEY_STATS_COLLECTOR key
@@ -118,7 +117,7 @@ class Controller(Responder, ControllerSpec, ABC):
             )
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """Called when events are fired
+        """Called when events are fired.
 
         Args:
             event_type (str): all event types, including AppEventType and EventType
@@ -128,7 +127,7 @@ class Controller(Responder, ControllerSpec, ABC):
             self._set_stats(fl_ctx)
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
-        """Called by runner when a client asks for a task
+        """Called by runner when a client asks for a task.
 
         Note: this is called in a separate thread.
 
@@ -639,6 +638,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def abort_all_tasks(self, fl_ctx: FLContext):
         """Ask clients to abort the execution of all tasks.
+
         NOTE: the server should send a notification to all clients, regardless of whether the server
         has any standing tasks.
 
@@ -649,6 +649,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
+
         NOTE: subclass controllers should not overwrite finalize_run.
 
         Args:

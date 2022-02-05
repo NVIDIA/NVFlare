@@ -17,16 +17,27 @@ import time
 
 class Signal(object):
     def __init__(self):
+        """Init the Signal."""
         self.value = None
         self.trigger_time = None
         self.triggered = False
 
     def trigger(self, value):
+        """Trigger the Signal.
+
+        Args:
+            value: set the value of the signal
+        """
         self.value = value
         self.trigger_time = time.time()
         self.triggered = True
 
     def reset(self, value=None):
+        """Reset the Signal.
+
+        Args:
+            value: reset the value of the signal
+        """
         self.value = value
         self.trigger_time = None
         self.triggered = False

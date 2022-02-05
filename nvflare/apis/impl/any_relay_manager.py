@@ -29,7 +29,7 @@ _KEY_PENDING_CLIENT = "__pending_client"
 
 class AnyRelayTaskManager(TaskManager):
     def __init__(self, task: Task, task_result_timeout, dynamic_targets):
-        """Task manager for relay controller on SendOrder.ANY
+        """Task manager for relay controller on SendOrder.ANY.
 
         Args:
             task (Task): an instance of Task
@@ -109,6 +109,7 @@ class AnyRelayTaskManager(TaskManager):
 
     def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
         """Determine whether the task should exit.
+
         Args:
             task (Task): an instance of Task
 
@@ -141,7 +142,8 @@ class AnyRelayTaskManager(TaskManager):
 
     def check_task_result(self, result: Shareable, client_task: ClientTask, fl_ctx: FLContext):
         """Check the result received from the client.
-        see whether the client_task is the last one in the task's list
+
+        See whether the client_task is the last one in the task's list
         If not, then it is a late response and ReservedHeaderKey.REPLY_IS_LATE is
         set to True in result's header.
 

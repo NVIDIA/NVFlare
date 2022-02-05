@@ -53,7 +53,6 @@ class InfoCollector(Widget):
     def __init__(self):
         """A widget for information collection.
 
-
         Note:
            self.categories structure:
                 category (dict)

@@ -17,10 +17,10 @@ import socket
 
 def get_open_ports(number):
     """Get the number of open ports from the system.
+
     Args:
         number: number of ports
     Returns: list of open_ports
-
     """
     ports = []
     for i in range(number):

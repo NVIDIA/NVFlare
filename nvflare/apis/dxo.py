@@ -45,7 +45,7 @@ _KEY_DXO = "DXO"
 
 class DXO(object):
     def __init__(self, data_kind: str, data: dict, meta: dict = None):
-        """
+        """Init the DXO.
 
         Args:
             data_kind: data_kind name
@@ -96,11 +96,17 @@ class DXO(object):
         return s
 
     def to_shareable(self) -> Shareable:
+        """Method to convert DXO object into Shareable.
+
+        Returns:
+            Shareable object.
+
+        """
         s = Shareable()
         return self.update_shareable(s)
 
     def to_bytes(self) -> bytes:
-        """method to serialize the DXO object into bytes.
+        """Method to serialize the DXO object into bytes.
 
         Returns:
             object serialized in bytes.
@@ -122,6 +128,15 @@ class DXO(object):
 
 
 def from_shareable(s: Shareable) -> DXO:
+    """Method to convert DXO object into Shareable.
+
+    Args:
+        s: Shareable object
+
+    Returns:
+        DXO object.
+
+    """
     content_type = s.get_header(ReservedHeaderKey.CONTENT_TYPE)
     if not content_type or content_type != "DXO":
         raise ValueError("the shareable is not a valid DXO - expect content_type DXO but got {}".format(content_type))
@@ -143,7 +158,7 @@ def from_shareable(s: Shareable) -> DXO:
 
 
 def from_bytes(data: bytes) -> DXO:
-    """method to convert the object bytes into Model object.
+    """Method to convert the object bytes into Model object.
 
     Args:
         data: a bytes object

@@ -48,7 +48,7 @@ class ComponentCaller(Widget):
     CTX_KEY_CALL_INFO = "comp_caller.call_info"
 
     def __init__(self):
-        """A widget enables calling component(s)"""
+        """A widget enables calling component(s)."""
         super().__init__()
         self.engine = None
 
@@ -82,7 +82,6 @@ class ComponentCaller(Widget):
 
                 - if the call is applicable, always report the execution status to the call.
         """
-
         # NOTE: it's important to assign self.engine to a new var!
         # This is because another thread may fire the END_RUN event, which will cause
         # self.engine to be set to None, just after checking it being None and before using it!

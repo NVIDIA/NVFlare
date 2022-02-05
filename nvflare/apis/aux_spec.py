@@ -27,15 +27,14 @@ class MessageSendStatus(enum.Enum):
 
 
 def aux_request_handle_func_signature(topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-    """
-    This is the signature of the message_handle_func.
+    """This is the signature of the message_handle_func.
 
     Args:
         topic: topic of the message to be handled
         request: the message data to be handled
         fl_ctx: FL context
 
-    Returns: a response to the requester
+    Returns: a Shareable response to the requester
 
     """
     pass

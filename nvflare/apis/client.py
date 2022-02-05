@@ -17,6 +17,12 @@ import time
 
 class Client:
     def __init__(self, name, token) -> None:
+        """Init Client.
+
+        Args:
+            name: client name
+            token: client token
+        """
         # super().__init__()
         self.name = name
         self.token = token

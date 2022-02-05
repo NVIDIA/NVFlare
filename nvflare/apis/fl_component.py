@@ -26,7 +26,7 @@ from .shareable import Shareable
 
 class FLComponent(object):
     def __init__(self):
-        """FLComponent base class."""
+        """Init FLComponent base class."""
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
