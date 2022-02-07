@@ -68,7 +68,9 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.engine_info = EngineInfo()
 
-        assert workers >= 1, "workers must >= 1"
+        if not workers >= 1:
+            raise ValueError("workers must >= 1 but got {}".format(workers))
+
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -287,7 +289,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def set_configurator(self, conf: ServerJsonConfigurator):
         if not isinstance(conf, ServerJsonConfigurator):
-            raise TypeError("Must be a type of ServerJsonConfigurator.")
+            raise TypeError("conf must be ServerJsonConfigurator but got {}".format(type(conf)))
         self.conf = conf
 
     def build_component(self, config_dict):

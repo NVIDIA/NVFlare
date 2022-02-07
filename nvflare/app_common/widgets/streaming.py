@@ -209,7 +209,7 @@ class AnalyticsReceiver(Widget, ABC):
                 return
             if not isinstance(data, Shareable):
                 self.log_error(
-                    fl_ctx, f"Expect data to be an instance of shareable but get {type(data)}", fire_event=False
+                    fl_ctx, f"Expect data to be an instance of Shareable but got {type(data)}", fire_event=False
                 )
                 return
 

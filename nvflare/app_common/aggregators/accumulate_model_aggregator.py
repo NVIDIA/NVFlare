@@ -67,7 +67,6 @@ class AccumulateWeightedAggregator(Aggregator):
         except:
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return False
-        assert isinstance(dxo, DXO)
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS):
             self.log_error(fl_ctx, "cannot handle data kind {}".format(dxo.data_kind))
@@ -150,7 +149,6 @@ class AccumulateWeightedAggregator(Aggregator):
         for v_name in vars_to_aggregate:
             n_local_iters, np_vars = [], []
             for item in self.accumulator:
-                assert isinstance(item, _AccuItem)
                 client_name = item.client
                 data = item.data
                 n_iter = item.steps

@@ -16,9 +16,9 @@ from multiprocessing import Lock
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode, ReservedKey
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply, ReservedHeaderKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 
 
@@ -69,7 +69,7 @@ class AuxRunner(FLComponent):
             raise ValueError("message handler function is not specified")
 
         if not callable(message_handle_func):
-            raise TypeError("specified message_handle_func is not callable")
+            raise TypeError("specified message_handle_func {} is not callable".format(message_handle_func))
 
         with self.reg_lock:
             if topic in self.topic_table:
@@ -149,7 +149,7 @@ class AuxRunner(FLComponent):
     def _process_bulk_requests(self, topic: str, request: Shareable, fl_ctx: FLContext):
         reqs = request.get(self.DATA_KEY_BULK, None)
         if not isinstance(reqs, list):
-            self.log_error(fl_ctx, "invalid bulk request - missing list of requests")
+            self.log_error(fl_ctx, "invalid bulk request - missing list of requests, got {} instead".format(type(reqs)))
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         abort_signal = fl_ctx.get_run_abort_signal()

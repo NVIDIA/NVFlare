@@ -46,8 +46,8 @@ class Message(object):
     def set_headers(self, headers: dict):
         if not headers:
             return
-
-        assert isinstance(headers, dict)
+        if not isinstance(headers, dict):
+            raise TypeError("headers must be dict but got {}".format(type(headers)))
         if len(headers) > 0:
             self.headers.update(headers)
 

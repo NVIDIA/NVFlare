@@ -82,6 +82,7 @@ class RequestProcessor(object):
 
 class FedAdminAgent(object):
     """FedAdminAgent communicate with the FedAdminServer."""
+
     def __init__(self, client_name, sender: Sender, app_ctx, req_poll_interval=0.5, process_poll_interval=0.1):
         """Init the FedAdminAgent.
 
@@ -92,10 +93,12 @@ class FedAdminAgent(object):
             req_poll_interval: request polling interval
             process_poll_interval: process polling interval
         """
-        assert isinstance(sender, Sender), "sender must be Sender"
+        if not isinstance(sender, Sender):
+            raise TypeError("sender must be an instance of Sender, but got {}".format(type(sender)))
 
         auditor = AuditService.get_auditor()
-        assert isinstance(auditor, Auditor), "auditor must be Auditor but got {}".format(type(auditor))
+        if not isinstance(auditor, Auditor):
+            raise TypeError("auditor must be an instance of Auditor, but got {}".format(type(auditor)))
 
         self.name = client_name
         self.sender = sender
@@ -117,7 +120,8 @@ class FedAdminAgent(object):
             processor: RequestProcessor
 
         """
-        assert isinstance(processor, RequestProcessor), "processor must be RequestProcessor"
+        if not isinstance(processor, RequestProcessor):
+            raise TypeError("processor must be an instance of RequestProcessor, but got {}".format(type(processor)))
 
         topics = processor.get_topics()
         for topic in topics:
@@ -186,7 +190,7 @@ class FedAdminAgent(object):
                             ), "processor for topic {} failed to produce valid reply".format(topic)
                     except BaseException as e:
                         traceback.print_exc()
-                        reply = error_reply("exception_occurred")
+                        reply = error_reply("exception_occurred: {}".format(e))
                 else:
                     reply = error_reply("invalid_request")
 

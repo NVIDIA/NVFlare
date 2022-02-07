@@ -67,7 +67,6 @@ class SVTPrivacy(Filter):
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return shareable
 
-        assert isinstance(dxo, DXO)
         if dxo.data is None:
             self.log_debug(fl_ctx, "no data to filter")
             return shareable

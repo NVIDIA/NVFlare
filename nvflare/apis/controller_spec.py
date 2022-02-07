@@ -66,10 +66,10 @@ class Task(object):
 
         """
         if not isinstance(name, str):
-            raise TypeError("name must be an instance of str.")
+            raise TypeError("name must be str, but got {}.".format(type(name)))
 
         if not isinstance(data, Shareable):
-            raise TypeError("data must be an instance of Shareable.")
+            raise TypeError("data must be an instance of Shareable, but got {}.".format(type(data)))
 
         self.name = name  # name of the task
         self.data = data  # task data to be sent to client(s)
@@ -79,26 +79,30 @@ class Task(object):
             self.props = {}
         else:
             if not isinstance(props, dict):
-                raise TypeError("props must be None or dict.")
+                raise TypeError("props must be None or dict, but got {}.".format(type(props)))
             self.props = props
 
         if not isinstance(timeout, int):
-            raise TypeError("timeout must be an instance of int.")
+            raise TypeError("timeout must be an int, but got {}.".format(type(timeout)))
 
         if timeout < 0:
-            raise ValueError("timeout must >= 0.")
+            raise ValueError("timeout must be >= 0, but got {}.".format(timeout))
 
         if before_task_sent_cb is not None and not callable(before_task_sent_cb):
-            raise TypeError("before_task_sent must be a callable function.")
+            raise TypeError(
+                "before_task_sent must be a callable function, but got {}.".format(type(before_task_sent_cb))
+            )
 
         if after_task_sent_cb is not None and not callable(after_task_sent_cb):
-            raise TypeError("after_task_sent_cb must be a callable function.")
+            raise TypeError(
+                "after_task_sent_cb must be a callable function, but got {}.".format(type(after_task_sent_cb))
+            )
 
         if result_received_cb is not None and not callable(result_received_cb):
-            raise TypeError("result_received must be a callable function.")
+            raise TypeError("result_received must be a callable function, but got {}.".format(type(result_received_cb)))
 
         if task_done_cb is not None and not callable(task_done_cb):
-            raise TypeError("task_done must be a callable function.")
+            raise TypeError("task_done must be a callable function, but got {}.".format(type(task_done_cb)))
 
         self.timeout = timeout
         self.before_task_sent_cb = before_task_sent_cb
@@ -116,12 +120,12 @@ class Task(object):
 
     def set_prop(self, key, value):
         if key.startswith("__"):
-            raise ValueError("Keys start with __ is reserved. Please use other key.")
+            raise ValueError("Keys start with __ is reserved. Please use other key instead of {}.".format(key))
         self.props[key] = value
 
     def get_prop(self, key):
         if key.startswith("__"):
-            raise ValueError("Keys start with __ is reserved. Please use other key.")
+            raise ValueError("Keys start with __ is reserved. Please use other key instead of {}.".format(key))
         return self.props.get(key)
 
 

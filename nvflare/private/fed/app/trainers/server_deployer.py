@@ -14,12 +14,13 @@
 
 """FL Server deployer."""
 
-from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
 from nvflare.private.fed.server.fed_server import FederatedServer
+from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
 
 
 class ServerDeployer:
     """FL Server deployer."""
+
     def __init__(self):
         """Init the ServerDeployer."""
         # self.app_validator = None

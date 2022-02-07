@@ -41,14 +41,22 @@ class ExcludeVars(Filter):
         if self.exclude_vars is not None:
             if not (isinstance(self.exclude_vars, list) or isinstance(self.exclude_vars, str)):
                 self.skip = True
-                self.logger.debug("Need to provide a list of layer names or a string for regex matching")
+                self.logger.debug(
+                    "Need to provide a list of layer names or a string for regex matching, but got {}".format(
+                        type(self.exclude_vars)
+                    )
+                )
                 return
 
             if isinstance(self.exclude_vars, list):
                 for var in self.exclude_vars:
                     if not isinstance(var, str):
                         self.skip = True
-                        self.logger.debug("encrypt_layers needs to be a list of layer names to encrypt.")
+                        self.logger.debug(
+                            "encrypt_layers needs to be a list of layer names to encrypt, but contains element of type {}".format(
+                                type(var)
+                            )
+                        )
                         return
                 self.logger.debug(f"Excluding {self.exclude_vars} from shareable")
             elif isinstance(self.exclude_vars, str):
@@ -87,7 +95,6 @@ class ExcludeVars(Filter):
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return shareable
 
-        assert isinstance(dxo, DXO)
         if dxo.data is None:
             self.log_debug(fl_ctx, "no data to filter")
             return shareable

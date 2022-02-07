@@ -63,7 +63,8 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
 
     peer_ctx = fl_ctx.get_peer_context()
     if peer_ctx:
-        assert isinstance(peer_ctx, FLContext)
+        if not isinstance(peer_ctx, FLContext):
+            raise TypeError("peer_ctx must be an instance of FLContext, but got {}".format(type(peer_ctx)))
         peer_run = peer_ctx.get_run_number()
         if not peer_run:
             peer_run = "?"

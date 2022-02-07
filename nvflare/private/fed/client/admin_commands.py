@@ -14,9 +14,9 @@
 
 """FL Admin commands."""
 
-from nvflare.apis.fl_constant import FLContextKey, AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.private.fed.client.client_status import get_status_message
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
@@ -48,6 +48,7 @@ class CommandProcessor(object):
 
 class CheckStatusCommand(CommandProcessor):
     """To implement the check_status command."""
+
     def get_command_name(self) -> str:
         """To get thee command name.
 
@@ -73,6 +74,7 @@ class CheckStatusCommand(CommandProcessor):
 
 class AbortCommand(CommandProcessor):
     """To implement the abort command."""
+
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -97,6 +99,7 @@ class AbortCommand(CommandProcessor):
 
 class AbortTaskCommand(CommandProcessor):
     """To implement the abort_task command."""
+
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -123,6 +126,7 @@ class AbortTaskCommand(CommandProcessor):
 
 class ShowStatsCommand(CommandProcessor):
     """To implement the show_stats command."""
+
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -146,7 +150,8 @@ class ShowStatsCommand(CommandProcessor):
         if not collector:
             result = {"error": "no info collector"}
         else:
-            assert isinstance(collector, InfoCollector)
+            if not isinstance(collector, InfoCollector):
+                raise TypeError("collector must be an instance of InfoCollector, but got {}".format(type(collector)))
 
             result = collector.get_run_stats()
 
@@ -157,6 +162,7 @@ class ShowStatsCommand(CommandProcessor):
 
 class ShowErrorsCommand(CommandProcessor):
     """To implement the show_errors command."""
+
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -180,7 +186,8 @@ class ShowErrorsCommand(CommandProcessor):
         if not collector:
             result = {"error": "no info collector"}
         else:
-            assert isinstance(collector, InfoCollector)
+            if not isinstance(collector, InfoCollector):
+                raise TypeError("collector must be an instance of InfoCollector, but got {}".format(type(collector)))
 
             result = collector.get_errors()
 
@@ -192,6 +199,7 @@ class ShowErrorsCommand(CommandProcessor):
 
 class ResetErrorsCommand(CommandProcessor):
     """To implement the reset_errors command."""
+
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -216,6 +224,7 @@ class ResetErrorsCommand(CommandProcessor):
 
 class AuxCommand(CommandProcessor):
     """To implement the Aux communication command."""
+
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -242,6 +251,7 @@ class AuxCommand(CommandProcessor):
 
 class ByeCommand(CommandProcessor):
     """To implement the ShutdownCommand."""
+
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -300,6 +310,9 @@ class AdminCommands(object):
             command_processor: AdminCommand processor
 
         """
-        assert isinstance(command_processor, CommandProcessor)
+        if not isinstance(command_processor, CommandProcessor):
+            raise TypeError(
+                "command_processor must be an instance of CommandProcessor, but got {}".format(type(command_processor))
+            )
 
         AdminCommands.commands.append(command_processor)

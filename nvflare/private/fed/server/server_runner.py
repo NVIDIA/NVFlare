@@ -162,7 +162,8 @@ class ServerRunner(FLComponent):
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR)
             if collector:
-                assert isinstance(collector, GroupInfoCollector)
+                if not isinstance(collector, GroupInfoCollector):
+                    raise TypeError("collector must be GroupInfoCollect but got {}".format(type(collector)))
 
                 with self.wf_lock:
                     if self.current_wf:
@@ -197,7 +198,8 @@ class ServerRunner(FLComponent):
             A tuple of (task name, task id, and task data)
         """
         engine = fl_ctx.get_engine()
-        assert isinstance(engine, ServerEngineSpec)
+        if not isinstance(engine, ServerEngineSpec):
+            raise TypeError("engine must be ServerEngineSpec but got {}".format(type(engine)))
 
         self.log_info(fl_ctx, "got task request from client")
 

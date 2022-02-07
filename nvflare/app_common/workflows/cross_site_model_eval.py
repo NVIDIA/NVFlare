@@ -69,23 +69,29 @@ class CrossSiteModelEval(Controller):
         super(CrossSiteModelEval, self).__init__(task_check_period=task_check_period)
 
         if not isinstance(task_check_period, float):
-            raise TypeError("task_check_period must be float.")
+            raise TypeError("task_check_period must be float but got {}".format(type(task_check_period)))
         if not isinstance(cross_val_dir, str):
-            raise TypeError("cross_val_dir must be a string.")
+            raise TypeError("cross_val_dir must be a string but got {}".format(type(cross_val_dir)))
         if not isinstance(submit_model_timeout, int):
-            raise TypeError("submit_model_timeout must be int.")
+            raise TypeError("submit_model_timeout must be int but got {}".format(type(submit_model_timeout)))
         if not isinstance(validation_timeout, int):
-            raise TypeError("validation_timeout must be int.")
+            raise TypeError("validation_timeout must be int but got {}".format(type(validation_timeout)))
         if not isinstance(model_locator_id, str):
-            raise TypeError("model_locator_id must be a string.")
+            raise TypeError("model_locator_id must be a string but got {}".format(type(model_locator_id)))
         if not isinstance(formatter_id, str):
-            raise TypeError("formatter_id must be a string.")
+            raise TypeError("formatter_id must be a string but got {}".format(type(formatter_id)))
         if not isinstance(submit_model_task_name, str):
-            raise TypeError("submit_model_task_name must be a string.")
+            raise TypeError("submit_model_task_name must be a string but got {}".format(type(submit_model_task_name)))
         if not isinstance(validation_task_name, str):
-            raise TypeError("validation_task_name must be a string.")
+            raise TypeError("validation_task_name must be a string but got {}".format(type(validation_task_name)))
         if not isinstance(cleanup_models, bool):
-            raise TypeError("cleanup_models must be bool.")
+            raise TypeError("cleanup_models must be bool but got {}".format(type(cleanup_models)))
+
+        if participating_clients:
+            if not isinstance(participating_clients, list):
+                raise TypeError("participating_clients must be a list but got {}".format(type(participating_clients)))
+            if not all(isinstance(x, str) for x in participating_clients):
+                raise TypeError("participating_clients must be strings")
 
         if submit_model_timeout < 0:
             raise ValueError("submit_model_timeout must be greater than or equal to 0.")
@@ -124,9 +130,6 @@ class CrossSiteModelEval(Controller):
         if not self._participating_clients:
             clients = engine.get_clients()
             self._participating_clients = [c.name for c in clients]
-        else:
-            assert isinstance(self._participating_clients, list), "participating_clients must be a list"
-            assert all(isinstance(x, str) for x in self._participating_clients), "participating_clients must be strings"
 
         # Create shareable dirs for models and results
         workspace: Workspace = engine.get_workspace()
@@ -505,7 +508,8 @@ class CrossSiteModelEval(Controller):
             if self._formatter:
                 collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
                 if collector:
-                    assert isinstance(collector, GroupInfoCollector)
+                    if not isinstance(collector, GroupInfoCollector):
+                        raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
 
                     fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, self._val_results, private=True, sticky=False)
                     val_info = self._formatter.format(fl_ctx)

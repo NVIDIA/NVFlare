@@ -42,24 +42,27 @@ _TASK_KEY_DONE = "___done"
 
 def _check_positive_int(name, value):
     if not isinstance(value, int):
-        raise TypeError("{} must be an instance of int.".format(name))
+        raise TypeError("{} must be an instance of int, but got {}.".format(name, type(name)))
     if value < 0:
         raise ValueError("{} must >= 0.".format(name))
 
 
 def _check_inputs(task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None]):
     if not isinstance(task, Task):
-        raise TypeError("task must be an instance of Task.")
+        raise TypeError("task must be an instance of Task, but got {}".format(type(task)))
 
     if not isinstance(fl_ctx, FLContext):
-        raise TypeError("fl_ctx must be an instance of FLContext.")
+        raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
 
     if targets is not None:
         if not isinstance(targets, list):
-            raise TypeError("targets must be a list of Client or string.")
+            raise TypeError("targets must be a list of Client or string, but got {}".format(type(targets)))
 
-        if not all([isinstance(t, (Client, str)) for t in targets]):
-            raise TypeError("targets must be a list of Client or string.")
+        for t in targets:
+            if not isinstance(t, (Client, str)):
+                raise TypeError(
+                    "targets must be a list of Client or string, but got element of type {}".format(type(t))
+                )
 
 
 class Controller(Responder, ControllerSpec, ABC):
@@ -103,7 +106,10 @@ class Controller(Responder, ControllerSpec, ABC):
         """
         collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
         if collector:
-            assert isinstance(collector, GroupInfoCollector)
+            if not isinstance(collector, GroupInfoCollector):
+                raise TypeError(
+                    "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
+                )
             collector.set_info(
                 group_name=self._name,
                 info={
@@ -139,9 +145,9 @@ class Controller(Responder, ControllerSpec, ABC):
             Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this requst
         """
         if not isinstance(client, Client):
-            raise TypeError("client must be an instance of Client.")
+            raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError("fl_ctx must be an instance of FLContext.")
+            raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
 
         client_task_to_send = None
         with self._task_lock:
@@ -312,11 +318,11 @@ class Controller(Responder, ControllerSpec, ABC):
             ValueError: task_name is not found in the client_task
         """
         if not isinstance(client, Client):
-            raise TypeError("client must be an instance of Client.")
+            raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError("fl_ctx must be an instance of FLContext.")
+            raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
         if not isinstance(result, Shareable):
-            raise TypeError("result must be an instance of Shareable.")
+            raise TypeError("result must be an instance of Shareable, but got {}".format(type(result)))
 
         with self._task_lock:
             # task_id is the uuid associated with the client_task
@@ -390,14 +396,14 @@ class Controller(Responder, ControllerSpec, ABC):
         if targets is not None:
             target_names = list()
             if not isinstance(targets, list):
-                raise ValueError("task targets must be a list.")
+                raise ValueError("task targets must be a list, but got {}".format(type(targets)))
             for t in targets:
                 if isinstance(t, str):
                     name = t
                 elif isinstance(t, Client):
                     name = t.name
                 else:
-                    raise ValueError("element in targets must be string or Client type.")
+                    raise ValueError("element in targets must be string or Client type, but got {}".format(type(t)))
 
                 if allow_dup_targets or (name not in target_names):
                     target_names.append(name)
@@ -439,7 +445,9 @@ class Controller(Responder, ControllerSpec, ABC):
         _check_positive_int("min_responses", min_responses)
         _check_positive_int("wait_time_after_min_received", wait_time_after_min_received)
         if targets and min_responses > len(targets):
-            raise ValueError("min_responses must be less than length of targets.")
+            raise ValueError(
+                "min_responses ({}) must be less than length of targets ({}).".format(min_responses, len(targets))
+            )
 
         manager = BcastTaskManager(
             task=task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
@@ -524,9 +532,13 @@ class Controller(Responder, ControllerSpec, ABC):
         )
         _check_positive_int("task_assignment_timeout", task_assignment_timeout)
         if task.timeout and task_assignment_timeout and task_assignment_timeout > task.timeout:
-            raise ValueError("task_assignment_timeout need to be less than or equal to task.timeout.")
+            raise ValueError(
+                "task_assignment_timeout ({}) needs to be less than or equal to task.timeout ({}).".format(
+                    task_assignment_timeout, task.timeout
+                )
+            )
         if not isinstance(send_order, SendOrder):
-            raise TypeError("send_order must be in Enum SendOrder.")
+            raise TypeError("send_order must be in Enum SendOrder, but got {}".format(type(send_order)))
 
         # targets must be provided
         if targets is None or len(targets) == 0:
@@ -691,13 +703,21 @@ class Controller(Responder, ControllerSpec, ABC):
         _check_positive_int("task_assignment_timeout", task_assignment_timeout)
         _check_positive_int("task_result_timeout", task_result_timeout)
         if task.timeout and task_assignment_timeout and task_assignment_timeout > task.timeout:
-            raise ValueError("task_assignment_timeout need to be less than or equal to task.timeout.")
+            raise ValueError(
+                "task_assignment_timeout ({}) needs to be less than or equal to task.timeout ({}).".format(
+                    task_assignment_timeout, task.timeout
+                )
+            )
         if task.timeout and task_result_timeout and task_result_timeout > task.timeout:
-            raise ValueError("task_result_timeout need to be less than or equal to task.timeout.")
+            raise ValueError(
+                "task_result_timeout ({}) needs to be less than or equal to task.timeout ({}).".format(
+                    task_result_timeout, task.timeout
+                )
+            )
         if not isinstance(send_order, SendOrder):
-            raise TypeError("send_order must be in Enum SendOrder.")
+            raise TypeError("send_order must be in Enum SendOrder, but got {}".format(type(send_order)))
         if not isinstance(dynamic_targets, bool):
-            raise TypeError("dynamic_targets must be an instance of bool.")
+            raise TypeError("dynamic_targets must be an instance of bool, but got {}".format(type(dynamic_targets)))
         if targets is None and dynamic_targets is False:
             raise ValueError("Need to provide targets when dynamic_targets is set to False.")
 
@@ -775,7 +795,9 @@ class Controller(Responder, ControllerSpec, ABC):
                 manager = task.props[_TASK_KEY_MANAGER]
                 if manager is not None:
                     if not isinstance(manager, TaskManager):
-                        raise TypeError("manager in task must be an instance of TaskManager.")
+                        raise TypeError(
+                            "manager in task must be an instance of TaskManager, but got {}".format(manager)
+                        )
                     should_exit, exit_status = manager.check_task_exit(task)
                     self.logger.debug("should_exit: {}, exit_status: {}".format(should_exit, exit_status))
                     if should_exit:

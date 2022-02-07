@@ -19,6 +19,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
+
 from .client_runner import ClientRunnerConfig
 
 
@@ -85,7 +86,8 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
     def _process_executor_def(self, node: Node):
         e = node.props["data"]
-        assert isinstance(e, _ExecutorDef)
+        if not isinstance(e, _ExecutorDef):
+            raise TypeError("e must be _ExecutorDef but got {}".format(type(e)))
         self.validate_tasks(e.tasks)
 
         if not isinstance(e.executor, Executor):

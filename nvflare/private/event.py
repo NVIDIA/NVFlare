@@ -15,7 +15,7 @@
 import uuid
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, EventScope
+from nvflare.apis.fl_constant import EventScope, FLContextKey
 from nvflare.apis.fl_context import FLContext
 
 # do not use underscore as key name; otherwise it cannot be removed from ctx
@@ -48,7 +48,8 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
 
     if handlers:
         for h in handlers:
-            assert isinstance(h, FLComponent)
+            if not isinstance(h, FLComponent):
+                raise TypeError("handler must be FLComponent but got {}".format(type(h)))
             try:
                 # since events could be recursive (a handler fires another event) on the same fl_ctx,
                 # we need to reset these key values into the fl_ctx
@@ -58,7 +59,8 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
                 ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=event_scope, private=True, sticky=False)
                 h.handle_event(event, ctx)
             except:
-                h.log_exception(ctx, 'exception when handling event "{}"'.format(event), fire_event=False,
-                                local_logging=True)
+                h.log_exception(
+                    ctx, 'exception when handling event "{}"'.format(event), fire_event=False, local_logging=True
+                )
 
     ctx.set_prop(key=_KEY_EVENT_DEPTH, value=depth, private=True, sticky=False)

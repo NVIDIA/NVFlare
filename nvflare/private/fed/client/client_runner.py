@@ -18,12 +18,11 @@ import time
 from nvflare.apis.client_engine_spec import ClientEngineSpec, TaskAssignment
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ReservedKey, ReservedTopic
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.private.defs import SpecialTaskName
-from nvflare.private.defs import TaskConstant
+from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -90,7 +89,8 @@ class ClientRunner(FLComponent):
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         engine = fl_ctx.get_engine()
-        assert isinstance(engine, ClientEngineSpec)
+        if not isinstance(engine, ClientEngineSpec):
+            raise TypeError("engine must be ClientEngineSpec, but got {}".format(type(engine)))
 
         if not isinstance(task.data, Shareable):
             self.log_error(
@@ -266,13 +266,15 @@ class ClientRunner(FLComponent):
                 # create a new task abort signal
                 task_reply = self._process_task(task, fl_ctx)
 
-                assert isinstance(task_reply, Shareable)
+                if not isinstance(task_reply, Shareable):
+                    raise TypeError("task_reply must be Shareable, but got {}".format(type(task_reply)))
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
                 self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
                 # set the cookie in the reply!
                 task_data = task.data
-                assert isinstance(task_data, Shareable)
+                if not isinstance(task_data, Shareable):
+                    raise TypeError("task_data must be Shareable, but got {}".format(type(task_data)))
 
                 cookie_jar = task_data.get_cookie_jar()
                 if cookie_jar:
@@ -305,9 +307,9 @@ class ClientRunner(FLComponent):
 
         try:
             self._try_run()
-        except BaseException:
+        except BaseException as e:
             with self.engine.new_context() as fl_ctx:
-                self.log_exception(fl_ctx, "processing error in RUN execution")
+                self.log_exception(fl_ctx, "processing error in RUN execution: {}".format(e))
         finally:
             # in case any task is still running, abort it
             self._abort_current_task()
@@ -383,7 +385,8 @@ class ClientRunner(FLComponent):
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR)
             if collector:
-                assert isinstance(collector, GroupInfoCollector)
+                if not isinstance(collector, GroupInfoCollector):
+                    raise TypeError("collector must be GroupInfoCollector, but got {}".format(type(collector)))
                 if self.current_task:
                     current_task_name = self.current_task.name
                 else:

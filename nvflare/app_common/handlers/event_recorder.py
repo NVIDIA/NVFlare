@@ -123,9 +123,7 @@ class EventRecorder(FLComponent):
 
     def validate_prop(self, prop_name: str, req: _CtxPropReq, fl_ctx: FLContext):
         stats = fl_ctx.get_prop(self._KEY_EVENT_STATS, None)
-        assert isinstance(stats, _EventStats)
 
-        assert isinstance(req, _CtxPropReq)
         detail = fl_ctx.get_prop_detail(prop_name)
         if not isinstance(detail, dict):
             stats.prop_missing += 1
@@ -174,7 +172,6 @@ class EventRecorder(FLComponent):
 
     def check_block_list(self, block_list, fl_ctx: FLContext):
         stats = fl_ctx.get_prop(self._KEY_EVENT_STATS, None)
-        assert isinstance(stats, _EventStats)
         for prop_name in block_list:
             detail = fl_ctx.get_prop_detail(prop_name)
             if detail:
@@ -183,10 +180,7 @@ class EventRecorder(FLComponent):
 
     def check_props(self, fl_ctx: FLContext):
         event_req = fl_ctx.get_prop(self._KEY_EVENT_REQ)
-        assert isinstance(event_req, _EventReq)
-
         stats = fl_ctx.get_prop(self._KEY_EVENT_STATS)
-        assert isinstance(stats, _EventStats)
 
         for prop_name, req in event_req.ctx_reqs.items():
             self.validate_prop(prop_name, req, fl_ctx)

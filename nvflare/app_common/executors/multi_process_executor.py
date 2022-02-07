@@ -65,7 +65,7 @@ class MultiProcessExecutor(Executor):
         self._build_components(components)
 
         if not isinstance(num_of_processes, int):
-            raise TypeError(f"{num_of_processes} must be an instance of int.")
+            raise TypeError("{} must be an instance of int but got {}".format(num_of_processes, type(num_of_processes)))
         if num_of_processes < 1:
             raise ValueError(f"{num_of_processes} must >= 1.")
         self.num_of_processes = num_of_processes
@@ -320,7 +320,6 @@ class MultiProcessExecutor(Executor):
 
         # wait for all relay threads to join!
         for t in self.relay_threads:
-            assert isinstance(t, threading.Thread)
             if t.is_alive():
                 t.join()
 

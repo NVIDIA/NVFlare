@@ -101,7 +101,6 @@ class _Client(object):
             w = self.waiters.pop(ref_id, None)
 
         if w:
-            assert isinstance(w, _Waiter)
             w.reply = reply
             w.reply_time = time.time()
 
@@ -212,10 +211,12 @@ class FedAdminServer(AdminServer):
         )
 
         if cmd_modules:
-            assert isinstance(cmd_modules, list), "cmd_modules must be list"
+            if not isinstance(cmd_modules, list):
+                raise TypeError("cmd_modules must be list but got {}".format(type(cmd_modules)))
 
             for m in cmd_modules:
-                assert isinstance(m, CommandModule), "cmd_modules must contain CommandModule"
+                if not isinstance(m, CommandModule):
+                    raise TypeError("cmd_modules must contain CommandModule but got element of type {}".format(type(m)))
                 cmd_reg.register_module(m)
 
         AdminServer.__init__(
@@ -268,7 +269,8 @@ class FedAdminServer(AdminServer):
         return result
 
     def send_request_to_client(self, req: Message, client_token: str, timeout_secs=2.0) -> ClientReply:
-        assert isinstance(req, Message), "request must be Message"
+        if not isinstance(req, Message):
+            raise TypeError("request must be Message but got {}".format(type(req)))
         reqs = {client_token: req}
         replies = self.send_requests(reqs, timeout_secs)
         if replies is None or len(replies) <= 0:
@@ -277,7 +279,8 @@ class FedAdminServer(AdminServer):
             return replies[0]
 
     def send_request_to_clients(self, req: Message, client_tokens: [str], timeout_secs=2.0) -> [ClientReply]:
-        assert isinstance(req, Message), "request must be Message"
+        if not isinstance(req, Message):
+            raise TypeError("request must be Message but got {}".format(type(req)))
         reqs = {}
         for token in client_tokens:
             reqs[token] = req
@@ -300,7 +303,9 @@ class FedAdminServer(AdminServer):
         Returns:
             A list of ClientReply
         """
-        assert isinstance(requests, dict), "requests must be a dict"
+
+        if not isinstance(requests, dict):
+            raise TypeError("requests must be a dict but got {}".format(type(requests)))
 
         if len(requests) <= 0:
             return []
@@ -312,7 +317,6 @@ class FedAdminServer(AdminServer):
                 if not client:
                     continue
 
-                assert isinstance(client, _Client)
                 if isinstance(r, list):
                     reqs = r
                 else:
@@ -336,7 +340,8 @@ class FedAdminServer(AdminServer):
                     reqs = [r]
 
                 for req in reqs:
-                    assert isinstance(req, Message), "request must be a Message"
+                    if not isinstance(req, Message):
+                        raise TypeError("request must be a Message but got {}".format(type(req)))
                     client_reqs.append(_ClientReq(client, req))
 
         return self._send_client_reqs(client_reqs, timeout_secs)

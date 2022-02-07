@@ -14,27 +14,28 @@
 
 """Sub_worker process to start the multi-processes client."""
 
-import logging
 import argparse
 import copy
+import logging
 import os
 import threading
 import time
 import traceback
-from multiprocessing.connection import Listener, Client
+from multiprocessing.connection import Client, Listener
 
-from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 
 
 class EventRelayer(FLComponent):
     """To relay the event from the worker_process."""
+
     def __init__(self, conn, local_rank):
         """To init the EventRelayer.
 

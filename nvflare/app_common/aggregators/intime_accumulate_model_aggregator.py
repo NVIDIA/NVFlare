@@ -117,7 +117,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         except BaseException:
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return False
-        assert isinstance(dxo, DXO)
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
             self.log_error(

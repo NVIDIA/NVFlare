@@ -18,8 +18,9 @@ import time
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.private.aux_runner import AuxRunner
+
 from .client_engine_executor_spec import ClientEngineExecutorSpec
 
 
@@ -70,7 +71,7 @@ class ClientAuxRunner(AuxRunner):
             raise ValueError("invalid timeout value {}: must >= 0.0".format(timeout))
 
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError("invalid fl_ctx: expects FLContext but got {}".format(type(fl_ctx)))
+            raise TypeError("fl_ctx must be FLContext but got {}".format(type(fl_ctx)))
 
         req_to_send = request
         req_to_send.set_header(ReservedHeaderKey.TOPIC, topic)
@@ -84,7 +85,8 @@ class ClientAuxRunner(AuxRunner):
 
         # send regular request
         engine = fl_ctx.get_engine()
-        assert isinstance(engine, ClientEngineExecutorSpec)
+        if not isinstance(engine, ClientEngineExecutorSpec):
+            raise TypeError("engine must be ClientEngineExecutorSpec, but got {}".format(type(engine)))
 
         reply = engine.aux_send(topic=topic, request=req_to_send, timeout=timeout, fl_ctx=fl_ctx)
 

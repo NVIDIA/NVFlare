@@ -13,4 +13,3 @@
 # limitations under the License.
 
 """This is the NVFlare client package."""
-

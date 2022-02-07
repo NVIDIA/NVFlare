@@ -78,7 +78,8 @@ class _CommandExecutor(object):
             conn.append_error("program error: no authorization context")
             return
 
-        assert isinstance(authz_ctx, FLAuthzContext)
+        if not isinstance(authz_ctx, FLAuthzContext):
+            raise TypeError("authz_ctx must be FLAuthzContext but got {}".format(type(authz_ctx)))
         target = authz_ctx.site_names[0]
         shell_cmd = conn.get_prop("shell_cmd")
         if target == "server":
@@ -88,7 +89,8 @@ class _CommandExecutor(object):
             return
 
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
         clients, invalid_inputs = engine.validate_clients([target])
         if len(invalid_inputs) > 0:
             conn.append_error("invalid client: {}".format(target))
@@ -109,7 +111,8 @@ class _CommandExecutor(object):
             conn.append_error("no reply from client - timed out")
             return
 
-        assert isinstance(reply, ClientReply)
+        if not isinstance(reply, ClientReply):
+            raise TypeError("reply must be ClientReply but got {}".format(type(reply)))
         conn.append_string(reply.reply.body)
 
     def get_usage(self):
@@ -152,7 +155,8 @@ class _FileCmdExecutor(_CommandExecutor):
                 return "only one file is allowed"
 
             for f in parse_result.files:
-                assert isinstance(f, str)
+                if not isinstance(f, str):
+                    raise TypeError("file must be str but got {}".format(type(f)))
 
                 if not re.match("^[A-Za-z0-9-._/]*$", f):
                     return "unsupported file {}".format(f)

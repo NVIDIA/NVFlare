@@ -46,7 +46,8 @@ class ComponentCallerCommandModule(CommandModule, CommandUtil):
 
     def authorize_call_component(self, conn: Connection, args: [str]):
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineInternalSpec)
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         caller = engine.get_widget(WidgetID.COMPONENT_CALLER)
         if not caller:
@@ -99,7 +100,8 @@ class ComponentCallerCommandModule(CommandModule, CommandUtil):
     def call_component(self, conn: Connection, args: [str]):
         # only support server side for now
         caller = conn.get_prop(self._CONN_KEY_CALLER)
-        assert isinstance(caller, ComponentCaller)
+        if not isinstance(caller, ComponentCaller):
+            raise TypeError("caller must be ComponentCaller but got {}".format(type(caller)))
         action = conn.get_prop(self._CONN_KEY_ACTION)
         comp_target = conn.get_prop(self._CONN_KEY_TARGET)
         call_params = conn.get_prop(self._CONN_KEY_PARAMS)

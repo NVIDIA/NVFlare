@@ -16,17 +16,16 @@ from .info_coll_cmd import ClientInfoProcessor
 from .process_aux_cmd import AuxRequestProcessor
 from .shell_cmd import ShellCommandProcessor
 from .sys_cmd import SysInfoProcessor
-from .training_cmds import (
+from .training_cmds import (  # StartClientMGpuProcessor,
     AbortAppProcessor,
+    AbortTaskProcessor,
     ClientStatusProcessor,
     DeleteRunNumberProcessor,
     DeployProcessor,
     RestartClientProcessor,
-    ShutdownClientProcessor,
-    # StartClientMGpuProcessor,
-    StartAppProcessor,
-    AbortTaskProcessor,
     SetRunNumberProcessor,
+    ShutdownClientProcessor,
+    StartAppProcessor,
 )
 from .validation_cmd import ValidateRequestProcessor
 
@@ -54,6 +53,7 @@ class ClientRequestProcessors:
     def register_cmd_module(request_processor):
         from .admin import RequestProcessor
 
-        assert isinstance(request_processor, RequestProcessor)
+        if not isinstance(request_processor, RequestProcessor):
+            raise TypeError("request_processor must be RequestProcessor, but got {}".format(type(request_processor)))
 
         ClientRequestProcessors.request_processors.append(request_processor)

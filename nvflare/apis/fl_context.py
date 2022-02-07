@@ -61,7 +61,7 @@ class FLContext(object):
 
     def set_prop(self, key: str, value, private=True, sticky=True):
         if not isinstance(key, str):
-            raise ValueError("prop key must be str")
+            raise ValueError("prop key must be str, but got {}".format(type(key)))
 
         with _update_lock:
             mask = 0

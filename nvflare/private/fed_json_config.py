@@ -16,7 +16,7 @@ import re
 
 from nvflare.apis.filter import Filter
 from nvflare.fuel.utils.json_scanner import Node
-from nvflare.private.json_configer import JsonConfigurator, ConfigContext, ConfigError
+from nvflare.private.json_configer import ConfigContext, ConfigError, JsonConfigurator
 
 
 class FilterChain(object):
@@ -119,7 +119,7 @@ class FedJsonConfigurator(JsonConfigurator):
 
     def validate_tasks(self, tasks):
         if not isinstance(tasks, list):
-            raise ConfigError('"tasks" must be specified as list of task names')
+            raise ConfigError('"tasks" must be specified as list of task names but got {}'.format(type(tasks)))
 
         if len(tasks) <= 0:
             raise ConfigError('"tasks" must not be empty')
@@ -132,7 +132,7 @@ class FedJsonConfigurator(JsonConfigurator):
         self.validate_tasks(chain.tasks)
 
         if not isinstance(chain.filters, list):
-            raise ConfigError('"filters" must be specified as list of filters')
+            raise ConfigError('"filters" must be specified as list of filters but got {}'.format(type(chain.filters)))
 
         if len(chain.filters) <= 0:
             raise ConfigError('"filters" must not be empty')
@@ -163,7 +163,8 @@ class FedJsonConfigurator(JsonConfigurator):
 
         data_filter_table = {}
         for c in self.task_data_filter_chains:
-            assert isinstance(c, FilterChain)
+            if not isinstance(c, FilterChain):
+                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
             for t in c.tasks:
                 if t in data_filter_table:
                     raise ConfigError("multiple data filter chains defined for task {}".format(t))
@@ -172,7 +173,8 @@ class FedJsonConfigurator(JsonConfigurator):
 
         result_filter_table = {}
         for c in self.task_result_filter_chains:
-            assert isinstance(c, FilterChain)
+            if not isinstance(c, FilterChain):
+                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
             for t in c.tasks:
                 if t in result_filter_table:
                     raise ConfigError("multiple data filter chains defined for task {}".format(t))

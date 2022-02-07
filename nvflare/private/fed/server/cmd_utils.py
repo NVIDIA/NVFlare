@@ -66,7 +66,8 @@ class CommandUtil(object):
             return "unknown target type {}".format(target_type)
 
         engine = conn.app_ctx
-        assert isinstance(engine, ServerEngineSpec)
+        if not isinstance(engine, ServerEngineSpec):
+            raise TypeError("engine must be ServerEngineSpec but got {}".format(type(engine)))
         if len(client_names) == 0:
             # get all clients
             clients = engine.get_clients()
