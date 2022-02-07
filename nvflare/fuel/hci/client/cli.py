@@ -44,7 +44,7 @@ class _BuiltInCmdModule(CommandModule):
         )
 
 
-class CredentialType(Enum):
+class CredentialType(str, Enum):
     PASSWORD = "password"
     CERT = "cert"
 
@@ -76,7 +76,7 @@ class AdminClient(cmd.Cmd):
         client_key=None,
         server_cn=None,
         require_login: bool = False,
-        credential_type: Union[str, CredentialType] = CredentialType.PASSWORD,
+        credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
         debug: bool = False,
     ):
