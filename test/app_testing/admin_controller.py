@@ -26,20 +26,13 @@ class AdminController(object):
         """
         This class runs an app on a given server and clients.
         """
-        super(AdminController, self).__init__()
+        super().__init__()
 
         self.app_path = app_path
         self.poll_period = poll_period
         self.last_app_name = ""
 
-        self.admin_api: FLAdminAPI = None
-        self.run_number = 0
-
-        self.logger = logging.getLogger("AdminController")
-
-    def initialize(self):
-        success = False
-        self.admin_api = FLAdminAPI(
+        self.admin_api: FLAdminAPI = FLAdminAPI(
             host="localhost",
             port=8003,
             upload_dir=self.app_path,
@@ -47,6 +40,12 @@ class AdminController(object):
             poc=True,
             debug=False,
         )
+        self.run_number = 0
+
+        self.logger = logging.getLogger("AdminController")
+
+    def initialize(self):
+        success = False
 
         try:
             # TODO:: login or login_with_password should return FLAdminAPIResponse to be consistent?
@@ -54,7 +53,7 @@ class AdminController(object):
             timeout = 100
             start_time = time.time()
             while time.time() - start_time <= timeout:
-                response: FLAdminAPIResponse = self.admin_api.login_with_password(username="admin", password="admin")
+                response = self.admin_api.login_with_password(username="admin", password="admin")
                 if response["status"] == APIStatus.SUCCESS:
                     success = True
                     break
@@ -148,7 +147,7 @@ class AdminController(object):
         return True
 
     def run_app(self):
-        #! Is it possible to get the training log after training is done?
+        # TODO:: Is it possible to get the training log after training is done?
         training_done = False
         while not training_done:
             response = self.admin_api.check_status(target_type=TargetType.SERVER)
