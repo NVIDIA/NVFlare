@@ -14,9 +14,10 @@
 
 from typing import List
 
-from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
 
@@ -32,15 +33,19 @@ class PTFileModelLocator(ModelLocator):
 
         self.pt_persistor_id = pt_persistor_id
 
+        self.model_persistor = None
         self.model_inventory = {}
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            self.initialize(fl_ctx)
+            self._initialize(fl_ctx)
 
-    def initialize(self, fl_ctx: FLContext):
+    def _initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         self.model_persistor: PTFileModelPersistor = engine.get_component(self.pt_persistor_id)
+        if self.model_persistor is None or not isinstance(self.model_persistor, PTFileModelPersistor):
+            raise ValueError(f"pt_persistor_id component must be PTFileModelPersistor. "
+                             f"But got: {type(self.model_persistor)}")
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add().
@@ -67,7 +72,7 @@ class PTFileModelLocator(ModelLocator):
         if model_name not in list(self.model_inventory.keys()):
             raise ValueError(f"model inventory does not contain: {model_name}")
 
-        weights = self.model_persistor.get_model(model_name, fl_ctx)
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
+        model_learnable = self.model_persistor.get_model(model_name, fl_ctx)
+        dxo = model_learnable_to_dxo(model_learnable)
 
         return dxo
