@@ -107,7 +107,7 @@ class Shareable(dict):
         return props.get(key, default)
 
     def to_bytes(self) -> bytes:
-        """Method to serialize the Model object into bytes.
+        """Serialize the Model object into bytes.
 
         Returns:
             object serialized in bytes.
@@ -117,7 +117,7 @@ class Shareable(dict):
 
     @classmethod
     def from_bytes(cls, data: bytes):
-        """Method to convert the object bytes into Model object.
+        """Convert the data bytes into Model object.
 
         Args:
             data: a bytes object

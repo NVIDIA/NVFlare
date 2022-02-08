@@ -50,6 +50,9 @@ class Task(object):
     ):
         """Init the Task.
 
+        A task is a piece of work that is assigned by the Controller to client workers.
+        Depending on how the task is assigned (broadcast, send, or relay), the task will be performed by one or more clients.
+
         Args:
             name (str): name of the task
             data (Shareable): data of the task

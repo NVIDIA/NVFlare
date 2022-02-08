@@ -25,6 +25,9 @@ class TaskAssignment(object):
     def __init__(self, name: str, task_id: str, data: Shareable):
         """Init TaskAssignment.
 
+        Keeps track of information about the assignment of a task, including the time
+        that it was created after being fetched by the Client Run Manager.
+
         Args:
             name: task name
             task_id: task id

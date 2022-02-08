@@ -17,7 +17,10 @@ import time
 
 class Signal(object):
     def __init__(self):
-        """Init the Signal."""
+        """Init the Signal.
+
+        Used to signal between and within FL Components.
+        """
         self.value = None
         self.trigger_time = None
         self.triggered = False

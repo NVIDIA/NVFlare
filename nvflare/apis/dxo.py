@@ -47,10 +47,12 @@ class DXO(object):
     def __init__(self, data_kind: str, data: dict, meta: dict = None):
         """Init the DXO.
 
+        The Data Exchange Object standardizes the data passed between communicating parties.
+
         Args:
-            data_kind: data_kind name
+            data_kind: kind of data
             data: clear-text data
-            meta: None or dict
+            meta: None or dict for any additional properties
         """
         if data is None:
             data = {}
@@ -96,7 +98,7 @@ class DXO(object):
         return s
 
     def to_shareable(self) -> Shareable:
-        """Method to convert DXO object into Shareable.
+        """Convert the DXO object into Shareable.
 
         Returns:
             Shareable object.
@@ -106,7 +108,7 @@ class DXO(object):
         return self.update_shareable(s)
 
     def to_bytes(self) -> bytes:
-        """Method to serialize the DXO object into bytes.
+        """Serialize the DXO object into bytes.
 
         Returns:
             object serialized in bytes.
@@ -128,7 +130,7 @@ class DXO(object):
 
 
 def from_shareable(s: Shareable) -> DXO:
-    """Method to convert DXO object into Shareable.
+    """Convert Shareable into a DXO object.
 
     Args:
         s: Shareable object
@@ -158,7 +160,7 @@ def from_shareable(s: Shareable) -> DXO:
 
 
 def from_bytes(data: bytes) -> DXO:
-    """Method to convert the object bytes into Model object.
+    """Convert the data bytes into Model object.
 
     Args:
         data: a bytes object

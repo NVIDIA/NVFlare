@@ -49,7 +49,18 @@ class FLContext(object):
             return result + "non-sticky"
 
     def __init__(self):
-        """Init the FLContext."""
+        """Init the FLContext.
+
+        The FLContext is used to passed data between FL Components.
+        It can be thought of as a dictionary that stores key/value pairs called props (properties).
+
+        Visibility: private props are only visible to local components,
+                    public props are also visible to remote components
+
+        Stickiness: sticky props become available in all future FL Contexts,
+                    non-sticky props will only be available in the current FL Context
+
+        """
         self.model = None
         self.props = {}
         self.logger = logging.getLogger(self.__class__.__name__)

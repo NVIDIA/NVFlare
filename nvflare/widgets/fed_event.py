@@ -30,6 +30,10 @@ class FedEventRunner(Widget):
     def __init__(self, topic=FED_EVENT_TOPIC):
         """Init FedEventRunner.
 
+        The FedEventRunner handles posting and receiving of fed events.
+        The system will do its best to fire off all events in the queue before shutdown
+        using the ABOUT_TO_END_RUN event and a grace period during END_RUN.
+
         Args:
             topic: the fed event topic to be handled. Defaults to 'fed.event'
         """

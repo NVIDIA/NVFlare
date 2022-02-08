@@ -25,7 +25,10 @@ from .shareable import Shareable
 
 class Responder(FLComponent, ABC):
     def __init__(self):
-        """Init the Responder."""
+        """Init the Responder.
+
+        Base class for responding to clients. Controller is a subclass of Responder.
+        """
         FLComponent.__init__(self)
 
     @abstractmethod
