@@ -10,7 +10,7 @@
       "id": "server_workflow",
       "path": "analysis_controller.AnalysisController",
       "args": {
-        "min_clients": 3
+        "min_clients": 4
       }
     }
   ],
