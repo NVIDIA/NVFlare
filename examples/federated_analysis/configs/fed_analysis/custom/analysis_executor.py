@@ -76,18 +76,22 @@ class AnalysisExecutor(Executor):
             self.log_error(
                 fl_ctx, f"No unique matching dataset list found in {self.data_root} for client {client_name}"
             )
+            return False
         dataset_json = dataset_json[0]
         self.log_info(fl_ctx, f"Reading data from {dataset_json}")
         self.data_list = load_decathlon_datalist(
             data_list_file_path=dataset_json, data_list_key=self.data_list_key, base_dir=self.data_root
         )
         self.log_info(fl_ctx, f"Client {client_name} has {len(self.data_list)} images")
+        return True
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Executing {task_name}")
         try:
             client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
-            self._load_data_list(client_name, fl_ctx)
+            if not self._load_data_list(client_name, fl_ctx):
+                self.log_error(fl_ctx, f"Reading data list for client {client_name} failed!")
+                return make_reply(ReturnCode.ERROR)
 
             if task_name == SupportedTasks.HISTOGRAM:
                 result_dict = self._compute_histo(fl_ctx, abort_signal)
