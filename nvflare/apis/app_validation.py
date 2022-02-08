@@ -25,8 +25,7 @@ class AppValidationKey(object):
 class AppValidator(ABC):
     @abstractmethod
     def validate(self, app_folder: str) -> Tuple[str, Dict]:
-        """
-        Validate and/or clean the content of specified application folder.
+        """Validate and/or clean the content of specified application folder.
 
         Args:
             app_folder: path to the app folder to be validated

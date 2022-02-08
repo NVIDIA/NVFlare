@@ -26,7 +26,13 @@ from .shareable import Shareable
 
 class FLComponent(object):
     def __init__(self):
-        """FLComponent base class."""
+        """Init FLComponent.
+
+        The FLComponent is the base class of all FL Components.
+        (executors, controllers, responders, filters, aggregrators, and widgets are all FLComponents)
+
+        FLComponents have the capability to handle and fire events and contain various methods for logging.
+        """
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 

@@ -33,6 +33,7 @@ class Widget(FLComponent):
     """
 
     def __init__(self):
+        """Init the Widget."""
         FLComponent.__init__(self)
 
 

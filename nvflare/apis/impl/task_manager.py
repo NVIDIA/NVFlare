@@ -30,7 +30,8 @@ class TaskCheckStatus(Enum):
 
 class TaskManager(object):
     def __init__(self):
-        """
+        """Manages tasks for clients.
+
         Programming Conventions:
         A TaskManager should be implemented as a state-free object.
         All task processing state info should be stored in the Task's props dict.
@@ -57,7 +58,6 @@ class TaskManager(object):
         Returns:
             TaskCheckStatus: NO_BLOCK for not sending the task, BLOCK for waiting, SEND for OK to send
         """
-
         if client_task.result_received_time:
             # the task was already sent to the client AND result was already received
             # do not send again
@@ -75,9 +75,10 @@ class TaskManager(object):
         Args:
             task (Task): an instance of Task
 
-        Tuple[bool, TaskCompletionStatus]:
-            first entry in the tuple means whether to exit the task or not.  If it's True, the task should exit.
-            second entry in the tuple indicates the TaskCompletionStatus.
+        Returns:
+            Tuple[bool, TaskCompletionStatus]:
+                first entry in the tuple means whether to exit the task or not.  If it's True, the task should exit.
+                second entry in the tuple indicates the TaskCompletionStatus.
         """
         pass
 

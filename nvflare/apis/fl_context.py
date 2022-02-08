@@ -49,6 +49,18 @@ class FLContext(object):
             return result + "non-sticky"
 
     def __init__(self):
+        """Init the FLContext.
+
+        The FLContext is used to passed data between FL Components.
+        It can be thought of as a dictionary that stores key/value pairs called props (properties).
+
+        Visibility: private props are only visible to local components,
+                    public props are also visible to remote components
+
+        Stickiness: sticky props become available in all future FL Contexts,
+                    non-sticky props will only be available in the current FL Context
+
+        """
         self.model = None
         self.props = {}
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -167,13 +179,22 @@ class FLContext(object):
 
 
 class FLContextManager(object):
+    """FLContextManager manages the creation and updates of FLContext objects for a run.
 
-    """
     NOTE: The engine may create a new FLContextManager object for each RUN!
 
     """
 
     def __init__(self, engine, identity_name: str, run_num: int, public_stickers, private_stickers):
+        """Init the FLContextManager.
+
+        Args:
+            engine: the engine that created this FLContextManager object
+            identity_name (str): identity name
+            run_num: the run number
+            public_stickers: public sticky properties that are copied into or copied from
+            private_stickers: private sticky properties that are copied into or copied from
+        """
         self.engine = engine
         self.identity_name = identity_name
         self.run_num = run_num
@@ -216,12 +237,10 @@ class FLContextManager(object):
         return ctx
 
     def finalize_context(self, ctx: FLContext):
-        """Finalize the context by copying/updating sticky props into stickers
+        """Finalize the context by copying/updating sticky props into stickers.
 
         Args:
             ctx: the context to be finalized
-
-        Returns:
 
         """
         with self._update_lock:

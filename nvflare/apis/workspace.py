@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Workspace folder structure:
+"""Workspace folder structure.
 
 WSROOT
     startup (optional)
@@ -35,6 +34,13 @@ import os
 
 class Workspace(object):
     def __init__(self, root_dir: str, name: str, config_folder: str):
+        """Init the Workspace.
+
+        Args:
+            root_dir: root directory of the workspace
+            name: name of the workspace
+            config_folder: the config folder
+        """
         self.root_dir = root_dir
         self.name = name
         self.config_folder = config_folder
