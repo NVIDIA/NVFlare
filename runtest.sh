@@ -21,8 +21,6 @@ function print_style_fail_msg() {
     echo "Please run ${green}./runtest.sh${noColor} to check errors and fix them." 
 } 
 
-# grep -V
-# echo "set to +e"
 set +e
 folders_to_check_license="nvflare test"
 
@@ -39,15 +37,11 @@ else
     rm -f no_license.lst
 fi
 
-# export PWD=$(pwd) && echo $PWD
+set -e
 export PYTHONPATH=$(pwd):$PYTHONPATH && echo "PYTHONPATH is ${PYTHONPATH}"
 
-# set -e
-
-# now only flake8
 python3 -m flake8 nvflare
 
-# set +e  # disable exit on failure so that diagnostics can be given on failure
 echo "${separator}${blue}isort-fix${noColor}"
 python3 -m isort --check $PWD/nvflare
 isort_status=$?
@@ -57,9 +51,7 @@ then
 else
     echo "${green}passed!${noColor}"
 fi
-# set -e # enable exit on failure
 
-# set +e  # disable exit on failure so that diagnostics can be given on failure
 echo "${separator}${blue}black-fix${noColor}"
 python3 -m black --check $PWD/nvflare 
 black_status=$?
@@ -69,10 +61,9 @@ then
 else
     echo "${green}passed!${noColor}"
 fi
-# set -e
 echo "Done with isort/black code style checks"
 
-python3 -m pydocstyle --convention=google nvflare
+python3 -m pydocstyle nvflare
 
 set -e
 echo "Running unit tests"

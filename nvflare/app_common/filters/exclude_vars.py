@@ -15,7 +15,7 @@
 import re
 from typing import List, Union
 
-from nvflare.apis.dxo import DXO, from_shareable
+from nvflare.apis.dxo import from_shareable
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext

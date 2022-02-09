@@ -14,7 +14,7 @@
 
 import numpy as np
 
-from nvflare.apis.dxo import DXO, MetaKey, from_shareable
+from nvflare.apis.dxo import MetaKey, from_shareable
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
