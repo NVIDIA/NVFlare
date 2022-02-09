@@ -350,6 +350,8 @@ class ServerEngine(ServerEngineInternalSpec):
     def _remove_dead_client(self, token):
         client = self.server.client_manager.remove_client(token)
         self.server.remove_client_data(token)
+        if self.server.admin_server:
+            self.server.admin_server.client_dead(token)
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.run_manager.aux_runner.register_aux_message_handler(topic, message_handle_func)
