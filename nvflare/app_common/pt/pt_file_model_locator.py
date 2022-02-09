@@ -44,8 +44,9 @@ class PTFileModelLocator(ModelLocator):
         engine = fl_ctx.get_engine()
         self.model_persistor: PTFileModelPersistor = engine.get_component(self.pt_persistor_id)
         if self.model_persistor is None or not isinstance(self.model_persistor, PTFileModelPersistor):
-            raise ValueError(f"pt_persistor_id component must be PTFileModelPersistor. "
-                             f"But got: {type(self.model_persistor)}")
+            raise ValueError(
+                f"pt_persistor_id component must be PTFileModelPersistor. " f"But got: {type(self.model_persistor)}"
+            )
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add().
