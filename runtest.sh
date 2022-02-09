@@ -63,7 +63,17 @@ else
 fi
 echo "Done with isort/black code style checks"
 
-python3 -m pydocstyle nvflare
+set +e
+echo "${separator}${blue}pydocstyle-fix${noColor}"
+python3 -m pydocstyle $PWD/nvflare 
+black_status=$?
+if [ ${black_status} -ne 0 ]
+then
+    echo "docstring check failed"
+else
+    echo "${green}passed!${noColor}"
+fi
+echo "Done with pydocstyle docstring style checks"
 
 set -e
 echo "Running unit tests"
