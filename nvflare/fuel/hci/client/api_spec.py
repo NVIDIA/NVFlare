@@ -38,6 +38,9 @@ class ReplyProcessor:
     def process_table(self, api: AdminAPISpec, table: Table):
         pass
 
+    def process_dict(self, api: AdminAPISpec, data: dict):
+        pass
+
     def process_shutdown(self, api: AdminAPISpec, msg: str):
         pass
 
