@@ -27,15 +27,20 @@ class MessageSendStatus(enum.Enum):
 
 
 def aux_request_handle_func_signature(topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-    """
-    This is the signature of the message_handle_func.
+    """This is the signature of the message_handle_func.
+
+    The message_handle_func is a callback function that is registered to handle an aux request of a specific topic.
+    Any implementation of a message_handle_func must follow this signature.
+
+    Example from the client runner:
+        engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
 
     Args:
         topic: topic of the message to be handled
         request: the message data to be handled
         fl_ctx: FL context
 
-    Returns: a response to the requester
+    Returns: a Shareable response to the requester
 
     """
     pass

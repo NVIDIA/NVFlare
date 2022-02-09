@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import os
 
 
@@ -27,18 +26,17 @@ class Workspace:
                 Workspace ROOT
                     startup (optional)
                         provisioned content
-                    runs
-                        1
-                            config (required)
-                                configurations
-                            custom (optional)
-                                custom python code
-                            other_folder (app defined)
+                    run_1
+                        config (required)
+                            configurations
+                        custom (optional)
+                            custom python code
+                        other_folder (app defined)
 
         Args:
-            root_dir: root directory.
-            name: name of the workspace.
-            config_folder: where to find required config inside an app.
+            root_dir: root directory of the workspace
+            name: name of the workspace
+            config_folder: where to find required config inside an app
         """
         self.root_dir = root_dir
         self.name = name

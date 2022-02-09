@@ -32,13 +32,14 @@ class ReservedHeaderKey(object):
 
 
 class Shareable(dict):
-    """The information communicated between server and client
+    """The information communicated between server and client.
 
     Shareable is just a dict that can have any keys and values, defined by developers and users.
     It is recommended that keys are strings. Values must be serializable.
     """
 
     def __init__(self):
+        """Init the Shareable."""
         super().__init__()
         self[ReservedHeaderKey.HEADERS] = {}
 
@@ -66,15 +67,13 @@ class Shareable(dict):
         self.set_header(ReservedHeaderKey.RC, rc)
 
     def add_cookie(self, name: str, data):
-        """
-        Add a cookie that is to be sent to the client and echoed back in response.
+        """Add a cookie that is to be sent to the client and echoed back in response.
+
         This method is intended to be called by the Server side.
 
         Args:
             name: the name of the cookie
             data: the data of the cookie, which must be serializable
-
-        Returns:
 
         """
         cookie_jar = self.get_cookie_jar()
@@ -108,7 +107,7 @@ class Shareable(dict):
         return props.get(key, default)
 
     def to_bytes(self) -> bytes:
-        """method to serialize the Model object into bytes.
+        """Serialize the Model object into bytes.
 
         Returns:
             object serialized in bytes.
@@ -118,7 +117,7 @@ class Shareable(dict):
 
     @classmethod
     def from_bytes(cls, data: bytes):
-        """method to convert the object bytes into Model object.
+        """Convert the data bytes into Model object.
 
         Args:
             data: a bytes object

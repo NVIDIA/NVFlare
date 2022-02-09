@@ -33,7 +33,8 @@ class AnalyticsData:
     def __init__(self, tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict] = None):
         """This class defines AnalyticsData format.
 
-            It is a wrapper to provide from / to DXO conversion.
+        It is a wrapper to provide to/from DXO conversion.
+
         Args:
             tag (str): tag name
             value: value
@@ -60,7 +61,11 @@ class AnalyticsData:
         self.kwargs = kwargs
 
     def to_dxo(self):
-        """Converts the AnalyticsData to DXO object."""
+        """Converts the AnalyticsData to DXO object.
+
+        Returns:
+            DXO object
+        """
         dxo = DXO(data_kind=DataKind.ANALYTIC, data={self.tag: self.value})
         dxo.set_meta_prop(_DATA_TYPE_KEY, self.data_type)
         dxo.set_meta_prop(_KWARGS_KEY, self.kwargs)
@@ -72,6 +77,9 @@ class AnalyticsData:
 
         Args:
             dxo (DXO): The DXO object to convert.
+
+        Returns:
+            AnalyticsData object
         """
         if not isinstance(dxo, DXO):
             raise TypeError("expect dxo to be an instance of DXO, but got {}.".format(type(dxo)))

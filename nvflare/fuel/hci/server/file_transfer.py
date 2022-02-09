@@ -29,12 +29,7 @@ from nvflare.fuel.hci.base64_utils import (
 )
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.server.authz import AuthzContext
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
-
-
-def upload_folder_authz_func_signature(folder_path: str) -> (str, AuthzContext):
-    pass
 
 
 class FileTransferModule(CommandModule):
@@ -46,9 +41,11 @@ class FileTransferModule(CommandModule):
             download_dir:
             upload_folder_authz_func:
         """
-        assert os.path.isdir(upload_dir), "upload_dir {} is not a valid dir".format(upload_dir)
+        if not os.path.isdir(upload_dir):
+            raise ValueError("upload_dir {} is not a valid dir".format(upload_dir))
 
-        assert os.path.isdir(download_dir), "download_dir {} is not a valid dir".format(download_dir)
+        if not os.path.isdir(download_dir):
+            raise ValueError("download_dir {} is not a valid dir".format(download_dir))
 
         self.upload_dir = upload_dir
         self.download_dir = download_dir

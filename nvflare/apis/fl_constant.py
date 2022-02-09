@@ -43,9 +43,9 @@ class ReturnCode(object):
 
 
 class MachineStatus(Enum):
-    """
-    Status Lifecycle:
+    """Constants for machine status.
 
+    Status Lifecycle
         STOPPED <-> STARTING -> STARTED -> STOPPING -> STOPPED
     """
 

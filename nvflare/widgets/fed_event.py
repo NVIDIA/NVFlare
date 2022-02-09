@@ -28,9 +28,14 @@ FED_EVENT_TOPIC = "fed.event"
 
 class FedEventRunner(Widget):
     def __init__(self, topic=FED_EVENT_TOPIC):
-        """
+        """Init FedEventRunner.
+
+        The FedEventRunner handles posting and receiving of fed events.
+        The system will do its best to fire off all events in the queue before shutdown
+        using the ABOUT_TO_END_RUN event and a grace period during END_RUN.
+
         Args:
-            topic:
+            topic: the fed event topic to be handled. Defaults to 'fed.event'
         """
         Widget.__init__(self)
         self.topic = topic
@@ -120,11 +125,14 @@ class FedEventRunner(Widget):
         return make_reply(ReturnCode.OK)
 
     def _post(self):
-        """
+        """Post an event.
+
         During ABOUT_TO_END_RUN, sleep_time is 0 and system will flush
          in_events by firing events without delay.
+
         During END_RUN, system will wait for self.grace_period, even the queue is empty,
         so any new item can be processed.
+
         However, since the system does not guarantee the receiving side of _post is still
         alive, we catch the exception and show warning messages to users if events can not
         be handled by receiving side.
@@ -175,6 +183,7 @@ class FedEventRunner(Widget):
 
 class ServerFedEventRunner(FedEventRunner):
     def __init__(self, topic=FED_EVENT_TOPIC):
+        """Init ServerFedEventRunner."""
         FedEventRunner.__init__(self, topic)
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
@@ -190,6 +199,7 @@ class ServerFedEventRunner(FedEventRunner):
 
 class ClientFedEventRunner(FedEventRunner):
     def __init__(self, topic=FED_EVENT_TOPIC):
+        """Init ClientFedEventRunner."""
         FedEventRunner.__init__(self, topic)
         self.ready = False
 

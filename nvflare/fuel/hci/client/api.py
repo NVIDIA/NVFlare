@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import socket
 import ssl
 import time
@@ -25,61 +27,30 @@ from nvflare.fuel.hci.reg import CommandModule, CommandRegister
 from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.fuel.hci.table import Table
 
+from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
 
 
-class ReplyProcessor(object):
-    """An abstract class for parsing server's response."""
-
-    def reply_start(self, client, reply_json):
-        pass
-
-    def process_string(self, client, item: str):
-        pass
-
-    def process_success(self, client, item: str):
-        pass
-
-    def process_error(self, client, err: str):
-        pass
-
-    def process_table(self, client, table: Table):
-        pass
-
-    def process_dict(self, client, d: dict):
-        pass
-
-    def process_shutdown(self, client, msg: str):
-        pass
-
-    def process_token(self, client, token: str):
-        pass
-
-    def protocol_error(self, client, err: str):
-        pass
-
-    def reply_done(self, client):
-        pass
+class _DefaultReplyProcessor(ReplyProcessor):
+    def process_shutdown(self, api: AdminAPI, msg: str):
+        api.shutdown_received = True
+        api.shutdown_msg = msg
 
 
 class _LoginReplyProcessor(ReplyProcessor):
-    """
-    Reply processor for handling login and setting the token for the admin client.
-    """
+    """Reply processor for handling login and setting the token for the admin client."""
 
-    def process_string(self, client, item: str):
-        client.login_result = item
+    def process_string(self, api: AdminAPI, item: str):
+        api.login_result = item
 
-    def process_token(self, client, token: str):
-        client.token = token
+    def process_token(self, api: AdminAPI, token: str):
+        api.token = token
 
 
 class _CmdListReplyProcessor(ReplyProcessor):
-    """
-    Reply processor to register available commands after getting back a table of commands from the server.
-    """
+    """Reply processor to register available commands after getting back a table of commands from the server."""
 
-    def process_table(self, client, table: Table):
+    def process_table(self, api: AdminAPI, table: Table):
         for i in range(len(table.rows)):
             if i == 0:
                 # this is header
@@ -99,7 +70,7 @@ class _CmdListReplyProcessor(ReplyProcessor):
             # the user is not authenticated - skip this command
             # continue
 
-            client.server_cmd_reg.add_command(
+            api.server_cmd_reg.add_command(
                 scope_name=scope,
                 cmd_name=cmd_name,
                 desc=desc,
@@ -110,10 +81,10 @@ class _CmdListReplyProcessor(ReplyProcessor):
                 confirm=confirm,
             )
 
-        client.server_cmd_received = True
+        api.server_cmd_received = True
 
 
-class AdminAPI:
+class AdminAPI(AdminAPISpec):
     """Underlying API to keep certs, keys and connection information and to execute admin commands through do_command.
 
     Args:
@@ -141,9 +112,10 @@ class AdminAPI:
         download_dir="",
         server_cn=None,
         cmd_modules=None,
-        poc=False,
-        debug=False,
+        poc: bool = False,
+        debug: bool = False,
     ):
+        super().__init__()
         if cmd_modules is None:
             from .file_transfer import FileTransferModule
 
@@ -161,12 +133,8 @@ class AdminAPI:
             if len(client_key) <= 0:
                 raise Exception("missing Client Key file name")
             self.client_key = client_key
-        self.server_cn = server_cn  # does not seem to be used right now
+        self.server_cn = server_cn
         self.debug = debug
-
-        # for reply callbacks
-        self.reply_processor = None
-        self.command_result = None
 
         # for login
         self.token = None
@@ -176,14 +144,12 @@ class AdminAPI:
         self.client_cmd_reg = CommandRegister(app_ctx=self)
         self.server_cmd_received = False
 
-        self.shutdown_msg = None
-
         self.all_cmds = []
-        self.iobuffer = None
-
         self._load_client_cmds(cmd_modules)
-        if poc:
-            print("Please log in with login_with_password(username, password) to enable server cmds.")
+
+        # for shutdown
+        self.shutdown_received = False
+        self.shutdown_msg = None
 
     def _load_client_cmds(self, cmd_modules):
         if cmd_modules:
@@ -199,9 +165,7 @@ class AdminAPI:
         self.all_cmds.append(cmd_entry.name)
 
     def logout(self):
-        """
-        Send logout command to server.
-        """
+        """Send logout command to server."""
         return self.server_execute("_logout")
 
     def login(self, username: str):
@@ -211,7 +175,7 @@ class AdminAPI:
             username: Username
 
         Returns:
-            Object containing status and details
+            A dict of status and details
         """
         self.login_result = None
         self._try_command(f"_cert_login {username}", _LoginReplyProcessor())
@@ -237,7 +201,7 @@ class AdminAPI:
             password: password
 
         Returns:
-            Object containing status and details
+            A dict of login status and details
         """
         self.login_result = None
         self._try_command(f"_login {username} {password}", _LoginReplyProcessor())
@@ -269,15 +233,16 @@ class AdminAPI:
             )
 
     def _process_server_reply(self, resp):
-        """Process the server reply and store the status/details into client's `command_result`
+        """Process the server reply and store the status/details into API's `command_result`
 
         Args:
             resp: The raw response that returns by the server.
         """
         if self.debug:
             print("DEBUG: Server Reply: {}".format(resp))
-        self.command_result = resp  # this resp is what is usually directly used to return, straight from server
-        reply_processor = ReplyProcessor() if self.reply_processor is None else self.reply_processor
+        # this resp is what is usually directly used to return, straight from server
+        self.set_command_result(resp)
+        reply_processor = _DefaultReplyProcessor() if self.reply_processor is None else self.reply_processor
 
         reply_processor.reply_start(self, resp)
 
@@ -369,7 +334,7 @@ class AdminAPI:
         """
         args = split_to_args(command)
         cmd_name = args[0]
-        self.command_result = None
+        self.set_command_result(None)
 
         # check client side commands
         entries = self.client_cmd_reg.get_command_entries(cmd_name)
@@ -379,11 +344,13 @@ class AdminAPI:
                 "details": f"Ambiguous client command {cmd_name} - qualify with scope",
             }
         elif len(entries) == 1:
+            self.set_command_result(None)
             ent = entries[0]
-            ent.handler(args, self.client_cmd_reg.app_ctx)
-            if self.command_result is None:
+            ent.handler(args, self)
+            result = self.get_command_result()
+            if result is None:
                 return {"status": APIStatus.ERROR_RUNTIME, "details": "Client did not respond"}
-            return self.command_result
+            return result
 
         # check server side commands
         entries = self.server_cmd_reg.get_command_entries(cmd_name)
@@ -400,10 +367,7 @@ class AdminAPI:
         return self.server_execute(command)
 
     def server_execute(self, command, reply_processor=None):
-        """
-        This had to be kept relatively the same as in the hci Admin client with a wrapper to return, because the client
-        is passed to command_reg commands and reusing that like file_transfer, server_execute is directly called.
-        """
+        self.set_command_result(None)
         start = time.time()
         self._try_command(command, reply_processor)
         secs = time.time() - start
@@ -412,40 +376,10 @@ class AdminAPI:
         if self.debug:
             print(f"DEBUG: server_execute Done [{usecs} usecs] {datetime.now()}")
 
-        if self.command_result is None:
+        result = self.get_command_result()
+        if result is None:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Server did not respond"}
-        if "status" not in self.command_result:
-            self.command_result.update({"status": APIStatus.SUCCESS})
-        return self.command_result
-
-    def write_string(self, data: str):
-        content = data + "\n"
-        self.iobuffer.write(content)
-
-    def _show_one_command(self, cmd_name, reg):
-        entries = reg.get_command_entries(cmd_name)
-        if len(entries) <= 0:
-            self.write_string("Undefined command {}\n".format(cmd_name))
-            return
-
-        for e in entries:
-            if not e.visible:
-                continue
-
-            if len(e.scope.name) > 0:
-                self.write_string("Command: {}.{}".format(e.scope.name, cmd_name))
-            else:
-                self.write_string("Command: {}".format(cmd_name))
-
-            self.write_string("Description: {}".format(e.desc))
-            self.write_string("Usage: {}\n".format(e.usage))
-
-    def _show_commands(self, reg: CommandRegister):
-        table = Table(["Scope", "Command", "Description"])
-        for scope_name in sorted(reg.scopes):
-            scope = reg.scopes[scope_name]
-            for cmd_name in sorted(scope.entries):
-                e = scope.entries[cmd_name]
-                if e.visible:
-                    table.add_row([scope_name, cmd_name, e.desc])
-        table.write(self.iobuffer)
+        if "status" not in result:
+            result.update({"status": APIStatus.SUCCESS})
+        self.set_command_result(result)
+        return result

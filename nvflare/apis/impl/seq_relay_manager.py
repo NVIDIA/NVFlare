@@ -30,7 +30,7 @@ _PENDING_CLIENT_TASK = "__pending_client_task"
 
 class SequentialRelayTaskManager(TaskManager):
     def __init__(self, task: Task, task_assignment_timeout, task_result_timeout, dynamic_targets: bool):
-        """Task manager for relay controller on SendOrder.SEQUENTIAL
+        """Task manager for relay controller on SendOrder.SEQUENTIAL.
 
         Args:
             task (Task): an instance of Task
@@ -94,10 +94,17 @@ class SequentialRelayTaskManager(TaskManager):
         return TaskCheckStatus.NO_BLOCK
 
     def _determine_window(self, task: Task) -> Tuple[int, int]:
-        """Return two indexes (starting/ending) of a window of client candidates.
+        """Returns two indexes (starting/ending) of a window of client candidates.
 
         When starting is negative and ending is 0, the window is closed and the task should exit
         When both starting and ending are negative, there is no client candidate as current client task has not returned
+
+        Args:
+            task (Task): an instance of Task
+
+        Returns:
+            Tuple[int, int]: starting and ending indices of a window of client candidates.
+
         """
         # adjust client window
         last_send_idx = task.props[_KEY_LAST_SEND_IDX]
@@ -165,12 +172,14 @@ class SequentialRelayTaskManager(TaskManager):
 
     def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
         """Determine whether the task should exit.
+
         Args:
             task (Task): an instance of Task
 
-        Tuple[bool, TaskCompletionStatus]:
-            first entry in the tuple means whether to exit the task or not.  If it's True, the task should exit.
-            second entry in the tuple indicates the TaskCompletionStatus.
+        Returns:
+            Tuple[bool, TaskCompletionStatus]:
+                first entry in the tuple means whether to exit the task or not.  If it's True, the task should exit.
+                second entry in the tuple indicates the TaskCompletionStatus.
         """
         # are we waiting for any client?
         win_start_idx, win_end_idx = self._determine_window(task)
@@ -190,7 +199,8 @@ class SequentialRelayTaskManager(TaskManager):
 
     def check_task_result(self, result: Shareable, client_task: ClientTask, fl_ctx: FLContext):
         """Check the result received from the client.
-        see whether the client_task is the last one in the task's list
+
+        See whether the client_task is the last one in the task's list
         If not, then it is a late response and ReservedHeaderKey.REPLY_IS_LATE is
         set to True in result's header.
 

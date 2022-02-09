@@ -33,8 +33,7 @@ class ServerEngineSpec(ABC):
 
     @abstractmethod
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
-        """
-        Validate specified client names.
+        """Validate specified client names.
 
         Args:
             client_names: list of names to be validated
@@ -59,14 +58,7 @@ class ServerEngineSpec(ABC):
 
     @abstractmethod
     def register_aux_message_handler(self, topic: str, message_handle_func):
-        """
-        Register aux message handling function with specified topics.
-
-        Args:
-            topic: the topic to be handled by the func
-            message_handle_func: the func to handle the message. Must follow aux_message_handle_func_signature.
-
-        Returns:
+        """Register aux message handling function with specified topics.
 
         Exception is raised when:
             a handler is already registered for the topic;
@@ -74,14 +66,20 @@ class ServerEngineSpec(ABC):
             bad message_handle_func - must be callable
 
         Implementation Note:
-        This method should simply call the ServerAuxRunner's register_aux_message_handler method.
+            This method should simply call the ServerAuxRunner's register_aux_message_handler method.
+
+        Args:
+            topic: the topic to be handled by the func
+            message_handle_func: the func to handle the message. Must follow aux_message_handle_func_signature.
+
         """
         pass
 
     @abstractmethod
     def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        """
-        Send a request to specified clients via the aux channel.
+        """Send a request to specified clients via the aux channel.
+
+        Implementation: simply calls the ServerAuxRunner's send_aux_request method.
 
         Args:
             targets: target clients. None or empty list means all clients
@@ -92,8 +90,6 @@ class ServerEngineSpec(ABC):
 
         Returns: a dict of replies (client name => reply Shareable)
 
-        Implementation: simply calls the ServerAuxRunner's send_aux_request method.
-
         """
         pass
 
@@ -102,8 +98,7 @@ class ServerEngineSpec(ABC):
 
     @abstractmethod
     def get_widget(self, widget_id: str) -> Widget:
-        """
-        Get the widget with the specified ID
+        """Get the widget with the specified ID.
 
         Args:
             widget_id: ID of the widget
