@@ -176,8 +176,8 @@ class LoginModule(CommandModule, CommandFilter):
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):
-        if args[0] in [LOGIN_CMD_NAME, CERT_LOGIN_CMD_NAME]:
-            # skip login command
+        if args[0] in [LOGIN_CMD_NAME, CERT_LOGIN_CMD_NAME, "_check_session"]:
+            # skip login and check session command
             return True
 
         # validate token
@@ -202,5 +202,10 @@ class LoginModule(CommandModule, CommandFilter):
             conn.set_prop(ConnProps.TOKEN, token)
             return True
         else:
-            conn.append_error("not authenticated - no user")
+            conn.append_string("session_inactive")
+            conn.append_error(
+                "user not authenticated or session timed out after {} seconds of inactivity - logging out".format(
+                    self.session_mgr.idle_timeout
+                )
+            )
             return False

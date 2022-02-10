@@ -210,6 +210,8 @@ class FedAdminServer(AdminServer):
             )
         )
 
+        cmd_reg.register_module(sess_mgr)
+
         if cmd_modules:
             if not isinstance(cmd_modules, list):
                 raise TypeError("cmd_modules must be list but got {}".format(type(cmd_modules)))
