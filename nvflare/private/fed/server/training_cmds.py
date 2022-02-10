@@ -459,13 +459,13 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error("no clients to shutdown")
             return False
 
+        replies = self.send_request_to_clients(conn, message)
+        self.process_replies_to_table(conn, replies)
+
         err = engine.remove_clients(clients)
         if err:
             conn.append_error(err)
             return False
-
-        replies = self.send_request_to_clients(conn, message)
-        self.process_replies_to_table(conn, replies)
         return True
 
     def shutdown(self, conn: Connection, args: List[str]):
