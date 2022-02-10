@@ -73,7 +73,9 @@ class FullModelShareableGenerator(ShareableGenerator):
             else:
                 base_model[ModelLearnableKey.WEIGHTS] = weights
         else:
-            raise ValueError("data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF.")
+            raise ValueError(
+                "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(dxo.data_kind)
+            )
 
         base_model[ModelLearnableKey.META] = dxo.get_meta_props()
         return base_model
