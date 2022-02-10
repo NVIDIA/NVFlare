@@ -202,5 +202,9 @@ class LoginModule(CommandModule, CommandFilter):
             conn.set_prop(ConnProps.TOKEN, token)
             return True
         else:
-            conn.append_error("not authenticated - no user")
+            conn.append_error(
+                "admin client session timed out after {} seconds of inactivity - logging out".format(
+                    self.session_mgr.idle_timeout
+                )
+            )
             return False

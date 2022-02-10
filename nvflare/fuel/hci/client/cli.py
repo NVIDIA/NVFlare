@@ -266,6 +266,11 @@ class AdminClient(cmd.Cmd):
             ent = entries[0]
             resp = ent.handler(args, self.api)
             self.print_resp(resp)
+            if "data" in resp:
+                for item in resp["data"]:
+                    item_type = item["type"]
+                    if item_type == "error" and "session timed out" in item["data"]:
+                        return True
             return
 
         entries = self.api.server_cmd_reg.get_command_entries(cmd_name)
