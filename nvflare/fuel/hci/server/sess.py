@@ -125,7 +125,14 @@ class SessionManager(CommandModule):
                     usage="list_sessions",
                     handler_func=self.handle_list_sessions,
                     visible=True,
-                )
+                ),
+                CommandSpec(
+                    name="_check_session",
+                    description="check if session is active",
+                    usage="check_session",
+                    handler_func=self.handle_check_session,
+                    visible=False,
+                ),
             ],
         )
 
@@ -146,4 +153,22 @@ class SessionManager(CommandModule):
                     time_to_string(s.last_active_time),
                     "{}".format(time.time() - s.last_active_time),
                 ]
+            )
+
+    def handle_check_session(self, conn: Connection, args: List[str]):
+        token = None
+        data = conn.request["data"]
+        for item in data:
+            it = item["type"]
+            if it == "token":
+                token = item["data"]
+                break
+
+        sess = self.get_session(token)
+        if sess:
+            conn.append_string("OK")
+        else:
+            conn.append_string("REJECT")
+            conn.append_error(
+                "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
             )

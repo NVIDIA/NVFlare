@@ -164,6 +164,9 @@ class AdminAPI(AdminAPISpec):
     def register_command(self, cmd_entry):
         self.all_cmds.append(cmd_entry.name)
 
+    def check_session(self):
+        return self.server_execute("_check_session")
+
     def logout(self):
         """Send logout command to server."""
         return self.server_execute("_logout")
@@ -379,6 +382,11 @@ class AdminAPI(AdminAPISpec):
         result = self.get_command_result()
         if result is None:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Server did not respond"}
+        if "data" in result:
+            for item in result["data"]:
+                item_type = item["type"]
+                if item_type == "string" and "session_inactive" in item["data"]:
+                    result.update({"status": APIStatus.ERROR_INACTIVE_SESSION})
         if "status" not in result:
             result.update({"status": APIStatus.SUCCESS})
         self.set_command_result(result)
