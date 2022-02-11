@@ -1,12 +1,10 @@
 name: pre-merge
 
 on:
-  # quick tests for pull requests and the releasing branches
-  push:
-    branches:
-      - main
   pull_request:
-
+    types: [opened, reopened, synchronize]
+    branches:
+      - test-ci
 jobs:
   unit-tests:
     runs-on: self-hosted
