@@ -53,8 +53,6 @@ commands shown as examples of how they may be run with a description.
     ,``ls clientname -SR``,List files in workspace root directory (-S: sort by file size; -R: list subdirectories recursively)
     pwd,``pwd server``,Print the name of workspace root directory
     ,``pwd clientname``,Print the name of workspace root directory
-    validate,``validate src_client dsc_client``, Gets the performance metrics for cross-site validation of a model
-    ,``validate all``, Gets the performance metrics for cross-site validation of all models
 
 
 .. tip::
