@@ -106,9 +106,7 @@ class PTScaffoldHelper(object):
         net_para = model.state_dict()
         for key in net_para:
             c_new_para[key] = (
-                c_new_para[key]
-                - c_global_para[key]
-                + (global_model_para[key] - net_para[key]) / (self.cnt * curr_lr)
+                c_new_para[key] - c_global_para[key] + (global_model_para[key] - net_para[key]) / (self.cnt * curr_lr)
             )
             self.c_delta_para[key] = (c_new_para[key] - c_local_para[key]).cpu().numpy()
         self.c_local.load_state_dict(c_new_para)
