@@ -44,81 +44,77 @@ import torch
 from torch.optim import Optimizer
 
 
-class PTScaffold(object):
-    """Learner Spec to be used with SCAFFOLD components.
+def get_lr_values(optimizer: Optimizer):
+    """
+    This function is used to get the learning rates of the optimizer.
+    """
+    return [group["lr"] for group in optimizer.state_dict()["param_groups"]]
+
+
+class PTScaffoldHelper(object):
+    """Helper to be used with SCAFFOLD components.
     Implements the functions used for the algorithm proposed in
     Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"
     (https://arxiv.org/abs/1910.06378) using PyTorch.
     SCAFFOLD-related functions are based on https://github.com/Xtra-Computing/NIID-Bench.
     See also Li et al. "Federated Learning on Non-IID Data Silos: An Experimental Study"
     (https://arxiv.org/abs/2102.02079).
-
-    Note: functions inherited from `Learner` are abstract and need to be implemented by the app.
     """
 
     def __init__(self):
-        # Model being optimized in SCAFFOLD
-        self.model = None  # should be provided by the Learner implementation
-
         # SCAFFOLD control terms
         self.cnt = 0
-        self.curr_lr = None
         self.c_global = None
         self.c_local = None
         self.c_delta_para = None
 
-    def scaffold_init(self):
-        # Should be called after `model` in Learner implementation is initialized.
-        if not self.model:
-            raise ValueError("SCAFFOLD model is not initialized!")
-
+    def init(self, model):
         # create models for SCAFFOLD correction terms
-        self.c_global = copy.deepcopy(self.model)
-        self.c_local = copy.deepcopy(self.model)
+        self.c_global = copy.deepcopy(model)
+        self.c_local = copy.deepcopy(model)
         # Initialize correction term with zeros
-        c_init_para = self.model.state_dict()
+        c_init_para = model.state_dict()
         for k in c_init_para.keys():
             c_init_para[k] = torch.zeros_like(c_init_para[k])
         self.c_global.load_state_dict(c_init_para)
         self.c_local.load_state_dict(c_init_para)
 
-    def scaffold_get_params(self):
+    def get_params(self):
         self.cnt = 0
         # Adapted from https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L371
         c_global_para = self.c_global.state_dict()
         c_local_para = self.c_local.state_dict()
         return c_global_para, c_local_para
 
-    def scaffold_model_update(self, c_global_para, c_local_para):
+    def model_update(self, model, curr_lr, c_global_para, c_local_para):
         # Update model using scaffold controls
         # See https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L391
-        self.curr_lr = self._get_lr_values(self.optimizer)[0]
-        net_para = self.model.state_dict()
+        net_para = model.state_dict()
         for key in net_para:
-            net_para[key] = net_para[key] - self.curr_lr * (c_global_para[key] - c_local_para[key])
-        self.model.load_state_dict(net_para)
+            net_para[key] = net_para[key] - curr_lr * (c_global_para[key] - c_local_para[key])
+        model.load_state_dict(net_para)
 
         self.cnt += 1
 
-    def scaffold_terms_update(self, model_global, c_global_para, c_local_para):
+    def terms_update(self, model, model_global, c_global_para, c_local_para, curr_lr):
         # Update the local scaffold controls
         # See https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L403
 
         c_new_para = self.c_local.state_dict()
         self.c_delta_para = copy.deepcopy(self.c_local.state_dict())
         global_model_para = model_global.state_dict()
-        net_para = self.model.state_dict()
+        net_para = model.state_dict()
         for key in net_para:
             c_new_para[key] = (
-                c_new_para[key]
-                - c_global_para[key]
-                + (global_model_para[key] - net_para[key]) / (self.cnt * self.curr_lr)
+                c_new_para[key] - c_global_para[key] + (global_model_para[key] - net_para[key]) / (self.cnt * curr_lr)
             )
             self.c_delta_para[key] = (c_new_para[key] - c_local_para[key]).cpu().numpy()
         self.c_local.load_state_dict(c_new_para)
 
-    def _get_lr_values(self, optimizer: Optimizer):
-        """
-        This function is used to get the learning rates of the optimizer.
-        """
-        return [group["lr"] for group in optimizer.state_dict()["param_groups"]]
+    def load_global_controls(self, weights):
+        self.c_global.load_state_dict(weights)
+
+    def get_delta_controls(self):
+        if self.c_delta_para is None:
+            raise ValueError("c_delta_para hasn't been computed yet!")
+        return self.c_delta_para

@@ -22,10 +22,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
-from nvflare.app_common.pt.pt_scaffold import PTScaffold
+from nvflare.app_common.pt.pt_scaffold import PTScaffoldHelper, get_lr_values
 
 
-class CIFAR10ScaffoldLearner(CIFAR10Learner, PTScaffold):
+class CIFAR10ScaffoldLearner(CIFAR10Learner):
     def __init__(
         self,
         dataset_root: str = "./dataset",
@@ -68,16 +68,16 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner, PTScaffold):
             central=central,
             analytic_sender_id=analytic_sender_id,
         )
-        PTScaffold.__init__(self)
+        self.scaffold_helper = PTScaffoldHelper()
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         # Initialize super class and SCAFFOLD
         CIFAR10Learner.initialize(self, parts=parts, fl_ctx=fl_ctx)
-        self.scaffold_init()
+        self.scaffold_helper.init(self.model)
 
     def local_train(self, fl_ctx, train_loader, model_global, abort_signal: Signal, val_freq: int = 0):
         # local_train with SCAFFOLD steps
-        c_global_para, c_local_para = self.scaffold_get_params()
+        c_global_para, c_local_para = self.scaffold_helper.get_params()
         for epoch in range(self.aggregation_epochs):
             if abort_signal.triggered:
                 return
@@ -105,7 +105,8 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner, PTScaffold):
                 self.optimizer.step()
 
                 # SCAFFOLD step
-                self.scaffold_model_update(c_global_para, c_local_para)
+                curr_lr = get_lr_values(self.optimizer)[0]
+                self.scaffold_helper.model_update(self.model, curr_lr, c_global_para, c_local_para)
 
                 current_step = epoch_len * self.epoch_global + i
                 self.writer.add_scalar("train_loss", loss.item(), current_step)
@@ -116,7 +117,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner, PTScaffold):
                     self.save_model(is_best=True)
 
         # Update the SCAFFOLD terms
-        self.scaffold_terms_update(model_global, c_global_para, c_local_para)
+        self.scaffold_helper.terms_update(self.model, model_global, c_global_para, c_local_para, curr_lr)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         # return DXO with extra control differences for SCAFFOLD
@@ -137,7 +138,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner, PTScaffold):
         global_ctrl_weights = dxo_global_ctrl_weights.data
         for k in global_ctrl_weights.keys():
             global_ctrl_weights[k] = torch.as_tensor(global_ctrl_weights[k])
-        self.c_global.load_state_dict(global_ctrl_weights)
+        self.scaffold_helper.load_global_controls(global_ctrl_weights)
 
         # modify shareable to only contain global weights
         shareable = dxo_global_weights.update_shareable(shareable)  # TODO: add set_dxo() method to Shareable
@@ -149,9 +150,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner, PTScaffold):
             dxo_weights_diff = from_shareable(result_shareable)
 
             # Create a DXO collection with weights and scaffold controls
-            if self.c_delta_para is None:
-                raise ValueError("c_delta_para hasn't been computed yet!")
-            dxo_weigths_diff_ctrl = DXO(data_kind=DataKind.WEIGHT_DIFF, data=self.c_delta_para)
+            dxo_weigths_diff_ctrl = DXO(data_kind=DataKind.WEIGHT_DIFF, data=self.scaffold_helper.get_delta_controls())
             # add same num steps as for model weights
             dxo_weigths_diff_ctrl.set_meta_prop(
                 MetaKey.NUM_STEPS_CURRENT_ROUND, dxo_weights_diff.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
