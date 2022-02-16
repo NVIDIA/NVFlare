@@ -68,7 +68,6 @@ class AdminClient(cmd.Cmd):
         credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
         debug: bool = False,
-        cli_history_dir: str = "",
         cli_history_size: int = 1000,
     ):
         """Admin command prompt for submitting admin commands to the server through the CLI.
@@ -85,7 +84,6 @@ class AdminClient(cmd.Cmd):
             credential_type: what type of credential to use
             cmd_modules: command modules to load and register
             debug: whether to print debug messages. False by default.
-            cli_history_dir: directory path to save the cli history file
             cli_history_size: the maximum number of commands to save in the cli history file. Defaults to 1000.
         """
         cmd.Cmd.__init__(self)
@@ -126,11 +124,13 @@ class AdminClient(cmd.Cmd):
             poc=poc,
         )
 
-        if readline and cli_history_dir and os.path.exists(cli_history_dir):
-            self.cli_history_file = os.path.join(cli_history_dir, ".cli_history")
+        nvflare_dir = os.path.join(os.path.expanduser("~"), ".nvflare")
+        if not os.path.isdir(nvflare_dir):
+            os.mkdir(nvflare_dir)
+        self.cli_history_file = os.path.join(nvflare_dir, ".admin_cli_history")
+
+        if readline:
             readline.set_history_length(cli_history_size)
-        else:
-            self.cli_history_file = None
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -221,12 +221,13 @@ class AdminClient(cmd.Cmd):
         return results[state]
 
     def preloop(self):
-        if readline and self.cli_history_file and os.path.exists(self.cli_history_file):
+        if readline and os.path.exists(self.cli_history_file):
             readline.read_history_file(self.cli_history_file)
 
-    def postloop(self):
-        if readline and self.cli_history_file:
+    def postcmd(self, stop, line):
+        if readline:
             readline.write_history_file(self.cli_history_file)
+        return stop
 
     def default(self, line):
         self._close_output_file()
