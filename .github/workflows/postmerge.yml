@@ -1,29 +1,26 @@
-name: pre-merge
+name: post-merge
 
 on:
-  issue_comment:
-    types: [created]
+  schedule:
+    - cron: "0 */8 * * *" # every 8 hours
+  workflow_dispatch:
 
 concurrency:
-  group: pre-merge-${{ github.event.issue.number }}
+  group: post-merge-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-trigger:
-    if: github.event.issue.pull_request && github.event.comment.body == '/build'
+  cron-trigger:
+    if: github.repository == 'NVIDIA/NVFlare' # avoid triggering in forked repo
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Pre-merge CI for pull request ${{ github.event.issue.number }}"
+      - run: echo "Cron triggered post-merge run..."
 
   unit-tests:
-    needs: [build-trigger]
+    needs: cron-trigger
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v2
-      - name: Checkout Pull Request
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin pull/${{ github.event.issue.number }}/merge && git checkout FETCH_HEAD
       - name: Set up Python 3.8
         uses: actions/setup-python@v2
         with:
@@ -32,14 +29,10 @@ jobs:
       - run: PYTHONPATH=$(pwd) ./runtest.sh
 
   example-tests:
-    needs: [build-trigger]
+    needs: cron-trigger
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v2
-      - name: Checkout Pull Request
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin pull/${{ github.event.issue.number }}/merge && git checkout FETCH_HEAD
       - name: Set up Python 3.8
         uses: actions/setup-python@v2
         with:
@@ -51,14 +44,10 @@ jobs:
           ./run_example_tests.sh
 
   app-tests:
-    needs: [build-trigger]
+    needs: cron-trigger
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v2
-      - name: Checkout Pull Request
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin pull/${{ github.event.issue.number }}/merge && git checkout FETCH_HEAD
       - name: Set up Python 3.8
         uses: actions/setup-python@v2
         with:
@@ -70,14 +59,10 @@ jobs:
           ./run_app_tests.sh
 
   wheel-build:
-    needs: [build-trigger]
+    needs: cron-trigger
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v2
-      - name: Checkout Pull Request
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin pull/${{ github.event.issue.number }}/merge && git checkout FETCH_HEAD
       - name: Set up Python 3.8
         uses: actions/setup-python@v2
         with:
