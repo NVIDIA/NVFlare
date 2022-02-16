@@ -40,7 +40,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
         """Simple Scaffold CIFAR-10 Trainer.
         Implements the training algorithm proposed in
         Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"
-        (https://arxiv.org/abs/1910.06378) using functions implemented in `ScaffoldLearner`.
+        (https://arxiv.org/abs/1910.06378) using functions implemented in `PTScaffoldHelper` class.
 
         Args:
             dataset_root: directory with CIFAR-10 data.
@@ -73,7 +73,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
     def initialize(self, parts: dict, fl_ctx: FLContext):
         # Initialize super class and SCAFFOLD
         CIFAR10Learner.initialize(self, parts=parts, fl_ctx=fl_ctx)
-        self.scaffold_helper.init(self.model)
+        self.scaffold_helper.init(model=self.model)
 
     def local_train(self, fl_ctx, train_loader, model_global, abort_signal: Signal, val_freq: int = 0):
         # local_train with SCAFFOLD steps
@@ -106,7 +106,9 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
 
                 # SCAFFOLD step
                 curr_lr = get_lr_values(self.optimizer)[0]
-                self.scaffold_helper.model_update(self.model, curr_lr, c_global_para, c_local_para)
+                self.scaffold_helper.model_update(
+                    model=self.model, curr_lr=curr_lr, c_global_para=c_global_para, c_local_para=c_local_para
+                )
 
                 current_step = epoch_len * self.epoch_global + i
                 self.writer.add_scalar("train_loss", loss.item(), current_step)
@@ -117,7 +119,13 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
                     self.save_model(is_best=True)
 
         # Update the SCAFFOLD terms
-        self.scaffold_helper.terms_update(self.model, model_global, c_global_para, c_local_para, curr_lr)
+        self.scaffold_helper.terms_update(
+            model=self.model,
+            curr_lr=curr_lr,
+            c_global_para=c_global_para,
+            c_local_para=c_local_para,
+            model_global=model_global,
+        )
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         # return DXO with extra control differences for SCAFFOLD
@@ -138,7 +146,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
         global_ctrl_weights = dxo_global_ctrl_weights.data
         for k in global_ctrl_weights.keys():
             global_ctrl_weights[k] = torch.as_tensor(global_ctrl_weights[k])
-        self.scaffold_helper.load_global_controls(global_ctrl_weights)
+        self.scaffold_helper.load_global_controls(weights=global_ctrl_weights)
 
         # modify shareable to only contain global weights
         shareable = dxo_global_weights.update_shareable(shareable)  # TODO: add set_dxo() method to Shareable

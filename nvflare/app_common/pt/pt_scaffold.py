@@ -96,7 +96,7 @@ class PTScaffoldHelper(object):
 
         self.cnt += 1
 
-    def terms_update(self, model, model_global, c_global_para, c_local_para, curr_lr):
+    def terms_update(self, model, curr_lr, c_global_para, c_local_para, model_global):
         # Update the local scaffold controls
         # See https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L403
 
