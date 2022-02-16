@@ -11,42 +11,28 @@
   "task_result_filters": [],
   "components": [
     {
-      "id": "model",
-      "path": "pt.networks.cifar10_nets.ModerateCNN",
-      "args": {}
-    },
-    {
       "id": "persistor",
       "name": "PTFileModelPersistor",
       "args": {
-        "model": "model"
+        "model": {
+          "path": "pt.networks.cifar10_nets.ModerateCNN",
+	      "args": {}
+        }
       }
     },
     {
       "id": "shareable_generator",
-      "name": "PTFedOptModelShareableGenerator",
-      "args": {
-        "device": "cpu",
-        "optimizer_args": {
-          "path": "torch.optim.SGD",
-          "args": {
-            "lr": 1.0,
-            "momentum": 0.6
-          }
-        },
-        "lr_scheduler_args": {
-          "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
-          "args": {
-            "T_max": "{num_rounds}",
-            "eta_min": 0.9
-          }
-        }
-      }
+      "name": "FullModelShareableGenerator",
+      "args": {}
     },
     {
       "id": "aggregator",
       "name": "InTimeAccumulateWeightedAggregator",
       "args": {
+        "expected_data_kind": {
+          "_model_weights_": "WEIGHT_DIFF",
+          "scaffold_c_diff": "WEIGHT_DIFF"
+        }
       }
     },
     {
@@ -70,7 +56,7 @@
   "workflows": [
       {
         "id": "scatter_gather_ctl",
-        "name": "ScatterAndGather",
+        "name": "ScatterAndGatherScaffold",
         "args": {
             "min_clients" : "{min_clients}",
             "num_rounds" : "{num_rounds}",
