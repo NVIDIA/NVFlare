@@ -29,16 +29,18 @@ from nvflare.apis.signal import Signal
 
 
 class AnalysisController(Controller):
-    def __init__(self, min_clients: int = 1):
+    def __init__(self, min_clients: int = 1, task_name_histogram: str = SupportedTasks.HISTOGRAM):
         """Controller for federated analysis.
 
         Args:
             min_clients: how many statistics to gather before computing the global statisitcs.
+            task_name_histogram: task name for histogram computation.
         """
         super().__init__()
         self.histograms = dict()
         self._min_clients = min_clients
         self.run_dir = None
+        self.task_name_histogram = task_name_histogram
 
     def start_controller(self, fl_ctx: FLContext):
         self.run_dir = os.path.join(fl_ctx.get_prop(FLContextKey.APP_ROOT), "..")
@@ -60,7 +62,7 @@ class AnalysisController(Controller):
         self.log_info(fl_ctx, "Analysis control flow started.")
         if abort_signal.triggered:
             return
-        task = Task(name=SupportedTasks.HISTOGRAM, data=Shareable(), result_received_cb=self._process_result_histogram)
+        task = Task(name=self.task_name_histogram, data=Shareable(), result_received_cb=self._process_result_histogram)
         self.broadcast_and_wait(
             task=task,
             min_responses=self._min_clients,
