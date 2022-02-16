@@ -22,6 +22,11 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
+try:
+    import readline
+except ImportError:
+    readline = None
+
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
@@ -50,22 +55,6 @@ class CredentialType(str, Enum):
 
 
 class AdminClient(cmd.Cmd):
-    """Admin command prompt for submitting admin commands to the server through the CLI.
-
-    Args:
-        host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
-        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
-        prompt: prompt to use for the command prompt
-        ca_cert: path to CA Cert file, by default provisioned rootCA.pem
-        client_cert: path to admin client Cert file, by default provisioned as client.crt
-        client_key: path to admin client Key file, by default provisioned as client.key
-        server_cn: server cn
-        require_login: whether to require login
-        credential_type: what type of credential to use
-        cmd_modules: command modules to load and register
-        debug: whether to print debug messages. False by default.
-    """
-
     def __init__(
         self,
         host,
@@ -79,7 +68,26 @@ class AdminClient(cmd.Cmd):
         credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
         debug: bool = False,
+        cli_history_dir: str = "",
+        cli_history_size: int = 1000,
     ):
+        """Admin command prompt for submitting admin commands to the server through the CLI.
+
+        Args:
+            host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
+            port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
+            prompt: prompt to use for the command prompt
+            ca_cert: path to CA Cert file, by default provisioned rootCA.pem
+            client_cert: path to admin client Cert file, by default provisioned as client.crt
+            client_key: path to admin client Key file, by default provisioned as client.key
+            server_cn: server cn
+            require_login: whether to require login
+            credential_type: what type of credential to use
+            cmd_modules: command modules to load and register
+            debug: whether to print debug messages. False by default.
+            cli_history_dir: directory path to save the cli history file
+            cli_history_size: the maximum number of commands to save in the cli history file. Defaults to 1000.
+        """
         cmd.Cmd.__init__(self)
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = prompt
@@ -117,6 +125,12 @@ class AdminClient(cmd.Cmd):
             debug=self.debug,
             poc=poc,
         )
+
+        if readline and cli_history_dir and os.path.exists(cli_history_dir):
+            self.cli_history_file = os.path.join(cli_history_dir, ".cli_history")
+            readline.set_history_length(cli_history_size)
+        else:
+            self.cli_history_file = None
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -205,6 +219,14 @@ class AdminClient(cmd.Cmd):
     def complete(self, text, state):
         results = [x + " " for x in self.api.all_cmds if x.startswith(text)] + [None]
         return results[state]
+
+    def preloop(self):
+        if readline and self.cli_history_file and os.path.exists(self.cli_history_file):
+            readline.read_history_file(self.cli_history_file)
+
+    def postloop(self):
+        if readline and self.cli_history_file:
+            readline.write_history_file(self.cli_history_file)
 
     def default(self, line):
         self._close_output_file()
