@@ -20,7 +20,7 @@ from nvflare.fuel.hci.security import verify_password
 from nvflare.fuel.hci.server.constants import ConnProps
 
 from .reg import CommandFilter
-from .sess import SessionManager
+from .sess import CHECK_SESSION_CMD_NAME, LIST_SESSIONS_CMD_NAME, SessionManager
 
 LOGIN_CMD_NAME = "_login"
 CERT_LOGIN_CMD_NAME = "_cert_login"
@@ -176,8 +176,8 @@ class LoginModule(CommandModule, CommandFilter):
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):
-        if args[0] in [LOGIN_CMD_NAME, CERT_LOGIN_CMD_NAME, "_check_session"]:
-            # skip login and check session command
+        if args[0] in [LOGIN_CMD_NAME, CERT_LOGIN_CMD_NAME, CHECK_SESSION_CMD_NAME, LIST_SESSIONS_CMD_NAME]:
+            # skip login and sessions commands
             return True
 
         # validate token
