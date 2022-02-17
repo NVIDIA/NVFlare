@@ -17,11 +17,12 @@ import getpass
 import json
 import os
 import signal
-import threading
+import sys
 import time
 import traceback
 from datetime import datetime
 from enum import Enum
+from functools import partial
 from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
@@ -124,21 +125,16 @@ class AdminClient(cmd.Cmd):
         self._session_monitor = threading.Thread(target=self._check_session, args=())
         self._session_monitor.daemon = True
 
-    def _check_session(self):
-        session_active = True
-        while session_active:
-            time.sleep(60)
-            res = self.api.check_session()
+        signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
 
-            for item in res["data"]:
-                item_type = item["type"]
-                if item_type == "string":
-                    if item["data"] == "REJECT":
-                        session_active = False
-                elif item_type == "error":
-                    self.write_error(item["data"])
+    def session_ended(self, message):
+        self.write_error(message)
+        os.kill(os.getpid(), signal.SIGUSR1)
 
-        os.kill(os.getpid(), signal.SIGINT)
+    def session_signal_handler(self, signum, frame):
+        if self.session_monitor_thread.is_alive():
+            self.session_monitor_thread.join()
+        sys.exit()
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -374,7 +370,8 @@ class AdminClient(cmd.Cmd):
                         except EOFError:
                             line = "bye"
                         except KeyboardInterrupt:
-                            return
+                            self.stdout.write("\n")
+                            line = "\n"
                     else:
                         self.stdout.write(self.prompt)
                         self.stdout.flush()
@@ -424,7 +421,7 @@ class AdminClient(cmd.Cmd):
                     print("Communication Error - please try later")
                     return
 
-        self._session_monitor.start()
+        self.session_monitor_thread = self.api.session_monitor(self.session_ended)
         self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
 
     def print_resp(self, resp: dict):

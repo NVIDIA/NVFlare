@@ -172,7 +172,7 @@ class SessionManager(CommandModule):
         if sess:
             conn.append_string("OK")
         else:
-            conn.append_string("REJECT")
+            conn.append_string("session_inactive")
             conn.append_error(
                 "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
             )

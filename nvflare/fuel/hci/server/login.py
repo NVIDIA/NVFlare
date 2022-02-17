@@ -204,7 +204,7 @@ class LoginModule(CommandModule, CommandFilter):
         else:
             conn.append_string("session_inactive")
             conn.append_error(
-                "user not authenticated or session timed out after {} seconds of inactivity - logging out".format(
+                "user not authenticated or session timed out after {} seconds of inactivity - logged out".format(
                     self.session_mgr.idle_timeout
                 )
             )
