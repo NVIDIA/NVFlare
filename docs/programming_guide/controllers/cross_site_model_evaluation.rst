@@ -20,5 +20,5 @@ example that implements the :class:`cross site model evaluation workflow<nvflare
    admin command to retrieve cross-site validation results. In NVFlare 2.0, with the ability to have customized
    workflows, cross-site validation is no longer in the NVFlare framework but is instead handled by the workflow. The
    the `cifar10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_ is configured to run cross-site
-   model evaluation and ``config_fed_server.json`` is configured with ``pt.validation_json_generator.ValidationJsonGenerator``
+   model evaluation and ``config_fed_server.json`` is configured with :class:`ValidationJsonGenerator<nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator>`
    to write the results to a JSON file on the server.
