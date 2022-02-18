@@ -29,15 +29,17 @@ from monai.handlers import (
     from_engine,
 )
 from monai.inferers import SimpleInferer, SlidingWindowInferer
-from monai.losses import DiceLoss
+from monai.losses import DiceCELoss
 from monai.networks.layers import Norm
 from monai.networks.nets import UNet
+from monai.optimizers import Novograd
 from monai.transforms import (
     Activationsd,
     AsDiscreted,
     Compose,
     CropForegroundd,
     EnsureChannelFirstd,
+    FgBgToIndicesd,
     LoadImaged,
     Orientationd,
     RandCropByPosNegLabeld,
@@ -64,6 +66,7 @@ class TrainConfiger:
         dataset_root: str,
         wf_config_file_name: str,
         dataset_folder_name: str = "Task09_Spleen",
+        max_epochs: int = 100,
     ):
         with open(os.path.join(app_root, wf_config_file_name)) as file:
             wf_config = json.load(file)
@@ -80,7 +83,7 @@ class TrainConfiger:
             use_gpu: whether to use GPU in training.
 
         """
-        self.max_epochs = wf_config["max_epochs"]
+        self.max_epochs = max_epochs
         self.learning_rate = wf_config["learning_rate"]
         self.data_list_json_file = wf_config["data_list_json_file"]
         self.val_interval = wf_config["val_interval"]
@@ -122,12 +125,12 @@ class TrainConfiger:
             [
                 LoadImaged(keys=("image", "label")),
                 EnsureChannelFirstd(keys=("image", "label")),
+                Orientationd(keys=["image", "label"], axcodes="RAS"),
                 Spacingd(
                     keys=["image", "label"],
                     pixdim=(1.5, 1.5, 2.0),
                     mode=("bilinear", "nearest"),
                 ),
-                Orientationd(keys=["image", "label"], axcodes="RAS"),
                 ScaleIntensityRanged(
                     keys="image",
                     a_min=-57,
@@ -137,15 +140,21 @@ class TrainConfiger:
                     clip=True,
                 ),
                 CropForegroundd(keys=("image", "label"), source_key="image"),
+                FgBgToIndicesd(
+                    keys="label",
+                    fg_postfix="_fg",
+                    bg_postfix="_bg",
+                    image_key="image",
+                ),
                 RandCropByPosNegLabeld(
                     keys=("image", "label"),
                     label_key="label",
-                    spatial_size=(64, 64, 64),
+                    spatial_size=(96, 96, 96),
                     pos=1,
                     neg=1,
                     num_samples=4,
-                    image_key="image",
-                    image_threshold=0,
+                    fg_indices_key="label_fg",
+                    bg_indices_key="label_bg",
                 ),
                 ToTensord(keys=("image", "label")),
             ]
@@ -171,7 +180,7 @@ class TrainConfiger:
         )
         train_data_loader = DataLoader(
             train_ds,
-            batch_size=2,
+            batch_size=4,
             shuffle=True,
             num_workers=4,
         )
@@ -179,12 +188,12 @@ class TrainConfiger:
             [
                 LoadImaged(keys=("image", "label")),
                 EnsureChannelFirstd(keys=("image", "label")),
+                Orientationd(keys=["image", "label"], axcodes="RAS"),
                 Spacingd(
                     keys=["image", "label"],
                     pixdim=(1.5, 1.5, 2.0),
                     mode=("bilinear", "nearest"),
                 ),
-                Orientationd(keys=["image", "label"], axcodes="RAS"),
                 ScaleIntensityRanged(
                     keys="image",
                     a_min=-57,
@@ -250,8 +259,8 @@ class TrainConfiger:
             amp=self.amp,
         )
 
-        optimizer = torch.optim.Adam(network.parameters(), self.learning_rate)
-        loss_function = DiceLoss(to_onehot_y=True, softmax=True)
+        optimizer = Novograd(network.parameters(), self.learning_rate)
+        loss_function = DiceCELoss(to_onehot_y=True, softmax=True, squared_pred=True, batch=True)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=5000, gamma=0.1
         )
