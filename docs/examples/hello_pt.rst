@@ -4,7 +4,7 @@ Quickstart (PyTorch)
 Before You Start
 ----------------
 
-Feel free to refer to the official :doc:`documentation <../programming_guide>` at any point to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
+Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
 Make sure you have an environment with NVIDIA FLARE installed.  You can follow the
 :doc:`installation <../installation>` guide on the general concept of Python virtual environment (the recommended environment) and how to
