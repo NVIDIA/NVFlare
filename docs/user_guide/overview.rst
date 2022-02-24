@@ -108,13 +108,14 @@ you will need to modify fed_server.json.  The same applies to the other two file
 .. note::
 
    When launching the FL server inside a docker with ``docker run``, use ``--net=host`` to map hostname into that
-   docker instance.  In secure gRPC, FL server has to bind the hostname specified in the provisioning stage.
-   Always make sure that hostname is what FL server can bind to. Additionally,
+   docker instance.  For secure gRPC communication, the FL server has to bind to the hostname specified in the
+   provisioning stage. Always make sure that hostname is what FL server can bind to. Additionally,
    the port that the server communicates on must also not be blocked by any firewalls.
 
-If clients from other machines cannot connect to the server, make sure that the host name specified when generating
-the startup kits in the provisioning process resolves to the correct IP. In ubuntu, an entry may need to be added to
-/etc/hosts with the IP and the host name.
+If clients from other machines cannot connect to the server, make sure that the hostname (name of the server under
+participants in project.yml) specified when generating the startup kits in the provisioning process resolves to the
+correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
+to ``/etc/hosts`` with the internal IP and the hostname.
 
 Federated learning client ($CLIENT_NAME.zip)
 ============================================

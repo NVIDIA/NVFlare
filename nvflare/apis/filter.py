@@ -22,8 +22,7 @@ from nvflare.apis.shareable import Shareable
 class Filter(FLComponent, ABC):
     @abstractmethod
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """
-            filter process apply to the Shareable object.
+        """Filter process applied to the Shareable object.
 
         Args:
             shareable: shareable

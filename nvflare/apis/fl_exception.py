@@ -14,20 +14,26 @@
 
 
 class FLCommunicationError(Exception):
-    """
-    Base class for fed_learn communication exceptions
-    """
+    """Base class for fed_learn communication exceptions."""
 
     def __init__(self, exception):
+        """Init the FLCommunicationError.
+
+        Args:
+            exception: grpc.RpcError when trying to register gprc channel
+        """
         super().__init__()
         # Copy all the gRPC exception properties into FLCommunicationError instance.
         self.__dict__.update(exception.__dict__)
 
 
 class WorkflowError(Exception):
-    """
-    FL Workflow error to indicate not to continue workflow execution.
-    """
+    """FL Workflow error to indicate not to continue workflow execution."""
 
     def __init__(self, *args: object) -> None:
+        """Init the WorkflowError.
+
+        Args:
+            *args: variable number of arguments for Exception; usually is error message string
+        """
         super().__init__(*args)

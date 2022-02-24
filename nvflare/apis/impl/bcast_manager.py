@@ -27,21 +27,20 @@ _KEY_MIN_RESPS_RCV_TIME = "__min_resps_received_time"
 
 class BcastTaskManager(TaskManager):
     def __init__(self, task: Task, min_responses: int = 0, wait_time_after_min_received: int = 0):
-        """Task manager for broadcast controller
+        """Task manager for broadcast controller.
 
         Args:
             task (Task): an instance of Task
             min_responses (int, optional): the minimum number of responses so this task is considered finished. Defaults to 0.
             wait_time_after_min_received (int, optional): additional wait time for late clients to contribute their results. Defaults to 0.
         """
-
         TaskManager.__init__(self)
         task.props[_KEY_MIN_RESPS] = min_responses
         task.props[_KEY_WAIT_TIME_AFTER_MIN_RESPS] = wait_time_after_min_received
         task.props[_KEY_MIN_RESPS_RCV_TIME] = None
 
     def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
-        """Determine if the task should exit
+        """Determine if the task should exit.
 
         Args:
             task (Task): an instance of Task
@@ -88,7 +87,7 @@ class BcastTaskManager(TaskManager):
 
 class BcastForeverTaskManager(TaskManager):
     def __init__(self):
-        """Task manager for broadcast controller with forever waiting time"""
+        """Task manager for broadcast controller with forever waiting time."""
         TaskManager.__init__(self)
 
     def check_task_send(self, client_task: ClientTask, fl_ctx: FLContext) -> TaskCheckStatus:

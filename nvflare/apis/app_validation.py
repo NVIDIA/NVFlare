@@ -25,8 +25,7 @@ class AppValidationKey(object):
 class AppValidator(ABC):
     @abstractmethod
     def validate(self, app_folder: str) -> Tuple[str, Dict]:
-        """
-        Validate and/or clean the content of specified application folder.
+        """Validate and/or clean the content of specified application folder.
 
         Args:
             app_folder: path to the app folder to be validated
@@ -37,7 +36,6 @@ class AppValidator(ABC):
             error_msg contains error message if failed to pass; otherwise an empty string.
             authorization_context is the context needed by authorization.
 
-            For example: the result result could be ("", {"byoc": True, "custom_datalist": True})
-
+            For example: the result could be ("", {"byoc": True, "custom_datalist": True})
         """
         pass

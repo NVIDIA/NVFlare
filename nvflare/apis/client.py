@@ -17,7 +17,15 @@ import time
 
 class Client:
     def __init__(self, name, token) -> None:
-        # super().__init__()
+        """Init Client.
+
+        Represents a client, and is managed by the client manager.
+        The token is a uuid used for authorization.
+
+        Args:
+            name: client name
+            token: client token
+        """
         self.name = name
         self.token = token
         self.last_connect_time = time.time()

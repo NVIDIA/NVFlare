@@ -1,0 +1,9 @@
+{
+  "ref_learning_rate": 1e-2,
+  "learning_rate": 1e-2,
+  "ditto_lambda": 1.0,
+  "fedproxloss_mu": 0.0,
+  "cache_dataset": 0.0,
+  "dataset_base_dir": "PWD/data_preparation/dataset",
+  "datalist_json_path": "PWD/data_preparation/datalists/client_All.json"
+}

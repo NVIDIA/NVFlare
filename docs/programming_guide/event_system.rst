@@ -148,3 +148,21 @@ command from the researcher. If needed, you can use this event to gracefully fin
 If your component provides some services that other components can use, you can put your component as a private and
 sticky prop into the fl_ctx at the time of START_RUN under a uniquely defined prop name. Other components can later get
 your component with this name and invoke the services of your component.
+
+Local Events and Fed Events
+---------------------------
+Local events are local to the client, and federated events or fed events are broadcast to other sites as well.
+
+The :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget will convert
+local events to federated events.
+
+One example of how this is applied in use is in log streaming as seen in the `hello-pt-tb example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_.
+
+The :class:`AnalyticsSender<nvflare.app_common.widgets.streaming.AnalyticsSender>` triggers an event called "analytix_log_stats",
+as a local event on the client. If we want server side to receive this event, we will need to convert the local event
+to a federated event, and this can be done with the :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget.
+
+The :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget converts the event
+to a federated event and adds a prefix to that event, which in the example becomes "fed.analytix_log_stats". This event
+is processed by the :class:`TBAnalyticsReceiver<nvflare.app_common.pt.tb_receiver.TBAnalyticsReceiver>` component
+on the server so the server can receive the streamed analytics.

@@ -48,7 +48,10 @@ class Task(object):
         result_received_cb=None,
         task_done_cb=None,
     ):
-        """
+        """Init the Task.
+
+        A task is a piece of work that is assigned by the Controller to client workers.
+        Depending on how the task is assigned (broadcast, send, or relay), the task will be performed by one or more clients.
 
         Args:
             name (str): name of the task
@@ -130,13 +133,15 @@ class Task(object):
 
 
 class ClientTask(object):
-
-    """
-    ClientTask records the processing information of a task for a client.
-
-    """
+    """ClientTask records the processing information of a task for a client."""
 
     def __init__(self, client: Client, task: Task):
+        """Init ClientTask.
+
+        Args:
+            client: the client
+            task: the processing information of this task will be recorded
+        """
         self.client = client
         self.task = task
         self.id = str(uuid.uuid4())
@@ -154,8 +159,7 @@ class SendOrder(Enum):
 
 
 def before_task_sent_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
-    """
-    Signature of the before_task_sent CB.
+    """Signature of the before_task_sent CB.
 
     Called before sending a task to a client.
     Usually used to prepare the FL Context, which is created to process client's task req
@@ -166,15 +170,12 @@ def before_task_sent_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
         fl_ctx: the FL context that comes with the client's task request.
         Public properties you set to this context will be sent to the client!
 
-    Returns:
-
     """
     pass
 
 
 def after_task_sent_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
-    """
-    Signature of the after_task_sent CB.
+    """Signature of the after_task_sent CB.
 
     Called after sending a task to a client.
     Usually used to clean up the FL Context or the Task data
@@ -183,16 +184,12 @@ def after_task_sent_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
         client_task: the client task that has been sent
         fl_ctx: the FL context that comes with the client's task request.
 
-    Returns:
-
     """
     pass
 
 
 def result_received_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
-    """
-
-    Signature of result_received CB
+    """Signature of result_received CB.
 
     Called after a result is received from a client
 
@@ -200,23 +197,18 @@ def result_received_cb_signature(client_task: ClientTask, fl_ctx: FLContext):
         client_task: the client task that the result is for
         fl_ctx: the FL context that comes with the client's result submission
 
-    Returns:
-
     """
     pass
 
 
 def task_done_cb_signature(task: Task, fl_ctx: FLContext):
-    """
-    Signature of task_done CB.
+    """Signature of task_done CB.
 
     Called when the task is completed.
 
     Args:
         task: the task that is completed
         fl_ctx: an instance of FL Context used for this call only.
-
-    Returns:
 
     """
     pass
@@ -234,14 +226,12 @@ class ControllerSpec(ABC):
             framework. For example, you can get Command Register from it and register your
             admin command modules.
 
-        Returns:
-
         """
         pass
 
     @abstractmethod
     def stop_controller(self, fl_ctx: FLContext):
-        """Stops the controller
+        """Stops the controller.
 
         This method is called right before the RUN is ended.
 
@@ -250,8 +240,6 @@ class ControllerSpec(ABC):
             framework. For example, you can get Command Register from it and unregister your
             admin command modules.
 
-        Returns:
-
         """
         pass
 
@@ -259,7 +247,8 @@ class ControllerSpec(ABC):
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
-        """
+        """Process result when no task is found for it.
+
         This is called when a result submission is received from a client, but no standing
         task can be found for it (from the task queue)
 
@@ -274,8 +263,6 @@ class ControllerSpec(ABC):
             result: the result from the client
             fl_ctx: the FL context that comes with the client's submission
 
-        Returns:
-
         """
         pass
 
@@ -287,8 +274,8 @@ class ControllerSpec(ABC):
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
     ):
-        """
-        Schedule to broadcast the task to specified targets.
+        """Schedule to broadcast the task to specified targets.
+
         This is a non-blocking call.
 
         The task is standing until one of the following conditions comes true:
@@ -320,8 +307,6 @@ class ControllerSpec(ABC):
             wait_time_after_min_received: how long (secs) to wait after the min_responses is received.
               If == 0, end the task immediately after the min responses are received;
 
-        Returns:
-
         """
         pass
 
@@ -334,21 +319,20 @@ class ControllerSpec(ABC):
         wait_time_after_min_received: int = 0,
         abort_signal: Signal = None,
     ):
-        """
-        This is the blocking version of the 'broadcast' method.
+        """This is the blocking version of the 'broadcast' method.
 
         First, the task is scheduled for broadcast (see the broadcast method);
         It then waits until the task is completed.
 
         Args:
-            task:
-            fl_ctx:
-            targets:
-            min_responses:
-            wait_time_after_min_received:
+            task: the task to be sent
+            fl_ctx: the FL context
+            targets: list of destination clients. None means all clients are determined dynamically.
+            min_responses: the min number of responses expected. If == 0, must get responses from
+              all clients that the task has been sent to;
+            wait_time_after_min_received: how long (secs) to wait after the min_responses is received.
+              If == 0, end the task immediately after the min responses are received;
             abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
-
-        Returns:
 
         """
         pass
@@ -359,20 +343,17 @@ class ControllerSpec(ABC):
         fl_ctx: FLContext,
         targets: Union[List[Client], List[str], None] = None,
     ):
-        """
-        Schedule a broadcast task that never ends until timeout or explicitly cancelled.
-        All clients will get the task every time it asks for a new task.
+        """Schedule a broadcast task that never ends until timeout or explicitly cancelled.
 
+        All clients will get the task every time it asks for a new task.
         This is a non-blocking call.
 
         NOTE: you can change the content of the task in the before_task_sent function.
 
         Args:
-            task:
-            fl_ctx:
-            targets:
-
-        Returns:
+            task: the task to be sent
+            fl_ctx: the FL context
+            targets: list of destination clients. None means all clients are determined dynamically.
 
         """
         pass
@@ -385,8 +366,8 @@ class ControllerSpec(ABC):
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
-        """
-        Schedule to send the task to a single target client.
+        """Schedule to send the task to a single target client.
+
         This is a non-blocking call.
 
         In ANY order, the target client is the first target that asks for task.
@@ -406,8 +387,6 @@ class ControllerSpec(ABC):
             send_order: how to choose the client to send the task.
             task_assignment_timeout: in SEQUENTIAL order, this is the wait time for trying a target client, before trying next target.
 
-        Returns:
-
         """
         pass
 
@@ -426,14 +405,13 @@ class ControllerSpec(ABC):
         It then waits until the task is completed and returns the task completion status and collected result.
 
         Args:
-            task:
-            fl_ctx:
-            targets:
-            send_order:
-            task_assignment_timeout:
-            abort_signal:
-
-        Returns:
+            task: the task to be performed by each client
+            fl_ctx: the FL context for scheduling the task
+            targets: list of clients. If None, all clients.
+            send_order: how to choose the next client
+            task_assignment_timeout: how long to wait for the expected client to get assigned
+            before assigning to next client.
+            abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
 
         """
         pass
@@ -460,8 +438,6 @@ class ControllerSpec(ABC):
             task_result_timeout: how long to wait for result from the assigned client before giving up.
             dynamic_targets: whether to dynamically grow the target list. If True, then the target list is
             expanded dynamically when a new client joins.
-
-        Returns:
 
         """
         pass
@@ -502,11 +478,9 @@ class ControllerSpec(ABC):
         If the task is not standing, this method has no effect.
 
         Args:
-            task:
-            completion_status:
-            fl_ctx
-
-        Returns:
+            task: the task to be cancelled
+            completion_status: the TaskCompletionStatus of the task
+            fl_ctx: the FL context
 
         """
         pass
@@ -514,8 +488,9 @@ class ControllerSpec(ABC):
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         """Cancels all standing tasks.
 
-        Returns:
-
+        Args:
+            completion_status: the TaskCompletionStatus of the task
+            fl_ctx: the FL context
         """
         pass
 
@@ -526,8 +501,6 @@ class ControllerSpec(ABC):
             task: the task to be aborted
             fl_ctx: the FL context
 
-        Returns:
-
         """
         pass
 
@@ -537,7 +510,8 @@ class ControllerSpec(ABC):
         NOTE: the server should send a notification to all clients, regardless of whether the server
         has any standing tasks.
 
-        Returns:
+        Args:
+            fl_ctx: the FL context
 
         """
         pass

@@ -73,6 +73,7 @@ class MONAITrainer(Executor):
             app_root=app_root,
             dataset_root=dataset_root,
             wf_config_file_name=fl_args.train_config,
+            max_epochs=self.aggregation_epochs,
         )
         conf.configure()
 

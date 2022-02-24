@@ -25,16 +25,19 @@ from .shareable import Shareable
 
 class Responder(FLComponent, ABC):
     def __init__(self):
+        """Init the Responder.
+
+        Base class for responding to clients. Controller is a subclass of Responder.
+        """
         FLComponent.__init__(self)
 
     @abstractmethod
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
-        """
-        Called by the Engine when a task request is received from a client.
+        """Called by the Engine when a task request is received from a client.
 
         Args:
-            client:
-            fl_ctx:
+            client: the Client that the task request is from
+            fl_ctx: the FLContext
 
         Returns: task name, task id, and task data
 
@@ -43,63 +46,50 @@ class Responder(FLComponent, ABC):
 
     @abstractmethod
     def handle_exception(self, task_id: str, fl_ctx: FLContext):
-        """
-        Called after process_task_request returns, but exception occurs before task is sent out
-        """
+        """Called after process_task_request returns, but exception occurs before task is sent out."""
         pass
 
     @abstractmethod
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
-        """
-        Called by the Engine to process the submitted result from a client.
+        """Called by the Engine to process the submitted result from a client.
 
         Args:
-            client:
-            task_name:
-            task_id:
-            result:
-            fl_ctx:
-
-        Returns:
+            client: the Client that the submitted result is from
+            task_name: the name of the task
+            task_id: the id of the task
+            result: the Shareable result from the Client
+            fl_ctx: the FLContext
 
         """
         pass
 
     def initialize_run(self, fl_ctx: FLContext):
-        """
-        Called when a new RUN is about to start.
+        """Called when a new RUN is about to start.
 
         Args:
             fl_ctx: FL context. It must contain 'run_number' that is to be initialized
-
-        Returns:
 
         """
         pass
 
     @abstractmethod
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
-        """
-        This is the control logic for the RUN.
+        """This is the control logic for the RUN.
+
         NOTE: this is running in a separate thread, and its life is the duration of the RUN.
 
         Args:
-            fl_ctx:
-            abort_signal:
-
-        Returns:
+            fl_ctx: the FL context
+            abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
 
         """
         pass
 
     def finalize_run(self, fl_ctx: FLContext):
-        """
-        Called when a new RUN is finished.
+        """Called when a new RUN is finished.
 
         Args:
-            fl_ctx:
-
-        Returns:
+            fl_ctx: the FL context
 
         """
         pass

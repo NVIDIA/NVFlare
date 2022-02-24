@@ -24,6 +24,7 @@ from nvflare.fuel.utils.wfconf import ConfigContext
 from nvflare.private.fed.client.base_client_deployer import BaseClientDeployer
 from nvflare.private.json_configer import JsonConfigurator
 
+from .fl_app_validator import FLAppValidator
 from .trainers.server_deployer import ServerDeployer
 
 FL_PACKAGES = ["nvflare"]
@@ -77,6 +78,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.app_root = app_root
         self.server_config_file_name = server_config_file_name
 
+        self.deployer = None
         self.app_validator = None
         self.enable_byoc = False
 
@@ -134,6 +136,9 @@ class FLServerStarterConfiger(JsonConfigurator):
             secure_train = self.cmd_vars["secure_train"]
         if not secure_train:
             self.enable_byoc = True
+
+        custom_validators = [self.app_validator] if self.app_validator else []
+        self.app_validator = FLAppValidator(custom_validators=custom_validators)
 
         build_ctx = {
             "secure_train": secure_train,
@@ -195,6 +200,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.app_root = app_root
         self.client_config_file_name = client_config_file_name
         self.enable_byoc = False
+        self.base_deployer = None
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         """Process config element.
@@ -202,7 +208,6 @@ class FLClientStarterConfiger(JsonConfigurator):
         Args:
             config_ctx: config context
             node: element node
-
         """
         # JsonConfigurator.process_config_element(self, config_ctx, node)
 
@@ -218,7 +223,6 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         Args:
             config_ctx: config context
-
         """
         super().start_config(config_ctx)
 
@@ -238,7 +242,6 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         Args:
             config_ctx: config context
-
         """
         secure_train = False
         if self.cmd_vars.get("secure_train"):
@@ -257,14 +260,3 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         self.base_deployer = BaseClientDeployer()
         self.base_deployer.build(build_ctx)
-        # self.trainer = trainer
-        # self.client_trainer = trainer
-
-    # def build_nested(self, config_dict, app_root):
-    #     if get_config_classname(config_dict) == "ClaraEvaluator":
-    #         config_dict["args"]["app_root"] = app_root
-    #     for k in config_dict["args"]:
-    #         element = config_dict["args"][k]
-    #         if isinstance(element, dict) and element.get("args") is not None:
-    #             config_dict["args"][k] = self.build_nested(config_dict["args"][k], app_root)
-    #     return self.build_component(config_dict)

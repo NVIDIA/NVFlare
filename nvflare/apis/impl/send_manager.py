@@ -26,7 +26,7 @@ _KEY_TASK_ASSIGN_TIMEOUT = "__task_assignment_timeout"
 
 class SendTaskManager(TaskManager):
     def __init__(self, task: Task, send_order: SendOrder, task_assignment_timeout):
-        """Task manager for send controller
+        """Task manager for send controller.
 
         Args:
             task (Task): an instance of Task
@@ -92,6 +92,7 @@ class SendTaskManager(TaskManager):
 
     def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
         """Determine whether the task should exit.
+
         Args:
             task (Task): an instance of Task
 

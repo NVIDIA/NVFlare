@@ -14,7 +14,7 @@
 
 import numpy as np
 
-from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
+from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
@@ -72,7 +72,7 @@ class IntimeModelSelectionHandler(FLComponent):
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return False
 
-        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS):
+        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
             self.log_debug(fl_ctx, "I cannot handle {}".format(dxo.data_kind))
             return False
 
