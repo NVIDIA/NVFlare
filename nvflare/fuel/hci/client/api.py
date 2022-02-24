@@ -152,7 +152,10 @@ class AdminAPI(AdminAPISpec):
         self.shutdown_received = False
         self.shutdown_msg = None
 
-        self.api_active = False
+        self.server_sess_active = False
+
+        self.sess_monitor_thread = None
+        self.sess_monitor_active = False
 
     def _load_client_cmds(self, cmd_modules):
         if cmd_modules:
@@ -167,18 +170,28 @@ class AdminAPI(AdminAPISpec):
     def register_command(self, cmd_entry):
         self.all_cmds.append(cmd_entry.name)
 
-    def session_monitor(self, session_callback, interval=5):
-        _session_monitor_thread = threading.Thread(
-            target=self._check_session, args=(session_callback, interval), daemon=True
+    def start_session_monitor(self, session_ended_callback, interval=5):
+        if self.sess_monitor_thread and self.sess_monitor_thread.is_alive():
+            self.close_session_monitor()
+        self.sess_monitor_thread = threading.Thread(
+            target=self._check_session, args=(session_ended_callback, interval), daemon=True
         )
-        _session_monitor_thread.start()
-        return _session_monitor_thread
+        self.sess_monitor_active = True
+        self.sess_monitor_thread.start()
 
-    def _check_session(self, session_callback, interval):
+    def close_session_monitor(self):
+        self.sess_monitor_active = False
+        if self.sess_monitor_thread:
+            self.sess_monitor_thread.join()
+
+    def _check_session(self, session_ended_callback, interval):
         error_msg = ""
         connection_error_counter = 0
         while True:
             time.sleep(interval)
+
+            if not self.sess_monitor_active:
+                return
 
             if self.shutdown_received:
                 error_msg = self.shutdown_msg
@@ -199,13 +212,13 @@ class AdminAPI(AdminAPISpec):
                         error_msg = item["data"]
                 break
 
-        self.api_active = False
-        session_callback(error_msg)
+        self.server_sess_active = False
+        session_ended_callback(error_msg)
 
     def logout(self):
         """Send logout command to server."""
         resp = self.server_execute("_logout")
-        self.api_active = False
+        self.server_sess_active = False
         return resp
 
     def login(self, username: str):
@@ -231,7 +244,7 @@ class AdminAPI(AdminAPISpec):
         if not self.server_cmd_received:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
 
-        self.api_active = True
+        self.server_sess_active = True
         return {"status": APIStatus.SUCCESS, "details": "Login success"}
 
     def login_with_password(self, username: str, password: str):
@@ -258,7 +271,7 @@ class AdminAPI(AdminAPISpec):
         if not self.server_cmd_received:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
 
-        self.api_active = True
+        self.server_sess_active = True
         return {"status": APIStatus.SUCCESS, "details": "Login success"}
 
     def _send_to_sock(self, sock, command, process_json_func):
@@ -409,7 +422,7 @@ class AdminAPI(AdminAPISpec):
         return self.server_execute(command)
 
     def server_execute(self, command, reply_processor=None):
-        if not self.api_active:
+        if not self.server_sess_active:
             return {"status": APIStatus.ERROR_INACTIVE_SESSION, "details": "API session is inactive"}
 
         self.set_command_result(None)
