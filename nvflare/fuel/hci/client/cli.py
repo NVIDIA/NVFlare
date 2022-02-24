@@ -17,7 +17,6 @@ import getpass
 import json
 import os
 import signal
-import sys
 import time
 import traceback
 from datetime import datetime
@@ -143,9 +142,8 @@ class AdminClient(cmd.Cmd):
         os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
-        if self.session_monitor_thread.is_alive():
-            self.session_monitor_thread.join()
-        sys.exit()
+        self.api.close_session_monitor()
+        raise ConnectionError
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -387,7 +385,7 @@ class AdminClient(cmd.Cmd):
                     if self.use_rawinput:
                         try:
                             line = input(self.prompt)
-                        except EOFError:
+                        except (EOFError, ConnectionError):
                             line = "bye"
                         except KeyboardInterrupt:
                             self.stdout.write("\n")
@@ -441,7 +439,7 @@ class AdminClient(cmd.Cmd):
                     print("Communication Error - please try later")
                     return
 
-        self.session_monitor_thread = self.api.session_monitor(self.session_ended)
+        self.api.start_session_monitor(self.session_ended)
         self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
 
     def print_resp(self, resp: dict):
