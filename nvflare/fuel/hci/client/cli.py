@@ -120,9 +120,6 @@ class AdminClient(cmd.Cmd):
             debug=self.debug,
             poc=poc,
         )
-            
-        self._session_monitor = threading.Thread(target=self._check_session, args=())
-        self._session_monitor.daemon = True
 
         signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
 

@@ -213,7 +213,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 if data["type"] == "string" or data["type"] == "error":
                     reply_data_list.append(data["data"])
             reply_data_full_response = "\n".join(reply_data_list)
-            if "session timed out" in reply_data_full_response:
+            if "session_inactive" in reply_data_full_response:
                 raise ConnectionRefusedError(reply_data_full_response)
             if "Failed to communicate" in reply_data_full_response:
                 raise ConnectionError(reply_data_full_response)
