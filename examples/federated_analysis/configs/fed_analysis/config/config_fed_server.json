@@ -1,0 +1,18 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "workflows": [
+    {
+      "id": "server_workflow",
+      "path": "analysis_controller.AnalysisController",
+      "args": {
+        "min_clients": 4
+      }
+    }
+  ],
+  "components": []
+}
