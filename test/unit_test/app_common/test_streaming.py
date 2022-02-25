@@ -18,7 +18,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.widgets.streaming import send_analytic_dxo, create_analytic_dxo
+from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
 
 INVALID_TEST_CASES = [
     (list(), dict(), FLContext(), TypeError, f"expect comp to be an instance of FLComponent, but got {type(list())}"),
@@ -34,8 +34,14 @@ INVALID_TEST_CASES = [
 
 INVALID_WRITE_TEST_CASES = [
     (list(), 1.0, AnalyticsDataType.SCALAR, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
-    ("tag", list(), AnalyticsDataType.SCALAR, TypeError, f"expect value to be an instance of float, but got {type(list())}"),
-    (list(), 1.0,  AnalyticsDataType.SCALARS, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
+    (
+        "tag",
+        list(),
+        AnalyticsDataType.SCALAR,
+        TypeError,
+        f"expect value to be an instance of float, but got {type(list())}",
+    ),
+    (list(), 1.0, AnalyticsDataType.SCALARS, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
     ("tag", 1.0, AnalyticsDataType.SCALARS, TypeError, f"expect value to be an instance of dict, but got {type(1.0)}"),
     (list(), 1.0, AnalyticsDataType.TEXT, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
     ("tag", 1.0, AnalyticsDataType.TEXT, TypeError, f"expect value to be an instance of str, but got {type(1.0)}"),
