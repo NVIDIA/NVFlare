@@ -181,8 +181,9 @@ class AdminAPI(AdminAPISpec):
 
     def close_session_monitor(self):
         self.sess_monitor_active = False
-        if self.sess_monitor_thread:
+        if self.sess_monitor_thread and self.sess_monitor_thread.is_alive():
             self.sess_monitor_thread.join()
+            self.sess_monitor_thread = None
 
     def _check_session(self, session_ended_callback, interval):
         error_msg = ""
@@ -439,11 +440,12 @@ class AdminAPI(AdminAPISpec):
             return {"status": APIStatus.ERROR_SERVER_CONNECTION, "details": "Server did not respond"}
         if "data" in result:
             for item in result["data"]:
-                item_type = item["type"]
-                if item_type == "string" and "session_inactive" in item["data"]:
-                    result.update({"status": APIStatus.ERROR_INACTIVE_SESSION})
-                if item_type == "error":
-                    if any(err in item["data"] for err in ("Failed to communicate with Admin Server", "wrong server")):
+                if item["type"] == "error":
+                    if "session_inactive" in item["data"]:
+                        result.update({"status": APIStatus.ERROR_INACTIVE_SESSION})
+                    elif any(
+                        err in item["data"] for err in ("Failed to communicate with Admin Server", "wrong server")
+                    ):
                         result.update({"status": APIStatus.ERROR_SERVER_CONNECTION})
         if "status" not in result:
             result.update({"status": APIStatus.SUCCESS})
