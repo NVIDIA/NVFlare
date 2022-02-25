@@ -50,6 +50,7 @@ def main():
     kv_list = parse_vars(args.set)
 
     args.train_config = os.path.join("config", "config_train.json")
+    args.cross_validate_config = os.path.join("config", "config_cross_validation.json")
     config_folder = kv_list.get("config_folder", "")
     secure_train = kv_list.get("secure_train", True)
     if config_folder == "":
