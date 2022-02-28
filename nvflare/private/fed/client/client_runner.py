@@ -228,6 +228,18 @@ class ClientRunner(FLComponent):
 
         return reply
 
+    def monitor_sp(self):
+        """A method running in a separate thread to monitor if the hot SP has been changed."""
+
+        while not self.asked_to_stop:
+            sp_changed = False
+            # call SD to get the hot SP
+            # Check if SP has changed
+
+            if sp_changed:
+                self.abort_task()
+                # Set the new SP location
+
     def _try_run(self):
         task_fetch_interval = self.task_fetch_interval
         while not self.asked_to_stop:

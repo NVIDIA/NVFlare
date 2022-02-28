@@ -34,17 +34,18 @@ from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
+from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
-
-from ..utils.fed_utils import shareable_to_modeldata
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
+from .server_state import ServerState, ColdState, NIS, ABORT_RUN, ACTION, MESSAGE, Cold2HotState, HotState, Hot2ColdState
 from .server_status import ServerStatus
+from ..utils.fed_utils import shareable_to_modeldata
 
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", 1024 * 1024 * 1024),
@@ -76,6 +77,7 @@ class BaseServer(ABC):
 
         self.grpc_server = None
         self.admin_server = None
+        self.overseer_agent = None
         self.lock = Lock()
         self.fl_ctx = FLContext()
         self.platform = None
@@ -84,6 +86,7 @@ class BaseServer(ABC):
         self.status = ServerStatus.NOT_STARTED
 
         self.abort_signal = None
+        self.server_state: ServerState = ColdState()
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -114,6 +117,9 @@ class BaseServer(ABC):
         num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
+        target = grpc_args.get("service").get("target", "localhost:500")
+        self.server_state.host = target.split(":")[0]
+        self.server_state.service_port = target.split(":")[1]
 
         compression = grpc.Compression.NoCompression
         if "Deflate" == grpc_args.get("compression"):
@@ -129,6 +135,8 @@ class BaseServer(ABC):
             )
             fed_service.add_FederatedTrainingServicer_to_server(self, self.grpc_server)
             admin_service.add_AdminCommunicatingServicer_to_server(self, self.grpc_server)
+
+        self.overseer_agent = self._create_overseer_agent(grpc_args)
 
         if secure_train:
             with open(grpc_args["ssl_private_key"], "rb") as f:
@@ -150,15 +158,52 @@ class BaseServer(ABC):
             )
             self.grpc_server.add_secure_port(target, server_credentials)
             self.logger.info("starting secure server at %s", target)
+
+            if self.overseer_agent:
+                self.overseer_agent.set_secure_context(ca_path=grpc_args["ssl_root_cert"],
+                                                       cert_path=grpc_args["ssl_cert"],
+                                                       prv_key_path=grpc_args["ssl_private_key"])
         else:
             self.grpc_server.add_insecure_port(target)
             self.logger.info("starting insecure server at %s", target)
         self.grpc_server.start()
 
+        self.overseer_agent.start(self.overseer_callback)
+
         # return self.start()
         cleanup_thread = threading.Thread(target=self.client_cleanup)
         # heartbeat_thread.daemon = True
         cleanup_thread.start()
+
+    def _create_overseer_agent(self, args=None):
+        overseer_agent = HttpOverseerAgent()
+
+        target = args.get("service").get("target", "localhost:500")
+        overseer_agent.initialize(
+            overseer_end_point="http://127.0.0.1:5000/api/v1",
+            project=args.get("name", "project"),
+            role="server",
+            name=target.split(":")[0],
+            fl_port=target.split(":")[1],
+            adm_port=str(args.get("admin_port", 2)),
+            sleep=6,
+        )
+        return overseer_agent
+
+    def overseer_callback(self, overseer_agent):
+        sp = overseer_agent.get_primary_sp()
+        print(sp)
+        with self.engine.new_context() as fl_ctx:
+            self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
+
+        if isinstance(self.server_state, Cold2HotState):
+            server_thread = threading.Thread(target=self._turn_to_hot)
+            server_thread.start()
+
+        if isinstance(self.server_state, Hot2ColdState):
+            server_thread = threading.Thread(target=self._turn_to_cold)
+            server_thread.start()
+
 
     def client_cleanup(self):
         while not self.shutdown:
@@ -185,6 +230,17 @@ class BaseServer(ABC):
                     client.name, token, len(self.client_manager.get_clients())
                 )
             )
+
+    def _turn_to_hot(self):
+        # Restore Snapshot
+        self.server_state = HotState(host=self.server_state.host,
+                                     port=self.server_state.service_port,
+                                     ssid=self.server_state.ssid)
+
+    def _turn_to_cold(self):
+        # Persist Snapshot
+        self.server_state = ColdState(host=self.server_state.host,
+                                      port=self.server_state.service_port)
 
     def fl_shutdown(self):
         self.shutdown = True
@@ -297,13 +353,30 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         This function does not change min_num_clients and max_num_clients.
         """
-        token = self.client_manager.authenticate(request, context)
-        if token:
-            self.tokens[token] = self.task_meta_info
-            if self.admin_server:
-                self.admin_server.client_heartbeat(token)
 
-            return fed_msg.FederatedSummary(comment="New client registered", token=token)
+        with self.engine.new_context() as fl_ctx:
+            state_check = self.server_state.register(fl_ctx)
+            self._handle_state_check(context, state_check)
+
+            token = self.client_manager.authenticate(request, context)
+            if token:
+                self.tokens[token] = self.task_meta_info
+                if self.admin_server:
+                    self.admin_server.client_heartbeat(token)
+
+                return fed_msg.FederatedSummary(comment="New client registered", token=token)
+
+    def _handle_state_check(self, context, state_check):
+        if state_check.get(ACTION) == NIS:
+            context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION,
+                state_check.get(MESSAGE),
+            )
+        elif state_check.get(ACTION) == ABORT_RUN:
+            context.abort(
+                grpc.StatusCode.ABORTED,
+                state_check.get(MESSAGE),
+            )
 
     def Quit(self, request, context):
         """Existing client quits the federated training process.
@@ -336,6 +409,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
         with self.engine.new_context() as fl_ctx:
+            state_check = self.server_state.get_task(fl_ctx)
+            self._handle_state_check(context, state_check)
 
             client = self.client_manager.validate_client(request, context)
             if client is None:
@@ -397,6 +472,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         # fl_ctx = self.fl_ctx.clone_sticky()
         with self.engine.new_context() as fl_ctx:
+            state_check = self.server_state.submit_result(fl_ctx)
+            self._handle_state_check(context, state_check)
 
             # if self.status == ServerStatus.TRAINING_STOPPED or self.status == ServerStatus.TRAINING_NOT_STARTED:
             #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server training stopped")
@@ -465,6 +542,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         # fl_ctx = self.fl_ctx.clone_sticky()
         with self.engine.new_context() as fl_ctx:
+            state_check = self.server_state.aux_communicate(fl_ctx)
+            self._handle_state_check(context, state_check)
+
             if self.server_runner is None or self.engine.run_manager is None:
                 self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
                 reply = make_reply(ReturnCode.SERVER_NOT_READY)
@@ -502,20 +582,25 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             return aux_reply
 
     def Heartbeat(self, request, context):
-        token = request.token
-        cn_names = context.auth_context().get("x509_common_name")
-        if cn_names:
-            client_name = cn_names[0].decode("utf-8")
-        else:
-            client_name = request.client_name
 
-        if self.client_manager.heartbeat(token, client_name, context):
-            self.tokens[token] = self.task_meta_info
-        if self.admin_server:
-            self.admin_server.client_heartbeat(token)
+        with self.engine.new_context() as fl_ctx:
+            state_check = self.server_state.heartbeat(fl_ctx)
+            self._handle_state_check(context, state_check)
 
-        summary_info = fed_msg.FederatedSummary()
-        return summary_info
+            token = request.token
+            cn_names = context.auth_context().get("x509_common_name")
+            if cn_names:
+                client_name = cn_names[0].decode("utf-8")
+            else:
+                client_name = request.client_name
+
+            if self.client_manager.heartbeat(token, client_name, context):
+                self.tokens[token] = self.task_meta_info
+            if self.admin_server:
+                self.admin_server.client_heartbeat(token)
+
+            summary_info = fed_msg.FederatedSummary()
+            return summary_info
 
     def Retrieve(self, request, context):
         client_name = request.client_name
@@ -598,6 +683,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 if self.engine.asked_to_stop:
                     self.engine.abort_app_on_server()
 
+                # sequence_number += 1
+                #
+                # Call the SD add_payload() to report the server status (call Agent pass data....., sequence number...,)
+
                 time.sleep(3)
 
         finally:
@@ -614,6 +703,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.engine.engine_info.status = MachineStatus.STARTED
         self.server_runner.run()
         self.engine.engine_info.status = MachineStatus.STOPPED
+
+    def deploy(self, grpc_args=None, secure_train=False):
+        super().deploy(grpc_args, secure_train)
 
     def stop_training(self):
         self.status = ServerStatus.STOPPED

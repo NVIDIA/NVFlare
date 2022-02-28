@@ -28,14 +28,15 @@ from typing import List, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import MachineStatus, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.state_persistor import StatePersistor
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -394,6 +395,25 @@ class ServerEngine(ServerEngineInternalSpec):
                 results[client_name] = None
 
         return results
+
+    def persist_components(self, fl_ctx: FLContext):
+
+        # Call the State Persistor to persist all the component states
+        # 1. call every component to generate the component states data
+        #    Make sure to include the current round number
+        # 2. call persistence API to save the component states
+
+        persistor = StatePersistor()
+        snapshot = FLSnapshot()
+        for component_id, component in self.run_manager.components.items():
+            snapshot.save_component_snapshot(component_id=component_id,
+                                             component_state=component.get_persist_state(fl_ctx))
+
+        persistor.save(snapshot=snapshot)
+
+    def restore_components(self, snapshot: FLSnapshot, fl_ctx: FLContext):
+        for component_id, component in self.run_manager.components.items():
+            component.restore(snapshot.get_component_snapshot(component_id=component_id))
 
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)

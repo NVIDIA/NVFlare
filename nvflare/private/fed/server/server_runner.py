@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import threading
+import time
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -23,6 +24,7 @@ from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.state_persistor import StatePersistor
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -75,6 +77,8 @@ class ServerRunner(FLComponent):
         self.wf_lock = threading.Lock()
         self.current_wf = None
         self.status = "init"
+
+        self.state_persistor = StatePersistor()
 
     def _execute_run(self):
         for wf in self.config.workflows:
@@ -137,7 +141,44 @@ class ServerRunner(FLComponent):
 
         self.status = "started"
         try:
-            self._execute_run()
+            switch_to_hot = False
+            # Call the SD
+
+            snapshot = None
+            while True:
+                if self.abort_signal.triggered:
+                    break
+
+                # Retrieve the persisted ComponentState, (snapshot of the FLComponents state)
+                snapshot = self.state_persistor.retrieve()
+
+                is_default_hot_sp = False
+                if snapshot:
+                    # check the persisted info if hot server completes workflow
+                    if snapshot.completed:
+                        break
+                else:
+                    if is_default_hot_sp:
+                        break
+
+                # Call the SD get_hot_sp(),
+                # Check if the current server switch to hot (SP destination + Session ID)
+                # (There's at MOST ONE Primary server at any given time!!!)
+
+                if switch_to_hot:
+                    break
+
+                time.sleep(1.0)
+
+            if switch_to_hot:
+                #  Restore all the component states
+                #  Restore the registered clients + tokens
+                if snapshot:
+                    with self.engine.new_context() as fl_ctx:
+                        engine = fl_ctx.get_engine()
+                        engine.restore_components(snapshot, fl_ctx)
+
+                self._execute_run()
         except:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, "Error executing RUN")
