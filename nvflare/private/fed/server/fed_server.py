@@ -341,7 +341,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if client is None:
                 context.abort(grpc.StatusCode.FAILED_PRECONDITION, "Client not valid.")
 
-            self.logger.info(f"Fetch task requested from client: {client.name} ({client.get_token()})")
+            self.logger.debug(f"Fetch task requested from client: {client.name} ({client.get_token()})")
             token = client.get_token()
 
             engine = fl_ctx.get_engine()
@@ -379,9 +379,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                 current_model = shareable_to_modeldata(shareable, fl_ctx)
                 task.data.CopyFrom(current_model)
-                self.logger.info(f"Return task:{taskname} to client:{client.name} --- ({token}) ")
-
-                # self.fl_ctx.merge_sticky(fl_ctx)
+                self.logger.info(f"GetTask: Return task: {taskname} to client: {client.name} ({token}) ")
 
                 return task
 
