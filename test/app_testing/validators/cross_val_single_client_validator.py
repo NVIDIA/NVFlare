@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import os
-
 from test.app_testing.app_result_validator import AppResultValidator
 
 
-def check_cross_validation_result(server_data, client_data, run_data):
+def check_cross_validation_result(server_data, run_data):
 
     run_number = run_data["run_number"]
     server_dir = server_data["server_path"]
@@ -79,7 +78,7 @@ class CrossValSingleClientValidator(AppResultValidator):
 
     def validate_results(self, server_data, client_data, run_data) -> bool:
 
-        cross_val_result = check_cross_validation_result(server_data, client_data, run_data)
+        cross_val_result = check_cross_validation_result(server_data, run_data)
 
         print(f"CrossVal Result: {cross_val_result}")
 

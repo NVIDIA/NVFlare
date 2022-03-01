@@ -1,0 +1,20 @@
+
+
+
+tests:
+  - app_name: hello-pt
+    validators:
+      - test.app_testing.validators.pt_model_validator.PTModelValidator
+  - app_name: hello-numpy-cross-val
+    validators:
+      - test.app_testing.validators.cross_val_result_validator.CrossResultValidator
+      - test.app_testing.validators.sag_result_validator.SAGResultValidator
+  - app_name: hello-numpy-sag
+    validators:
+      - test.app_testing.validators.sag_result_validator.SAGResultValidator
+  - app_name: hello-tf2
+    validators:
+      - test.app_testing.validators.tf_model_validator.TFModelValidator
+  - app_name: hello-cyclic
+    validators:
+      - test.app_testing.validators.tf_model_validator.TFModelValidator
