@@ -94,8 +94,12 @@ class CertBuilder(Builder):
         self._build_root(study.name)
         ctx["root_cert"] = self.root_cert
         ctx["root_pri_key"] = self.pri_key
-        server = study.get_participants_by_type("server")
-        self._build_write_cert_pair(server, "server", ctx)
+        overseer = study.get_participants_by_type("overseer")
+        self._build_write_cert_pair(overseer, "overseer", ctx)
+
+        servers = study.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            self._build_write_cert_pair(server, "server", ctx)
 
         for client in study.get_participants_by_type("client", first_only=False):
             self._build_write_cert_pair(client, "client", ctx)

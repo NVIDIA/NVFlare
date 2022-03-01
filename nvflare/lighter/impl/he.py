@@ -64,10 +64,11 @@ class HEBuilder(Builder):
         self._context.global_scale = 2 ** self.scale_bits
 
     def build(self, study, ctx):
-        server = study.get_participants_by_type("server")
-        dest_dir = self.get_kit_dir(server, ctx)
-        with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
-            f.write(self.get_serialized_context())
+        servers = study.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            dest_dir = self.get_kit_dir(server, ctx)
+            with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
+                f.write(self.get_serialized_context())
         for client in study.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(client, ctx)
             with open(os.path.join(dest_dir, "client_context.tenseal"), "wb") as f:

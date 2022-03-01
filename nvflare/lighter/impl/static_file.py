@@ -20,7 +20,7 @@ from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
-    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image=""):
+    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image="", overseer_agent=""):
         """Build all static files from template.
 
         Uses the information from project.yml through study to go through the participants and write the contents of
@@ -41,6 +41,7 @@ class StaticFileBuilder(Builder):
         self.config_folder = config_folder
         self.docker_image = docker_image
         self.app_validator = app_validator
+        self.overseer_agent = overseer_agent
 
     def _write(self, file_full_path, content, mode, exe=False):
         mode = mode + "w"
@@ -48,6 +49,16 @@ class StaticFileBuilder(Builder):
             f.write(content)
         if exe:
             os.chmod(file_full_path, 0o755)
+
+    def _build_overseer(self, overseer, ctx):
+        dest_dir = self.get_kit_dir(overseer, ctx)
+        self._write(
+            os.path.join(dest_dir, "start.sh"),
+            self.template["start_svr_sh"],
+            "t",
+            exe=True,
+        )
+        ctx["overseer_end_point"] = f"https://{overseer.name}/api/v1"
 
     def _build_server(self, server, ctx):
         config = json.loads(self.template["fed_server"])
@@ -65,6 +76,19 @@ class StaticFileBuilder(Builder):
         config["enable_byoc"] = server.enable_byoc
         if self.app_validator:
             config["app_validator"] = {"path": self.app_validator}
+        if self.overseer_agent:
+            overseer_agent = self.overseer_agent
+            overseer_agent["args"].update(
+                {
+                    "role": "server",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.study_name,
+                    "name": server.name,
+                    "fl_port": fed_learn_port,
+                    "adm_port": admin_port,
+                }
+            )
+            config["overseer_agent"] = overseer_agent
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
         replacement_dict = {
             "admin_port": admin_port,
@@ -121,6 +145,17 @@ class StaticFileBuilder(Builder):
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
         }
+        if self.overseer_agent:
+            overseer_agent = self.overseer_agent
+            overseer_agent["args"].update(
+                {
+                    "role": "client",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.study_name,
+                    "name": client.subject,
+                }
+            )
+            config["overseer_agent"] = overseer_agent
 
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config), "t")
         if self.docker_image:
@@ -169,6 +204,19 @@ class StaticFileBuilder(Builder):
             "admin_port": f"{admin_port}",
             "docker_image": self.docker_image,
         }
+        config = dict()
+        if self.overseer_agent:
+            overseer_agent = self.overseer_agent
+            overseer_agent["args"].update(
+                {
+                    "role": "admin",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.study_name,
+                    "name": admin.subject,
+                }
+            )
+            config["overseer_agent"] = overseer_agent
+        self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config), "t")
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
@@ -190,9 +238,12 @@ class StaticFileBuilder(Builder):
 
     def build(self, study, ctx):
         self.template = ctx.get("template")
-        server = study.get_participants_by_type("server")
         self.study_name = study.name
-        self._build_server(server, ctx)
+        overseer = study.get_participants_by_type("overseer")
+        self._build_overseer(overseer, ctx)
+        servers = study.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            self._build_server(server, ctx)
 
         for client in study.get_participants_by_type("client", first_only=False):
             self._build_client(client, ctx)

@@ -24,7 +24,7 @@ from nvflare.apis.overseer_spec import SP, OverseerAgent
 
 
 class HttpOverseerAgent(OverseerAgent):
-    def __init__(self, role, overseer_end_point, project):
+    def __init__(self, role, overseer_end_point, project, name: str, fl_port: str = "", adm_port: str = ""):
         if role not in ["server", "client", "admin"]:
             raise ValueError(f'Expect role in ["server", "client", "admin"] but got {role}')
         self._role = role
@@ -46,6 +46,8 @@ class HttpOverseerAgent(OverseerAgent):
         self._overseer_info = {}
         self._update_callback = None
         self._conditional_cb = False
+        if self._role == "server":
+            self._sp_end_point = ":".join([name, fl_port, adm_port])
 
     def _send(
         self, api_point, headers: Optional[Dict[str, Any]] = None, payload: Optional[Dict[str, Any]] = None
@@ -69,9 +71,6 @@ class HttpOverseerAgent(OverseerAgent):
 
     def initialize(
         self,
-        name: str,
-        fl_port: str = "",
-        adm_port: str = "",
         aux: dict = {},
         *args,
         **kwargs,
@@ -83,8 +82,6 @@ class HttpOverseerAgent(OverseerAgent):
         if self._ca_path:
             self._session.verify = self._ca_path
         self._aux = aux
-        if self._role == "server":
-            self._sp_end_point = ":".join([name, fl_port, adm_port])
         self._args = args
         self._kwargs = kwargs
         self._sleep = self._kwargs.get("sleep", 1)
