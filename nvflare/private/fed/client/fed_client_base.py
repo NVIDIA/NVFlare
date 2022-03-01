@@ -28,6 +28,8 @@ from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import EngineConstant
+from nvflare.ha.overseer_agent import HttpOverseerAgent
+from nvflare.apis.overseer_spec import SP
 
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -66,6 +68,7 @@ class FederatedClientBase:
 
         self.client_name = client_name
         self.token = None
+        self.ssid = None
         self.client_args = client_args
         self.servers = server_args
 
@@ -87,6 +90,50 @@ class FederatedClientBase:
 
         self.status = ClientStatus.NOT_STARTED
 
+        self.sp_established = False
+        self.overseer_agent = self._create_overseer_agent(client_args)
+
+        if secure_train:
+            if self.overseer_agent:
+                self.overseer_agent.set_secure_context(ca_path=client_args["ssl_root_cert"],
+                                                   cert_path=client_args["ssl_cert"],
+                                                   prv_key_path=client_args["ssl_private_key"])
+
+        self.overseer_agent.start(self.overseer_callback)
+
+    def _create_overseer_agent(self, args=None):
+        overseer_agent = HttpOverseerAgent()
+
+        overseer_agent.initialize(
+            overseer_end_point="http://127.0.0.1:5000/api/v1",
+            project="example_project",
+            role="client",
+            name="localhost",
+            sleep=6,
+        )
+        return overseer_agent
+
+    def overseer_callback(self, overseer_agent):
+        sp = overseer_agent.get_primary_sp()
+        self.set_primary_sp(sp)
+
+    def set_sp(self, project_name, sp: SP):
+        server = self.servers[project_name].get("target")
+        location = sp.name + ":" + sp.fl_port
+        if server != location:
+            self.servers[project_name]["target"] = location
+            self.sp_established = True
+            self.logger.info(f"Got the new primary SP: {location}")
+
+        if self.ssid and self.ssid != sp.service_session_id:
+            thread = threading.Thread(target=self._switch_ssid)
+            thread.start()
+
+    def _switch_ssid(self):
+        self.engine.abort_task(self.engine.run_number)
+        self.register()
+        self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
+
     def client_register(self, project_name):
         """Register the client to the FL server and get the FL token.
 
@@ -98,13 +145,14 @@ class FederatedClientBase:
         """
         if not self.token:
             try:
-                self.token = self.communicator.client_registration(self.client_name, self.servers, project_name)
+                self.token, self.ssid = self.communicator.client_registration(self.client_name,
+                                                                              self.servers, project_name)
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
                     self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
                     self.logger.info(
-                        "Successfully registered client:{} for {}. Got token:{}".format(
-                            self.client_name, project_name, self.token
+                        "Successfully registered client:{} for {}. Token:{} SSID:{}".format(
+                            self.client_name, project_name, self.token, self.ssid
                         )
                     )
                     # fire_event(EventType.CLIENT_REGISTER, self.handlers, self.fl_ctx)
@@ -124,7 +172,7 @@ class FederatedClientBase:
         """
         try:
             self.logger.info("Starting to fetch execute task.")
-            task = self.communicator.getTask(self.servers, project_name, self.token, fl_ctx)
+            task = self.communicator.getTask(self.servers, project_name, self.token, self.ssid, fl_ctx)
 
             return task
         except FLCommunicationError as e:
@@ -148,7 +196,8 @@ class FederatedClientBase:
             self.logger.info("Starting to push execute result.")
             execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
             message = self.communicator.submitUpdate(
-                self.servers, project_name, self.token, fl_ctx, self.client_name, shareable, execute_task_name
+                self.servers, project_name, self.token, self.ssid, fl_ctx,
+                self.client_name, shareable, execute_task_name
             )
 
             return message
@@ -174,8 +223,8 @@ class FederatedClientBase:
         try:
             self.logger.info("Starting to send aux messagee.")
             message = self.communicator.auxCommunicate(
-                self.servers, project_name, self.token, fl_ctx, self.client_name, shareable, topic, timeout
-            )
+                self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable,
+                topic, timeout)
 
             return message
         except FLCommunicationError as e:
@@ -185,7 +234,7 @@ class FederatedClientBase:
     def send_heartbeat(self, project_name):
         try:
             if self.token:
-                self.communicator.send_heartbeat(self.servers, project_name, self.token, self.client_name)
+                self.communicator.send_heartbeat(self.servers, project_name, self.token, self.ssid, self.client_name)
         except FLCommunicationError as e:
             self.communicator.heartbeat_done = True
 
@@ -254,6 +303,15 @@ class FederatedClientBase:
             if pool:
                 pool.terminate()
 
+    def set_primary_sp(self, sp):
+        pool = None
+        try:
+            pool = ThreadPool(len(self.servers))
+            return pool.map(partial(self.set_sp, sp=sp), tuple(self.servers))
+        finally:
+            if pool:
+                pool.terminate()
+
     def run_heartbeat(self):
         """Periodically runs the heartbeat."""
         self.heartbeat()
@@ -272,11 +330,15 @@ class FederatedClientBase:
         Returns: N/A
 
         """
-        return self.communicator.quit_remote(self.servers, task_name, self.token, fl_ctx)
+        return self.communicator.quit_remote(self.servers, task_name, self.token, self.ssid, fl_ctx)
+
+    def set_client_engine(self, engine):
+        self.engine = engine
 
     def close(self):
         """Quit the remote federated server, close the local session."""
         self.logger.info("Shutting down client")
+        self.overseer_agent.end()
 
         return 0
 

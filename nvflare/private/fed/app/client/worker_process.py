@@ -81,12 +81,13 @@ def main():
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         with open(token_file, "r") as f:
             token = f.readline().strip()
+            ssid = f.readline().strip()
             run_number = f.readline().strip()
             client_name = f.readline().strip()
             listen_port = f.readline().strip()
             print(
                 "token is: {} run_number is: {} client_name: {} listen_port: {}".format(
-                    token, run_number, client_name, listen_port
+                    token, ssid, run_number, client_name, listen_port
                 )
             )
 
@@ -112,6 +113,7 @@ def main():
         federated_client.status = ClientStatus.STARTING
 
         federated_client.token = token
+        federated_client.ssid = ssid
         federated_client.client_name = client_name
         federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)

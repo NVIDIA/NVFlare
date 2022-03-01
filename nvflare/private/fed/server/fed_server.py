@@ -77,7 +77,6 @@ class BaseServer(ABC):
 
         self.grpc_server = None
         self.admin_server = None
-        self.overseer_agent = None
         self.lock = Lock()
         self.fl_ctx = FLContext()
         self.platform = None
@@ -86,7 +85,6 @@ class BaseServer(ABC):
         self.status = ServerStatus.NOT_STARTED
 
         self.abort_signal = None
-        self.server_state: ServerState = ColdState()
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -117,9 +115,6 @@ class BaseServer(ABC):
         num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
-        target = grpc_args.get("service").get("target", "localhost:500")
-        self.server_state.host = target.split(":")[0]
-        self.server_state.service_port = target.split(":")[1]
 
         compression = grpc.Compression.NoCompression
         if "Deflate" == grpc_args.get("compression"):
@@ -135,8 +130,6 @@ class BaseServer(ABC):
             )
             fed_service.add_FederatedTrainingServicer_to_server(self, self.grpc_server)
             admin_service.add_AdminCommunicatingServicer_to_server(self, self.grpc_server)
-
-        self.overseer_agent = self._create_overseer_agent(grpc_args)
 
         if secure_train:
             with open(grpc_args["ssl_private_key"], "rb") as f:
@@ -158,52 +151,15 @@ class BaseServer(ABC):
             )
             self.grpc_server.add_secure_port(target, server_credentials)
             self.logger.info("starting secure server at %s", target)
-
-            if self.overseer_agent:
-                self.overseer_agent.set_secure_context(ca_path=grpc_args["ssl_root_cert"],
-                                                       cert_path=grpc_args["ssl_cert"],
-                                                       prv_key_path=grpc_args["ssl_private_key"])
         else:
             self.grpc_server.add_insecure_port(target)
             self.logger.info("starting insecure server at %s", target)
         self.grpc_server.start()
 
-        self.overseer_agent.start(self.overseer_callback)
-
         # return self.start()
         cleanup_thread = threading.Thread(target=self.client_cleanup)
         # heartbeat_thread.daemon = True
         cleanup_thread.start()
-
-    def _create_overseer_agent(self, args=None):
-        overseer_agent = HttpOverseerAgent()
-
-        target = args.get("service").get("target", "localhost:500")
-        overseer_agent.initialize(
-            overseer_end_point="http://127.0.0.1:5000/api/v1",
-            project=args.get("name", "project"),
-            role="server",
-            name=target.split(":")[0],
-            fl_port=target.split(":")[1],
-            adm_port=str(args.get("admin_port", 2)),
-            sleep=6,
-        )
-        return overseer_agent
-
-    def overseer_callback(self, overseer_agent):
-        sp = overseer_agent.get_primary_sp()
-        print(sp)
-        with self.engine.new_context() as fl_ctx:
-            self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
-
-        if isinstance(self.server_state, Cold2HotState):
-            server_thread = threading.Thread(target=self._turn_to_hot)
-            server_thread.start()
-
-        if isinstance(self.server_state, Hot2ColdState):
-            server_thread = threading.Thread(target=self._turn_to_cold)
-            server_thread.start()
-
 
     def client_cleanup(self):
         while not self.shutdown:
@@ -230,17 +186,6 @@ class BaseServer(ABC):
                     client.name, token, len(self.client_manager.get_clients())
                 )
             )
-
-    def _turn_to_hot(self):
-        # Restore Snapshot
-        self.server_state = HotState(host=self.server_state.host,
-                                     port=self.server_state.service_port,
-                                     ssid=self.server_state.ssid)
-
-    def _turn_to_cold(self):
-        # Persist Snapshot
-        self.server_state = ColdState(host=self.server_state.host,
-                                      port=self.server_state.service_port)
 
     def fl_shutdown(self):
         self.shutdown = True
@@ -311,6 +256,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.secure_train = secure_train
         self.enable_byoc = enable_byoc
 
+        self.overseer_agent = None
+        self.server_state: ServerState = ColdState()
+
     def get_current_model_meta_data(self):
         """Get the model metadata, which usually contains additional fields."""
         s = Struct()
@@ -364,7 +312,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 if self.admin_server:
                     self.admin_server.client_heartbeat(token)
 
-                return fed_msg.FederatedSummary(comment="New client registered", token=token)
+                return fed_msg.FederatedSummary(comment="New client registered", token=token,
+                                                ssid=self.server_state.ssid)
 
     def _handle_state_check(self, context, state_check):
         if state_check.get(ACTION) == NIS:
@@ -376,6 +325,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             context.abort(
                 grpc.StatusCode.ABORTED,
                 state_check.get(MESSAGE),
+            )
+
+    def _ssid_check(self, client_state, context):
+        if client_state.ssid != self.server_state.ssid:
+            context.abort(
+                grpc.StatusCode.UNAUTHENTICATED,
+                "Invalid Service session ID"
             )
 
     def Quit(self, request, context):
@@ -411,6 +367,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.get_task(fl_ctx)
             self._handle_state_check(context, state_check)
+            self._ssid_check(request, context)
 
             client = self.client_manager.validate_client(request, context)
             if client is None:
@@ -474,6 +431,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.submit_result(fl_ctx)
             self._handle_state_check(context, state_check)
+            self._ssid_check(request.client, context)
 
             # if self.status == ServerStatus.TRAINING_STOPPED or self.status == ServerStatus.TRAINING_NOT_STARTED:
             #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server training stopped")
@@ -544,6 +502,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.aux_communicate(fl_ctx)
             self._handle_state_check(context, state_check)
+            self._ssid_check(request.client, context)
 
             if self.server_runner is None or self.engine.run_manager is None:
                 self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
@@ -707,6 +666,63 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def deploy(self, grpc_args=None, secure_train=False):
         super().deploy(grpc_args, secure_train)
 
+        target = grpc_args["service"].get("target", "0.0.0.0:6007")
+        self.server_state.host = target.split(":")[0]
+        self.server_state.service_port = target.split(":")[1]
+
+        self.overseer_agent = self._create_overseer_agent(grpc_args)
+
+        if secure_train:
+            if self.overseer_agent:
+                self.overseer_agent.set_secure_context(ca_path=grpc_args["ssl_root_cert"],
+                                                   cert_path=grpc_args["ssl_cert"],
+                                                   prv_key_path=grpc_args["ssl_private_key"])
+
+        self.overseer_agent.start(self.overseer_callback)
+
+    def _create_overseer_agent(self, args=None):
+        overseer_agent = HttpOverseerAgent()
+
+        target = args.get("service").get("target", "localhost:500")
+        overseer_agent.initialize(
+            overseer_end_point="http://127.0.0.1:5000/api/v1",
+            project=args.get("name", "project"),
+            role="server",
+            name=target.split(":")[0],
+            fl_port=target.split(":")[1],
+            adm_port=str(args.get("admin_port", 2)),
+            sleep=6,
+        )
+        return overseer_agent
+
+    def overseer_callback(self, overseer_agent):
+        sp = overseer_agent.get_primary_sp()
+        print(sp)
+        with self.engine.new_context() as fl_ctx:
+            self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
+
+        if isinstance(self.server_state, Cold2HotState):
+            server_thread = threading.Thread(target=self._turn_to_hot)
+            server_thread.start()
+
+        if isinstance(self.server_state, Hot2ColdState):
+            server_thread = threading.Thread(target=self._turn_to_cold)
+            server_thread.start()
+
+    def _turn_to_hot(self):
+        # Restore Snapshot
+        if self.engine.run_number != -1:
+            self.engine.start_app_on_server()
+
+        self.server_state = HotState(host=self.server_state.host,
+                                     port=self.server_state.service_port,
+                                     ssid=self.server_state.ssid)
+
+    def _turn_to_cold(self):
+        # Wrap-up server operations
+        self.server_state = ColdState(host=self.server_state.host,
+                                      port=self.server_state.service_port)
+
     def stop_training(self):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
@@ -714,4 +730,5 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def close(self):
         """Shutdown the server."""
         self.logger.info("shutting down server")
+        self.overseer_agent.end()
         return super().close()

@@ -144,7 +144,7 @@ class ClientEngine(ClientEngineInternalSpec):
         if os.path.exists(token_file):
             os.remove(token_file)
         with open(token_file, "wt") as f:
-            f.write("%s\n%s\n%s\n%s\n" % (self.client.token, run_number, self.client.client_name, open_port))
+            f.write("%s\n%s\n%s\n%s\n%s\n" % (self.client.token, self.client.ssid, run_number, self.client.client_name, open_port))
 
     def wait_process_complete(self):
         self.client.process.wait()
