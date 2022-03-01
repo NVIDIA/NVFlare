@@ -1,0 +1,37 @@
+
+
+
+tests:
+  - app_name: global_model_eval
+    validators:
+      - test.app_testing.validators.global_model_eval_validator.GlobalModelEvalValidator
+      - test.app_testing.validators.sag_result_validator.SAGResultValidator
+  - app_name: pt
+    validators:
+      - test.app_testing.validators.pt_model_validator.PTModelValidator
+  - app_name: sag_weights_diff
+    validators:
+      - test.app_testing.validators.sag_result_validator.SAGResultValidator
+  - app_name: cross_val_one_client
+    validators:
+      - test.app_testing.validators.cross_val_single_client_validator.CrossValSingleClientValidator
+      - test.app_testing.validators.sag_result_validator.SAGResultValidator
+  - app_name: cross_val
+    validators:
+      - test.app_testing.validators.cross_val_result_validator.CrossResultValidator
+      - test.app_testing.validators.sag_result_validator.SAGResultValidator
+  - app_name: sag
+    validators:
+      - test.app_testing.validators.sag_result_validator.SAGResultValidator
+  - app_name: filters
+    validators:
+      - test.app_testing.validators.filters_result_validator.FiltersResultValidator
+  - app_name: tb_streaming
+    validators:
+      - test.app_testing.validators.tb_result_validator.TBResultValidator
+  - app_name: tf
+    validators:
+      - test.app_testing.validators.tf_model_validator.TFModelValidator
+  - app_name: cyclic
+    validators:
+      - test.app_testing.validators.tf_model_validator.TFModelValidator

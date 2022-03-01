@@ -48,7 +48,6 @@ class AdminController(object):
         success = False
 
         try:
-            # TODO:: login or login_with_password should return FLAdminAPIResponse to be consistent?
             response = None
             timeout = 100
             start_time = time.time()

@@ -13,12 +13,13 @@
 # limitations under the License.
 
 import logging
+from abc import ABC, abstractmethod
 
 
-class AppResultValidator(object):
+class AppResultValidator(ABC):
     def __init__(self):
-        super(AppResultValidator, self).__init__()
         self.logger = logging.getLogger("AppValidator")
 
+    @abstractmethod
     def validate_results(self, server_data, client_data, run_data) -> bool:
         pass
