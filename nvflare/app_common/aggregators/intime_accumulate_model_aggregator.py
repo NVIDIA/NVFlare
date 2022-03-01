@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Union, Dict, Any
+
+from typing import Any, Dict, Union
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
@@ -38,7 +39,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self,
         exclude_vars: Union[str, Dict[str, str], None] = None,
         aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
-        expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF
+        expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
     ):
         """Perform accumulated weighted aggregation
         It parses the shareable and aggregates the contained DXO(s).
@@ -68,11 +69,15 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         if isinstance(expected_data_kind, dict):
             for k, v in expected_data_kind.items():
                 if v not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
-                    raise ValueError(f"expected_data_kind[{k}] = {v} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}")
+                    raise ValueError(
+                        f"expected_data_kind[{k}] = {v} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}"
+                    )
             self.expected_data_kind = expected_data_kind
         else:
             if expected_data_kind not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
-                raise ValueError(f"expected_data_kind = {expected_data_kind} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}")
+                raise ValueError(
+                    f"expected_data_kind = {expected_data_kind} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}"
+                )
             self.expected_data_kind = {self._single_dxo_key: expected_data_kind}
 
         # Check exclude_vars

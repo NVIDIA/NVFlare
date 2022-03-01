@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_component import FLComponent
