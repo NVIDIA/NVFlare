@@ -9,14 +9,11 @@ Controller/Worker Interactions
 NVIDIA FLARE 2.0's collaborative computing is achieved through the Controller/Worker interactions. The following diagram
 shows how the Controller and Worker interact.
 
-.. image:: ../resources/Controller_worker.png
+.. image:: ../resources/Controller.png
     :height: 300px
 
 The Controller is a python object that controls or coordinates the Workers to get a job done. The controller is run on
 the FL server (highlighted on the right).
-
-.. image:: ../resources/Controller.png
-    :height: 300px
 
 A Worker is capable of performing tasks. Workers run on FL clients.
 
