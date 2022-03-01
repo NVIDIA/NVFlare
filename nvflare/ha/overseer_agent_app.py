@@ -24,7 +24,7 @@ def setup_basic_info():
     parser.add_argument("-r", "--role", type=str, help="role (server, client or admin)")
     parser.add_argument("-n", "--name", type=str, help="globally unique name")
     parser.add_argument("-f", "--fl_port", type=str, help="fl port number")
-    parser.add_argument("-a", "--adm_port", type=str, help="adm port number")
+    parser.add_argument("-a", "--admin_port", type=str, help="adm port number")
     parser.add_argument("-s", "--sleep", type=float, help="sleep (seconds) in heartbeat")
     parser.add_argument("-c", "--ca_path", type=str, help="root CA path")
     parser.add_argument("-o", "--overseer_url", type=str, help="Overseer URL")
@@ -35,16 +35,14 @@ def setup_basic_info():
         overseer_end_point=args.overseer_url,
         project=args.project,
         role=args.role,
+        name=args.name,
+        fl_port=args.fl_port,
+        admin_port=args.admin_port,
+        heartbeat_interval=args.sleep,
     )
 
     if args.ca_path:
         overseer_agent.set_secure_context(ca_path=args.ca_path)
-    overseer_agent.initialize(
-        name=args.name,
-        fl_port=args.fl_port,
-        adm_port=args.adm_port,
-        sleep=args.sleep,
-    )
     return overseer_agent
 
 

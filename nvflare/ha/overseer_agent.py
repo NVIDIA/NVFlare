@@ -24,7 +24,16 @@ from nvflare.apis.overseer_spec import SP, OverseerAgent
 
 
 class HttpOverseerAgent(OverseerAgent):
-    def __init__(self, role, overseer_end_point, project, name: str, fl_port: str = "", adm_port: str = ""):
+    def __init__(
+        self,
+        role,
+        overseer_end_point,
+        project,
+        name: str,
+        fl_port: str = "",
+        admin_port: str = "",
+        heartbeat_interval=5,
+    ):
         if role not in ["server", "client", "admin"]:
             raise ValueError(f'Expect role in ["server", "client", "admin"] but got {role}')
         self._role = role
@@ -47,7 +56,8 @@ class HttpOverseerAgent(OverseerAgent):
         self._update_callback = None
         self._conditional_cb = False
         if self._role == "server":
-            self._sp_end_point = ":".join([name, fl_port, adm_port])
+            self._sp_end_point = ":".join([name, fl_port, admin_port])
+        self._heartbeat_interval = heartbeat_interval
 
     def _send(
         self, api_point, headers: Optional[Dict[str, Any]] = None, payload: Optional[Dict[str, Any]] = None
@@ -69,24 +79,13 @@ class HttpOverseerAgent(OverseerAgent):
         self._cert_path = cert_path
         self._prv_key_path = prv_key_path
 
-    def initialize(
-        self,
-        aux: dict = {},
-        *args,
-        **kwargs,
-    ):
+    def start(self, update_callback=None, conditional_cb=False):
         self._session = Session()
         adapter = HTTPAdapter(max_retries=1)
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
         if self._ca_path:
             self._session.verify = self._ca_path
-        self._aux = aux
-        self._args = args
-        self._kwargs = kwargs
-        self._sleep = self._kwargs.get("sleep", 1)
-
-    def start(self, update_callback=None, conditional_cb=False):
         self.conditional_cb = conditional_cb
         if update_callback:
             self._update_callback = update_callback
@@ -129,7 +128,6 @@ class HttpOverseerAgent(OverseerAgent):
 
     def _prepare_data(self):
         data = dict(role=self._role, project=self._project)
-        data.update(self._aux)
         return data
 
     def _rnq_worker(self):
@@ -140,7 +138,7 @@ class HttpOverseerAgent(OverseerAgent):
         while not self._asked_to_exit:
             self._flag.wait()
             self._rnq(api_point, headers=None, data=data)
-            time.sleep(self._sleep)
+            time.sleep(self._heartbeat_interval)
 
     def _rnq(self, api_point, headers, data):
         resp = self._send(api_point, headers=headers, payload=data)
@@ -151,9 +149,9 @@ class HttpOverseerAgent(OverseerAgent):
         self._overseer_info = resp.json()
         psp = self._overseer_info.get("primary_sp")
         if psp:
-            name, fl_port, adm_port = psp.get("sp_end_point").split(":")
+            name, fl_port, admin_port = psp.get("sp_end_point").split(":")
             service_session_id = psp.get("service_session_id", "")
-            self._psp = SP(name, fl_port, adm_port, service_session_id, True)
+            self._psp = SP(name, fl_port, admin_port, service_session_id, True)
             # last_heartbeat = psp.get("last_heartbeat", "")
             self._handle_ssid(service_session_id)
         else:

@@ -60,7 +60,7 @@ def setup_basic_info():
     parser.add_argument("-r", "--role", type=str, help="role (server, client or admin)")
     parser.add_argument("-n", "--name", type=str, help="globally unique name")
     parser.add_argument("-f", "--fl_port", type=str, help="fl port number")
-    parser.add_argument("-a", "--adm_port", type=str, help="adm port number")
+    parser.add_argument("-a", "--admin_port", type=str, help="adm port number")
     parser.add_argument("-s", "--sleep", type=float, help="sleep (seconds) in heartbeat")
     parser.add_argument("-c", "--ca_path", type=str, help="root CA path")
     parser.add_argument("-o", "--overseer_url", type=str, help="Overseer URL")
@@ -71,52 +71,14 @@ def setup_basic_info():
         overseer_end_point=args.overseer_url,
         project=args.project,
         role=args.role,
-    )
-    overseer_agent
-    if args.ca_path:
-        overseer_agent.set_secure_context(ca_path=args.ca_path)
-    overseer_agent.initialize(
         name=args.name,
         fl_port=args.fl_port,
-        adm_port=args.adm_port,
-        sleep=args.sleep,
+        admin_port=args.admin_port,
+        heartbeat_interval=args.sleep,
     )
+    if args.ca_path:
+        overseer_agent.set_secure_context(ca_path=args.ca_path)
     return overseer_agent
-
-
-def gui_main():
-    setup_basic_info()
-    from tkinter import Tk, ttk
-
-    global button
-    root = Tk()
-    button = ttk.Button(root, text=pformat(overseer_agent._overseer_info, indent=4))
-    button.pack()
-    overseer_agent.start(simple_callback)
-    root.mainloop()
-    overseer_agent.end()
-
-
-def main():
-    setup_basic_info()
-    overseer_agent.start(simple_callback)
-    while True:
-        answer = input("(p)ause/(r)esume/(s)witch/(d)ump/(e)nd? ")
-        normalized_answer = answer.strip().upper()
-        if normalized_answer == "P":
-            overseer_agent.pause()
-        elif normalized_answer == "R":
-            overseer_agent.resume()
-        elif normalized_answer == "E":
-            overseer_agent.end()
-            break
-        elif normalized_answer[0] == "S":
-            sp_index = int(normalized_answer.split()[1])
-            sp = overseer_agent._overseer_info.get("sp_list")[sp_index]
-            resp = overseer_agent.promote_sp(sp.get("sp_end_point"))
-            pprint(resp.json())
-        elif normalized_answer == "D":
-            pprint(overseer_agent._overseer_info)
 
 
 def simple_callback(overseer_agent):

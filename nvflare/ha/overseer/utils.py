@@ -29,7 +29,7 @@ else:
     from .mem_store import do_refresh, get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
 
-def update_sp_state(project, now, heartbeat_timeout=8):
+def update_sp_state(project, now, heartbeat_timeout=10):
     valid_starting = now - timedelta(seconds=heartbeat_timeout)
     # mark all late SP as offline and not primary
     # print(f"{now=} {valid_starting=}")

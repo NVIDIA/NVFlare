@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import json
 import os
 
@@ -58,7 +59,13 @@ class StaticFileBuilder(Builder):
             "t",
             exe=True,
         )
-        ctx["overseer_end_point"] = f"https://{overseer.name}/api/v1"
+        protocol = overseer.props.get("protocol", "http")
+        api_root = overseer.props.get("api_root", "/api/v1/")
+        port = overseer.props.get("port")
+        if port:
+            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}:{port}{api_root}"
+        else:
+            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}{api_root}"
 
     def _build_server(self, server, ctx):
         config = json.loads(self.template["fed_server"])
@@ -77,17 +84,16 @@ class StaticFileBuilder(Builder):
         if self.app_validator:
             config["app_validator"] = {"path": self.app_validator}
         if self.overseer_agent:
-            overseer_agent = self.overseer_agent
-            overseer_agent["args"].update(
-                {
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if "args" not in overseer_agent:
+                overseer_agent["args"] = {
                     "role": "server",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
                     "project": self.study_name,
                     "name": server.name,
-                    "fl_port": fed_learn_port,
-                    "adm_port": admin_port,
+                    "fl_port": str(fed_learn_port),
+                    "admin_port": str(admin_port),
                 }
-            )
             config["overseer_agent"] = overseer_agent
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
         replacement_dict = {
@@ -146,15 +152,14 @@ class StaticFileBuilder(Builder):
             "docker_image": self.docker_image,
         }
         if self.overseer_agent:
-            overseer_agent = self.overseer_agent
-            overseer_agent["args"].update(
-                {
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if "args" not in overseer_agent:
+                overseer_agent["args"] = {
                     "role": "client",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
                     "project": self.study_name,
                     "name": client.subject,
                 }
-            )
             config["overseer_agent"] = overseer_agent
 
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config), "t")
@@ -206,15 +211,14 @@ class StaticFileBuilder(Builder):
         }
         config = dict()
         if self.overseer_agent:
-            overseer_agent = self.overseer_agent
-            overseer_agent["args"].update(
-                {
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if "args" not in overseer_agent:
+                overseer_agent["args"] = {
                     "role": "admin",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
                     "project": self.study_name,
                     "name": admin.subject,
                 }
-            )
             config["overseer_agent"] = overseer_agent
         self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config), "t")
         if self.docker_image:

@@ -7,7 +7,9 @@ participants:
   - name: overseer.nvflare.nvidia.com
     type: overseer
     org: nvidia
-    port: 8443
+    protocol: http
+    api_root: /api/v1
+    # port: 5000
   # change example.com to the FQDN of the server
   - name: example1.com
     type: server
@@ -54,8 +56,6 @@ builders:
       # docker_image:
       overseer_agent:
         path: nvflare.ha.overseer_agent
-        args:
-          overseer_end_point: http://
   - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
     args:
       orgs:

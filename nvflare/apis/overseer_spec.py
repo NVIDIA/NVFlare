@@ -21,7 +21,7 @@ from typing import Any, Dict
 class SP:
     name: str = ""
     fl_port: str = ""
-    adm_port: str = ""
+    admin_port: str = ""
     service_session_id: str = ""
     primary: bool = False
 
@@ -34,7 +34,7 @@ class OverseerAgent(ABC):
         role: str,
         name: str,
         fl_port: str = "",
-        adm_port: str = "",
+        admin_port: str = "",
         aux: dict = {},
         *args,
         **kwargs,
