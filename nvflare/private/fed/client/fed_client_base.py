@@ -118,20 +118,22 @@ class FederatedClientBase:
         self.set_primary_sp(sp)
 
     def set_sp(self, project_name, sp: SP):
-        server = self.servers[project_name].get("target")
-        location = sp.name + ":" + sp.fl_port
-        if server != location:
-            self.servers[project_name]["target"] = location
-            self.sp_established = True
-            self.logger.info(f"Got the new primary SP: {location}")
+        if sp and sp.primary is True:
+            server = self.servers[project_name].get("target")
+            location = sp.name + ":" + sp.fl_port
+            if server != location:
+                self.servers[project_name]["target"] = location
+                self.sp_established = True
+                self.logger.info(f"Got the new primary SP: {location}")
 
-        if self.ssid and self.ssid != sp.service_session_id:
-            thread = threading.Thread(target=self._switch_ssid)
-            thread.start()
+            if self.ssid and self.ssid != sp.service_session_id:
+                self.ssid = sp.service_session_id
+                thread = threading.Thread(target=self._switch_ssid)
+                thread.start()
 
     def _switch_ssid(self):
         self.engine.abort_task(self.engine.run_number)
-        self.register()
+        # self.register()
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 
     def client_register(self, project_name):

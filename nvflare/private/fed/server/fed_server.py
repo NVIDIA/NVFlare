@@ -697,7 +697,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def overseer_callback(self, overseer_agent):
         sp = overseer_agent.get_primary_sp()
-        print(sp)
+        # print(sp)
         with self.engine.new_context() as fl_ctx:
             self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
 

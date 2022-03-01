@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.fl_context import FLContext
 
@@ -42,6 +44,8 @@ class ServerState(object):
         self.service_port = port
         self.ssid = ssid
 
+        self.logger = logging.getLogger("FederatedServer")
+
     def register(self, fl_ctx: FLContext) -> dict:
         pass
 
@@ -63,6 +67,9 @@ class ServerState(object):
 
 class ColdState(ServerState):
 
+    def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
+        super().__init__(host, port, ssid)
+
     def register(self, fl_ctx: FLContext) -> dict:
         return ServerState.NOT_IN_SERVICE
 
@@ -83,13 +90,19 @@ class ColdState(ServerState):
             if sp.name == self.host and sp.fl_port == self.service_port:
                 self.primary = True
                 self.ssid = sp.service_session_id
+                self.logger.info(f"Got the primary sp: {sp.name} fl_port: {sp.fl_port} SSID: {sp.service_session_id}. "
+                                 f"Turning to hot.")
                 return Cold2HotState(host=self.host, port=self.service_port, ssid=sp.service_session_id)
             else:
                 self.primary = False
                 return self
         return self
 
+
 class Cold2HotState(ServerState):
+
+    def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
+        super().__init__(host, port, ssid)
 
     def register(self, fl_ctx: FLContext) -> dict:
         return ServerState.IN_SSERVICE
@@ -112,6 +125,9 @@ class Cold2HotState(ServerState):
 
 class HotState(ServerState):
 
+    def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
+        super().__init__(host, port, ssid)
+
     def register(self, fl_ctx: FLContext) -> dict:
         return ServerState.IN_SSERVICE
 
@@ -133,11 +149,17 @@ class HotState(ServerState):
                 self.primary = True
                 if sp.service_session_id != self.ssid:
                     self.ssid = sp.service_session_id
+                    self.logger.info(
+                        f"Primary sp changed to: {sp.name} fl_port: {sp.fl_port} SSID: {sp.service_session_id}. "
+                        f"Turning to Cold")
                     return Hot2ColdState(host=self.host, port=self.service_port, ssid=sp.service_session_id)
                 else:
                     return self
             else:
                 self.primary = False
+                self.logger.info(
+                    f"Primary sp changed to: {sp.name} fl_port: {sp.fl_port} SSID: {sp.service_session_id}. "
+                    f"Turning to Cold")
                 return Hot2ColdState(host=self.host, port=self.service_port)
         return self
 

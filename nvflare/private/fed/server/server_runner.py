@@ -137,6 +137,7 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.abort_signal, private=True, sticky=True)
             self.fire_event(EventType.START_RUN, fl_ctx)
+            self.engine.persist_components(fl_ctx)
 
         self.status = "started"
         try:
