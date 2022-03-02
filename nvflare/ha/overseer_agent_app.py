@@ -28,6 +28,8 @@ def setup_basic_info():
     parser.add_argument("-s", "--sleep", type=float, help="sleep (seconds) in heartbeat")
     parser.add_argument("-c", "--ca_path", type=str, help="root CA path")
     parser.add_argument("-o", "--overseer_url", type=str, help="Overseer URL")
+    parser.add_argument("-t", "--cert_path", type=str, help="cert path")
+    parser.add_argument("-v", "--prv_key_path", type=str, help="priviate key path")
 
     args = parser.parse_args()
 
@@ -42,7 +44,9 @@ def setup_basic_info():
     )
 
     if args.ca_path:
-        overseer_agent.set_secure_context(ca_path=args.ca_path)
+        overseer_agent.set_secure_context(
+            ca_path=args.ca_path, cert_path=args.cert_path, prv_key_path=args.prv_key_path
+        )
     return overseer_agent
 
 

@@ -86,6 +86,7 @@ class HttpOverseerAgent(OverseerAgent):
         self._session.mount("https://", adapter)
         if self._ca_path:
             self._session.verify = self._ca_path
+            self._session.cert = (self._cert_path, self._prv_key_path)
         self.conditional_cb = conditional_cb
         if update_callback:
             self._update_callback = update_callback
