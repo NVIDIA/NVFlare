@@ -98,7 +98,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 )
             if isinstance(exclude_vars, dict) and not _check_one_to_one_mapping(expected_data_kind, exclude_vars):
                 raise ValueError(
-                    f"A dict exclude_vars should specify exclude_vars for every key in expected_data_kind."
+                    "A dict exclude_vars should specify exclude_vars for every key in expected_data_kind."
                 )
 
         exclude_vars_dict = dict()
@@ -122,7 +122,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             expected_data_kind, aggregation_weights
         ):
             raise ValueError(
-                f"A nested aggregation_weights should specify aggregation_weights for every key in expected_data_kind."
+                "A nested aggregation_weights should specify aggregation_weights for every key in expected_data_kind."
             )
 
         aggregation_weights = aggregation_weights or {}
