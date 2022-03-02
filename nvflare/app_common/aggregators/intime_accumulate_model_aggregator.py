@@ -97,9 +97,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                     f"exclude_vars = {exclude_vars} should be a regex string but get {type(exclude_vars)}."
                 )
             if isinstance(exclude_vars, dict) and not _check_one_to_one_mapping(expected_data_kind, exclude_vars):
-                raise ValueError(
-                    "A dict exclude_vars should specify exclude_vars for every key in expected_data_kind."
-                )
+                raise ValueError("A dict exclude_vars should specify exclude_vars for every key in expected_data_kind.")
 
         exclude_vars_dict = dict()
         for k in self.expected_data_kind.keys():
