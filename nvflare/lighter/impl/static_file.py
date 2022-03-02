@@ -15,6 +15,7 @@
 import copy
 import json
 import os
+import yaml
 
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import sh_replace
@@ -61,7 +62,22 @@ class StaticFileBuilder(Builder):
         )
         protocol = overseer.props.get("protocol", "http")
         api_root = overseer.props.get("api_root", "/api/v1/")
-        port = overseer.props.get("port")
+        default_port = "443" if protocol == "https" else "80"
+        port = overseer.props.get("port", default_port)
+        replacement_dict = {"port": port}
+        if self.docker_image:
+            self._write(
+                os.path.join(dest_dir, "docker.sh"),
+                sh_replace(self.template["docker_svr_sh"], replacement_dict),
+                "t",
+                exe=True,
+            )
+        self._write(
+            os.path.join(dest_dir, "gunicorn.conf.py"),
+            sh_replace(self.template["gunicorn_conf_py"], replacement_dict),
+            "t",
+            exe=False,
+        )
         if port:
             ctx["overseer_end_point"] = f"{protocol}://{overseer.name}:{port}{api_root}"
         else:

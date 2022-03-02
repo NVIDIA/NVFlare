@@ -4,12 +4,12 @@ description: NVIDIA FLARE sample project yaml file
 
 participants:
   # change overseer.nvflare.nvidia.com to the FQDN of the overseer
-  - name: overseer.nvflare.nvidia.com
+  - name: tinylaptop
     type: overseer
     org: nvidia
-    protocol: http
+    protocol: https
     api_root: /api/v1
-    # port: 5000
+    port: 8443
   # change example.com to the FQDN of the server
   - name: example1.com
     type: server
