@@ -34,6 +34,16 @@ def _is_nested_aggregation_weights(aggregation_weights):
     return True
 
 
+def _check_one_to_one_mapping(ref_dict: dict, dict_to_check: dict):
+    keys = {k: "" for k in ref_dict}
+    for k in dict_to_check:
+        if k in keys:
+            keys.pop(k)
+    if len(keys) == 0:
+        return True
+    return False
+
+
 class InTimeAccumulateWeightedAggregator(Aggregator):
     def __init__(
         self,
@@ -49,7 +59,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 Regular expression string to match excluded vars during aggregation. Defaults to None.
                 Can be one string or a dict of {dxo_name: regex strings} corresponding to each aggregated DXO
                 when processing a DXO of `DataKind.COLLECTION`.
-            aggregation_weights (Union[Dict[str, Any], Dict[str, Dict[str, Any]], optional):
+            aggregation_weights (Union[Dict[str, Any], Dict[str, Dict[str, Any]]], optional):
                 Aggregation weight for each contributor. Defaults to None.
                 Can be one dict of {contrib_name: aggr_weight} or a dict of dicts corresponding to each aggregated DXO
                 when processing a DXO of `DataKind.COLLECTION`.
@@ -81,8 +91,16 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             self.expected_data_kind = {self._single_dxo_key: expected_data_kind}
 
         # Check exclude_vars
-        if exclude_vars and not isinstance(exclude_vars, dict) and not isinstance(exclude_vars, str):
-            raise ValueError(f"exclude_vars = {exclude_vars} should be a regex string but get {type(exclude_vars)}.")
+        if exclude_vars:
+            if not isinstance(exclude_vars, dict) and not isinstance(exclude_vars, str):
+                raise ValueError(
+                    f"exclude_vars = {exclude_vars} should be a regex string but get {type(exclude_vars)}."
+                )
+            if isinstance(exclude_vars, dict) and not _check_one_to_one_mapping(expected_data_kind, exclude_vars):
+                raise ValueError(
+                    f"A dict exclude_vars should specify exclude_vars for every key in expected_data_kind."
+                )
+
         exclude_vars_dict = dict()
         for k in self.expected_data_kind.keys():
             if isinstance(exclude_vars, dict):
@@ -100,20 +118,22 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.exclude_vars = exclude_vars_dict
 
         # Check aggregation weights
+        if _is_nested_aggregation_weights(aggregation_weights) and not _check_one_to_one_mapping(
+            expected_data_kind, aggregation_weights
+        ):
+            raise ValueError(
+                f"A nested aggregation_weights should specify aggregation_weights for every key in expected_data_kind."
+            )
+
         aggregation_weights = aggregation_weights or {}
         aggregation_weights_dict = dict()
-        if _is_nested_aggregation_weights(aggregation_weights):
-            for k in self.expected_data_kind.keys():
-                if k in aggregation_weights:
-                    aggregation_weights_dict[k] = aggregation_weights[k]
-                else:
-                    aggregation_weights_dict[k] = {}
-        else:
-            for k in self.expected_data_kind.keys():
+        for k in self.expected_data_kind.keys():
+            if k in aggregation_weights:
+                aggregation_weights_dict[k] = aggregation_weights[k]
+            else:
                 # assume same aggregation weights for each entry of DXO collection.
                 aggregation_weights_dict[k] = aggregation_weights
         self.aggregation_weights = aggregation_weights_dict
-        print(self.aggregation_weights)
 
         # Set up DXO aggregators
         self.dxo_aggregators = dict()
