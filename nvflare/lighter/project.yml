@@ -67,9 +67,8 @@ builders:
         # if overseer_exists is true, agent arguments are role, name and other local parameters
         # if overseer_exists is false, arguments are copied from args in this section
         overseer_exists: true
-        # args:
-        #   dummy_arg1: foo
-        #   dummy_arg2: bar
+        args:
+          sp_end_point: example1.com.8002:8003
   # - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
   #   args:
   #     orgs:
