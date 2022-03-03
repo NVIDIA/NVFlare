@@ -87,6 +87,7 @@ class FederatedClientBase:
         self.fl_ctx = FLContext()
         self.platform = None
         self.abort_signal = Signal()
+        self.engine = None
 
         self.status = ClientStatus.NOT_STARTED
 
@@ -132,7 +133,8 @@ class FederatedClientBase:
                 thread.start()
 
     def _switch_ssid(self):
-        self.engine.abort_task(self.engine.run_number)
+        if self.engine:
+            self.engine.abort_task(self.engine.run_number)
         # self.register()
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 

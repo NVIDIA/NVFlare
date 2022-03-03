@@ -15,6 +15,7 @@
 import logging
 import pickle
 import threading
+import os
 import time
 from abc import ABC, abstractmethod
 from concurrent import futures
@@ -591,7 +592,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         response = admin_msg.Empty()
         return response
 
-    def start_run(self, run_number, run_root, conf, args):
+    def start_run(self, run_number, run_root, conf, args, snapshot):
         # self.status = ServerStatus.STARTING
 
         # Create the FL Engine
@@ -615,6 +616,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         try:
             with self.engine.new_context() as fl_ctx:
 
+                if snapshot:
+                    self.engine.restore_components(snapshot=snapshot, fl_ctx=FLContext())
+
                 # with open(os.path.join(run_root, env_config)) as file:
                 #     env = json.load(file)
 
@@ -627,6 +631,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             self.server_runner = ServerRunner(config=self.runner_config, run_num=run_number, engine=self.engine)
             self.run_manager.add_handler(self.server_runner)
+            self.run_manager.add_component("_Server_Runner", self.server_runner)
 
             # self.controller.initialize_run(self.fl_ctx)
 
@@ -711,8 +716,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _turn_to_hot(self):
         # Restore Snapshot
-        if self.engine.run_number != -1:
-            self.engine.start_app_on_server()
+        from nvflare.app_common.storages.snapshot_file_persistor import SnapshotFilePersistor
+        persistor = SnapshotFilePersistor()
+        snapshot = persistor.retrieve(os.path.join("/tmp", "snapshot.data"))
+        if snapshot and not snapshot.completed:
+            data = snapshot.get_component_snapshot("_Server_Runner")
+            self.engine.run_number = data.get("run_number")
+            self.engine.start_app_on_server(snapshot=snapshot)
 
         self.server_state = HotState(host=self.server_state.host,
                                      port=self.server_state.service_port,

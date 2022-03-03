@@ -28,7 +28,7 @@ class StatePersistable:
         Returns: serializable persist data
 
         """
-        pass
+        return {}
 
     def restore(self, state_data: dict, fl_ctx: FLContext):
         """To restore the FLComponent state from persist data.

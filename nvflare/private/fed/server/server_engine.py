@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import gc
 import logging
 import os
@@ -30,8 +31,9 @@ from nvflare.apis.fl_constant import MachineStatus, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.state_persistor import StatePersistor
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.storages.snapshot_file_persistor import SnapshotFilePersistor
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
@@ -135,7 +137,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self) -> str:
+    def start_app_on_server(self, snapshot=None) -> str:
         if self.run_number == -1:
             return "Please set a run number."
 
@@ -158,7 +160,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             # future = self.executor.submit(start_server_training, (self.server))
             future = self.executor.submit(
-                lambda p: start_server_training(*p), [self.server, self.args, app_root, self.run_number]
+                lambda p: start_server_training(*p), [self.server, self.args, app_root, self.run_number, snapshot]
             )
 
             start = time.time()
@@ -396,24 +398,31 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return results
 
-    def persist_components(self, fl_ctx: FLContext):
+    def persist_components(self, fl_ctx: FLContext, completed: bool):
 
         # Call the State Persistor to persist all the component states
         # 1. call every component to generate the component states data
         #    Make sure to include the current round number
         # 2. call persistence API to save the component states
 
-        persistor = StatePersistor()
+        persistor = SnapshotFilePersistor()
         snapshot = FLSnapshot()
         for component_id, component in self.run_manager.components.items():
             snapshot.save_component_snapshot(component_id=component_id,
                                              component_state=component.get_persist_state(fl_ctx))
 
+        snapshot.save_component_snapshot(component_id="fl_context",
+                                         component_state=copy.deepcopy(get_serializable_data(fl_ctx).props))
+
+        snapshot.completed = completed
+
         persistor.save(snapshot=snapshot)
 
     def restore_components(self, snapshot: FLSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
-            component.restore(snapshot.get_component_snapshot(component_id=component_id))
+            component.restore(snapshot.get_component_snapshot(component_id=component_id), fl_ctx)
+
+        fl_ctx.props.update(snapshot.get_component_snapshot(component_id="fl_context"))
 
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
@@ -422,7 +431,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.executor.shutdown()
 
 
-def start_server_training(server, args, app_root, run_number):
+def start_server_training(server, args, app_root, run_number, snapshot):
 
     restart_file = os.path.join(args.workspace, "restart.fl")
     if os.path.exists(restart_file):
@@ -438,7 +447,7 @@ def start_server_training(server, args, app_root, run_number):
 
         set_up_run_config(server, conf)
 
-        server.start_run(run_number, app_root, conf, args)
+        server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
         traceback.print_exc()
         logging.getLogger().warning("FL server execution exception: " + str(e))

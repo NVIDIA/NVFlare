@@ -109,7 +109,7 @@ class ServerEngineSpec(ABC):
         """
         pass
 
-    def persist_components(self, fl_ctx: FLContext):
+    def persist_components(self, fl_ctx: FLContext, completed: bool):
         pass
 
     def restore_components(self, snapshot: FLSnapshot, fl_ctx: FLContext):

@@ -158,10 +158,10 @@ class Communicator:
         login_message.meta.project.name = project_name
 
         result, retry = None, self.retry
-        retry = 1500  # retry register for 2 hours (7500s)
+        # retry = 1500  # retry register for 2 hours (7500s)
         with self.set_up_channel(servers[project_name]) as channel:
             stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
+            while True:
                 try:
                     start_time = time.time()
                     result = stub.Register(login_message)
@@ -183,7 +183,7 @@ class Communicator:
                         status_code = grpc_error.code()
                         if grpc.StatusCode.UNAUTHENTICATED == status_code:
                             raise excep
-                    retry -= 1
+                    # retry -= 1
                     time.sleep(5)
             if self.should_stop:
                 raise excep
@@ -442,12 +442,11 @@ class Communicator:
                 return
 
         self.logger.error(
-            f"Action: {action} grpc communication error. retry: {retry}, First start till now: {time.time() - start_time} seconds."
+            f"Action: {action} grpc communication error. Keep retry..."
         )
         if grpc.StatusCode.UNAVAILABLE == status_code:
             self.logger.error(
-                f"Could not connect to server: {service.get('target')}\t"
-                f"Setting flag for stopping training. {grpc_error.details()}"
+                f"Could not connect to server: {service.get('target')}\t {grpc_error.details()}"
             )
             self.should_stop = True
 
