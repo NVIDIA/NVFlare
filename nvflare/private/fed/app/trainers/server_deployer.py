@@ -39,6 +39,7 @@ class ServerDeployer:
         self.app_validator = build_ctx["app_validator"]
         self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
+        self.snapshot_persistor = build_ctx["snapshot_persistor"]
 
     def train(self):
         """To start the ServerDeployer."""
@@ -80,6 +81,7 @@ class ServerDeployer:
             args=args,
             secure_train=secure_train,
             enable_byoc=self.enable_byoc,
+            snapshot_persistor=self.snapshot_persistor
         )
         return first_server, services
 

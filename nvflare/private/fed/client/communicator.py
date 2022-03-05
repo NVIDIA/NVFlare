@@ -382,11 +382,11 @@ class Communicator:
         message.ssid = ssid
         message.client_name = client_name
 
-        with self.set_up_channel(servers[task_name]) as channel:
-            while not self.heartbeat_done:
+        while not self.heartbeat_done:
+            with self.set_up_channel(servers[task_name]) as channel:
                 stub = fed_service.FederatedTrainingStub(channel)
                 # retry the heartbeat call for 10 minutes
-                retry = 120
+                retry = 2
                 while retry > 0:
                     try:
                         self.logger.debug(f"Send {task_name} heartbeat {token}")

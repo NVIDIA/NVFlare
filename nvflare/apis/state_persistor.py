@@ -27,11 +27,10 @@ class StatePersistor:
         """
         pass
 
-    def retrieve(self, location: str) -> FLSnapshot:
+    def retrieve(self) -> FLSnapshot:
         """Call to load the persisted FL components snapshot from the persisted location.
 
         Args:
-            location: persist location
 
         Returns:
 

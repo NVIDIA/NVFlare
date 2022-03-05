@@ -27,13 +27,12 @@ from threading import Lock
 from typing import List, Tuple
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import MachineStatus, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import MachineStatus, ReservedTopic, ReturnCode, FLContextKey, SnapshotKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.storages.snapshot_file_persistor import SnapshotFilePersistor
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
@@ -46,7 +45,7 @@ from .server_status import ServerStatus
 
 
 class ServerEngine(ServerEngineInternalSpec):
-    def __init__(self, server, args, client_manager: ClientManager, workers=3):
+    def __init__(self, server, args, client_manager: ClientManager, snapshot_persistor, workers=3):
         """Server engine.
 
         Args:
@@ -79,6 +78,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.asked_to_stop = False
+        self.snapshot_persistor = snapshot_persistor
 
     def _get_server_app_folder(self):
         return "app_server"
@@ -405,24 +405,29 @@ class ServerEngine(ServerEngineInternalSpec):
         #    Make sure to include the current round number
         # 2. call persistence API to save the component states
 
-        persistor = SnapshotFilePersistor()
         snapshot = FLSnapshot()
         for component_id, component in self.run_manager.components.items():
             snapshot.save_component_snapshot(component_id=component_id,
                                              component_state=component.get_persist_state(fl_ctx))
 
-        snapshot.save_component_snapshot(component_id="fl_context",
+        snapshot.save_component_snapshot(component_id=SnapshotKey.FL_CONTEXT,
                                          component_state=copy.deepcopy(get_serializable_data(fl_ctx).props))
+
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        data = zip_directory_to_bytes(workspace.get_run_dir(self.run_number), "")
+        snapshot.save_component_snapshot(component_id=SnapshotKey.WORKSPACE,
+                                         component_state={"content": data})
 
         snapshot.completed = completed
 
-        persistor.save(snapshot=snapshot)
+        self.server.snapshot_location = self.snapshot_persistor.save(snapshot=snapshot)
+        self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
 
     def restore_components(self, snapshot: FLSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
             component.restore(snapshot.get_component_snapshot(component_id=component_id), fl_ctx)
 
-        fl_ctx.props.update(snapshot.get_component_snapshot(component_id="fl_context"))
+        fl_ctx.props.update(snapshot.get_component_snapshot(component_id=SnapshotKey.FL_CONTEXT))
 
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)

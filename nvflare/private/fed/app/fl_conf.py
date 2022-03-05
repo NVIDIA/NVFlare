@@ -81,6 +81,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.deployer = None
         self.app_validator = None
         self.enable_byoc = False
+        self.snapshot_persistor = None
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -124,6 +125,9 @@ class FLServerStarterConfiger(JsonConfigurator):
             self.app_validator = self.build_component(element)
             return
 
+        if path == "snapshot_persistor":
+            self.snapshot_persistor = self.build_component(element)
+
     def finalize_config(self, config_ctx: ConfigContext):
         """Finalize the config process.
 
@@ -146,6 +150,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             "server_config": self.config_data["servers"],
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
+            "snapshot_persistor": self.snapshot_persistor
         }
 
         deployer = ServerDeployer()

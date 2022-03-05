@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import logging
-import pickle
-import threading
 import os
+import pickle
+import shutil
+import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent import futures
@@ -31,10 +32,11 @@ import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, SnapshotKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -44,7 +46,8 @@ from nvflare.widgets.fed_event import ServerFedEventRunner
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
-from .server_state import ServerState, ColdState, NIS, ABORT_RUN, ACTION, MESSAGE, Cold2HotState, HotState, Hot2ColdState
+from .server_state import ServerState, ColdState, NIS, ABORT_RUN, ACTION, MESSAGE, Cold2HotState, HotState, \
+    Hot2ColdState
 from .server_status import ServerStatus
 from ..utils.fed_utils import shareable_to_modeldata
 
@@ -206,6 +209,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         args=None,
         secure_train=False,
         enable_byoc=False,
+        snapshot_persistor=None,
     ):
         """Federated server services.
 
@@ -248,7 +252,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # Additional fields for CurrentTask meta_data in GetModel API.
         self.current_model_meta_data = {}
 
-        self.engine = ServerEngine(server=self, args=args, client_manager=self.client_manager)
+        self.engine = ServerEngine(server=self, args=args, client_manager=self.client_manager,
+                                   snapshot_persistor=snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
 
@@ -257,8 +262,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.secure_train = secure_train
         self.enable_byoc = enable_byoc
 
+        self.workspace = args.workspace
+        self.snapshot_location = None
         self.overseer_agent = None
         self.server_state: ServerState = ColdState()
+        self.snapshot_persistor = snapshot_persistor
 
     def get_current_model_meta_data(self):
         """Get the model metadata, which usually contains additional fields."""
@@ -716,12 +724,22 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _turn_to_hot(self):
         # Restore Snapshot
-        from nvflare.app_common.storages.snapshot_file_persistor import SnapshotFilePersistor
-        persistor = SnapshotFilePersistor()
-        snapshot = persistor.retrieve(os.path.join("/tmp", "snapshot.data"))
+        snapshot = self.snapshot_persistor.retrieve()
         if snapshot and not snapshot.completed:
-            data = snapshot.get_component_snapshot("_Server_Runner")
+            data = snapshot.get_component_snapshot(SnapshotKey.SERVER_RUNNER)
             self.engine.run_number = data.get("run_number")
+
+            # Restore the workspace
+            workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
+            dest = os.path.join(self.workspace, "run_" + str(self.engine.run_number))
+            if os.path.exists(dest):
+                shutil.rmtree(dest)
+
+            if not os.path.exists(dest):
+                os.makedirs(dest)
+            unzip_all_from_bytes(workspace_data, dest)
+
+            self.logger.info(f"Restore the previous snapshot. Run_number: {self.engine.run_number}")
             self.engine.start_app_on_server(snapshot=snapshot)
 
         self.server_state = HotState(host=self.server_state.host,
