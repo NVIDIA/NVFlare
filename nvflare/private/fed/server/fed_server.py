@@ -37,7 +37,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
-from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
@@ -210,6 +209,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         secure_train=False,
         enable_byoc=False,
         snapshot_persistor=None,
+        overseer_agent=None
     ):
         """Federated server services.
 
@@ -264,7 +264,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         self.workspace = args.workspace
         self.snapshot_location = None
-        self.overseer_agent = None
+        self.overseer_agent = overseer_agent
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
 
@@ -694,10 +694,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.overseer_agent.start(self.overseer_callback)
 
     def _create_overseer_agent(self, args=None):
-        overseer_agent = HttpOverseerAgent()
 
         target = args.get("service").get("target", "localhost:500")
-        overseer_agent.initialize(
+        self.overseer_agent.initialize(
             overseer_end_point="http://127.0.0.1:5000/api/v1",
             project=args.get("name", "project"),
             role="server",
@@ -706,7 +705,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             adm_port=str(args.get("admin_port", 2)),
             sleep=6,
         )
-        return overseer_agent
+        return self.overseer_agent
 
     def overseer_callback(self, overseer_agent):
         sp = overseer_agent.get_primary_sp()

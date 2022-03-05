@@ -42,6 +42,7 @@ class BaseClientDeployer:
         self.client_name = build_ctx["client_name"]
         self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
+        self.overseer_agent = build_ctx["overseer_agent"]
 
     def set_model_manager(self, model_manager):
         self.model_manager = model_manager
@@ -73,6 +74,7 @@ class BaseClientDeployer:
             executors=self.executors,
             compression=compression,
             enable_byoc=self.enable_byoc,
+            overseer_agent=self.overseer_agent
         )
         return self.federated_client
 

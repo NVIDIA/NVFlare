@@ -25,12 +25,10 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
+from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import EngineConstant
-from nvflare.ha.overseer_agent import HttpOverseerAgent
-from nvflare.apis.overseer_spec import SP
-
 from .client_status import ClientStatus
 from .communicator import Communicator
 
@@ -51,6 +49,7 @@ class FederatedClientBase:
         client_state_processors: Optional[List[Filter]] = None,
         handlers: Optional[List[FLComponent]] = None,
         compression=None,
+        overseer_agent=None
     ):
         """To init FederatedClientBase.
 
@@ -92,6 +91,8 @@ class FederatedClientBase:
         self.status = ClientStatus.NOT_STARTED
 
         self.sp_established = False
+        self.overseer_agent = overseer_agent
+
         self.overseer_agent = self._create_overseer_agent(client_args)
 
         if secure_train:
@@ -103,16 +104,15 @@ class FederatedClientBase:
         self.overseer_agent.start(self.overseer_callback)
 
     def _create_overseer_agent(self, args=None):
-        overseer_agent = HttpOverseerAgent()
 
-        overseer_agent.initialize(
+        self.overseer_agent.initialize(
             overseer_end_point="http://127.0.0.1:5000/api/v1",
             project="example_project",
             role="client",
             name="localhost",
             sleep=6,
         )
-        return overseer_agent
+        return self.overseer_agent
 
     def overseer_callback(self, overseer_agent):
         sp = overseer_agent.get_primary_sp()
