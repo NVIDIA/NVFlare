@@ -54,7 +54,8 @@ class Communicator:
         self.verbose = False
         self.should_stop = False
         self.heartbeat_done = False
-        self.retry = int(math.ceil(float(retry_timeout) / 5))
+        # self.retry = int(math.ceil(float(retry_timeout) / 5))
+        self.retry = 1
         self.client_state_processors = client_state_processors
         self.compression = compression
 
