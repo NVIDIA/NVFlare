@@ -463,9 +463,9 @@ class AdminClient(cmd.Cmd):
                         pwd = self.password
                     else:
                         pwd = getpass.getpass("Password: ")
-                    print(f"host: {self.api.host} port: {self.api.port}")
+                    # print(f"host: {self.api.host} port: {self.api.port}")
                     self.api.login_with_password(username=user_name, password=pwd)
-                    print(f"login_result: {self.api.login_result} token: {self.api.token}")
+                    self.stdout.write(f"login_result: {self.api.login_result} token: {self.api.token}\n{self.prompt}")
                     if self.api.login_result == "OK":
                         self.user_name = user_name
                         self.password = pwd
