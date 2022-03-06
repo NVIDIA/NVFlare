@@ -77,6 +77,7 @@ def main():
     startup = os.path.join(args.workspace, "startup")
     SecurityContentService.initialize(content_folder=startup)
 
+    federated_client = None
     try:
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         with open(token_file, "r") as f:
@@ -172,6 +173,7 @@ def main():
             command_agent.shutdown()
         if deployer:
             deployer.close()
+        federated_client.close()
         # address = ('localhost', 6000)
         # conn_client = Client(address, authkey='client process secret password'.encode())
         # conn_client.send('bye')

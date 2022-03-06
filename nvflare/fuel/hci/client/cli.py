@@ -18,6 +18,7 @@ import json
 import os
 import time
 import traceback
+import threading
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
@@ -31,6 +32,8 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
+from nvflare.ha.overseer_agent import HttpOverseerAgent
+from nvflare.apis.overseer_spec import SP
 
 from .api import AdminAPI
 
@@ -92,6 +95,7 @@ class AdminClient(cmd.Cmd):
         self.require_login = require_login
         self.credential_type = credential_type
         self.user_name = None
+        self.password = None
         self.pwd = None
 
         self.debug = debug
@@ -131,6 +135,48 @@ class AdminClient(cmd.Cmd):
 
         if readline:
             readline.set_history_length(cli_history_size)
+
+        self.ssid = None
+        self.overseer_agent = self._create_overseer_agent()
+
+        if self.credential_type == CredentialType.CERT:
+            if self.overseer_agent:
+                self.overseer_agent.set_secure_context(ca_path=ca_cert,
+                                                   cert_path=client_cert,
+                                                   prv_key_path=client_key)
+
+        self.overseer_agent.start(self.overseer_callback)
+
+    def _create_overseer_agent(self):
+        overseer_agent = HttpOverseerAgent()
+
+        overseer_agent.initialize(
+            overseer_end_point="http://127.0.0.1:5000/api/v1",
+            project="example_project",
+            role="client",
+            name="localhost",
+            sleep=6,
+        )
+        return overseer_agent
+
+    def overseer_callback(self, overseer_agent):
+        sp = overseer_agent.get_primary_sp()
+        self.set_primary_sp(sp)
+
+    def set_primary_sp(self, sp: SP):
+        if sp and sp.primary is True:
+            if self.api.host != sp.name or self.api.port != int(sp.adm_port) or self.ssid != sp.service_session_id:
+                self.api.host = sp.name
+                self.api.port = int(sp.adm_port)
+                self.ssid = sp.service_session_id
+                print(f"Got primary SP. Host: {self.api.host} Admin_port: {self.api.port} SSID: {self.ssid}")
+
+                thread = threading.Thread(target=self._login_sp)
+                thread.start()
+
+    def _login_sp(self):
+        self.do_bye("logout")
+        self.login()
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -395,34 +441,52 @@ class AdminClient(cmd.Cmd):
                     pass
 
     def run(self):
+
+        try:
+            while self.api.token is None:
+                time.sleep(1.0)
+
+            self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
+        finally:
+            self.overseer_agent.end()
+
+    def login(self):
         if self.require_login:
-            user_name = input("User Name: ")
+            if self.user_name:
+                user_name = self.user_name
+            else:
+                user_name = input("User Name: ")
 
             if self.credential_type == CredentialType.PASSWORD:
                 while True:
-                    pwd = getpass.getpass("Password: ")
+                    if self.password:
+                        pwd = self.password
+                    else:
+                        pwd = getpass.getpass("Password: ")
+                    print(f"host: {self.api.host} port: {self.api.port}")
                     self.api.login_with_password(username=user_name, password=pwd)
+                    print(f"login_result: {self.api.login_result} token: {self.api.token}")
                     if self.api.login_result == "OK":
                         self.user_name = user_name
+                        self.password = pwd
                         self.pwd = hash_password(pwd)
                         break
                     elif self.api.login_result == "REJECT":
                         print("Incorrect password - please try again")
                     else:
                         print("Communication Error - please try later")
-                        return
+                        return False
             elif self.credential_type == CredentialType.CERT:
                 self.api.login(username=user_name)
                 if self.api.login_result == "OK":
                     self.user_name = user_name
                 elif self.api.login_result == "REJECT":
                     print("Incorrect user name or certificate")
-                    return
+                    return False
                 else:
                     print("Communication Error - please try later")
-                    return
-
-        self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
+                    return False
+        return True
 
     def print_resp(self, resp: dict):
         """Prints the server response
