@@ -65,6 +65,21 @@ class StaticFileBuilder(Builder):
         default_port = "443" if protocol == "https" else "80"
         port = overseer.props.get("port", default_port)
         replacement_dict = {"port": port}
+        admins = self.study.get_participants_by_type("admin", first_only=False)
+        priviledge_dict = dict()
+        for admin in admins:
+            for role in admin.props.get("roles", {}):
+                if role in priviledge_dict:
+                    priviledge_dict[role].append(admin.subject)
+                else:
+                    priviledge_dict[role] = [admin.subject]
+        self._write(
+            os.path.join(dest_dir, "priviledge.yml"),
+            yaml.dump(priviledge_dict, Dumper=yaml.Dumper),
+            "t",
+            exe=False,
+        )
+        
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
@@ -77,6 +92,12 @@ class StaticFileBuilder(Builder):
             sh_replace(self.template["gunicorn_conf_py"], replacement_dict),
             "t",
             exe=False,
+        )
+        self._write(
+            os.path.join(dest_dir, "start.sh"),
+            self.template["start_ovsr_sh"],
+            "t",
+            exe=True,
         )
         if port:
             ctx["overseer_end_point"] = f"{protocol}://{overseer.name}:{port}{api_root}"
@@ -101,7 +122,7 @@ class StaticFileBuilder(Builder):
             config["app_validator"] = {"path": self.app_validator}
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
-            if "args" not in overseer_agent:
+            if overseer_agent.get("overseer_exists", True):
                 overseer_agent["args"] = {
                     "role": "server",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
@@ -110,6 +131,7 @@ class StaticFileBuilder(Builder):
                     "fl_port": str(fed_learn_port),
                     "admin_port": str(admin_port),
                 }
+            overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
         replacement_dict = {
@@ -169,13 +191,14 @@ class StaticFileBuilder(Builder):
         }
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
-            if "args" not in overseer_agent:
+            if overseer_agent.get("overseer_exists", True):
                 overseer_agent["args"] = {
                     "role": "client",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
                     "project": self.study_name,
                     "name": client.subject,
                 }
+            overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
 
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config), "t")
@@ -228,13 +251,14 @@ class StaticFileBuilder(Builder):
         config = dict()
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
-            if "args" not in overseer_agent:
+            if overseer_agent.get("overseer_exists", True):
                 overseer_agent["args"] = {
                     "role": "admin",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
                     "project": self.study_name,
                     "name": admin.subject,
                 }
+            overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
         self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config), "t")
         if self.docker_image:
@@ -259,6 +283,7 @@ class StaticFileBuilder(Builder):
     def build(self, study, ctx):
         self.template = ctx.get("template")
         self.study_name = study.name
+        self.study = study
         overseer = study.get_participants_by_type("overseer")
         self._build_overseer(overseer, ctx)
         servers = study.get_participants_by_type("server", first_only=False)

@@ -24,8 +24,9 @@ from nvflare.ha.overseer.utils import (
     promote_sp,
     simple_PSP_policy,
     update_sp_state,
+    load_privilege
 )
-
+privilege_dict = load_privilege()
 
 @app.route("/api/v1/heartbeat", methods=["GET", "POST"])
 def heartbeat():
@@ -52,6 +53,8 @@ def heartbeat():
 
 @app.route("/api/v1/promote", methods=["GET", "POST"])
 def promote():
+    if request.headers.get("X-USER") not in privilege_dict["super"]:
+        return jsonify({"Error": "No rights"})
     if request.method == "POST":
         req = request.json
         sp_end_point = req.get("sp_end_point", "")

@@ -14,6 +14,7 @@
 
 import os
 import uuid
+import yaml
 from datetime import datetime, timedelta
 
 OVERSEER_STORE = os.environ.get("OVERSEER_STORE")
@@ -28,6 +29,13 @@ else:
     print("Using default STORE (MEM)")
     from .mem_store import do_refresh, get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
+def load_privilege():
+    priviledge_file = os.environ.get("AUTHZ_FILE", "priviledge.yml")
+    try:
+        priviledge = yaml.load(open(priviledge_file, "tr"), Loader=yaml.Loader)
+    except:
+        priviledge = dict()
+    return priviledge
 
 def update_sp_state(project, now, heartbeat_timeout=10):
     valid_starting = now - timedelta(seconds=heartbeat_timeout)
