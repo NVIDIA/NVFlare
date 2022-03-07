@@ -58,8 +58,9 @@ builders:
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
       snapshot_persistor:
-        path: nvflare.app_common.snapshot_file_persistor.SnapshotFilePersistor
+        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
         args:
+          storage: storage_spec
           location: /tmp/snapshot.data
       overseer_agent:
         path: nvflare.ha.overseer_agent.HttpOverseerAgent
