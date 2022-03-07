@@ -53,7 +53,7 @@ def heartbeat():
 
 @app.route("/api/v1/promote", methods=["GET", "POST"])
 def promote():
-    if request.headers.get("X-USER") not in privilege_dict["super"]:
+    if request.headers.get("X-USER") not in privilege_dict.get("super", {}):
         return jsonify({"Error": "No rights"})
     if request.method == "POST":
         req = request.json

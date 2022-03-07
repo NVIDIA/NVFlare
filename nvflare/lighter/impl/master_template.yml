@@ -128,6 +128,23 @@ fed_server: |
     ] 
   }
 
+fed_admin: |
+  {
+    "format_version": 1,
+    "admin": {
+      "with_file_transfer": true,
+      "upload_dir": "transfer",
+      "download_dir": "transfer",
+      "with_login": true,
+      "with_ssl": true,
+      "cred_type": "cert",
+      "client_key": "client.key",
+      "client_cert": "client.crt",
+      "ca_cert": "rootCA.pem",
+      "prompt": "> "
+    }
+  }
+
 authz_def: |
   {
     "rules": {
@@ -189,7 +206,7 @@ fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   mkdir -p $DIR/../transfer
-  python3 -m nvflare.fuel.hci.tools.admin --host {~~cn~~} --port {~~admin_port~~} --prompt "> " --with_file_transfer --upload_dir=$DIR/../transfer --download_dir=$DIR/../transfer --with_shell --with_login --with_ssl --cred_type cert --ca_cert=$DIR/rootCA.pem --client_cert=$DIR/client.crt --client_key=$DIR/client.key
+  python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json
 
 log_config: |
   [loggers]
@@ -223,7 +240,7 @@ log_config: |
 start_ovsr_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  AUTHZ_FILE=$DIR/privilidge.yml gunicorn -c $DIR/gunicorn.conf.py --keyfile $DIR/overseer.key --certfile $DIR/overseer.crt --ca-certs $DIR/rootCA.pem
+  AUTHZ_FILE=$DIR/priviledge.yml gunicorn -c $DIR/gunicorn.conf.py --keyfile $DIR/overseer.key --certfile $DIR/overseer.crt --ca-certs $DIR/rootCA.pem
 
 start_cln_sh: |
   #!/usr/bin/env bash

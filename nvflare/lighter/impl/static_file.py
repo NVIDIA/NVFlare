@@ -239,6 +239,7 @@ class StaticFileBuilder(Builder):
         )
 
     def _build_admin(self, admin, ctx):
+        config = json.loads(self.template["fed_admin"])
         dest_dir = self.get_kit_dir(admin, ctx)
         admin_port = ctx.get("admin_port")
         server_name = ctx.get("server_name")
@@ -248,7 +249,7 @@ class StaticFileBuilder(Builder):
             "admin_port": f"{admin_port}",
             "docker_image": self.docker_image,
         }
-        config = dict()
+        agent_config = dict()
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
             if overseer_agent.get("overseer_exists", True):
@@ -259,7 +260,8 @@ class StaticFileBuilder(Builder):
                     "name": admin.subject,
                 }
             overseer_agent.pop("overseer_exists", None)
-            config["overseer_agent"] = overseer_agent
+            agent_config["overseer_agent"] = overseer_agent
+        config["admin"].update(agent_config)
         self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config), "t")
         if self.docker_image:
             self._write(

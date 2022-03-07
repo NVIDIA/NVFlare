@@ -58,7 +58,7 @@ builders:
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
       overseer_agent:
-        path: nvflare.ha.overseer_agent
+        path: nvflare.ha.overseer_agent.HttpOverseerAgent
         # if overseer_exists is true, agent arguments are role, name and other local parameters
         # if overseer_exists is false, arguments are copied from args in this section
         overseer_exists: true
