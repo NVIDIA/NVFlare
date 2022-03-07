@@ -22,7 +22,7 @@ from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
-    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image="", overseer_agent=""):
+    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image="", snapshot_persistor="", overseer_agent=""):
         """Build all static files from template.
 
         Uses the information from project.yml through study to go through the participants and write the contents of
@@ -44,6 +44,7 @@ class StaticFileBuilder(Builder):
         self.docker_image = docker_image
         self.app_validator = app_validator
         self.overseer_agent = overseer_agent
+        self.snapshot_persistor = snapshot_persistor
 
     def _write(self, file_full_path, content, mode, exe=False):
         mode = mode + "w"
@@ -133,6 +134,8 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
+        if self.snapshot_persistor:
+            config["snapshot_persistor"] = self.snapshot_persistor
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
         replacement_dict = {
             "admin_port": admin_port,
