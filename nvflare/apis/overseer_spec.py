@@ -27,21 +27,10 @@ class SP:
 
 
 class OverseerAgent(ABC):
-    def initialize(
-        self,
-        overseer_end_point: str,
-        project: str,
-        role: str,
-        name: str,
-        fl_port: str = "",
-        admin_port: str = "",
-        aux: dict = {},
-        *args,
-        **kwargs,
-    ):
+    def set_secure_context(self, ca_path: str, cert_path: str = "", prv_key_path: str = ""):
         pass
 
-    def start(self, update_callback=None):
+    def start(self, update_callback=None, conditional_cb=False):
         pass
 
     def pause(self):
@@ -53,15 +42,15 @@ class OverseerAgent(ABC):
     def end(self):
         pass
 
-    def set_secure_context(self, ca_path: str, cert_path: str = "", prv_key_path: str = ""):
-        pass
-
     def get_primary_sp(self) -> SP:
         """Return current primary service provider.
 
         If primary sp not available, such as not reported by SD, connection to SD not established yet
         the name and ports will be empty strings.
         """
+        pass
+
+    def promote_sp(self, sp_end_point, headers=None):
         pass
 
     def add_payload(self, payload: Dict[str, Any]):
