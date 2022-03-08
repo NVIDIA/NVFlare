@@ -16,26 +16,21 @@ import cmd
 import getpass
 import json
 import os
+import signal
 import time
 import traceback
-import threading
 from datetime import datetime
 from enum import Enum
+from functools import partial
 from typing import List, Optional
-
-try:
-    import readline
-except ImportError:
-    readline = None
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
-from nvflare.ha.overseer_agent import HttpOverseerAgent
-from nvflare.apis.overseer_spec import SP
 
 from .api import AdminAPI
+from .api_status import APIStatus
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -58,6 +53,22 @@ class CredentialType(str, Enum):
 
 
 class AdminClient(cmd.Cmd):
+    """Admin command prompt for submitting admin commands to the server through the CLI.
+
+    Args:
+        host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
+        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
+        prompt: prompt to use for the command prompt
+        ca_cert: path to CA Cert file, by default provisioned rootCA.pem
+        client_cert: path to admin client Cert file, by default provisioned as client.crt
+        client_key: path to admin client Key file, by default provisioned as client.key
+        server_cn: server cn
+        require_login: whether to require login
+        credential_type: what type of credential to use
+        cmd_modules: command modules to load and register
+        debug: whether to print debug messages. False by default.
+    """
+
     def __init__(
         self,
         host,
@@ -71,31 +82,13 @@ class AdminClient(cmd.Cmd):
         credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
         debug: bool = False,
-        cli_history_size: int = 1000,
     ):
-        """Admin command prompt for submitting admin commands to the server through the CLI.
-
-        Args:
-            host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
-            port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
-            prompt: prompt to use for the command prompt
-            ca_cert: path to CA Cert file, by default provisioned rootCA.pem
-            client_cert: path to admin client Cert file, by default provisioned as client.crt
-            client_key: path to admin client Key file, by default provisioned as client.key
-            server_cn: server cn
-            require_login: whether to require login
-            credential_type: what type of credential to use
-            cmd_modules: command modules to load and register
-            debug: whether to print debug messages. False by default.
-            cli_history_size: the maximum number of commands to save in the cli history file. Defaults to 1000.
-        """
         cmd.Cmd.__init__(self)
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = prompt
         self.require_login = require_login
         self.credential_type = credential_type
         self.user_name = None
-        self.password = None
         self.pwd = None
 
         self.debug = debug
@@ -128,54 +121,15 @@ class AdminClient(cmd.Cmd):
             poc=poc,
         )
 
-        nvflare_dir = os.path.join(os.path.expanduser("~"), ".nvflare")
-        if not os.path.isdir(nvflare_dir):
-            os.mkdir(nvflare_dir)
-        self.cli_history_file = os.path.join(nvflare_dir, ".admin_cli_history")
+        signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
 
-        if readline:
-            readline.set_history_length(cli_history_size)
+    def session_ended(self, message):
+        self.write_error(message)
+        os.kill(os.getpid(), signal.SIGUSR1)
 
-        self.ssid = None
-        self.overseer_agent = self._create_overseer_agent()
-
-        if self.credential_type == CredentialType.CERT:
-            if self.overseer_agent:
-                self.overseer_agent.set_secure_context(ca_path=ca_cert,
-                                                   cert_path=client_cert,
-                                                   prv_key_path=client_key)
-
-        self.overseer_agent.start(self.overseer_callback)
-
-    def _create_overseer_agent(self):
-        overseer_agent = HttpOverseerAgent(
-            overseer_end_point="http://127.0.0.1:5000/api/v1",
-            project="example_project",
-            role="admin",
-            name="localhost",
-            heartbeat_interval=6,
-        )
-
-        return overseer_agent
-
-    def overseer_callback(self, overseer_agent):
-        sp = overseer_agent.get_primary_sp()
-        self.set_primary_sp(sp)
-
-    def set_primary_sp(self, sp: SP):
-        if sp and sp.primary is True:
-            if self.api.host != sp.name or self.api.port != int(sp.adm_port) or self.ssid != sp.service_session_id:
-                self.api.host = sp.name
-                self.api.port = int(sp.adm_port)
-                self.ssid = sp.service_session_id
-                print(f"Got primary SP. Host: {self.api.host} Admin_port: {self.api.port} SSID: {self.ssid}")
-
-                thread = threading.Thread(target=self._login_sp)
-                thread.start()
-
-    def _login_sp(self):
-        self.do_bye("logout")
-        self.login()
+    def session_signal_handler(self, signum, frame):
+        self.api.close_session_monitor()
+        raise ConnectionError
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -265,15 +219,6 @@ class AdminClient(cmd.Cmd):
         results = [x + " " for x in self.api.all_cmds if x.startswith(text)] + [None]
         return results[state]
 
-    def preloop(self):
-        if readline and os.path.exists(self.cli_history_file):
-            readline.read_history_file(self.cli_history_file)
-
-    def postcmd(self, stop, line):
-        if readline:
-            readline.write_history_file(self.cli_history_file)
-        return stop
-
     def default(self, line):
         self._close_output_file()
         try:
@@ -334,6 +279,8 @@ class AdminClient(cmd.Cmd):
             ent = entries[0]
             resp = ent.handler(args, self.api)
             self.print_resp(resp)
+            if resp["status"] == APIStatus.ERROR_INACTIVE_SESSION:
+                return True
             return
 
         entries = self.api.server_cmd_reg.get_command_entries(cmd_name)
@@ -376,6 +323,8 @@ class AdminClient(cmd.Cmd):
         usecs = int(secs * 1000000)
         done = "Done [{} usecs] {}".format(usecs, datetime.now())
         self.print_resp(resp)
+        if resp["status"] == APIStatus.ERROR_INACTIVE_SESSION:
+            return True
         self.write_stdout(done)
         if self.api.shutdown_received:
             # exit the client
@@ -413,7 +362,7 @@ class AdminClient(cmd.Cmd):
                     if self.use_rawinput:
                         try:
                             line = input(self.prompt)
-                        except EOFError:
+                        except (EOFError, ConnectionError):
                             line = "bye"
                         except KeyboardInterrupt:
                             self.stdout.write("\n")
@@ -440,52 +389,35 @@ class AdminClient(cmd.Cmd):
                     pass
 
     def run(self):
-
-        try:
-            while self.api.token is None:
-                time.sleep(1.0)
-
-            self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
-        finally:
-            self.overseer_agent.end()
-
-    def login(self):
         if self.require_login:
-            if self.user_name:
-                user_name = self.user_name
-            else:
-                user_name = input("User Name: ")
+            user_name = input("User Name: ")
 
             if self.credential_type == CredentialType.PASSWORD:
                 while True:
-                    if self.password:
-                        pwd = self.password
-                    else:
-                        pwd = getpass.getpass("Password: ")
-                    # print(f"host: {self.api.host} port: {self.api.port}")
+                    pwd = getpass.getpass("Password: ")
                     self.api.login_with_password(username=user_name, password=pwd)
-                    self.stdout.write(f"login_result: {self.api.login_result} token: {self.api.token}\n{self.prompt}")
                     if self.api.login_result == "OK":
                         self.user_name = user_name
-                        self.password = pwd
                         self.pwd = hash_password(pwd)
                         break
                     elif self.api.login_result == "REJECT":
                         print("Incorrect password - please try again")
                     else:
                         print("Communication Error - please try later")
-                        return False
+                        return
             elif self.credential_type == CredentialType.CERT:
                 self.api.login(username=user_name)
                 if self.api.login_result == "OK":
                     self.user_name = user_name
                 elif self.api.login_result == "REJECT":
                     print("Incorrect user name or certificate")
-                    return False
+                    return
                 else:
                     print("Communication Error - please try later")
-                    return False
-        return True
+                    return
+
+        self.api.start_session_monitor(self.session_ended)
+        self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
 
     def print_resp(self, resp: dict):
         """Prints the server response
