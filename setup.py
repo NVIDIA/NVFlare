@@ -19,37 +19,39 @@ from datetime import datetime
 
 from setuptools import find_packages, setup
 
+import versioneer
 # read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-with open(os.path.join(this_directory, "nvflare", "__init__.py"), encoding="utf-8") as f:
-    for line in f.readlines():
-        if "__version__" in line:
-            init_version = line.split("=")[1].strip().strip('"')
-
-nvfl_version = os.environ.get("NVFL_VERSION", init_version)
-yymmdd = datetime.today().strftime("%y%m%d")
-nvfl_nightly_version = f"{nvfl_version}.dev{yymmdd}"
-
-if os.environ.get("NVFL_RELEASE"):
-    package_name = "nvflare"
-    version = nvfl_version
-else:
-    package_name = "nvflare-nightly"
-    version = nvfl_nightly_version
-
+# with open(os.path.join(this_directory, "nvflare", "__init__.py"), encoding="utf-8") as f:
+#     for line in f.readlines():
+#         if "__version__" in line:
+#             init_version = line.split("=")[1].strip().strip('"')
+# 
+# nvfl_version = os.environ.get("NVFL_VERSION", init_version)
+# yymmdd = datetime.today().strftime("%y%m%d")
+# nvfl_nightly_version = f"{nvfl_version}.dev{yymmdd}"
+# 
+# if os.environ.get("NVFL_RELEASE"):
+#     package_name = "nvflare"
+#     version = nvfl_version
+# else:
+#     package_name = "nvflare-nightly"
+#     version = nvfl_nightly_version
+# 
 
 if os.path.exists(os.path.join(this_directory, "nvflare", "poc.zip")):
     os.remove(os.path.join(this_directory, "nvflare", "poc.zip"))
 shutil.make_archive(base_name="poc", format="zip", root_dir=os.path.join(this_directory, "nvflare"), base_dir="poc")
 shutil.move("poc.zip", os.path.join(this_directory, "nvflare", "poc.zip"))
+package_name = "nvflare"
 
-python_version = os.environ.get("PY_VERSION", "3.7")
 setup(
     name=package_name,
-    version=version,
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     description="Federated Learning Application Runtime Environment",
     url="https://github.com/NVIDIA/NVFlare",
     package_dir={"nvflare": "nvflare"},

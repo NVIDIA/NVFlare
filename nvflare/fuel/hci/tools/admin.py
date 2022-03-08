@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--client_cert", type=str, default="")
     parser.add_argument("--client_key", type=str, default="")
     parser.add_argument("--with_debug", action="store_true")
+    parser.add_argument("--cli_history_size", type=int, default=1000)
 
     args = parser.parse_args()
 
@@ -95,6 +96,7 @@ def main():
         require_login=args.with_login,
         credential_type=CredentialType.PASSWORD if args.cred_type == "password" else CredentialType.CERT,
         debug=args.with_debug,
+        cli_history_size=args.cli_history_size,
     )
 
     client.run()

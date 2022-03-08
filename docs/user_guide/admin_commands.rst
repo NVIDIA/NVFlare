@@ -30,16 +30,14 @@ commands shown as examples of how they may be run with a description.
     ,``check_status client clientname``,"The name, token, and status of the specified client with *clientname* are displayed."
     upload_app,``upload_app applicationname``,Uploads the application folder to the FL server. Note that *applicationname* is the folder path relative to the "transfer" directory which is at the same level as the "startup" directory containing the script running the admin client.
     set_run_number,``set_run_number 1``,Creates a folder "run_1" on the server at the same level as the "startup" directory to contain all of the applications for deployment.
-    deploy_app,``deploy_app applicatonname server``,"Deploys the application specified by *applicationname* to the server. Note that *applicationname* is expected to be an application which has been uploaded to the server already and resides in the *transfer* directory on the server (which is at the same level as the *startup* directory by default). *applicationname* can be a relative path if the application is contained in any parent directories, for example apps/segmentation_ct_spleen."
+    deploy_app,``deploy_app applicatonname server``,"Deploys the application specified by *applicationname* to the server. Note that *applicationname* is expected to be an application which has been uploaded to the server already and resides in the *transfer* directory on the server (which is at the same level as the *startup* directory by
+    default). *applicationname* can be a relative path if the application is contained in any parent directories, for example apps/segmentation_ct_spleen."
     ,``deploy_app applicationname client``,Deploys the application specified by *applicationname* to each client. This can also be done per client by specifying a specific client name for this command. Please note that the deployed applications are also in their own workspace named after the run number set by set_run_number above.
     start_app,``start_app server``,Starts the server training.
     ,``start_app client``,Starts all of the clients. Individual clients can be started by specifying the client instance name after the start client command.
     abort,``abort client``,Aborts all of the clients. Individual clients can be aborted by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
     ,``abort server``,Aborts the server training
-    restart,``restart client``,Restarts all of the clients. Individual clients can be restarted by specifying *clientname*.
-    ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
-    shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
-    ,``shutdown server``,Shuts down the server. Clients must be shut down first before the server is shut down.
+    download_folder,``download_folder foldername``,Download folder from the server's file_download_dir (set to transfer by default)
     cat,``cat server startup/fed_server.json -ns``,Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)
     ,``cat clientname startup/docker.sh -bT``,Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)
     env,``env server``,Show environment variables
@@ -53,8 +51,12 @@ commands shown as examples of how they may be run with a description.
     ,``ls clientname -SR``,List files in workspace root directory (-S: sort by file size; -R: list subdirectories recursively)
     pwd,``pwd server``,Print the name of workspace root directory
     ,``pwd clientname``,Print the name of workspace root directory
-    validate,``validate src_client dsc_client``, Gets the performance metrics for cross-site validation of a model
-    ,``validate all``, Gets the performance metrics for cross-site validation of all models
+    sys_info,``sys_info server``,Get system information
+    ,``sys_info client *clientname*``,Get system information. Individual clients can be shutdown by specifying *clientname*.
+    restart,``restart client``,Restarts all of the clients. Individual clients can be restarted by specifying *clientname*.
+    ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
+    shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
+    ,``shutdown server``,Shuts down the server. Clients must be shut down first before the server is shut down.
 
 
 .. tip::

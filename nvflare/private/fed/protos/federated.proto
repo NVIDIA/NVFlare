@@ -76,6 +76,8 @@ message FederatedSummary {
     string comment = 2;
     // The client token
     string token = 3;
+    // The service session ID
+    string ssid = 4;
 }
 
 
@@ -107,6 +109,8 @@ message ClientState {
     google.protobuf.Struct meta_data = 4;
     // The context data.
     map<string, NDArray> context = 5;
+    // The service session ID
+    string ssid = 6;
 }
 
 // The client's contribution to the current federated model
@@ -131,6 +135,8 @@ message Token {
     string token = 1;
     // The client identification
     string client_name = 2;
+    // The service session ID
+    string ssid = 3;
 }
 
 // The client's Aux communication message

@@ -24,7 +24,7 @@
   "components": [
     {
       "id": "prostate-learner",
-      "path": "pt.learners.prostate_learner.ProstateLearner",
+      "path": "pt.learners.supervised_prostate_learner.SupervisedProstateLearner",
       "args": {
         "aggregation_epochs": 10,
         "train_config_filename": "config_train.json"

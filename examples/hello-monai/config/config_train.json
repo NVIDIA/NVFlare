@@ -1,6 +1,5 @@
 {
-  "max_epochs": 100,
-  "learning_rate": 2e-4,
+  "learning_rate": 2e-3,
   "amp": true,
   "use_gpu": true,
   "multi_gpu": false,

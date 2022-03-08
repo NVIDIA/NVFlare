@@ -37,17 +37,14 @@
     },
     {
       "id": "model_locator",
-      "path": "pt.pt_model_locator.PTModelLocator",
-      "args": {}
-    },
-    {
-      "id": "formatter",
-      "path": "pt.pt_formatter.PTFormatter",
-      "args": {}
+      "name": "PTFileModelLocator",
+      "args": {
+        "pt_persistor_id": "persistor"
+      }
     },
     {
       "id": "json_generator",
-      "path": "pt.validation_json_generator.ValidationJsonGenerator",
+      "name": "ValidationJsonGenerator",
       "args": {}
     }
   ],
@@ -72,7 +69,6 @@
         "name": "CrossSiteModelEval",
         "args": {
           "model_locator_id": "model_locator",
-          "formatter_id": "formatter",
           "submit_model_timeout": 600,
           "validation_timeout": 6000,
           "cleanup_models": true

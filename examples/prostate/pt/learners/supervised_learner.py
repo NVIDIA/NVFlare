@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,11 +23,10 @@ from torch.utils.tensorboard import SummaryWriter
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
-from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
 
 class SupervisedLearner(Learner):
@@ -124,11 +123,6 @@ class SupervisedLearner(Learner):
         with open(train_config_file_path) as file:
             config_info = json.load(file)
 
-        self.fedproxloss_mu = config_info.get("fedproxloss_mu", 0.0)
-        if self.fedproxloss_mu > 0:
-            self.log_info(fl_ctx, f"Using FedProx loss with mu {self.fedproxloss_mu}")
-            self.criterion_prox = PTFedProxLoss(mu=self.fedproxloss_mu)
-
         self._extra_train_config(fl_ctx, config_info)
 
     def finalize(self, fl_ctx: FLContext):
@@ -175,7 +169,8 @@ class SupervisedLearner(Learner):
 
                 loss.backward()
                 self.optimizer.step()
-                self.writer.add_scalar("train_loss", loss.item(), epoch_len * self.epoch_global + i)
+                current_step = epoch_len * self.epoch_global + i
+                self.writer.add_scalar("train_loss", loss.item(), current_step)
             if val_freq > 0 and epoch % val_freq == 0:
                 acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model")
                 if acc > self.best_acc:
@@ -323,8 +318,13 @@ class SupervisedLearner(Learner):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # get round information
+        # get validation information
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
+        model_owner = shareable.get(ReservedHeaderKey.HEADERS).get(AppConstants.MODEL_OWNER)
+        if model_owner:
+            self.log_info(fl_ctx, f"Evaluating model from {model_owner} on {fl_ctx.get_identity_name()}")
+        else:
+            model_owner = "global_model"
 
         # update local model weights with received weights
         dxo = from_shareable(shareable)
@@ -333,15 +333,19 @@ class SupervisedLearner(Learner):
         # Before loading weights, tensors might need to be reshaped to support HE for secure aggregation.
         local_var_dict = self.model.state_dict()
         model_keys = global_weights.keys()
+        n_loaded = 0
         for var_name in local_var_dict:
             if var_name in model_keys:
                 weights = torch.as_tensor(global_weights[var_name], device=self.device)
                 try:
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
+                    n_loaded += 1
                 except Exception as e:
                     raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.model.load_state_dict(local_var_dict)
+        if n_loaded == 0:
+            raise ValueError(f"No weights loaded for validation! Received weight dict is {global_weights}")
 
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
@@ -349,7 +353,7 @@ class SupervisedLearner(Learner):
             global_acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_global_model")
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(fl_ctx, f"val_acc_global_model: {global_acc:.4f}")
+            self.log_info(fl_ctx, f"val_acc_global_model ({model_owner}): {global_acc:.4f}")
 
             return DXO(data_kind=DataKind.METRICS, data={MetaKey.INITIAL_METRICS: global_acc}, meta={}).to_shareable()
 
@@ -358,12 +362,12 @@ class SupervisedLearner(Learner):
             train_acc = self.local_valid(self.train_for_valid_loader, abort_signal)
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(fl_ctx, f"training acc: {train_acc:.4f}")
+            self.log_info(fl_ctx, f"training acc ({model_owner}): {train_acc:.4f}")
 
             val_acc = self.local_valid(self.valid_loader, abort_signal)
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(fl_ctx, f"validation acc: {val_acc:.4f}")
+            self.log_info(fl_ctx, f"validation acc ({model_owner}): {val_acc:.4f}")
 
             self.log_info(fl_ctx, "Evaluation finished. Returning shareable")
 
