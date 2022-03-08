@@ -683,7 +683,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.server_state.host = target.split(":")[0]
         self.server_state.service_port = target.split(":")[1]
 
-        self.overseer_agent = self._create_overseer_agent(grpc_args)
+        # self.overseer_agent = self._create_overseer_agent(grpc_args)
 
         if secure_train:
             if self.overseer_agent:
@@ -695,16 +695,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _create_overseer_agent(self, args=None):
 
-        target = args.get("service").get("target", "localhost:500")
-        self.overseer_agent.initialize(
-            overseer_end_point="http://127.0.0.1:5000/api/v1",
-            project=args.get("name", "project"),
-            role="server",
-            name=target.split(":")[0],
-            fl_port=target.split(":")[1],
-            adm_port=str(args.get("admin_port", 2)),
-            sleep=6,
-        )
+        if self.engine:
+            with self.engine.new_context() as fl_ctx:
+                self.overseer_agent.initialize(fl_ctx)
+
         return self.overseer_agent
 
     def overseer_callback(self, overseer_agent):

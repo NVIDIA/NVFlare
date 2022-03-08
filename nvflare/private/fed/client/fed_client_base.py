@@ -93,7 +93,7 @@ class FederatedClientBase:
         self.sp_established = False
         self.overseer_agent = overseer_agent
 
-        self.overseer_agent = self._create_overseer_agent(client_args)
+        # self.overseer_agent = self._create_overseer_agent(client_args)
 
         if secure_train:
             if self.overseer_agent:
@@ -105,13 +105,10 @@ class FederatedClientBase:
 
     def _create_overseer_agent(self, args=None):
 
-        self.overseer_agent.initialize(
-            overseer_end_point="http://127.0.0.1:5000/api/v1",
-            project="example_project",
-            role="client",
-            name="localhost",
-            sleep=6,
-        )
+        if self.engine:
+            with self.engine.new_context() as fl_ctx:
+                self.overseer_agent.initialize(fl_ctx)
+
         return self.overseer_agent
 
     def overseer_callback(self, overseer_agent):

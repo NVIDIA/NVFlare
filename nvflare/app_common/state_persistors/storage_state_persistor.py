@@ -36,10 +36,9 @@ class StorageStatePersistor(StatePersistor):
             snapshot: FLSnapshot object
         Returns: storage location
         """
-        snapshot_dict = snapshot.get_snapshot()
         # snapshot_uri_timestamp = "snapshot-" + datetime.datetime.now().strftime("%Y-%m-%d,%H:%M:%S")
         self.storage.create_object(
-            uri=self.location, data=pickle.dumps(snapshot_dict), meta={}, overwrite_existing=True
+            uri=self.location, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True
         )
 
         return self.location
@@ -47,14 +46,11 @@ class StorageStatePersistor(StatePersistor):
     def retrieve(self) -> FLSnapshot:
         """Call to load the persisted FL components snapshot from the persisted location.
         Args:
-        Returns:
+        Returns: retrieved Snapshot
         """
         retrieved_snapshot = None
         try:
-            retrieved_dict = pickle.loads(self.storage.get_data(self.location))
-            retrieved_snapshot = FLSnapshot()
-            for component_id, component_dict in retrieved_dict.items():
-                retrieved_snapshot.save_component_snapshot(component_id, component_dict)
+            retrieved_snapshot = pickle.loads(self.storage.get_data(self.location))
         finally:
             return retrieved_snapshot
 

@@ -148,15 +148,14 @@ class AdminClient(cmd.Cmd):
         self.overseer_agent.start(self.overseer_callback)
 
     def _create_overseer_agent(self):
-        overseer_agent = HttpOverseerAgent()
-
-        overseer_agent.initialize(
+        overseer_agent = HttpOverseerAgent(
             overseer_end_point="http://127.0.0.1:5000/api/v1",
             project="example_project",
             role="client",
             name="localhost",
-            sleep=6,
+            heartbeat_interval=6,
         )
+
         return overseer_agent
 
     def overseer_callback(self, overseer_agent):
