@@ -24,7 +24,6 @@ from nvflare.apis.storage import StorageSpec
 class StorageStatePersistor(StatePersistor):
     def __init__(self, storage: StorageSpec, location: str):
         self.storage = storage
-
         self.location = location
 
         if not os.path.isabs(location):
@@ -36,7 +35,6 @@ class StorageStatePersistor(StatePersistor):
             snapshot: FLSnapshot object
         Returns: storage location
         """
-        # snapshot_uri_timestamp = "snapshot-" + datetime.datetime.now().strftime("%Y-%m-%d,%H:%M:%S")
         self.storage.create_object(
             uri=self.location, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True
         )
