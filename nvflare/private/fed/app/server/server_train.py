@@ -66,7 +66,7 @@ def main():
         # trainer = WorkFlowFactory().create_server_trainer(train_configs, envs)
         startup = os.path.join(args.workspace, "startup")
         conf = FLServerStarterConfiger(
-            app_root="startup",
+            app_root=startup,
             # wf_config_file_name="config_train.json",
             server_config_file_name=args.fed_server,
             # env_config_file_name="environment.json",
