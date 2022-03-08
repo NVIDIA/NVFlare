@@ -63,6 +63,18 @@ readme_fs: |
 
   Please always safeguard the server.key.
 
+gunicorn_conf_py: |
+  bind="0.0.0.0:{~~port~~}"
+  ca_certs="rootCA.pem"
+  cert_reqs=2
+  certfile="overseer.crt"
+  do_handshake_on_connect=True
+  keyfile="overseer.key"
+  timeout=30
+  worker_class="nvflare.ha.overseer.worker.ClientAuthWorker"
+  workers=1
+  wsgi_app="nvflare.ha.overseer.overseer:app"
+
 fed_client: |
   {
     "format_version": 1,
@@ -114,6 +126,23 @@ fed_server: |
             "compression": "Gzip"
         }
     ] 
+  }
+
+fed_admin: |
+  {
+    "format_version": 1,
+    "admin": {
+      "with_file_transfer": true,
+      "upload_dir": "transfer",
+      "download_dir": "transfer",
+      "with_login": true,
+      "with_ssl": true,
+      "cred_type": "cert",
+      "client_key": "client.key",
+      "client_cert": "client.crt",
+      "ca_cert": "rootCA.pem",
+      "prompt": "> "
+    }
   }
 
 authz_def: |
@@ -177,7 +206,7 @@ fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   mkdir -p $DIR/../transfer
-  python3 -m nvflare.fuel.hci.tools.admin --host {~~cn~~} --port {~~admin_port~~} --prompt "> " --with_file_transfer --upload_dir=$DIR/../transfer --download_dir=$DIR/../transfer --with_shell --with_login --with_ssl --cred_type cert --ca_cert=$DIR/rootCA.pem --client_cert=$DIR/client.crt --client_key=$DIR/client.key
+  python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json
 
 log_config: |
   [loggers]
@@ -207,6 +236,11 @@ log_config: |
 
   [formatter_fullFormatter]
   format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+
+start_ovsr_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  AUTHZ_FILE=$DIR/privilege.yml gunicorn -c $DIR/gunicorn.conf.py --keyfile $DIR/overseer.key --certfile $DIR/overseer.crt --ca-certs $DIR/rootCA.pem
 
 start_cln_sh: |
   #!/usr/bin/env bash

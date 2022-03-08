@@ -27,11 +27,12 @@ class SignatureBuilder(Builder):
     """
 
     def build(self, study: Study, ctx: dict):
-        server = study.get_participants_by_type("server")
-        dest_dir = self.get_kit_dir(server, ctx)
-        root_pri_key = ctx.get("root_pri_key")
-        signatures = sign_all(dest_dir, root_pri_key)
-        pickle.dump(signatures, open(os.path.join(dest_dir, "signature.pkl"), "wb"))
+        servers = study.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            dest_dir = self.get_kit_dir(server, ctx)
+            root_pri_key = ctx.get("root_pri_key")
+            signatures = sign_all(dest_dir, root_pri_key)
+            pickle.dump(signatures, open(os.path.join(dest_dir, "signature.pkl"), "wb"))
         for p in study.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(p, ctx)
             root_pri_key = ctx.get("root_pri_key")

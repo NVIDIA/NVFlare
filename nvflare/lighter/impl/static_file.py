@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import json
 import os
+import yaml
 
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
-    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image=""):
+    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image="", snapshot_persistor="", overseer_agent=""):
         """Build all static files from template.
 
         Uses the information from project.yml through study to go through the participants and write the contents of
@@ -41,6 +43,8 @@ class StaticFileBuilder(Builder):
         self.config_folder = config_folder
         self.docker_image = docker_image
         self.app_validator = app_validator
+        self.overseer_agent = overseer_agent
+        self.snapshot_persistor = snapshot_persistor
 
     def _write(self, file_full_path, content, mode, exe=False):
         mode = mode + "w"
@@ -48,6 +52,58 @@ class StaticFileBuilder(Builder):
             f.write(content)
         if exe:
             os.chmod(file_full_path, 0o755)
+
+    def _build_overseer(self, overseer, ctx):
+        dest_dir = self.get_kit_dir(overseer, ctx)
+        self._write(
+            os.path.join(dest_dir, "start.sh"),
+            self.template["start_svr_sh"],
+            "t",
+            exe=True,
+        )
+        protocol = overseer.props.get("protocol", "http")
+        api_root = overseer.props.get("api_root", "/api/v1/")
+        default_port = "443" if protocol == "https" else "80"
+        port = overseer.props.get("port", default_port)
+        replacement_dict = {"port": port}
+        admins = self.study.get_participants_by_type("admin", first_only=False)
+        privilege_dict = dict()
+        for admin in admins:
+            for role in admin.props.get("roles", {}):
+                if role in privilege_dict:
+                    privilege_dict[role].append(admin.subject)
+                else:
+                    privilege_dict[role] = [admin.subject]
+        self._write(
+            os.path.join(dest_dir, "privilege.yml"),
+            yaml.dump(privilege_dict, Dumper=yaml.Dumper),
+            "t",
+            exe=False,
+        )
+        
+        if self.docker_image:
+            self._write(
+                os.path.join(dest_dir, "docker.sh"),
+                sh_replace(self.template["docker_svr_sh"], replacement_dict),
+                "t",
+                exe=True,
+            )
+        self._write(
+            os.path.join(dest_dir, "gunicorn.conf.py"),
+            sh_replace(self.template["gunicorn_conf_py"], replacement_dict),
+            "t",
+            exe=False,
+        )
+        self._write(
+            os.path.join(dest_dir, "start.sh"),
+            self.template["start_ovsr_sh"],
+            "t",
+            exe=True,
+        )
+        if port:
+            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}:{port}{api_root}"
+        else:
+            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}{api_root}"
 
     def _build_server(self, server, ctx):
         config = json.loads(self.template["fed_server"])
@@ -65,6 +121,21 @@ class StaticFileBuilder(Builder):
         config["enable_byoc"] = server.enable_byoc
         if self.app_validator:
             config["app_validator"] = {"path": self.app_validator}
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": "server",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.study_name,
+                    "name": server.name,
+                    "fl_port": str(fed_learn_port),
+                    "admin_port": str(admin_port),
+                }
+            overseer_agent.pop("overseer_exists", None)
+            config["overseer_agent"] = overseer_agent
+        if self.snapshot_persistor:
+            config["snapshot_persistor"] = self.snapshot_persistor
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
         replacement_dict = {
             "admin_port": admin_port,
@@ -121,6 +192,17 @@ class StaticFileBuilder(Builder):
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
         }
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": "client",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.study_name,
+                    "name": client.subject,
+                }
+            overseer_agent.pop("overseer_exists", None)
+            config["overseer_agent"] = overseer_agent
 
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config), "t")
         if self.docker_image:
@@ -160,6 +242,7 @@ class StaticFileBuilder(Builder):
         )
 
     def _build_admin(self, admin, ctx):
+        config = json.loads(self.template["fed_admin"])
         dest_dir = self.get_kit_dir(admin, ctx)
         admin_port = ctx.get("admin_port")
         server_name = ctx.get("server_name")
@@ -169,6 +252,20 @@ class StaticFileBuilder(Builder):
             "admin_port": f"{admin_port}",
             "docker_image": self.docker_image,
         }
+        agent_config = dict()
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": "admin",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.study_name,
+                    "name": admin.subject,
+                }
+            overseer_agent.pop("overseer_exists", None)
+            agent_config["overseer_agent"] = overseer_agent
+        config["admin"].update(agent_config)
+        self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config), "t")
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
@@ -190,9 +287,13 @@ class StaticFileBuilder(Builder):
 
     def build(self, study, ctx):
         self.template = ctx.get("template")
-        server = study.get_participants_by_type("server")
         self.study_name = study.name
-        self._build_server(server, ctx)
+        self.study = study
+        overseer = study.get_participants_by_type("overseer")
+        self._build_overseer(overseer, ctx)
+        servers = study.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            self._build_server(server, ctx)
 
         for client in study.get_participants_by_type("client", first_only=False):
             self._build_client(client, ctx)

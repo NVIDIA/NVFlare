@@ -79,8 +79,8 @@ def main():
 
     project = yaml.load(open(project_full_path, "r"), Loader=yaml.Loader)
     api_version = project.get("api_version")
-    if api_version not in [2]:
-        raise ValueError(f"Incompatible API version found in {project_full_path}")
+    if api_version not in [3]:
+        raise ValueError(f"API version expected 3 but found {api_version}")
 
     study_name = project.get("name")
     study_description = project.get("description", "")

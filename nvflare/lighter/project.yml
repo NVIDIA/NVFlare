@@ -1,10 +1,24 @@
-api_version: 2
+api_version: 3
 name: example_project
 description: NVIDIA FLARE sample project yaml file
 
 participants:
+  # change overseer.nvflare.nvidia.com to the FQDN of the overseer
+  - name: tinylaptop
+    type: overseer
+    org: nvidia
+    protocol: https
+    api_root: /api/v1
+    port: 8443
   # change example.com to the FQDN of the server
-  - name: example.com
+  - name: example1.com
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
+    # enable_byoc loads python codes in app.  Default is false.
+    enable_byoc: true
+  - name: example2.com
     type: server
     org: nvidia
     fed_learn_port: 8002
@@ -24,6 +38,9 @@ participants:
     org: nvidia
     roles:
       - super
+  - name: admin@example.com
+    type: admin
+    org: nvidia
 
 # The same methods in all builders are called in their order defined in builders section
 builders:
@@ -40,27 +57,40 @@ builders:
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
-  - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
-    args:
-      orgs:
-        nvidia:
-          - relaxed
-      roles:
-        super: super user of system
-      groups: 
-        relaxed: 
-          desc: org group with relaxed policies
-          rules: 
-            allow_byoc: true
-            allow_custom_datalist: true
-      disabled: false
+      snapshot_persistor:
+        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
+        args:
+          storage: storage_spec
+          location: /tmp/snapshot.data
+      overseer_agent:
+        path: nvflare.ha.overseer_agent.HttpOverseerAgent
+        # if overseer_exists is true, agent arguments are role, name and other local parameters
+        # if overseer_exists is false, arguments are copied from args in this section
+        overseer_exists: true
+        # args:
+        #   dummy_arg1: foo
+        #   dummy_arg2: bar
+  # - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
+  #   args:
+  #     orgs:
+  #       nvidia:
+  #         - relaxed
+  #     roles:
+  #       super: super user of system
+  #     groups: 
+  #       relaxed: 
+  #         desc: org group with relaxed policies
+  #         rules: 
+  #           allow_byoc: true
+  #           allow_custom_datalist: true
+  #     disabled: false
   - path: nvflare.lighter.impl.cert.CertBuilder
-  - path: nvflare.lighter.impl.he.HEBuilder
-    args:
-      poly_modulus_degree: 8192 
-      coeff_mod_bit_sizes: [60, 40, 40]
-      scale_bits: 40
-      scheme: CKKS
+  # - path: nvflare.lighter.impl.he.HEBuilder
+  #   args:
+  #     poly_modulus_degree: 8192 
+  #     coeff_mod_bit_sizes: [60, 40, 40]
+  #     scale_bits: 40
+  #     scheme: CKKS
   - path: nvflare.lighter.impl.signature.SignatureBuilder
   - path: nvflare.lighter.impl.workspace.DistributionBuilder
     args:
