@@ -204,34 +204,34 @@ class ServerRunner(FLComponent):
         self.log_debug(fl_ctx, "process task request from client")
 
         if self.status == "init":
-            self.log_error(fl_ctx, "server runner still initializing - asked client to try again later")
+            self.log_debug(fl_ctx, "server runner still initializing - asked client to try again later")
             return self._task_try_again()
 
         if self.status == "done":
-            self.log_error(fl_ctx, "server runner is finalizing - asked client to end the run")
+            self.log_info(fl_ctx, "server runner is finalizing - asked client to end the run")
             return SpecialTaskName.END_RUN, "", None
 
         peer_ctx = fl_ctx.get_peer_context()
         if not isinstance(peer_ctx, FLContext):
-            self.log_error(fl_ctx, "invalid task request: no peer context - asked client to try again later")
+            self.log_debug(fl_ctx, "invalid task request: no peer context - asked client to try again later")
             return self._task_try_again()
 
         peer_run_num = peer_ctx.get_run_number()
         if not peer_run_num or peer_run_num != self.run_num:
             # the client is in a different RUN
-            self.log_error(fl_ctx, "invalid task request: not the same run_number - asked client to end the run")
+            self.log_info(fl_ctx, "invalid task request: not the same run_number - asked client to end the run")
             return SpecialTaskName.END_RUN, "", None
 
         try:
             with self.wf_lock:
                 if self.current_wf is None:
-                    self.log_error(fl_ctx, "no current workflow - asked client to try again later")
+                    self.log_info(fl_ctx, "no current workflow - asked client to try again later")
                     return self._task_try_again()
 
                 task_name, task_id, task_data = self.current_wf.responder.process_task_request(client, fl_ctx)
 
                 if not task_name or task_name == SpecialTaskName.TRY_AGAIN:
-                    self.log_error(fl_ctx, "no task currently for client - asked client to try again later")
+                    self.log_debug(fl_ctx, "no task currently for client - asked client to try again later")
                     return self._task_try_again()
 
                 if task_data:
@@ -307,37 +307,23 @@ class ServerRunner(FLComponent):
         # set the reply prop so log msg context could include RC from it
         fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=False)
 
-        if not isinstance(result, Shareable):
-            self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
-            return
-
-        # set the reply prop so log msg context could include RC from it
-        fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=False)
-
-        if not isinstance(result, Shareable):
-            self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
-            return
-
-        # set the reply prop so log msg context could include RC from it
-        fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=False)
-
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
 
         if self.status != "started":
-            self.log_error(fl_ctx, "ignored result submission since server runner's status is {}".format(self.status))
+            self.log_info(fl_ctx, "ignored result submission since server runner's status is {}".format(self.status))
             return
 
         peer_ctx = fl_ctx.get_peer_context()
         if not isinstance(peer_ctx, FLContext):
-            self.log_error(fl_ctx, "invalid result submission: no peer context; dropped.")
+            self.log_info(fl_ctx, "invalid result submission: no peer context - dropped")
             return
 
         peer_run_num = peer_ctx.get_run_number()
         if not peer_run_num or peer_run_num != self.run_num:
             # the client is on a different RUN
-            self.log_error(fl_ctx, "invalid result submission: not the same run number; dropped")
+            self.log_info(fl_ctx, "invalid result submission: not the same run number - dropped")
             return
 
         result.set_header(ReservedHeaderKey.TASK_NAME, task_name)
@@ -362,7 +348,7 @@ class ServerRunner(FLComponent):
         with self.wf_lock:
             try:
                 if self.current_wf is None:
-                    self.log_error(fl_ctx, "no current workflow - dropped submission.")
+                    self.log_info(fl_ctx, "no current workflow - dropped submission.")
                     return
 
                 wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW, None)
