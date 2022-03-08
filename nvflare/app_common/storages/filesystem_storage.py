@@ -56,20 +56,20 @@ class FilesystemStorage(StorageSpec):
         try:
             Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
             with open(path + "_tmp", "wb") as f:
-                f.write(pickle.dumps(content))
+                f.write(content)
                 f.flush()
                 os.fsync(f.fileno())
-            if os.path.isfile(path):
-                os.remove(path)
         except Exception as e:
+            if os.path.isfile(path + "_tmp"):
+                os.remove(path + "_tmp")
             raise IOError("failed to write content: {}".format(e))
 
         os.rename(path + "_tmp", path)
 
-    def _read(self, path: str) -> object:
+    def _read(self, path: str) -> bytes:
         try:
             with open(path, "rb") as f:
-                content = pickle.load(f)
+                content = f.read()
         except Exception as e:
             raise IOError("failed to read content: {}".format(e))
 
@@ -114,7 +114,11 @@ class FilesystemStorage(StorageSpec):
         meta_path = os.path.join(full_uri, "meta")
 
         self._write(data_path + "_tmp", data)
-        self._write(meta_path, meta)
+        try:
+            self._write(meta_path, pickle.dumps(meta))
+        except Exception as e:
+            os.remove(data_path + "_tmp")
+            raise e
         os.rename(data_path + "_tmp", data_path)
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
@@ -140,11 +144,11 @@ class FilesystemStorage(StorageSpec):
             raise Exception("object {} does not exist".format(uri))
 
         if replace:
-            self._write(os.path.join(full_uri, "meta"), meta)
+            self._write(os.path.join(full_uri, "meta"), pickle.dumps(meta))
         else:
             prev_meta = self.get_meta(uri)
             prev_meta.update(meta)
-            self._write(os.path.join(full_uri, "meta"), prev_meta)
+            self._write(os.path.join(full_uri, "meta"), pickle.dumps(prev_meta))
 
     def update_data(self, uri: str, data: ByteString):
         """Update the data info of the specified object
@@ -201,7 +205,7 @@ class FilesystemStorage(StorageSpec):
         if not self._object_exists(full_uri):
             raise Exception("object {} does not exist".format(uri))
 
-        return self._read(os.path.join(full_uri, "meta"))
+        return pickle.loads(self._read(os.path.join(full_uri, "meta")))
 
     def get_full_meta(self, uri: str) -> dict:
         """Get full meta info of the specified object
