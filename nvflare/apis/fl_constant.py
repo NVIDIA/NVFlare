@@ -176,3 +176,11 @@ class LogMessageTag(object):
     WARNING = "log/warning"
     CRITICAL = "log/critical"
     LOG_RECORD = "log_record"
+
+
+class SnapshotKey(object):
+
+    FL_CONTEXT = "fl_context"
+    SERVER_RUNNER = "_Server_Runner"
+    WORKSPACE = "_workspace"
+

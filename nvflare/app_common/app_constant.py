@@ -149,3 +149,10 @@ class ValidateType(object):
 
     BEFORE_TRAIN_VALIDATE = "before_train_validate"
     MODEL_VALIDATE = "model_validate"
+
+
+class AlgorithmConstants(object):
+
+    SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
+    SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
+    SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"

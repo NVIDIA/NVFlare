@@ -81,6 +81,8 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.deployer = None
         self.app_validator = None
         self.enable_byoc = False
+        self.snapshot_persistor = None
+        self.overseer_agent = None
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -124,6 +126,14 @@ class FLServerStarterConfiger(JsonConfigurator):
             self.app_validator = self.build_component(element)
             return
 
+        if path == "snapshot_persistor":
+            self.snapshot_persistor = self.build_component(element)
+            return
+
+        if path == "overseer_agent":
+            self.overseer_agent = self.build_component(element)
+            return
+
     def finalize_config(self, config_ctx: ConfigContext):
         """Finalize the config process.
 
@@ -146,6 +156,8 @@ class FLServerStarterConfiger(JsonConfigurator):
             "server_config": self.config_data["servers"],
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
+            "snapshot_persistor": self.snapshot_persistor,
+            "overseer_agent": self.overseer_agent
         }
 
         deployer = ServerDeployer()
@@ -201,6 +213,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.client_config_file_name = client_config_file_name
         self.enable_byoc = False
         self.base_deployer = None
+        self.overseer_agent = None
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         """Process config element.
@@ -216,6 +229,10 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         if path == "enable_byoc":
             self.enable_byoc = element
+            return
+
+        if path == "overseer_agent":
+            self.overseer_agent = self.build_component(element)
             return
 
     def start_config(self, config_ctx: ConfigContext):
@@ -256,6 +273,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             "secure_train": secure_train,
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
+            "overseer_agent": self.overseer_agent
         }
 
         self.base_deployer = BaseClientDeployer()

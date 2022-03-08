@@ -173,12 +173,3 @@ class StorageSpec(object):
 
         """
         pass
-
-    def finalize(self):
-        """Finalize storage
-
-        Args:
-
-        Returns:
-        """
-        pass

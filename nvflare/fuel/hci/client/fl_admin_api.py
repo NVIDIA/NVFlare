@@ -204,8 +204,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             err = self._error_buffer
             self._error_buffer = None
             raise RuntimeError(err)
-        if reply.get("status") != APIStatus.SUCCESS:
-            raise RuntimeError(reply.get("details"))
         reply_data_list = []
         reply_data_full_response = ""
         if reply.get("data"):
@@ -215,7 +213,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 if data["type"] == "string" or data["type"] == "error":
                     reply_data_list.append(data["data"])
             reply_data_full_response = "\n".join(reply_data_list)
-            if "not authenticated - no user" in reply_data_full_response:
+            if "session_inactive" in reply_data_full_response:
                 raise ConnectionRefusedError(reply_data_full_response)
             if "Failed to communicate" in reply_data_full_response:
                 raise ConnectionError(reply_data_full_response)
@@ -225,6 +223,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 raise LookupError(reply_data_full_response)
             if "Authorization Error" in reply_data_full_response:
                 raise PermissionError(reply_data_full_response)
+        if reply.get("status") != APIStatus.SUCCESS:
+            raise RuntimeError(reply.get("details"))
         return success_in_data, reply_data_full_response, reply
 
     def _parse_section_of_response_text(

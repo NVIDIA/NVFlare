@@ -92,6 +92,9 @@ class RunManager:
     def get_component(self, component_id: str) -> object:
         return self.components.get(component_id)
 
+    def add_component(self, component_id: str, component):
+        self.components[component_id] = component
+
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fire_event(event=event_type, handlers=self.handlers, ctx=fl_ctx)
 

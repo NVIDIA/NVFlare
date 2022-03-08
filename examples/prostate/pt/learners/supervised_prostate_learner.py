@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 
 import torch
 import torch.optim as optim
-from monai.data import DataLoader, Dataset, load_decathlon_datalist
+from monai.data import CacheDataset, DataLoader, Dataset, load_decathlon_datalist
 from monai.inferers import SlidingWindowInferer
 from monai.losses import DiceLoss
 from monai.metrics import DiceMetric
@@ -37,7 +37,6 @@ from monai.transforms import (
     RandShiftIntensityd,
     Spacingd,
 )
-from pt.learners.supervised_learner import SupervisedLearner
 from pt.utils.custom_client_datalist_json_path import custom_client_datalist_json_path
 
 from nvflare.apis.fl_context import FLContext
@@ -45,8 +44,10 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
+from pt.learners.supervised_learner import SupervisedLearner
 
-class ProstateLearner(SupervisedLearner):
+
+class SupervisedProstateLearner(SupervisedLearner):
     def __init__(
         self,
         train_config_filename,
@@ -79,6 +80,7 @@ class ProstateLearner(SupervisedLearner):
         self.fedproxloss_mu = config_info["fedproxloss_mu"]
         self.roi_size = config_info.get("roi_size", (224, 224, 32))
         self.infer_roi_size = config_info.get("infer_roi_size", (224, 224, 32))
+        cache_rate = config_info["cache_dataset"]
         dataset_base_dir = config_info["dataset_base_dir"]
         datalist_json_path = config_info["datalist_json_path"]
 
@@ -165,10 +167,18 @@ class ProstateLearner(SupervisedLearner):
         self.transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
         # Set dataset
-        self.train_dataset = Dataset(
-            data=train_list,
-            transform=self.transform_train,
-        )
+        if cache_rate > 0.0:
+            self.train_dataset = CacheDataset(
+                data=train_list,
+                transform=self.transform_train,
+                cache_rate=cache_rate,
+                num_workers=4,
+            )
+        else:
+            self.train_dataset = Dataset(
+                data=train_list,
+                transform=self.transform_train,
+            )
         self.train_dataset_for_valid = Dataset(
             data=train_list,
             transform=self.transform_valid,
@@ -182,19 +192,19 @@ class ProstateLearner(SupervisedLearner):
             self.train_dataset,
             batch_size=1,
             shuffle=True,
-            num_workers=1,
+            num_workers=2,
         )
         self.train_for_valid_loader = DataLoader(
             self.train_dataset_for_valid,
             batch_size=1,
             shuffle=False,
-            num_workers=1,
+            num_workers=2,
         )
         self.valid_loader = DataLoader(
             self.valid_dataset,
             batch_size=1,
             shuffle=False,
-            num_workers=1,
+            num_workers=2,
         )
 
         # Set inferer and evaluation metric

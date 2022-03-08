@@ -23,6 +23,7 @@ from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.state_persistor import StatePersistor
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -134,6 +135,7 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.abort_signal, private=True, sticky=True)
             self.fire_event(EventType.START_RUN, fl_ctx)
+            self.engine.persist_components(fl_ctx, completed=False)
 
         self.status = "started"
         try:
@@ -150,6 +152,7 @@ class ServerRunner(FLComponent):
                 self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
                 self.fire_event(EventType.END_RUN, fl_ctx)
                 self.log_info(fl_ctx, "END_RUN fired")
+                self.engine.persist_components(fl_ctx, completed=True)
 
         # ask all clients to end run!
         self.engine.send_aux_request(
@@ -424,3 +427,9 @@ class ServerRunner(FLComponent):
         self.status = "done"
         self.abort_signal.trigger(value=True)
         self.log_info(fl_ctx, "asked to abort - triggered abort_signal to stop the RUN")
+
+    def get_persist_state(self, fl_ctx: FLContext) -> dict:
+        return {"run_number": self.run_num}
+
+    def restore(self, state_data: dict, fl_ctx: FLContext):
+        self.run_num = state_data.get("run_number")

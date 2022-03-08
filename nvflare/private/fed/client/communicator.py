@@ -54,7 +54,8 @@ class Communicator:
         self.verbose = False
         self.should_stop = False
         self.heartbeat_done = False
-        self.retry = int(math.ceil(float(retry_timeout) / 5))
+        # self.retry = int(math.ceil(float(retry_timeout) / 5))
+        self.retry = 1
         self.client_state_processors = client_state_processors
         self.compression = compression
 
@@ -99,7 +100,7 @@ class Communicator:
             channel = grpc.insecure_channel(**channel_dict, compression=self.compression)
         return channel
 
-    def get_client_state(self, project_name, token, fl_ctx: FLContext):
+    def get_client_state(self, project_name, token, ssid, fl_ctx: FLContext):
         """Client's metadata used to authenticate and communicate.
 
         Args:
@@ -110,7 +111,7 @@ class Communicator:
         Returns: a ClientState message
 
         """
-        state_message = fed_msg.ClientState(token=token)
+        state_message = fed_msg.ClientState(token=token, ssid=ssid)
         state_message.meta.project.name = project_name
         state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
 
@@ -158,14 +159,15 @@ class Communicator:
         login_message.meta.project.name = project_name
 
         result, retry = None, self.retry
-        retry = 1500  # retry register for 2 hours (7500s)
+        # retry = 1500  # retry register for 2 hours (7500s)
         with self.set_up_channel(servers[project_name]) as channel:
             stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
+            while True:
                 try:
                     start_time = time.time()
                     result = stub.Register(login_message)
                     token = result.token
+                    ssid = result.ssid
                     self.should_stop = False
                     break
                 except grpc.RpcError as grpc_error:
@@ -182,16 +184,16 @@ class Communicator:
                         status_code = grpc_error.code()
                         if grpc.StatusCode.UNAUTHENTICATED == status_code:
                             raise excep
-                    retry -= 1
+                    # retry -= 1
                     time.sleep(5)
             if self.should_stop:
                 raise excep
             if result is None:
                 return None
 
-        return token
+        return token, ssid
 
-    def getTask(self, servers, project_name, token, fl_ctx: FLContext):
+    def getTask(self, servers, project_name, token, ssid, fl_ctx: FLContext):
         """Get registered with the remote server via channel, and fetch the server's model parameters.
 
         Args:
@@ -210,7 +212,7 @@ class Communicator:
                 # get the global model
                 try:
                     start_time = time.time()
-                    global_model = stub.GetTask(self.get_client_state(project_name, token, fl_ctx))
+                    global_model = stub.GetTask(self.get_client_state(project_name, token, ssid, fl_ctx))
                     # Clear the stopping flag
                     # if the connection to server recovered.
                     self.should_stop = False
@@ -241,7 +243,8 @@ class Communicator:
         # Failed to get global, return None
         return None
 
-    def submitUpdate(self, servers, project_name, token, fl_ctx: FLContext, client_name, shareable, execute_task_name):
+    def submitUpdate(self, servers, project_name, token, ssid,
+                     fl_ctx: FLContext, client_name, shareable, execute_task_name):
         """Submit the task execution result back to the server.
 
         Args:
@@ -256,7 +259,7 @@ class Communicator:
         Returns: server message from the server
 
         """
-        client_state = self.get_client_state(project_name, token, fl_ctx)
+        client_state = self.get_client_state(project_name, token, ssid, fl_ctx)
         client_state.client_name = client_name
         contrib = self._get_communication_data(shareable, client_state, fl_ctx, execute_task_name)
 
@@ -290,7 +293,8 @@ class Communicator:
                     time.sleep(5)
         return server_msg
 
-    def auxCommunicate(self, servers, project_name, token, fl_ctx: FLContext, client_name, shareable, topic, timeout):
+    def auxCommunicate(self, servers, project_name, token, ssid,
+                       fl_ctx: FLContext, client_name, shareable, topic, timeout):
         """To send the aux communication message to the server.
 
         Args:
@@ -306,7 +310,7 @@ class Communicator:
         Returns: server response message
 
         """
-        client_state = self.get_client_state(project_name, token, fl_ctx)
+        client_state = self.get_client_state(project_name, token, ssid, fl_ctx)
         client_state.client_name = client_name
 
         aux_message = fed_msg.AuxMessage()
@@ -338,7 +342,7 @@ class Communicator:
                     time.sleep(5)
         return server_msg
 
-    def quit_remote(self, servers, task_name, token, fl_ctx: FLContext):
+    def quit_remote(self, servers, task_name, token, ssid, fl_ctx: FLContext):
         """Sending the last message to the server before leaving.
 
         Args:
@@ -357,7 +361,7 @@ class Communicator:
                 try:
                     start_time = time.time()
                     self.logger.info(f"Quitting server: {task_name}")
-                    server_message = stub.Quit(self.get_client_state(task_name, token, fl_ctx))
+                    server_message = stub.Quit(self.get_client_state(task_name, token, ssid, fl_ctx))
                     # Clear the stopping flag
                     # if the connection to server recovered.
                     self.should_stop = False
@@ -373,16 +377,17 @@ class Communicator:
                     time.sleep(3)
         return server_message
 
-    def send_heartbeat(self, servers, task_name, token, client_name):
+    def send_heartbeat(self, servers, task_name, token, ssid, client_name):
         message = fed_msg.Token()
         message.token = token
+        message.ssid = ssid
         message.client_name = client_name
 
-        with self.set_up_channel(servers[task_name]) as channel:
-            while not self.heartbeat_done:
+        while not self.heartbeat_done:
+            with self.set_up_channel(servers[task_name]) as channel:
                 stub = fed_service.FederatedTrainingStub(channel)
                 # retry the heartbeat call for 10 minutes
-                retry = 120
+                retry = 2
                 while retry > 0:
                     try:
                         self.logger.debug(f"Send {task_name} heartbeat {token}")
@@ -438,12 +443,11 @@ class Communicator:
                 return
 
         self.logger.error(
-            f"Action: {action} grpc communication error. retry: {retry}, First start till now: {time.time() - start_time} seconds."
+            f"Action: {action} grpc communication error. Keep retry..."
         )
         if grpc.StatusCode.UNAVAILABLE == status_code:
             self.logger.error(
-                f"Could not connect to server: {service.get('target')}\t"
-                f"Setting flag for stopping training. {grpc_error.details()}"
+                f"Could not connect to server: {service.get('target')}\t {grpc_error.details()}"
             )
             self.should_stop = True
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import socket
 import ssl
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -151,6 +152,11 @@ class AdminAPI(AdminAPISpec):
         self.shutdown_received = False
         self.shutdown_msg = None
 
+        self.server_sess_active = False
+
+        self.sess_monitor_thread = None
+        self.sess_monitor_active = False
+
     def _load_client_cmds(self, cmd_modules):
         if cmd_modules:
             if not isinstance(cmd_modules, list):
@@ -164,9 +170,57 @@ class AdminAPI(AdminAPISpec):
     def register_command(self, cmd_entry):
         self.all_cmds.append(cmd_entry.name)
 
+    def start_session_monitor(self, session_ended_callback, interval=5):
+        if self.sess_monitor_thread and self.sess_monitor_thread.is_alive():
+            self.close_session_monitor()
+        self.sess_monitor_thread = threading.Thread(
+            target=self._check_session, args=(session_ended_callback, interval), daemon=True
+        )
+        self.sess_monitor_active = True
+        self.sess_monitor_thread.start()
+
+    def close_session_monitor(self):
+        self.sess_monitor_active = False
+        if self.sess_monitor_thread and self.sess_monitor_thread.is_alive():
+            self.sess_monitor_thread.join()
+            self.sess_monitor_thread = None
+
+    def _check_session(self, session_ended_callback, interval):
+        error_msg = ""
+        connection_error_counter = 0
+        while True:
+            time.sleep(interval)
+
+            if not self.sess_monitor_active:
+                return
+
+            if self.shutdown_received:
+                error_msg = self.shutdown_msg
+                break
+
+            resp = self.server_execute("_check_session")
+            status = resp["status"]
+
+            connection_error_counter += 1
+            if status != APIStatus.ERROR_SERVER_CONNECTION:
+                connection_error_counter = 0
+
+            if status in APIStatus.ERROR_INACTIVE_SESSION or (
+                status in APIStatus.ERROR_SERVER_CONNECTION and connection_error_counter > 60 // interval
+            ):
+                for item in resp["data"]:
+                    if item["type"] == "error":
+                        error_msg = item["data"]
+                break
+
+        self.server_sess_active = False
+        session_ended_callback(error_msg)
+
     def logout(self):
         """Send logout command to server."""
-        return self.server_execute("_logout")
+        resp = self.server_execute("_logout")
+        self.server_sess_active = False
+        return resp
 
     def login(self, username: str):
         """Login using certification files and retrieve server side commands.
@@ -191,6 +245,7 @@ class AdminAPI(AdminAPISpec):
         if not self.server_cmd_received:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
 
+        self.server_sess_active = True
         return {"status": APIStatus.SUCCESS, "details": "Login success"}
 
     def login_with_password(self, username: str, password: str):
@@ -217,6 +272,7 @@ class AdminAPI(AdminAPISpec):
         if not self.server_cmd_received:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
 
+        self.server_sess_active = True
         return {"status": APIStatus.SUCCESS, "details": "Login success"}
 
     def _send_to_sock(self, sock, command, process_json_func):
@@ -367,6 +423,9 @@ class AdminAPI(AdminAPISpec):
         return self.server_execute(command)
 
     def server_execute(self, command, reply_processor=None):
+        if not self.server_sess_active:
+            return {"status": APIStatus.ERROR_INACTIVE_SESSION, "details": "API session is inactive"}
+
         self.set_command_result(None)
         start = time.time()
         self._try_command(command, reply_processor)
@@ -378,7 +437,16 @@ class AdminAPI(AdminAPISpec):
 
         result = self.get_command_result()
         if result is None:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "Server did not respond"}
+            return {"status": APIStatus.ERROR_SERVER_CONNECTION, "details": "Server did not respond"}
+        if "data" in result:
+            for item in result["data"]:
+                if item["type"] == "error":
+                    if "session_inactive" in item["data"]:
+                        result.update({"status": APIStatus.ERROR_INACTIVE_SESSION})
+                    elif any(
+                        err in item["data"] for err in ("Failed to communicate with Admin Server", "wrong server")
+                    ):
+                        result.update({"status": APIStatus.ERROR_SERVER_CONNECTION})
         if "status" not in result:
             result.update({"status": APIStatus.SUCCESS})
         self.set_command_result(result)

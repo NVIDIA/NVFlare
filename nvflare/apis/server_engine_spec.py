@@ -20,6 +20,7 @@ from nvflare.widgets.widget import Widget
 
 from .client import Client
 from .fl_context import FLContext
+from .fl_snapshot import FLSnapshot
 from .workspace import Workspace
 
 
@@ -106,4 +107,10 @@ class ServerEngineSpec(ABC):
         Returns: the widget or None if not found
 
         """
+        pass
+
+    def persist_components(self, fl_ctx: FLContext, completed: bool):
+        pass
+
+    def restore_components(self, snapshot: FLSnapshot, fl_ctx: FLContext):
         pass

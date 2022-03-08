@@ -18,24 +18,32 @@ from .fl_snapshot import FLSnapshot
 class StatePersistor:
     def save(self, snapshot: FLSnapshot) -> str:
         """Call to save the snapshot of the FL state to storage.
+
         Args:
             snapshot: FLSnapshot object
+
         Returns: storage location
+
         """
         pass
 
-    def retrieve(self, location: str) -> FLSnapshot:
+    def retrieve(self) -> FLSnapshot:
         """Call to load the persisted FL components snapshot from the persisted location.
+
         Args:
-            location: persist location
+
         Returns:
+
         """
         pass
 
-    def delete(self, location: str):
+    def delete(self,  location: str):
         """To delete the FL component snapshot.
+
         Args:
             location: persist location
+
         Returns:
+
         """
         pass

@@ -24,7 +24,7 @@ function print_style_fail_msg() {
 set +e
 folders_to_check_license="nvflare test"
 
-grep -r --include "*.py" -L "# Copyright (c) \(2021\|2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved." ${folders_to_check_license} > no_license.lst
+grep -r --include "*.py" -L "\(# Copyright (c) \(2021\|2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" ${folders_to_check_license} > no_license.lst
 if [ -s no_license.lst ]; then
     # The file is not-empty.
     cat no_license.lst

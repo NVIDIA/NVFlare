@@ -16,10 +16,12 @@ import cmd
 import getpass
 import json
 import os
+import signal
 import time
 import traceback
 from datetime import datetime
 from enum import Enum
+from functools import partial
 from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
@@ -28,6 +30,7 @@ from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
 
 from .api import AdminAPI
+from .api_status import APIStatus
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -117,6 +120,16 @@ class AdminClient(cmd.Cmd):
             debug=self.debug,
             poc=poc,
         )
+
+        signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
+
+    def session_ended(self, message):
+        self.write_error(message)
+        os.kill(os.getpid(), signal.SIGUSR1)
+
+    def session_signal_handler(self, signum, frame):
+        self.api.close_session_monitor()
+        raise ConnectionError
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -266,6 +279,8 @@ class AdminClient(cmd.Cmd):
             ent = entries[0]
             resp = ent.handler(args, self.api)
             self.print_resp(resp)
+            if resp["status"] == APIStatus.ERROR_INACTIVE_SESSION:
+                return True
             return
 
         entries = self.api.server_cmd_reg.get_command_entries(cmd_name)
@@ -308,6 +323,8 @@ class AdminClient(cmd.Cmd):
         usecs = int(secs * 1000000)
         done = "Done [{} usecs] {}".format(usecs, datetime.now())
         self.print_resp(resp)
+        if resp["status"] == APIStatus.ERROR_INACTIVE_SESSION:
+            return True
         self.write_stdout(done)
         if self.api.shutdown_received:
             # exit the client
@@ -345,7 +362,7 @@ class AdminClient(cmd.Cmd):
                     if self.use_rawinput:
                         try:
                             line = input(self.prompt)
-                        except EOFError:
+                        except (EOFError, ConnectionError):
                             line = "bye"
                         except KeyboardInterrupt:
                             self.stdout.write("\n")
@@ -399,6 +416,7 @@ class AdminClient(cmd.Cmd):
                     print("Communication Error - please try later")
                     return
 
+        self.api.start_session_monitor(self.session_ended)
         self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
 
     def print_resp(self, resp: dict):
