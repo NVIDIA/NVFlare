@@ -96,7 +96,7 @@ def main():
         require_login=args.with_login,
         credential_type=CredentialType.PASSWORD if args.cred_type == "password" else CredentialType.CERT,
         debug=args.with_debug,
-        cli_history_size=args.cli_history_size,
+        # cli_history_size=args.cli_history_size,
     )
 
     client.run()
