@@ -30,12 +30,12 @@ else:
     from .mem_store import do_refresh, get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
 def load_privilege():
-    priviledge_file = os.environ.get("AUTHZ_FILE", "priviledge.yml")
+    privilege_file = os.environ.get("AUTHZ_FILE", "privilege.yml")
     try:
-        priviledge = yaml.load(open(priviledge_file, "tr"), Loader=yaml.Loader)
+        privilege = yaml.load(open(privilege_file, "tr"), Loader=yaml.Loader)
     except:
-        priviledge = dict()
-    return priviledge
+        privilege = dict()
+    return privilege
 
 def update_sp_state(project, now, heartbeat_timeout=10):
     valid_starting = now - timedelta(seconds=heartbeat_timeout)
