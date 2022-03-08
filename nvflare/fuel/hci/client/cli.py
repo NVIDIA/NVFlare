@@ -151,7 +151,7 @@ class AdminClient(cmd.Cmd):
         overseer_agent = HttpOverseerAgent(
             overseer_end_point="http://127.0.0.1:5000/api/v1",
             project="example_project",
-            role="client",
+            role="admin",
             name="localhost",
             heartbeat_interval=6,
         )
