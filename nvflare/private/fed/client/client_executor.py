@@ -24,8 +24,8 @@ from multiprocessing.connection import Client
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode
 from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-
 from .client_status import ClientStatus, get_status_message
 
 
@@ -147,7 +147,7 @@ class ProcessExecutor(ClientExecutor):
         self.conn_client = None
         # self.pool = None
 
-        self.listen_port = 6000
+        self.listen_port = get_open_ports(1)[0]
 
         self.lock = threading.Lock()
 
