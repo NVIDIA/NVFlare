@@ -47,7 +47,7 @@
       "role": "server",
       "name": "localhost",
       "fl_port": "8002",
-      "admn_port": "8003",
+      "admin_port": "8003",
       "heartbeat_interval": 6
     }
   }
