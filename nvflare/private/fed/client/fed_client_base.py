@@ -84,6 +84,7 @@ class FederatedClientBase:
         self.abort_signal = Signal()
 
         self.status = ClientStatus.NOT_STARTED
+        self.remote_tasks = None
 
     def client_register(self, project_name):
         """Register the client to the FL server.

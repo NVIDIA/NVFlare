@@ -27,6 +27,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
+from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareeable_data, shareable_to_modeldata
 
 
@@ -218,16 +219,23 @@ class Communicator:
                     self.should_stop = False
 
                     end_time = time.time()
-                    self.logger.info(
-                        f"Received from {project_name} server "
-                        f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
-                    )
 
                     task = fed_msg.CurrentTask()
                     task.meta.CopyFrom(global_model.meta)
                     task.meta_data.CopyFrom(global_model.meta_data)
                     task.data.CopyFrom(global_model.data)
                     task.task_name = global_model.task_name
+
+                    if global_model.task_name == SpecialTaskName.TRY_AGAIN:
+                        self.logger.debug(
+                            f"Received from {project_name} server "
+                            f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+                        )
+                    else:
+                        self.logger.info(
+                            f"Received from {project_name} server "
+                            f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+                        )
 
                     return task
                 except grpc.RpcError as grpc_error:
