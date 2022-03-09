@@ -6,8 +6,8 @@
         "project": "example_project",
         "role": "server",
         "name": "localhost",
-        "fl_port": 8002,
-        "admn_port": 8003,
+        "fl_port": "8002",
+        "admin_port": "8003",
         "heartbeat_interval": 6
       }
     }
