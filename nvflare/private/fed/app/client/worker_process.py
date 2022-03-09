@@ -110,7 +110,7 @@ def main():
         conf.configure()
 
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client()
+        federated_client = deployer.create_fed_client(args)
         federated_client.status = ClientStatus.STARTING
 
         federated_client.token = token

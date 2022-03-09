@@ -44,7 +44,8 @@ class FederatedClient(FederatedClientBase):
         executors: Optional[List[Executor]] = None,
         compression=None,
         enable_byoc=False,
-        overseer_agent=None
+        overseer_agent=None,
+        args=None
     ):
         """To init FederatedClient.
 
@@ -70,7 +71,8 @@ class FederatedClient(FederatedClientBase):
             client_state_processors=client_state_processors,
             handlers=handlers,
             compression=compression,
-            overseer_agent=overseer_agent
+            overseer_agent=overseer_agent,
+            args=args
         )
 
         self.executors = executors

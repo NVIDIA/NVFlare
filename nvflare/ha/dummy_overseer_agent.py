@@ -15,22 +15,38 @@
 import json
 import threading
 import time
+import uuid
 
 from requests.models import Response
 
 from nvflare.apis.overseer_spec import SP, OverseerAgent
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_constant import FLContextKey
 
 
 class DummyOverseerAgent(OverseerAgent):
+    SSID = "ebc6125d-0a56-4688-9b08-355fe9e4d61a"
+
     def __init__(self, sp_end_point, heartbeat_interval=5):
-        name, fl_port, admin_port = sp_end_point.split(":")
-        self._psp = SP(name, fl_port, admin_port, True)
+        self.sp_end_point = sp_end_point
+
+        name, fl_port, admin_port = self.sp_end_point.split(":")
+        self._psp = SP(name, fl_port, admin_port, DummyOverseerAgent.SSID, True)
 
         self._report_and_query = threading.Thread(target=self._rnq_worker, args=())
         self._flag = threading.Event()
+        self._asked_to_exit = False
         self._update_callback = None
         self._conditional_cb = False
         self._heartbeat_interval = heartbeat_interval
+
+    def initialize(self, fl_ctx: FLContext):
+        sp_end_point = fl_ctx.get_prop(FLContextKey.SP_END_POINT)
+        if sp_end_point:
+            self.sp_end_point = sp_end_point
+
+        name, fl_port, admin_port = self.sp_end_point.split(":")
+        self._psp = SP(name, fl_port, admin_port, DummyOverseerAgent.SSID, True)
 
     def get_primary_sp(self) -> SP:
         """Return current primary service provider. The PSP is static in the dummy agent."""

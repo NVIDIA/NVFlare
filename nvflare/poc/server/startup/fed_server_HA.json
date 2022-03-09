@@ -10,9 +10,14 @@
       }
     },
     "overseer_agent": {
-      "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+      "path": "nvflare.ha.overseer_agent.HttpOverseerAgent",
       "args": {
-        "sp_end_point":  "localhost:8002:8003",
+        "overseer_end_point": "http://localhost:6000/api/v1",
+        "project": "example_project",
+        "role": "server",
+        "name": "localhost",
+        "fl_port": 8002,
+        "admn_port": 8003,
         "heartbeat_interval": 6
       }
     }

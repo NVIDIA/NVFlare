@@ -1,8 +1,13 @@
 {"format_version": 2, "servers": [{"name": "example_project", "service": {"options": [["grpc.max_send_message_length", 2147483647], ["grpc.max_receive_message_length", 2147483647]]}}], "client": {"retry_timeout": 30, "ssl_private_key": "client.key", "ssl_cert": "client.crt", "ssl_root_cert": "rootCA.pem", "compression": "Gzip"},
     "overseer_agent": {
-      "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+      "path": "nvflare.ha.overseer_agent.HttpOverseerAgent",
       "args": {
-        "sp_end_point":  "localhost:8002:8003",
+        "overseer_end_point": "http://localhost:6000/api/v1",
+        "project": "example_project",
+        "role": "server",
+        "name": "localhost",
+        "fl_port": 8002,
+        "admn_port": 8003,
         "heartbeat_interval": 6
       }
     }

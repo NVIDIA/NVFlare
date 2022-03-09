@@ -83,7 +83,7 @@ def main():
 
         security_check(trainer.secure_train, args)
 
-        federated_client = trainer.create_fed_client()
+        federated_client = trainer.create_fed_client(args)
 
         while not federated_client.sp_established:
             print("Waiting for SP....")

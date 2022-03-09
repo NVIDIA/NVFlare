@@ -28,6 +28,7 @@ from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -49,7 +50,8 @@ class FederatedClientBase:
         client_state_processors: Optional[List[Filter]] = None,
         handlers: Optional[List[FLComponent]] = None,
         compression=None,
-        overseer_agent=None
+        overseer_agent=None,
+        args=None
     ):
         """To init FederatedClientBase.
 
@@ -93,7 +95,7 @@ class FederatedClientBase:
         self.sp_established = False
         self.overseer_agent = overseer_agent
 
-        # self.overseer_agent = self._create_overseer_agent(client_args)
+        self.overseer_agent = self._init_agent(args)
 
         if secure_train:
             if self.overseer_agent:
@@ -103,11 +105,14 @@ class FederatedClientBase:
 
         self.overseer_agent.start(self.overseer_callback)
 
-    def _create_overseer_agent(self, args=None):
+    def _init_agent(self, args=None):
+        kv_list = parse_vars(args.set)
+        sp = kv_list.get("sp")
 
-        if self.engine:
-            with self.engine.new_context() as fl_ctx:
-                self.overseer_agent.initialize(fl_ctx)
+        if sp:
+            fl_ctx = FLContext()
+            fl_ctx.set_prop(FLContextKey.SP_END_POINT, sp)
+            self.overseer_agent.initialize(fl_ctx)
 
         return self.overseer_agent
 

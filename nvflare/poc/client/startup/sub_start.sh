@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 client=$1
 server=$2
+sp=$3
 
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -24,7 +25,7 @@ start_fl() {
     exit
   fi
   lst=$SECONDS
-((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false uid=${client} config_folder=config host=${server} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
+((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false uid=${client} config_folder=config host=${server} sp=${sp} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
   pid=`cat $DIR/../pid.fl`
 }
 
