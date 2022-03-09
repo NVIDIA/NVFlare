@@ -104,8 +104,8 @@ class AdminAPI(AdminAPISpec):
 
     def __init__(
         self,
-        host,
-        port,
+        host=None,
+        port=None,
         ca_cert="",
         client_cert="",
         client_key="",
@@ -113,6 +113,9 @@ class AdminAPI(AdminAPISpec):
         download_dir="",
         server_cn=None,
         cmd_modules=None,
+        overseer_end_point=None,
+        project=None,
+        name=None,
         poc: bool = False,
         debug: bool = False,
     ):
