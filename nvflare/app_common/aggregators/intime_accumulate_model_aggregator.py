@@ -34,14 +34,12 @@ def _is_nested_aggregation_weights(aggregation_weights):
     return True
 
 
-def _check_one_to_one_mapping(ref_dict: dict, dict_to_check: dict):
-    keys = {k: "" for k in ref_dict}
-    for k in dict_to_check:
-        if k in keys:
-            keys.pop(k)
-    if len(keys) == 0:
-        return True
-    return False
+def _get_missing_keys(ref_dict: dict, dict_to_check: dict):
+    result = []
+    for k in ref_dict:
+        if k not in dict_to_check:
+            result.append(k)
+    return result
 
 
 class InTimeAccumulateWeightedAggregator(Aggregator):
@@ -94,10 +92,15 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         if exclude_vars:
             if not isinstance(exclude_vars, dict) and not isinstance(exclude_vars, str):
                 raise ValueError(
-                    f"exclude_vars = {exclude_vars} should be a regex string but get {type(exclude_vars)}."
+                    f"exclude_vars = {exclude_vars} should be a regex string but got {type(exclude_vars)}."
                 )
-            if isinstance(exclude_vars, dict) and not _check_one_to_one_mapping(expected_data_kind, exclude_vars):
-                raise ValueError("A dict exclude_vars should specify exclude_vars for every key in expected_data_kind.")
+            if isinstance(exclude_vars, dict):
+                missing_keys = _get_missing_keys(expected_data_kind, exclude_vars)
+                if len(missing_keys) != 0:
+                    raise ValueError(
+                        "A dict exclude_vars should specify exclude_vars for every key in expected_data_kind. "
+                        f"But missed these keys: {missing_keys}"
+                    )
 
         exclude_vars_dict = dict()
         for k in self.expected_data_kind.keys():
@@ -105,7 +108,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 if k in exclude_vars:
                     if not isinstance(exclude_vars[k], str):
                         raise ValueError(
-                            f"exclude_vars[{k}] = {exclude_vars[k]} should be a regex string but get {type(exclude_vars[k])}."
+                            f"exclude_vars[{k}] = {exclude_vars[k]} should be a regex string but got {type(exclude_vars[k])}."
                         )
                     exclude_vars_dict[k] = exclude_vars[k]
             else:
@@ -116,12 +119,13 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.exclude_vars = exclude_vars_dict
 
         # Check aggregation weights
-        if _is_nested_aggregation_weights(aggregation_weights) and not _check_one_to_one_mapping(
-            expected_data_kind, aggregation_weights
-        ):
-            raise ValueError(
-                "A nested aggregation_weights should specify aggregation_weights for every key in expected_data_kind."
-            )
+        if _is_nested_aggregation_weights(aggregation_weights):
+            missing_keys = _get_missing_keys(expected_data_kind, aggregation_weights)
+            if len(missing_keys) != 0:
+                raise ValueError(
+                    "A dict of dict aggregation_weights should specify aggregation_weights "
+                    f"for every key in expected_data_kind. But missed these keys: {missing_keys}"
+                )
 
         aggregation_weights = aggregation_weights or {}
         aggregation_weights_dict = dict()
