@@ -184,7 +184,7 @@ class StaticFileBuilder(Builder):
         dest_dir = self.get_kit_dir(client, ctx)
         fed_learn_port = ctx.get("fed_learn_port")
         server_name = ctx.get("server_name")
-        config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
+        # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
         config["servers"][0]["name"] = self.study_name
         config["enable_byoc"] = client.enable_byoc
         replacement_dict = {
