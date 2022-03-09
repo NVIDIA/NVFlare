@@ -77,13 +77,12 @@ gunicorn_conf_py: |
 
 fed_client: |
   {
-    "format_version": 1,
+    "format_version": 2,
     "enable_byoc": false,
     "servers": [
         {
             "name": "spleen_segmentation",
             "service": {
-                "target": "localhost:8002",
                 "options": [
                     ["grpc.max_send_message_length",    2147483647],
                     ["grpc.max_receive_message_length", 2147483647]
@@ -102,7 +101,7 @@ fed_client: |
 
 fed_server: |
   {
-    "format_version": 1,
+    "format_version": 2,
     "enable_byoc": false,
     "servers": [
         {
