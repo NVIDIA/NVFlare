@@ -16,6 +16,7 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import Any, Dict
 
+from .fl_context import FLContext
 
 @dataclass
 class SP:
@@ -27,6 +28,9 @@ class SP:
 
 
 class OverseerAgent(ABC):
+    def initialize(self, fl_ctx: FLContext):
+        pass
+
     def set_secure_context(self, ca_path: str, cert_path: str = "", prv_key_path: str = ""):
         pass
 
