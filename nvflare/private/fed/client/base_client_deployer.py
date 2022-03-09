@@ -47,7 +47,7 @@ class BaseClientDeployer:
     def set_model_manager(self, model_manager):
         self.model_manager = model_manager
 
-    def create_fed_client(self):
+    def create_fed_client(self, args):
         if self.host:
             for item in self.server_config:
                 target = item["service"].get("target", None)
@@ -74,7 +74,8 @@ class BaseClientDeployer:
             executors=self.executors,
             compression=compression,
             enable_byoc=self.enable_byoc,
-            overseer_agent=self.overseer_agent
+            overseer_agent=self.overseer_agent,
+            args=args
         )
         return self.federated_client
 

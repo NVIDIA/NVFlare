@@ -97,7 +97,7 @@ class ServerDeployer:
 
         """
         first_server, services = self.create_fl_server(args, secure_train=self.secure_train)
-        services.deploy(grpc_args=first_server, secure_train=self.secure_train)
+        services.deploy(args, grpc_args=first_server, secure_train=self.secure_train)
         # self.create_builder(services)
         print("deployed FL server trainer.")
         return services

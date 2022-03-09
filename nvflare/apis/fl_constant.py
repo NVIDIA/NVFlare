@@ -89,6 +89,7 @@ class ReservedKey(object):
     NUM_OF_PROCESSES = "__num_of_processes__"
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
+    SP_END_POINT = "__sp_end_point__"
 
 
 class FLContextKey(object):
@@ -119,6 +120,7 @@ class FLContextKey(object):
     NUM_OF_PROCESSES = ReservedKey.NUM_OF_PROCESSES
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
+    SP_END_POINT = ReservedKey.SP_END_POINT
 
 
 class ReservedTopic(object):

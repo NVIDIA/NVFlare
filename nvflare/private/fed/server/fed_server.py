@@ -37,6 +37,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
@@ -112,7 +113,7 @@ class BaseServer(ABC):
             self.logger.info("server off")
             return 0
 
-    def deploy(self, grpc_args=None, secure_train=False):
+    def deploy(self, args, grpc_args=None, secure_train=False):
         """Start a grpc server and listening the designated port."""
         num_server_workers = grpc_args.get("num_server_workers", 1)
         num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
@@ -676,14 +677,14 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.server_runner.run()
         self.engine.engine_info.status = MachineStatus.STOPPED
 
-    def deploy(self, grpc_args=None, secure_train=False):
-        super().deploy(grpc_args, secure_train)
+    def deploy(self, args, grpc_args=None, secure_train=False):
+        super().deploy(args, grpc_args, secure_train)
 
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         self.server_state.host = target.split(":")[0]
         self.server_state.service_port = target.split(":")[1]
 
-        # self.overseer_agent = self._create_overseer_agent(grpc_args)
+        self.overseer_agent = self._init_agent(args)
 
         if secure_train:
             if self.overseer_agent:
@@ -693,10 +694,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         self.overseer_agent.start(self.overseer_callback)
 
-    def _create_overseer_agent(self, args=None):
+    def _init_agent(self, args=None):
+        kv_list = parse_vars(args.set)
+        sp = kv_list.get("sp")
 
-        if self.engine:
+        if sp:
             with self.engine.new_context() as fl_ctx:
+                fl_ctx.set_prop(FLContextKey.SP_END_POINT, sp)
                 self.overseer_agent.initialize(fl_ctx)
 
         return self.overseer_agent

@@ -30,6 +30,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegist
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
 from nvflare.ha.overseer_agent import HttpOverseerAgent
+from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 from nvflare.apis.overseer_spec import SP
 
 from .api import AdminAPI
@@ -144,6 +145,10 @@ class AdminClient(cmd.Cmd):
             project="example_project",
             role="admin",
             name="localhost",
+            heartbeat_interval=6,
+        )
+        overseer_agent = DummyOverseerAgent(
+            sp_end_point="localhost:8002:8003",
             heartbeat_interval=6,
         )
 

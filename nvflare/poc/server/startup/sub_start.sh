@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 host=$1
+sp=$2
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "WORKSPACE set to $DIR/.."
@@ -20,7 +21,7 @@ start_fl() {
     exit
   fi
   lst=$SECONDS
-((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=false config_folder=config host=${host} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
+((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=false config_folder=config host=${host} sp=${sp} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
   pid=`cat $DIR/../pid.fl`
 }
 
