@@ -88,3 +88,32 @@ class ClientStatusKey(object):
     CURRENT_TASK = "current_task"
     STATUS = "status"
     APP_NAME = "app_name"
+
+
+# TODO:: Remove some of these constants
+class AppFolderConstants:
+    """hard coded file names inside the app folder."""
+
+    CONFIG_TRAIN = "config_train.json"
+    CONFIG_ENV = "environment.json"
+    CONFIG_FED_SERVER = "config_fed_server.json"
+    CONFIG_FED_CLIENT = "config_fed_client.json"
+
+
+class SSLConstants:
+    """hard coded names related to SSL."""
+
+    CERT = "ssl_cert"
+    PRIVATE_KEY = "ssl_private_key"
+    ROOT_CERT = "ssl_root_cert"
+
+
+class WorkspaceConstants:
+    """hard coded file names inside the workspace folder."""
+
+    LOGGING_CONFIG = "log.config"
+    AUDIT_LOG = "audit.log"
+
+    # these two files is used by shell scripts to determine restart / shutdown
+    RESTART_FILE = "restart.fl"
+    SHUTDOWN_FILE = "shutdown.fl"
