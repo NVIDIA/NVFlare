@@ -278,3 +278,73 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         self.base_deployer = BaseClientDeployer()
         self.base_deployer.build(build_ctx)
+
+
+class FLAdminClientStarterConfigurator(JsonConfigurator):
+    """FL Admin Client startup configurator."""
+
+    def __init__(
+        self,
+        app_root: str,
+        admin_config_file_name=None
+    ):
+        """Uses the json configuration to start the FL admin client.
+
+        Args:
+            app_root: application root
+            admin_config_file_name: admin config filename
+        """
+        base_pkgs = FL_PACKAGES
+        module_names = FL_MODULES
+
+        admin_config_file_name = os.path.join(app_root, admin_config_file_name)
+
+        JsonConfigurator.__init__(
+            self,
+            config_file_name=admin_config_file_name,
+            base_pkgs=base_pkgs,
+            module_names=module_names,
+            exclude_libs=True,
+        )
+
+        self.app_root = app_root
+        self.admin_config_file_name = admin_config_file_name
+        self.base_deployer = None
+        self.overseer_agent = None
+
+    def process_config_element(self, config_ctx: ConfigContext, node: Node):
+        """Process config element.
+
+        Args:
+            config_ctx: config context
+            node: element node
+        """
+        element = node.element
+        path = node.path()
+
+        if path == "admin.overseer_agent":
+            self.overseer_agent = self.build_component(element)
+            return
+
+    def start_config(self, config_ctx: ConfigContext):
+        """Start the config process.
+
+        Args:
+            config_ctx: config context
+        """
+        super().start_config(config_ctx)
+
+        try:
+            admin = self.config_data["admin"]
+            if admin.get("client_key"):
+                admin["client_key"] = os.path.join(self.app_root, admin["client_key"])
+            if admin.get("client_cert"):
+                admin["client_cert"] = os.path.join(self.app_root, admin["client_cert"])
+            if admin.get("ca_cert"):
+                admin["ca_cert"] = os.path.join(self.app_root, admin["ca_cert"])
+            if admin.get("upload_dir"):
+                admin["upload_dir"] = os.path.join(os.path.dirname(self.app_root), admin["upload_dir"])
+            if admin.get("download_dir"):
+                admin["download_dir"] = os.path.join(os.path.dirname(self.app_root), admin["download_dir"])
+        except Exception:
+            raise ValueError("Client config error: '{}'".format(self.client_config_file_name))
