@@ -82,6 +82,8 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.deployer = None
         self.app_validator = None
         self.enable_byoc = False
+        self.snapshot_persistor = None
+        self.overseer_agent = None
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -123,6 +125,14 @@ class FLServerStarterConfiger(JsonConfigurator):
 
         if path == "app_validator" and isinstance(element, dict):
             self.app_validator = self.build_component(element)
+            return
+
+        if path == "snapshot_persistor":
+            self.snapshot_persistor = self.build_component(element)
+            return
+
+        if path == "overseer_agent":
+            self.overseer_agent = self.build_component(element)
             return
 
     def finalize_config(self, config_ctx: ConfigContext):
@@ -204,6 +214,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.client_config_file_name = client_config_file_name
         self.enable_byoc = False
         self.base_deployer = None
+        self.overseer_agent = None
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         """Process config element.
@@ -217,6 +228,10 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         if path == "enable_byoc":
             self.enable_byoc = element
+            return
+
+        if path == "overseer_agent":
+            self.overseer_agent = self.build_component(element)
             return
 
     def start_config(self, config_ctx: ConfigContext):
@@ -327,5 +342,5 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
             if admin.get("download_dir"):
                 admin["download_dir"] = os.path.join(os.path.dirname(self.app_root), admin["download_dir"])
         except Exception:
-            raise ValueError("Client config error: '{}'".format(self.client_config_file_name))
+            raise ValueError("Client config error: '{}'".format(self.admin_config_file_name))
 

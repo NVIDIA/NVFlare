@@ -17,6 +17,7 @@
 import argparse
 import os
 import sys
+import time
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
@@ -81,6 +82,11 @@ def main():
         security_check(secure_train=trainer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
 
         federated_client = trainer.create_fed_client()
+
+        while not federated_client.sp_established:
+            print("Waiting for SP....")
+            time.sleep(1.0)
+
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
 
@@ -207,12 +213,14 @@ def create_admin_agent(
         is_multi_gpu=is_multi_gpu,
         rank=rank,
     )
+    client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
         sender=sender,
-        app_ctx=ClientEngine(federated_client, federated_client.token, sender, args, rank),
+        app_ctx=client_engine,
     )
     admin_agent.app_ctx.set_agent(admin_agent)
+    federated_client.set_client_engine(client_engine)
     for processor in req_processors:
         admin_agent.register_processor(processor)
 

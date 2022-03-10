@@ -77,10 +77,12 @@ def main():
     startup = os.path.join(args.workspace, "startup")
     SecurityContentService.initialize(content_folder=startup)
 
+    federated_client = None
     try:
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         with open(token_file, "r") as f:
             token = f.readline().strip()
+            ssid = f.readline().strip()
             run_number = f.readline().strip()
             client_name = f.readline().strip()
             listen_port = f.readline().strip()
@@ -108,10 +110,11 @@ def main():
         conf.configure()
 
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client()
+        federated_client = deployer.create_fed_client(args)
         federated_client.status = ClientStatus.STARTING
 
         federated_client.token = token
+        federated_client.ssid = ssid
         federated_client.client_name = client_name
         federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)
@@ -170,6 +173,7 @@ def main():
             command_agent.shutdown()
         if deployer:
             deployer.close()
+        federated_client.close()
         # address = ('localhost', 6000)
         # conn_client = Client(address, authkey='client process secret password'.encode())
         # conn_client.send('bye')
