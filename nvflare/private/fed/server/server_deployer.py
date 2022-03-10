@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FL Server deployer."""
 
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
@@ -23,31 +22,25 @@ class ServerDeployer:
 
     def __init__(self):
         """Init the ServerDeployer."""
-        # self.app_validator = None
         self.services = None
         self.cmd_modules = ServerCommandModules.cmd_modules
+        self.server_config = None
+        self.secure_train = None
+        self.app_validator = None
+        self.host = None
+        self.enable_byoc = None
 
     def build(self, build_ctx):
         """To build the ServerDeployer.
 
         Args:
             build_ctx: build context
-
         """
         self.server_config = build_ctx["server_config"]
         self.secure_train = build_ctx["secure_train"]
         self.app_validator = build_ctx["app_validator"]
         self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
-
-    def train(self):
-        """To start the ServerDeployer."""
-        self.services = self.deploy()
-        self.start_training(self.services)
-
-    def start_training(self, services):
-        """Start the deployemnt."""
-        services.start()
 
     def create_fl_server(self, args, secure_train=False):
         """To create the FL Server.
@@ -56,8 +49,8 @@ class ServerDeployer:
             args: command args
             secure_train: True/False
 
-        Returns: FL Server
-
+        Returns:
+            A tuple of (first server config, FederatedServer).
         """
         # We only deploy the first server right now .....
         first_server = sorted(self.server_config)[0]
@@ -89,12 +82,11 @@ class ServerDeployer:
         Args:
             args: command args.
 
-        Returns: FL Server
-
+        Returns:
+            A FederatedServer.
         """
         first_server, services = self.create_fl_server(args, secure_train=self.secure_train)
         services.deploy(grpc_args=first_server, secure_train=self.secure_train)
-        # self.create_builder(services)
         print("deployed FL server trainer.")
         return services
 
