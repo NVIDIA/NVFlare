@@ -17,6 +17,8 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvidia.g
 ### 1.2 Deep Learning
 * [Hello PyTorch](./hello-pt/README.md)
   * Example using [NVIDIA FLARE](https://nvidia.github.io/NVFlare) an image classifier using [FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
+* [Hello PyTorch with TensorBoard](./hello-pt-tb/README.md)
+  * Example building upon [Hello PyTorch](./hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.
 * [Hello TensorFlow](./hello-tf2/README.md)
   * Example of using [NVIDIA FLARE](https://nvidia.github.io/NVFlare) an image classifier using [FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629)) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework.
 
@@ -30,4 +32,6 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvidia.g
 * [Federated Learning with Differential Privacy for BraTS18 segmentation](./brats18/README.md)
    * Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./prostate/README.md)
-   * Example of training a multi-institutional prostate segmentation model using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [Ditto](https://arxiv.org/abs/2012.04221).
+  * Example of training a multi-institutional prostate segmentation model using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [Ditto](https://arxiv.org/abs/2012.04221).
+* [Federated Analysis](./federated_analysis/README.md)
+  * Example of gathering local data summary statistics to compute the global dataset statistics.

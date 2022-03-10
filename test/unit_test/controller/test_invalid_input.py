@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
 import re
+
+import pytest
 
 from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_context import FLContext

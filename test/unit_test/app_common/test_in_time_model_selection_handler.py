@@ -42,29 +42,29 @@ class MockSimpleEngine:
         return True
 
 
-class TestModelSelectionHandler:
+class TestInTimeModelSelectionHandler:
     @pytest.mark.parametrize("mshandler", [IntimeModelSelectionHandler])
     @pytest.mark.parametrize(
         "initial,received,expected",
         [
-            [
+            (
                 1,
                 {
                     "client1": {"weight": 0.5, "iter_number": 1, "metric": 10},
                 },
                 True,
-            ],
-            [
+            ),
+            (
                 1,
                 {
                     "client1": {"weight": 0.5, "iter_number": 1, "metric": 1},
                     "client2": {"weight": 0.5, "iter_number": 1, "metric": 0.2},
                 },
                 False,
-            ],
+            ),
         ],
     )
-    def test_model_section(self, mshandler, initial, received, expected):
+    def test_model_selection(self, mshandler, initial, received, expected):
         aggregation_weights = {k: v["weight"] for k, v in received.items()}
         handler = mshandler(aggregation_weights=aggregation_weights)
         handler.best_val_metric = initial

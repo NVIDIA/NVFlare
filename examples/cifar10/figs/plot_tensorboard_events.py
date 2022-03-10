@@ -76,7 +76,7 @@ def main():
     data = {"Config": [], "Step": [], "Accuracy": []}
 
     if add_cross_site_val:
-        xsite_keys = ["SRV_server", "SRV_server_best"]
+        xsite_keys = ["SRV_FL_global_model.pt", "SRV_best_FL_global_model.pt"]
         xsite_data = {"Config": []}
         for k in xsite_keys:
             xsite_data.update({k: []})
@@ -94,7 +94,7 @@ def main():
 
         if add_cross_site_val:
             xsite_file = glob.glob(
-                os.path.join(server_results_root, exp["run"] + "/**/cross_site_val.json"), recursive=True
+                os.path.join(server_results_root, exp["run"] + "/**/cross_val_results.json"), recursive=True
             )
             assert len(xsite_file) == 1, "No unique x-site file found!"
             with open(xsite_file[0], "r") as f:

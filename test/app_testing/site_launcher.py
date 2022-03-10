@@ -44,7 +44,7 @@ class SiteLauncher(object):
         """
         This class sets up the test environment for a test. It will launch and keep track of servers and clients.
         """
-        super(SiteLauncher, self).__init__()
+        super().__init__()
 
         self.original_poc_directory = poc_directory
         self.server_dir_name = server_dir_name
@@ -57,7 +57,7 @@ class SiteLauncher(object):
 
         self.admin_api = None
 
-        self.logger = logging.getLogger("SiteRunner")
+        self.logger = logging.getLogger("SiteLauncher")
 
         # Create temporary poc directory
         if not os.path.exists(self.original_poc_directory):
@@ -74,7 +74,6 @@ class SiteLauncher(object):
     def start_server(self):
         server_dir = os.path.join(self.poc_directory, self.server_dir_name)
         log_path = os.path.join(server_dir, "log.txt")
-        # log_file = open(log_path, 'w')
         new_env = os.environ.copy()
 
         # Create upload directory
@@ -92,7 +91,6 @@ class SiteLauncher(object):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        # process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
         print("Starting server ...")
 
         t = threading.Thread(target=process_logs, args=(log_path, process))
@@ -100,7 +98,6 @@ class SiteLauncher(object):
 
         self.server_properties["path"] = server_dir
         self.server_properties["process"] = process
-        # self.server_properties["log_file"] = log_file
         self.server_properties["log_path"] = log_path
 
     def start_clients(self, n=2):
@@ -141,7 +138,6 @@ class SiteLauncher(object):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
             )
-            # process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
             self.client_properties[client_id]["process"] = process
 
             print(f"Launched client {client_id} process.")
@@ -222,9 +218,6 @@ class SiteLauncher(object):
 
     def stop_all_sites(self):
         self.stop_server()
-
-    def client_status(self, client_id):
-        pass
 
     def finalize(self):
         print(f"Deleting temporary directory: {self.poc_directory}.")

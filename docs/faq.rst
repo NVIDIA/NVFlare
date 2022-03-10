@@ -387,3 +387,5 @@ Known issues
    large to be uploaded and that causes timeout.
 #. Please don't start a new training run or start a new app before the previous application is fully stopped. Users
    can do ``abort client`` and ``abort server`` before ``start_app`` for the new run.
+#. After calling ``shutdown client`` for a client running multi GPUs, a process (sub_worker_process) may remain. The
+   work around for this is to run ``abort client`` before the ``shutdown`` command.

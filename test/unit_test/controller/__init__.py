@@ -11,15 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import logging
-from abc import ABC, abstractmethod
-
-
-class AppResultValidator(ABC):
-    def __init__(self):
-        self.logger = logging.getLogger("AppValidator")
-
-    @abstractmethod
-    def validate_results(self, server_data, client_data, run_data) -> bool:
-        pass
