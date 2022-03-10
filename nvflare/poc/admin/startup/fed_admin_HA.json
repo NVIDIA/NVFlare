@@ -4,11 +4,7 @@
     "with_file_transfer": true,
     "upload_dir": "transfer",
     "download_dir": "transfer",
-    "with_ssl": true,
-    "cred_type": "cert",
-    "client_key": "client.key",
-    "client_cert": "client.crt",
-    "ca_cert": "rootCA.pem",
+    "cred_type": "password",
     "prompt": "> ",
     "overseer_agent": {
       "path": "nvflare.ha.overseer_agent.HttpOverseerAgent",
