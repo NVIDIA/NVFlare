@@ -322,7 +322,7 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         element = node.element
         path = node.path()
 
-        if path == "overseer_agent":
+        if path == "admin.overseer_agent":
             self.overseer_agent = self.build_component(element)
             return
 

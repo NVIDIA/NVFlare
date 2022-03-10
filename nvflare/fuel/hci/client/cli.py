@@ -31,7 +31,7 @@ from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
 from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
-from nvflare.apis.overseer_spec import SP
+from nvflare.apis.overseer_spec import SP, OverseerAgent
 
 from .api import AdminAPI
 from .api_status import APIStatus
@@ -88,9 +88,7 @@ class AdminClient(cmd.Cmd):
         require_login: bool = False,
         credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
-        overseer_end_point: str = None,
-        project: str = None,
-        name: str = None,
+        overseer_agent: OverseerAgent = None,
         debug: bool = False,
     ):
         cmd.Cmd.__init__(self)
@@ -102,6 +100,7 @@ class AdminClient(cmd.Cmd):
         self.password = None
         self.pwd = None
 
+        self.overseer_agent = overseer_agent
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
@@ -128,9 +127,7 @@ class AdminClient(cmd.Cmd):
             client_key=client_key,
             server_cn=server_cn,
             cmd_modules=modules,
-            overseer_end_point=overseer_end_point,
-            project=project,
-            name=name,
+            overseer_agent=self.overseer_agent,
             debug=self.debug,
             poc=poc,
         )
@@ -138,7 +135,6 @@ class AdminClient(cmd.Cmd):
         signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
 
         self.ssid = None
-        self.overseer_agent = self._create_overseer_agent(overseer_end_point, project, name)
 
         if self.credential_type == CredentialType.CERT:
             if self.overseer_agent:
@@ -147,21 +143,6 @@ class AdminClient(cmd.Cmd):
                                                    prv_key_path=client_key)
 
         self.overseer_agent.start(self.overseer_callback)
-
-    def _create_overseer_agent(self, overseer_end_point, project, name):
-        overseer_agent = HttpOverseerAgent(
-            overseer_end_point=overseer_end_point,
-            project=project,
-            role="admin",
-            name=name,
-            heartbeat_interval=6,
-        )
-        overseer_agent = DummyOverseerAgent(
-            sp_end_point="localhost:8002:8003",
-            heartbeat_interval=6,
-        )
-
-        return overseer_agent
 
     def overseer_callback(self, overseer_agent):
         sp = overseer_agent.get_primary_sp()

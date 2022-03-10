@@ -113,9 +113,7 @@ class AdminAPI(AdminAPISpec):
         download_dir="",
         server_cn=None,
         cmd_modules=None,
-        overseer_end_point=None,
-        project=None,
-        name=None,
+        overseer_agent=None,
         poc: bool = False,
         debug: bool = False,
     ):

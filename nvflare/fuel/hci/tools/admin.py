@@ -102,9 +102,7 @@ def main():
         require_login=admin_config["with_login"],
         credential_type=CredentialType.PASSWORD if admin_config["cred_type"] == "password" else CredentialType.CERT,
         debug=args.with_debug,
-        overseer_end_point=admin_config["overseer_agent"]["args"]["overseer_end_point"],
-        project=admin_config["overseer_agent"]["args"]["project"],
-        name=admin_config["overseer_agent"]["args"]["name"],
+        overseer_agent=conf.overseer_agent,
         # cli_history_size=args.cli_history_size,
     )
 
