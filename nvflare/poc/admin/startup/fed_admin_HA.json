@@ -1,0 +1,23 @@
+{
+  "format_version": 2,
+  "admin": {
+    "with_file_transfer": true,
+    "upload_dir": "transfer",
+    "download_dir": "transfer",
+    "with_ssl": true,
+    "cred_type": "cert",
+    "client_key": "client.key",
+    "client_cert": "client.crt",
+    "ca_cert": "rootCA.pem",
+    "prompt": "> ",
+    "overseer_agent": {
+      "path": "nvflare.ha.overseer_agent.HttpOverseerAgent",
+      "args": {
+        "role": "admin",
+        "overseer_end_point": "http://localhost:6000/api/v1",
+        "project": "example_project",
+        "name": "admin"
+      }
+    }
+  }
+}

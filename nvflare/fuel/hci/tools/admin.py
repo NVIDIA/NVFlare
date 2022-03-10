@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse, os
+import argparse
+import os
 
 from nvflare.fuel.common.excepts import ConfigError
-
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
@@ -52,23 +52,27 @@ def main():
     except ConfigError as ex:
         print("ConfigError:", str(ex))
 
-    admin_config = conf.config_data["admin"]
+    try:
+        admin_config = conf.config_data["admin"]
+    except KeyError:
+        print("Missing admin section in fed_admin configuration.")
+
     modules = []
 
-    if admin_config["with_file_transfer"]:
+    if admin_config.get("with_file_transfer"):
         modules.append(
             FileTransferModule(
-                upload_dir=admin_config["upload_dir"],
-                download_dir=admin_config["download_dir"],
+                upload_dir=admin_config.get("upload_dir"),
+                download_dir=admin_config.get("download_dir"),
                 upload_folder_cmd_name=args.upload_folder_cmd_name,
             )
         )
 
-    ca_cert = admin_config["ca_cert"]
-    client_cert = admin_config["client_cert"]
-    client_key = admin_config["client_key"]
+    ca_cert = admin_config.get("ca_cert", "")
+    client_cert = admin_config.get("client_cert", "")
+    client_key = admin_config.get("client_key", "")
 
-    if admin_config["with_ssl"]:
+    if admin_config.get("with_ssl"):
         if len(ca_cert) <= 0:
             print("missing CA Cert file name field ca_cert in fed_admin configuration")
             return
@@ -86,21 +90,21 @@ def main():
         client_cert = None
 
     if args.with_debug:
-        print("SSL: {}".format(admin_config["with_ssl"]))
-        print("File Transfer: {}".format(admin_config["with_file_transfer"]))
+        print("SSL: {}".format(admin_config.get("with_ssl")))
+        print("File Transfer: {}".format(admin_config.get("with_file_transfer")))
 
-        if admin_config["with_file_transfer"]:
-            print("  Upload Dir: {}".format(admin_config["upload_dir"]))
-            print("  Download Dir: {}".format(admin_config["download_dir"]))
+        if admin_config.get("with_file_transfer"):
+            print("  Upload Dir: {}".format(admin_config.get("upload_dir")))
+            print("  Download Dir: {}".format(admin_config.get("download_dir")))
 
     client = AdminClient(
-        prompt=admin_config["prompt"],
+        prompt=admin_config.get("prompt", "> "),
         cmd_modules=modules,
         ca_cert=ca_cert,
         client_cert=client_cert,
         client_key=client_key,
-        require_login=admin_config["with_login"],
-        credential_type=CredentialType.PASSWORD if admin_config["cred_type"] == "password" else CredentialType.CERT,
+        require_login=admin_config.get("with_login", True),
+        credential_type=CredentialType.PASSWORD if admin_config.get("cred_type") == "password" else CredentialType.CERT,
         debug=args.with_debug,
         overseer_agent=conf.overseer_agent,
         # cli_history_size=args.cli_history_size,
