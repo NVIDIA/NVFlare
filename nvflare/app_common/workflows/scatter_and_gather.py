@@ -168,7 +168,11 @@ class ScatterAndGather(Controller):
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
-            for self._current_round in range(self._start_round, self._start_round + self._num_rounds):
+            # for self._current_round in range(self._start_round, self._start_round + self._num_rounds):
+            if self._current_round is None:
+                self._current_round = self._start_round
+            while self._current_round < self._start_round + self._num_rounds:
+
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
@@ -226,6 +230,12 @@ class ScatterAndGather(Controller):
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_info(fl_ctx, f"Round {self._current_round} finished.")
+
+                self._current_round += 1
+
+                # Call the engine to persist the snapshot of all the FLComponents
+                engine = fl_ctx.get_engine()
+                engine.persist_components(fl_ctx, completed=False)
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
@@ -322,3 +332,20 @@ class ScatterAndGather(Controller):
             self.log_info(fl_ctx, f"Abort signal received. Exiting at round {self._current_round}.")
             return True
         return False
+
+    def get_persist_state(self, fl_ctx: FLContext) -> dict:
+        return {
+            "current_round": self._current_round,
+            "start_round": self._start_round,
+            "num_rounds": self._num_rounds,
+            "global_weights": self._global_weights
+        }
+
+    def restore(self, state_data: dict, fl_ctx: FLContext):
+        try:
+            self._current_round = state_data.get("current_round")
+            self._start_round = state_data.get("start_round")
+            self._num_rounds = state_data.get("num_rounds")
+            self._global_weights = state_data.get("global_weights")
+        finally:
+            pass
