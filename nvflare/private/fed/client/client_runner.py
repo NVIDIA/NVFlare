@@ -244,10 +244,10 @@ class ClientRunner(FLComponent):
 
                 # reset to default fetch interval
                 task_fetch_interval = self.task_fetch_interval
-                self.log_info(fl_ctx, "fetching task from server ...")
+                self.log_debug(fl_ctx, "fetching task from server ...")
                 task = self.engine.get_task_assignment(fl_ctx)
                 if not task:
-                    self.log_info(fl_ctx, "no task received - will try in {} secs".format(task_fetch_interval))
+                    self.log_debug(fl_ctx, "no task received - will try in {} secs".format(task_fetch_interval))
                     continue
 
                 if task.name == SpecialTaskName.END_RUN:
@@ -258,7 +258,9 @@ class ClientRunner(FLComponent):
                     task_data = task.data
                     if task_data and isinstance(task_data, Shareable):
                         task_fetch_interval = task_data.get(TaskConstant.WAIT_TIME, self.task_fetch_interval)
-                    self.log_info(fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval))
+                    self.log_debug(
+                        fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval)
+                    )
                     continue
 
                 self.log_info(fl_ctx, "got task assignment: name={}, id={}".format(task.name, task.task_id))
