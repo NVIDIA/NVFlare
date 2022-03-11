@@ -25,39 +25,40 @@ from nvflare.app_common.aggregators.accumulate_model_aggregator import Accumulat
 from nvflare.app_common.app_constant import AppConstants
 
 
-class TestAggregator:
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
+class TestAccumulateWeightedAggregator:
     @pytest.mark.parametrize(
         "received,expected",
         [
-            [
+            (
                 {"client1": {"weight": 0.5, "iter_number": 1, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}}},
                 {"var1": np.array([1.0, 1.5, 0.55, 0.05])},
-            ],
-            [
+            ),
+            (
                 {"client1": {"weight": 1.0, "iter_number": 1, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}}},
                 {"var1": np.array([2.0, 3.0, 1.1, 0.1])},
-            ],
-            [
+            ),
+            (
                 {
                     "client1": {"weight": 0.5, "iter_number": 3, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}},
                     "client2": {"weight": 1.0, "iter_number": 1, "aggr_data": {"var1": np.array([1.0, 1.0, 2.1, 0.5])}},
                 },
                 {"var1": np.array([1.0, 1.375, 0.9375, 0.1625])},
-            ],
-            [
+            ),
+            (
                 {
                     "client1": {"weight": 1.0, "iter_number": 5, "aggr_data": {"var1": np.array([2.0, 3.0, 1.1, 0.1])}},
                     "client2": {"weight": 0.5, "iter_number": 4, "aggr_data": {"var1": np.array([1.0, 1.0, 2.1, 0.5])}},
                 },
                 {"var1": np.array([4.0 / 3, 17.0 / 9, 9.7 / 9, 1.0 / 6])},
-            ],
+            ),
         ],
     )
-    def test_accum_aggregator(self, aggregator, received, expected):
+    def test_aggregate(self, received, expected):
         aggregation_weights = {k: v["weight"] for k, v in received.items()}
-        agg = aggregator(aggregation_weights=aggregation_weights)
+        agg = AccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
         fl_ctx_mgr = FLContextManager(engine=None, identity_name="", run_num=1, public_stickers={}, private_stickers={})
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for k, v in received.items():
             fl_ctx_mgr.identity_name = k
             dxo = DXO(
@@ -68,8 +69,6 @@ class TestAggregator:
                 },
             )
 
-            fl_ctx = FLContext()
-            fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: k})
             s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
@@ -78,21 +77,20 @@ class TestAggregator:
         result = agg.aggregate(fl_ctx)
         np.testing.assert_allclose(result["DXO"]["data"]["var1"], expected["var1"])
 
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
-    @pytest.mark.parametrize("shape", [(4), (6, 6)])
+    @pytest.mark.parametrize("shape", [4, (6, 6)])
     @pytest.mark.parametrize("n_clients", [10, 50, 100])
-    def test_accum_aggregator_random(self, aggregator, shape, n_clients):
+    def test_aggregate_random(self, shape, n_clients):
         aggregation_weights = {f"client_{i}": random.random() for i in range(n_clients)}
-        agg = aggregator(aggregation_weights=aggregation_weights)
+        agg = AccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
         weighted_sum = np.zeros(shape)
         sum_of_weights = 0
         fl_ctx_mgr = FLContextManager(engine=None, identity_name="", run_num=1, public_stickers={}, private_stickers={})
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for client_name in aggregation_weights:
             iter_number = random.randint(1, 50)
             fl_ctx_mgr.identity_name = client_name
             weights = np.random.random(shape)
-            fl_ctx = FLContext()
-            fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
             s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
@@ -111,21 +109,21 @@ class TestAggregator:
         result_dxo = from_shareable(result)
         np.testing.assert_allclose(result_dxo.data["var1"], weighted_sum / sum_of_weights)
 
-    @pytest.mark.parametrize("aggregator", [AccumulateWeightedAggregator])
-    def test_accum_aggregator_accept(self, aggregator):
+    @pytest.mark.parametrize("current_round,contribution_round,expected", [(1, 1, True), (2, 1, False)])
+    def test_accept(self, current_round, contribution_round, expected):
         aggregation_weights = {f"client_{i}": random.random() for i in range(2)}
-        agg = aggregator(aggregation_weights=aggregation_weights)
+        agg = AccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
         client_name = "client_0"
         iter_number = 1
         fl_ctx_mgr = FLContextManager(engine=None, identity_name="", run_num=1, public_stickers={}, private_stickers={})
         fl_ctx_mgr.identity_name = client_name
-        weights = np.random.random((4))
+        weights = np.random.random(4)
 
         fl_ctx = FLContext()
         s = Shareable()
         s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-        s.set_header(AppConstants.CONTRIBUTION_ROUND, 1)
-        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1)
+        s.set_header(AppConstants.CONTRIBUTION_ROUND, contribution_round)
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round)
         dxo = DXO(
             DataKind.WEIGHT_DIFF,
             data={"var1": weights},
@@ -133,22 +131,4 @@ class TestAggregator:
                 MetaKey.NUM_STEPS_CURRENT_ROUND: iter_number,
             },
         )
-        assert (True) == agg.accept(dxo.update_shareable(s), fl_ctx)
-
-        client_name = "client_0"
-        iter_number = 1
-        fl_ctx_mgr.identity_name = client_name
-        weights = np.random.random((4))
-        dxo = DXO(
-            DataKind.WEIGHT_DIFF,
-            data={"var1": weights},
-            meta={
-                MetaKey.NUM_STEPS_CURRENT_ROUND: iter_number,
-            },
-        )
-        fl_ctx = FLContext()
-        s = Shareable()
-        s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-        s.set_header(AppConstants.CONTRIBUTION_ROUND, 1)
-        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 2)
-        assert (False) == agg.accept(dxo.update_shareable(s), fl_ctx)
+        assert agg.accept(dxo.update_shareable(s), fl_ctx) == expected

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+from typing import Any, Dict, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_component import FLComponent
@@ -24,18 +25,18 @@ from nvflare.app_common.app_constant import AppConstants
 class DXOAggregator(FLComponent):
     def __init__(
         self,
-        exclude_vars=None,
-        aggregation_weights=None,
+        exclude_vars: Optional[str] = None,
+        aggregation_weights: Optional[Dict[str, Any]] = None,
         expected_data_kind: DataKind = DataKind.WEIGHT_DIFF,
         name_postfix: str = "",
     ):
-        """Perform accumulated weighted aggregation for one kind of corresponding DXO from contributors
+        """Perform accumulated weighted aggregation for one kind of corresponding DXO from contributors.
 
         Args:
-            exclude_vars ([type], optional): regex to match excluded vars during aggregation. Defaults to None.
-            aggregation_weights ([type], optional): dictionary to map contributor name to its aggregation weights.
+            exclude_vars (str, optional): Regex to match excluded vars during aggregation. Defaults to None.
+            aggregation_weights (Dict[str, Any], optional): Aggregation weight for each contributor.
                                 Defaults to None.
-            expected_data_kind: Expected DataKind for this kind of DXO.
+            expected_data_kind (DataKind): Expected DataKind for this DXO.
             name_postfix: optional postfix to give to class name and show in logger output.
         """
         super().__init__()
