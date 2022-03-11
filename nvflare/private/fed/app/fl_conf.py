@@ -157,7 +157,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
             "snapshot_persistor": self.snapshot_persistor,
-            "overseer_agent": self.overseer_agent
+            "overseer_agent": self.overseer_agent,
         }
 
         deployer = ServerDeployer()
@@ -273,7 +273,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             "secure_train": secure_train,
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
-            "overseer_agent": self.overseer_agent
+            "overseer_agent": self.overseer_agent,
         }
 
         self.base_deployer = BaseClientDeployer()
@@ -283,11 +283,7 @@ class FLClientStarterConfiger(JsonConfigurator):
 class FLAdminClientStarterConfigurator(JsonConfigurator):
     """FL Admin Client startup configurator."""
 
-    def __init__(
-        self,
-        app_root: str,
-        admin_config_file_name=None
-    ):
+    def __init__(self, app_root: str, admin_config_file_name=None):
         """Uses the json configuration to start the FL admin client.
 
         Args:

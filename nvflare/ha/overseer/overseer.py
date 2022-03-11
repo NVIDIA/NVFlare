@@ -21,12 +21,14 @@ from nvflare.ha.overseer.utils import (
     do_refresh,
     get_all_sp,
     get_primary_sp,
+    load_privilege,
     promote_sp,
     simple_PSP_policy,
     update_sp_state,
-    load_privilege
 )
+
 privilege_dict = load_privilege()
+
 
 @app.route("/api/v1/heartbeat", methods=["GET", "POST"])
 def heartbeat():

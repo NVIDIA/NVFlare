@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import math
 import socket
 import time
 from typing import List, Optional
@@ -55,6 +54,7 @@ class Communicator:
         self.verbose = False
         self.should_stop = False
         self.heartbeat_done = False
+        # TODO: should we change this back?
         # self.retry = int(math.ceil(float(retry_timeout) / 5))
         self.retry = 1
         self.client_state_processors = client_state_processors
@@ -252,8 +252,9 @@ class Communicator:
         # Failed to get global, return None
         return None
 
-    def submitUpdate(self, servers, project_name, token, ssid,
-                     fl_ctx: FLContext, client_name, shareable, execute_task_name):
+    def submitUpdate(
+        self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, execute_task_name
+    ):
         """Submit the task execution result back to the server.
 
         Args:
@@ -302,8 +303,9 @@ class Communicator:
                     time.sleep(5)
         return server_msg
 
-    def auxCommunicate(self, servers, project_name, token, ssid,
-                       fl_ctx: FLContext, client_name, shareable, topic, timeout):
+    def auxCommunicate(
+        self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, topic, timeout
+    ):
         """Send the auxiliary communication message to the server.
 
         Args:
@@ -450,13 +452,9 @@ class Communicator:
                 self.should_stop = False
                 return
 
-        self.logger.error(
-            f"Action: {action} grpc communication error. Keep retry..."
-        )
+        self.logger.error(f"Action: {action} grpc communication error. Keep retry...")
         if grpc.StatusCode.UNAVAILABLE == status_code:
-            self.logger.error(
-                f"Could not connect to server: {service.get('target')}\t {grpc_error.details()}"
-            )
+            self.logger.error(f"Could not connect to server: {service.get('target')}\t {grpc_error.details()}")
             self.should_stop = True
 
         if grpc.StatusCode.OUT_OF_RANGE == status_code:

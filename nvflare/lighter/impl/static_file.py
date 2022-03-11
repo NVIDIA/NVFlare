@@ -15,6 +15,7 @@
 import copy
 import json
 import os
+
 import yaml
 
 from nvflare.lighter.spec import Builder
@@ -22,7 +23,15 @@ from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
-    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image="", snapshot_persistor="", overseer_agent=""):
+    def __init__(
+        self,
+        enable_byoc=False,
+        config_folder="",
+        app_validator="",
+        docker_image="",
+        snapshot_persistor="",
+        overseer_agent="",
+    ):
         """Build all static files from template.
 
         Uses the information from project.yml through study to go through the participants and write the contents of
@@ -80,7 +89,7 @@ class StaticFileBuilder(Builder):
             "t",
             exe=False,
         )
-        
+
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
