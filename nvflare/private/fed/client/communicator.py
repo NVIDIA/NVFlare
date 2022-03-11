@@ -413,7 +413,7 @@ class Communicator:
                 # if retry <= 0:
                 #     raise excep
 
-                time.sleep(60)
+                time.sleep(30)
 
     def _get_communication_data(self, shareable, client_state, fl_ctx: FLContext, execute_task_name):
         contrib = fed_msg.Contribution()
