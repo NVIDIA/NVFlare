@@ -366,13 +366,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         return fed_msg.FederatedSummary(comment="Removed client")
 
     def GetTask(self, request, context):
-        """Process client's request."""
-        # # fl_ctx = self.fl_ctx.clone_sticky()
-        # if not self.run_manager:
-        #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server training stopped")
-
-        # if self.server_runner is None:
-        #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
+        """Process client's get task request."""
 
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.get_task(fl_ctx)
@@ -383,25 +377,20 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if client is None:
                 context.abort(grpc.StatusCode.FAILED_PRECONDITION, "Client not valid.")
 
-            self.logger.info(f"Fetch task requested from client: {client.name} ({client.get_token()})")
+            self.logger.debug(f"Fetch task requested from client: {client.name} ({client.get_token()})")
             token = client.get_token()
 
             engine = fl_ctx.get_engine()
-            # shared_fl_ctx = FLContext()
-            # shared_fl_ctx.set_run_number(request.meta.run_number)
             shared_fl_ctx = pickle.loads(proto_to_bytes(request.context["fl_context"]))
             fl_ctx.set_peer_context(shared_fl_ctx)
 
             with self.lock:
-                # shareable = self.model_manager.get_shareable(self.fl_ctx)
-
                 if self.server_runner is None or engine is None or self.engine.run_manager is None:
                     self.logger.info("server has no current run - asked client to end the run")
                     taskname = SpecialTaskName.END_RUN
                     task_id = ""
                     shareable = None
                 else:
-                    # taskname, task_id, shareable = self.controller.process_task_request(client, fl_ctx)
                     taskname, task_id, shareable = self.server_runner.process_task_request(client, fl_ctx)
 
                 if shareable is None:
@@ -421,31 +410,23 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                 current_model = shareable_to_modeldata(shareable, fl_ctx)
                 task.data.CopyFrom(current_model)
-                self.logger.info(f"Return task:{taskname} to client:{client.name} --- ({token}) ")
-
-                # self.fl_ctx.merge_sticky(fl_ctx)
+                if taskname == SpecialTaskName.TRY_AGAIN:
+                    self.logger.debug(f"GetTask: Return task: {taskname} to client: {client.name} ({token}) ")
+                else:
+                    self.logger.info(f"GetTask: Return task: {taskname} to client: {client.name} ({token}) ")
 
                 return task
 
     def SubmitUpdate(self, request, context):
         """Handle client's submission of the federated updates."""
-        # if not self.run_manager:
-        #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
-
         if self.server_runner is None or self.engine.run_manager is None:
-            # context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
             self.logger.info("ignored result submission since Server Engine isn't ready")
             context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
-        # fl_ctx = self.fl_ctx.clone_sticky()
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.submit_result(fl_ctx)
             self._handle_state_check(context, state_check)
             self._ssid_check(request.client, context)
-
-            # if self.status == ServerStatus.TRAINING_STOPPED or self.status == ServerStatus.TRAINING_NOT_STARTED:
-            #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server training stopped")
-            #     return
 
             contribution = request
 
@@ -461,7 +442,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     shareable = shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
                     shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
 
-                    # fl_ctx.set_prop(FLContextKey.PEER_CONTEXT, shared_fl_context)
                     fl_ctx.set_peer_context(shared_fl_context)
 
                     shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=False)
@@ -482,13 +462,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                         time_seconds or "less than 1",
                     )
 
-                    # fire_event(EventType.BEFORE_PROCESS_SUBMISSION, self.handlers, fl_ctx)
-
-                    # task_id = shared_fl_context.get_cookie(FLContextKey.TASK_ID)
                     task_id = shareable.get_cookie(FLContextKey.TASK_ID)
                     self.server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
-
-                    # fire_event(EventType.AFTER_PROCESS_SUBMISSION, self.handlers, fl_ctx)
 
             response_comment = "Received from {} ({} Bytes, {} seconds)".format(
                 contribution.client.client_name,
@@ -498,17 +473,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             summary_info = fed_msg.FederatedSummary(comment=response_comment)
             summary_info.meta.CopyFrom(self.task_meta_info)
 
-            # with self.lock:
-            #     self.fl_ctx.merge_sticky(fl_ctx)
-
             return summary_info
 
     def AuxCommunicate(self, request, context):
         """Handle auxiliary channel communication."""
-        # if not self.run_manager:
-        #     context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
-
-        # fl_ctx = self.fl_ctx.clone_sticky()
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.aux_communicate(fl_ctx)
             self._handle_state_check(context, state_check)
@@ -541,8 +509,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=False)
 
             topic = shareable.get_header(ReservedHeaderKey.TOPIC)
-            # aux_runner = fl_ctx.get_aux_runner()
-            # assert isinstance(aux_runner, ServerAuxRunner)
             reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
 
             aux_reply = fed_msg.AuxReply()
@@ -576,9 +542,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         messages = self.admin_server.get_outgoing_requests(client_token=client_name) if self.admin_server else []
 
         response = admin_msg.Messages()
-        # response.message.CopyFrom(messages)
         for m in messages:
-            # message = response.message.add()
             response.message.append(message_to_proto(m))
         return response
 
@@ -602,8 +566,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         return response
 
     def start_run(self, run_number, run_root, conf, args, snapshot):
-        # self.status = ServerStatus.STARTING
-
         # Create the FL Engine
         workspace = Workspace(args.workspace, "server", args.config_folder)
         self.run_manager = RunManager(
@@ -628,9 +590,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 if snapshot:
                     self.engine.restore_components(snapshot=snapshot, fl_ctx=FLContext())
 
-                # with open(os.path.join(run_root, env_config)) as file:
-                #     env = json.load(file)
-
                 fl_ctx.set_prop(FLContextKey.APP_ROOT, run_root, sticky=True)
                 fl_ctx.set_prop(FLContextKey.CURRENT_RUN, run_number, private=False, sticky=True)
                 fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True, sticky=True)
@@ -642,17 +601,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self.run_manager.add_handler(self.server_runner)
             self.run_manager.add_component("_Server_Runner", self.server_runner)
 
-            # self.controller.initialize_run(self.fl_ctx)
-
-            # return super().start()
-            # self.status = ServerStatus.STARTED
-            # self.run_engine()
             engine_thread = threading.Thread(target=self.run_engine)
-            # heartbeat_thread.daemon = True
             engine_thread.start()
 
             while self.engine.engine_info.status != MachineStatus.STOPPED:
-                # self.remove_dead_clients()
                 if self.engine.asked_to_stop:
                     self.engine.abort_app_on_server()
 

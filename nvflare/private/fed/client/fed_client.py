@@ -23,9 +23,10 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.private.defs import SpecialTaskName
 from nvflare.private.event import fire_event
+from nvflare.private.fed.utils.numproto import proto_to_bytes
 
-from ..utils.numproto import proto_to_bytes
 from .fed_client_base import FederatedClientBase
 
 
@@ -83,7 +84,10 @@ class FederatedClient(FederatedClientBase):
 
         pull_success, task_name, remote_tasks = self.pull_task(fl_ctx)
         fire_event(EventType.AFTER_PULL_TASK, self.handlers, fl_ctx)
-        self.logger.info(f"pull_task completed. Task name:{task_name} Status:{pull_success} ")
+        if task_name == SpecialTaskName.TRY_AGAIN:
+            self.logger.debug(f"pull_task completed. Task name:{task_name} Status:{pull_success} ")
+        else:
+            self.logger.info(f"pull_task completed. Task name:{task_name} Status:{pull_success} ")
         return pull_success, task_name, remote_tasks
 
     def extract_shareable(self, responses, fl_ctx: FLContext):

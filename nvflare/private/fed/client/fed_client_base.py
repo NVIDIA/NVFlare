@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The client of the federated training process."""
-
 import logging
 import threading
 from functools import partial
@@ -35,7 +33,7 @@ from .communicator import Communicator
 
 
 class FederatedClientBase:
-    """Federated client-side base implementation.
+    """The client-side base implementation of federated learning.
 
     This class provide the tools function which will be used in both FedClient and FedClientLite.
     """
@@ -91,6 +89,7 @@ class FederatedClientBase:
         self.engine = None
 
         self.status = ClientStatus.NOT_STARTED
+        self.remote_tasks = None
 
         self.sp_established = False
         self.overseer_agent = overseer_agent
@@ -141,13 +140,10 @@ class FederatedClientBase:
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 
     def client_register(self, project_name):
-        """Register the client to the FL server and get the FL token.
+        """Register the client to the FL server.
 
         Args:
-            project_name: FL server project name
-
-        Returns: N/A
-
+            project_name: FL study project name.
         """
         if not self.token:
             try:
@@ -157,46 +153,42 @@ class FederatedClientBase:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
                     self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
                     self.logger.info(
-                        "Successfully registered client:{} for {}. Token:{} SSID:{}".format(
+                        "Successfully registered client:{} for project {}. Token:{} SSID:{}".format(
                             self.client_name, project_name, self.token, self.ssid
                         )
                     )
-                    # fire_event(EventType.CLIENT_REGISTER, self.handlers, self.fl_ctx)
 
-            except FLCommunicationError as e:
+            except FLCommunicationError:
                 self.communicator.heartbeat_done = True
 
     def fetch_execute_task(self, project_name, fl_ctx: FLContext):
-        """Get registered with the remote server via channel, and fetch the server's model parameters.
+        """Fetch a task from the server.
 
         Args:
             project_name: FL study project name
             fl_ctx: FLContext
 
-        Returns:  a CurrentTask message from server
-
+        Returns:
+            A CurrentTask message from server
         """
         try:
-            self.logger.info("Starting to fetch execute task.")
+            self.logger.debug("Starting to fetch execute task.")
             task = self.communicator.getTask(self.servers, project_name, self.token, self.ssid, fl_ctx)
 
             return task
         except FLCommunicationError as e:
             self.logger.info(e)
-            # self.communicator.heartbeat_done = True
 
     def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
-        """Read local model and push to self.server[task_name] channel.
-
-        This function makes and sends a Contribution Message.
+        """Submit execution results of a task to server.
 
         Args:
             project_name: FL study project name
             shareable: Shareable object
             fl_ctx: FLContext
 
-        Returns: reply message
-
+        Returns:
+            A FederatedSummary message from the server.
         """
         try:
             self.logger.info("Starting to push execute result.")
@@ -209,12 +201,9 @@ class FederatedClientBase:
             return message
         except FLCommunicationError as e:
             self.logger.info(e)
-            # self.communicator.heartbeat_done = True
 
     def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Read local model and push to self.server[task_name] channel.
-
-        This function makes and sends a Contribution Message.
+        """Send auxiliary message to the server.
 
         Args:
             project_name: FL study project name
@@ -223,11 +212,11 @@ class FederatedClientBase:
             timeout: communication timeout
             fl_ctx: FLContext
 
-        Returns: reply message
-
+        Returns:
+            A reply message
         """
         try:
-            self.logger.info("Starting to send aux messagee.")
+            self.logger.debug("Starting to send aux message.")
             message = self.communicator.auxCommunicate(
                 self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable,
                 topic, timeout)
@@ -235,7 +224,6 @@ class FederatedClientBase:
             return message
         except FLCommunicationError as e:
             self.logger.info(e)
-            # self.communicator.heartbeat_done = True
 
     def send_heartbeat(self, project_name):
         try:

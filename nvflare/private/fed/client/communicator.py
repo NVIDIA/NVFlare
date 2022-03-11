@@ -27,6 +27,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
+from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareeable_data, shareable_to_modeldata
 
 
@@ -68,7 +69,8 @@ class Communicator:
             channel_dict: grpc channel parameters
             token: client token
 
-        Returns: an initialised grpc channel
+        Returns:
+            An initialised grpc channel
 
         """
         if self.secure_train:
@@ -83,7 +85,7 @@ class Communicator:
                 certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
             )
 
-            # make sure that all headers are in lowecase,
+            # make sure that all headers are in lowercase,
             # otherwise grpc throws an exception
             call_credentials = grpc.metadata_call_credentials(
                 lambda context, callback: callback((("x-custom-token", token),), None)
@@ -108,7 +110,8 @@ class Communicator:
             token: FL client token
             fl_ctx: FLContext
 
-        Returns: a ClientState message
+        Returns:
+            A ClientState message
 
         """
         state_message = fed_msg.ClientState(token=token, ssid=ssid)
@@ -148,14 +151,13 @@ class Communicator:
             servers: FL servers
             project_name: FL study project name
 
-        Returns: FL token
+        Returns:
+            The client's token
 
         """
         local_ip = self.get_client_ip()
 
         login_message = fed_msg.ClientLogin(client_name=client_name, client_ip=local_ip)
-        # login_message = fed_msg.ClientLogin(
-        #     client_id=None, token=None, client_ip=local_ip)
         login_message.meta.project.name = project_name
 
         result, retry = None, self.retry
@@ -194,15 +196,16 @@ class Communicator:
         return token, ssid
 
     def getTask(self, servers, project_name, token, ssid, fl_ctx: FLContext):
-        """Get registered with the remote server via channel, and fetch the server's model parameters.
+        """Get a task from server.
 
         Args:
             servers: FL servers
             project_name: FL study project name
-            token: FL client token
+            token: client token
             fl_ctx: FLContext
 
-        Returns: a CurrentTask message from server
+        Returns:
+            A CurrentTask message from server
 
         """
         global_model, retry = None, self.retry
@@ -218,10 +221,6 @@ class Communicator:
                     self.should_stop = False
 
                     end_time = time.time()
-                    self.logger.info(
-                        f"Received from {project_name} server "
-                        f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
-                    )
 
                     task = fed_msg.CurrentTask()
                     task.meta.CopyFrom(global_model.meta)
@@ -229,6 +228,16 @@ class Communicator:
                     task.data.CopyFrom(global_model.data)
                     task.task_name = global_model.task_name
 
+                    if global_model.task_name == SpecialTaskName.TRY_AGAIN:
+                        self.logger.debug(
+                            f"Received from {project_name} server "
+                            f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+                        )
+                    else:
+                        self.logger.info(
+                            f"Received from {project_name} server "
+                            f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+                        )
                     return task
                 except grpc.RpcError as grpc_error:
                     self.grpc_error_handler(
@@ -256,8 +265,8 @@ class Communicator:
             shareable: execution task result shareable
             execute_task_name: execution task name
 
-        Returns: server message from the server
-
+        Returns:
+            A FederatedSummary message from the server.
         """
         client_state = self.get_client_state(project_name, token, ssid, fl_ctx)
         client_state.client_name = client_name
@@ -295,7 +304,7 @@ class Communicator:
 
     def auxCommunicate(self, servers, project_name, token, ssid,
                        fl_ctx: FLContext, client_name, shareable, topic, timeout):
-        """To send the aux communication message to the server.
+        """Send the auxiliary communication message to the server.
 
         Args:
             servers: FL servers
@@ -307,7 +316,8 @@ class Communicator:
             topic: aux message topic
             timeout: aux communication timeout
 
-        Returns: server response message
+        Returns:
+            An AuxReply message from server
 
         """
         client_state = self.get_client_state(project_name, token, ssid, fl_ctx)
@@ -327,7 +337,7 @@ class Communicator:
             while retry > 0:
                 try:
                     start_time = time.time()
-                    self.logger.info(f"Send AuxMessage to {project_name} server")
+                    self.logger.debug(f"Send AuxMessage to {project_name} server")
                     server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
                     # Clear the stopping flag
                     # if the connection to server recovered.
@@ -351,7 +361,8 @@ class Communicator:
             token: FL client token
             fl_ctx: FLContext
 
-        Returns: server's reply to the last message
+        Returns:
+            server's reply to the last message
 
         """
         server_message, retry = None, self.retry
@@ -428,9 +439,6 @@ class Communicator:
             start_time: communication start time
             retry: retry number
             verbose: verbose to error print out
-
-        Returns: N/A
-
         """
         status_code = None
         if isinstance(grpc_error, grpc.Call):
