@@ -272,7 +272,6 @@ class AdminAPI(AdminAPISpec):
 
     def _check_session(self, session_ended_callback, interval):
         error_msg = ""
-        no_psp_counter = 0
         while True:
             time.sleep(interval)
 
@@ -286,12 +285,7 @@ class AdminAPI(AdminAPISpec):
             resp = self.server_execute("_check_session")
             status = resp["status"]
 
-            no_psp_counter += 1
-            psp_exists = self.overseer_agent.get_primary_sp().service_session_id
-            if psp_exists:
-                no_psp_counter = 0
-
-            if status == APIStatus.ERROR_INACTIVE_SESSION or (not psp_exists and no_psp_counter > 60 // interval):
+            if status == APIStatus.ERROR_INACTIVE_SESSION:
                 for item in resp["data"]:
                     if item["type"] == "error":
                         error_msg = item["data"]
