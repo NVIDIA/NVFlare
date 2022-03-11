@@ -101,8 +101,11 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
             bool to indicate if this shareable is accepted.
         """
         dxo = from_shareable(shareable)
-        if dxo.data_kind != DataKind.WEIGHT_DIFF:
-            self.log_error(fl_ctx, "support WEIGHT_DIFF type DXO only, skipping this shareable.")
+        if dxo.data_kind != self.expected_data_kind:
+            self.log_error(
+                fl_ctx,
+                f"expected {self.expected_data_kind} type DXO only but received {dxo.data_kind}, skipping this shareable.",
+            )
             return False
 
         enc_algo = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
