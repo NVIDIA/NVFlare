@@ -17,6 +17,7 @@ import getpass
 import json
 import os
 import signal
+import sys
 import time
 import traceback
 from datetime import datetime
@@ -142,7 +143,7 @@ class AdminClient(cmd.Cmd):
 
     def session_signal_handler(self, signum, frame):
         self.api.close_session_monitor()
-        raise ConnectionError
+        sys.exit()
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -380,7 +381,7 @@ class AdminClient(cmd.Cmd):
                     if self.use_rawinput:
                         try:
                             line = input(self.prompt)
-                        except (EOFError, ConnectionError):
+                        except EOFError:
                             line = "bye"
                         except KeyboardInterrupt:
                             self.stdout.write("\n")
@@ -415,8 +416,7 @@ class AdminClient(cmd.Cmd):
                 if self.api.shutdown_received:
                     return False
 
-            # self.api.start_session_monitor(self.session_ended)
-            # above line was commented out, but if we want to use it, need to be logged in to call server_execute("_check_session") and consider how SP changes impact this
+            self.api.start_session_monitor(self.session_ended)
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
         finally:
             self.overseer_agent.end()
