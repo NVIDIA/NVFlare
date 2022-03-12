@@ -19,6 +19,7 @@ class FLSnapshot:
     The format is:
             { component_id: component_state_dict }
     """
+
     def __init__(self) -> None:
         super().__init__()
         self.component_states = {}

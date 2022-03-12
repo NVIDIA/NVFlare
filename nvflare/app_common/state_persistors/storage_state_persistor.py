@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
 import os
+import pickle
 
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.state_persistor import StatePersistor
@@ -34,9 +34,7 @@ class StorageStatePersistor(StatePersistor):
             snapshot: FLSnapshot object
         Returns: storage location
         """
-        self.storage.create_object(
-            uri=self.location, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True
-        )
+        self.storage.create_object(uri=self.location, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True)
 
         return self.location
 
