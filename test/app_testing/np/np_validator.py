@@ -82,7 +82,7 @@ class NPValidator(Executor):
                 model = model_dxo.data
             else:
                 self.log_error(
-                    fl_ctx, f"Model DXO doesn't have data or is not of type DataKind.WEIGHTS. Unable to validate."
+                    fl_ctx, "Model DXO doesn't have data or is not of type DataKind.WEIGHTS. Unable to validate."
                 )
                 shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
                 return shareable

@@ -161,7 +161,7 @@ class NPTrainer(Executor):
                 model_shareable = outgoing_dxo.to_shareable()
             else:
                 # Set return code.
-                self.log_error(fl_ctx, f"local model not found.")
+                self.log_error(fl_ctx, "local model not found.")
                 model_shareable.set_return_code(ReturnCode.EXECUTION_RESULT_ERROR)
 
             return model_shareable

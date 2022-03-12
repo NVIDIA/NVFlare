@@ -15,6 +15,7 @@
 import argparse
 import importlib
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -43,25 +44,26 @@ def read_yaml(yaml_file_path):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run NVFlare tests")
+    parser.add_argument("--poc", "-p", type=str, help="Poc Directory.")
+    parser.add_argument("--snapshot_path", "-s", type=str, help="Directory that contains Snapshot.")
+    parser.add_argument("--n_clients", "-n", type=int, help="Number of clients.")
+    parser.add_argument("--app_path", "-ap", type=str, help="Directory for the apps.")
+    parser.add_argument("--yaml", "-y", type=str, help="Yaml test config path.")
+    parser.add_argument("--cleanup", "-c", action="store_true", help="Whether to cleanup.")
+
+    args = parser.parse_args()
+
     site_launcher = None
     cleanup = True
     try:
-        parser = argparse.ArgumentParser(description="Run NVFlare tests")
-        parser.add_argument("--poc", "-p", type=str, help="Poc Directory")
-        parser.add_argument("--n_clients", "-n", type=int, help="Number of clients.")
-        parser.add_argument("--app_path", "-ap", type=str, help="Directory for the apps.")
-        parser.add_argument("--yaml", "-y", type=str, help="Yaml test config path.")
-        parser.add_argument("--cleanup", "-c", action="store_true", help="Whether to cleanup ")
-
-        args = parser.parse_args()
-
         cleanup = args.cleanup
 
         test_apps = read_yaml(args.yaml)
 
         print(f"test_apps = {test_apps}")
 
-        site_launcher = SiteLauncher(poc_directory=args.poc, app_path=args.app_path)
+        site_launcher = SiteLauncher(poc_directory=args.poc)
 
         site_launcher.start_server()
         site_launcher.start_clients(n=args.n_clients)
@@ -113,7 +115,7 @@ if __name__ == "__main__":
 
                 app_results.append((test_app, validate_result))
             else:
-                print(f"No validators provided so results can't be checked.")
+                print("No validators provided so results can't be checked.")
 
             print(f"Finished running {test_app} in {time.time()-start_time} seconds.")
 
@@ -135,4 +137,6 @@ if __name__ == "__main__":
             site_launcher.stop_all_sites()
 
             if cleanup:
-                site_launcher.finalize()
+                site_launcher.cleanup()
+                print(f"Deleting snapshot storage directory: {args.snapshot_path}")
+                shutil.rmtree(args.snapshot_path)
