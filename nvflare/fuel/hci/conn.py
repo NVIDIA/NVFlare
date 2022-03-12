@@ -27,16 +27,20 @@ from .table import Table
 
 LINE_END = "\x03"  # Indicates the end of the line (end of text)
 ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmission)
-
-
 MAX_MSG_SIZE = 1024
+MAX_DATA_SIZE = 512 * 1024 * 1024
+MAX_IDLE_TIME = 10
 
 
 def receive_til_end(sock, end=ALL_END):
     total_data = []
-
+    data_size = 0
+    sock.settimeout(MAX_IDLE_TIME)
     while True:
         data = str(sock.recv(1024), "utf-8")
+        data_size += len(data)
+        if data_size > MAX_DATA_SIZE:
+            raise BufferError(f"Data size exceeds limit ({MAX_DATA_SIZE} bytes)")
         if end in data:
             total_data.append(data[: data.find(end)])
             break
