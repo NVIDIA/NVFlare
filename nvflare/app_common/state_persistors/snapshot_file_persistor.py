@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
 import os
+import pickle
 
 from nvflare.apis.state_persistor import FLSnapshot, StatePersistor
 
 
 class SnapshotFilePersistor(StatePersistor):
-
     def __init__(self, location) -> None:
         super().__init__()
         self.location = location

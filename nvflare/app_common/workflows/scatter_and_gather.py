@@ -338,7 +338,7 @@ class ScatterAndGather(Controller):
             "current_round": self._current_round,
             "start_round": self._start_round,
             "num_rounds": self._num_rounds,
-            "global_weights": self._global_weights
+            "global_weights": self._global_weights,
         }
 
     def restore(self, state_data: dict, fl_ctx: FLContext):

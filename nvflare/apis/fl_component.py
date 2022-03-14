@@ -21,8 +21,8 @@ from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
 from .fl_constant import EventScope, FedEventHeader, FLContextKey, LogMessageTag
 from .fl_context import FLContext
-from .shareable import Shareable
 from .persistable import StatePersistable
+from .shareable import Shareable
 
 
 class FLComponent(StatePersistable):

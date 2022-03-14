@@ -185,7 +185,11 @@ class FilesystemStorage(StorageSpec):
         full_dir_path = os.path.join(self.root_dir, dir_path.lstrip("/"))
 
         if os.path.isdir(full_dir_path):
-            return [os.path.join(dir_path, obj) for obj in os.listdir(full_dir_path) if self._object_exists(os.path.join(full_dir_path, obj))]
+            return [
+                os.path.join(dir_path, obj)
+                for obj in os.listdir(full_dir_path)
+                if self._object_exists(os.path.join(full_dir_path, obj))
+            ]
 
     def get_meta(self, uri: str) -> dict:
         """Get user defined meta info of the specified object

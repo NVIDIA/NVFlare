@@ -40,16 +40,26 @@ from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
+from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
-from .server_state import ServerState, ColdState, NIS, ABORT_RUN, ACTION, MESSAGE, Cold2HotState, HotState, \
-    Hot2ColdState
+from .server_state import (
+    ABORT_RUN,
+    ACTION,
+    MESSAGE,
+    NIS,
+    Cold2HotState,
+    ColdState,
+    Hot2ColdState,
+    HotState,
+    ServerState,
+)
 from .server_status import ServerStatus
-from ..utils.fed_utils import shareable_to_modeldata
 
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", 1024 * 1024 * 1024),
@@ -211,7 +221,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         secure_train=False,
         enable_byoc=False,
         snapshot_persistor=None,
-        overseer_agent=None
+        overseer_agent=None,
     ):
         """Federated server services.
 
@@ -254,8 +264,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # Additional fields for CurrentTask meta_data in GetModel API.
         self.current_model_meta_data = {}
 
-        self.engine = ServerEngine(server=self, args=args, client_manager=self.client_manager,
-                                   snapshot_persistor=snapshot_persistor)
+        self.engine = ServerEngine(
+            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
+        )
         self.run_manager = None
         self.server_runner = None
 
@@ -323,8 +334,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 if self.admin_server:
                     self.admin_server.client_heartbeat(token)
 
-                return fed_msg.FederatedSummary(comment="New client registered", token=token,
-                                                ssid=self.server_state.ssid)
+                return fed_msg.FederatedSummary(
+                    comment="New client registered", token=token, ssid=self.server_state.ssid
+                )
 
     def _handle_state_check(self, context, state_check):
         if state_check.get(ACTION) == NIS:
@@ -340,10 +352,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _ssid_check(self, client_state, context):
         if client_state.ssid != self.server_state.ssid:
-            context.abort(
-                grpc.StatusCode.UNAUTHENTICATED,
-                "Invalid Service session ID"
-            )
+            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid Service session ID")
 
     def Quit(self, request, context):
         """Existing client quits the federated training process.
@@ -641,9 +650,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         if secure_train:
             if self.overseer_agent:
-                self.overseer_agent.set_secure_context(ca_path=grpc_args["ssl_root_cert"],
-                                                   cert_path=grpc_args["ssl_cert"],
-                                                   prv_key_path=grpc_args["ssl_private_key"])
+                self.overseer_agent.set_secure_context(
+                    ca_path=grpc_args["ssl_root_cert"],
+                    cert_path=grpc_args["ssl_cert"],
+                    prv_key_path=grpc_args["ssl_private_key"],
+                )
 
         self.overseer_agent.start(self.overseer_callback)
 
@@ -693,14 +704,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 self.logger.info(f"Restore the previous snapshot. Run_number: {self.engine.run_number}")
                 self.engine.start_app_on_server(snapshot=snapshot)
 
-            self.server_state = HotState(host=self.server_state.host,
-                                         port=self.server_state.service_port,
-                                         ssid=self.server_state.ssid)
+            self.server_state = HotState(
+                host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid
+            )
 
     def _turn_to_cold(self):
         # Wrap-up server operations
-        self.server_state = ColdState(host=self.server_state.host,
-                                      port=self.server_state.service_port)
+        self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
 
     def stop_training(self):
         self.status = ServerStatus.STOPPED

@@ -17,7 +17,7 @@ import os
 import sys
 
 os.environ["KIVY_NO_ARGS"] = "1"
-from pprint import pformat, pprint
+from pprint import pformat
 
 from kivy.app import App
 from kivy.clock import Clock

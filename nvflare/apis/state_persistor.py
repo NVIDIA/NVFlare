@@ -22,8 +22,8 @@ class StatePersistor:
         Args:
             snapshot: FLSnapshot object
 
-        Returns: storage location
-
+        Returns:
+            Storage location.
         """
         pass
 
@@ -37,8 +37,8 @@ class StatePersistor:
         """
         pass
 
-    def delete(self,  location: str):
-        """To delete the FL component snapshot.
+    def delete(self, location: str):
+        """Delete the FL component snapshot.
 
         Args:
             location: persist location

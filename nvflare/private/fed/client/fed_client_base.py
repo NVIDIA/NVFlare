@@ -28,6 +28,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
+
 from .client_status import ClientStatus
 from .communicator import Communicator
 
@@ -49,7 +50,7 @@ class FederatedClientBase:
         handlers: Optional[List[FLComponent]] = None,
         compression=None,
         overseer_agent=None,
-        args=None
+        args=None,
     ):
         """To init FederatedClientBase.
 
@@ -98,9 +99,11 @@ class FederatedClientBase:
 
         if secure_train:
             if self.overseer_agent:
-                self.overseer_agent.set_secure_context(ca_path=client_args["ssl_root_cert"],
-                                                   cert_path=client_args["ssl_cert"],
-                                                   prv_key_path=client_args["ssl_private_key"])
+                self.overseer_agent.set_secure_context(
+                    ca_path=client_args["ssl_root_cert"],
+                    cert_path=client_args["ssl_cert"],
+                    prv_key_path=client_args["ssl_private_key"],
+                )
 
         self.overseer_agent.start(self.overseer_callback)
 
@@ -147,8 +150,9 @@ class FederatedClientBase:
         """
         if not self.token:
             try:
-                self.token, self.ssid = self.communicator.client_registration(self.client_name,
-                                                                              self.servers, project_name)
+                self.token, self.ssid = self.communicator.client_registration(
+                    self.client_name, self.servers, project_name
+                )
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
                     self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
@@ -194,8 +198,14 @@ class FederatedClientBase:
             self.logger.info("Starting to push execute result.")
             execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
             message = self.communicator.submitUpdate(
-                self.servers, project_name, self.token, self.ssid, fl_ctx,
-                self.client_name, shareable, execute_task_name
+                self.servers,
+                project_name,
+                self.token,
+                self.ssid,
+                fl_ctx,
+                self.client_name,
+                shareable,
+                execute_task_name,
             )
 
             return message
@@ -218,8 +228,8 @@ class FederatedClientBase:
         try:
             self.logger.debug("Starting to send aux message.")
             message = self.communicator.auxCommunicate(
-                self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable,
-                topic, timeout)
+                self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable, topic, timeout
+            )
 
             return message
         except FLCommunicationError as e:

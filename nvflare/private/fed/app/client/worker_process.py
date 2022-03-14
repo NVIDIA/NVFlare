@@ -87,7 +87,7 @@ def main():
             client_name = f.readline().strip()
             listen_port = f.readline().strip()
             print(
-                "token is: {} run_number is: {} client_name: {} listen_port: {}".format(
+                "token is: {} ssid is: {} run_number is: {} client_name: {} listen_port: {}".format(
                     token, ssid, run_number, client_name, listen_port
                 )
             )

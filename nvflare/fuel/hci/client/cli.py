@@ -17,21 +17,19 @@ import getpass
 import json
 import os
 import signal
+import threading
 import time
 import traceback
-import threading
 from datetime import datetime
 from enum import Enum
 from functools import partial
 from typing import List, Optional
 
+from nvflare.apis.overseer_spec import SP, OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
-from nvflare.ha.overseer_agent import HttpOverseerAgent
-from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
-from nvflare.apis.overseer_spec import SP, OverseerAgent
 
 from .api import AdminAPI
 from .api_status import APIStatus
@@ -138,9 +136,7 @@ class AdminClient(cmd.Cmd):
 
         if self.credential_type == CredentialType.CERT:
             if self.overseer_agent:
-                self.overseer_agent.set_secure_context(ca_path=ca_cert,
-                                                   cert_path=client_cert,
-                                                   prv_key_path=client_key)
+                self.overseer_agent.set_secure_context(ca_path=ca_cert, cert_path=client_cert, prv_key_path=client_key)
 
         self.overseer_agent.start(self.overseer_callback)
 

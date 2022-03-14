@@ -41,10 +41,7 @@ def main():
         os.chdir(args.workspace)
         workspace = os.path.join(args.workspace, "startup")
 
-        conf = FLAdminClientStarterConfigurator(
-            app_root=workspace,
-            admin_config_file_name=args.fed_admin
-        )
+        conf = FLAdminClientStarterConfigurator(app_root=workspace, admin_config_file_name=args.fed_admin)
         conf.configure()
 
         # stuff for admin launching maybe?

@@ -18,7 +18,7 @@ import time
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
-from nvflare.fuel.hci.client.fl_admin_api_spec import FLAdminAPIResponse, TargetType
+from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 
 
 class AdminController(object):
