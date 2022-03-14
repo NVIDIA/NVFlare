@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict
 
 from .fl_context import FLContext
@@ -26,6 +26,7 @@ class SP:
     admin_port: str = ""
     service_session_id: str = ""
     primary: bool = False
+    props: dict = field(default_factory=dict)
 
 
 class OverseerAgent(ABC):
