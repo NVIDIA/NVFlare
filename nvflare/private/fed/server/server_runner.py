@@ -23,7 +23,6 @@ from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.state_persistor import StatePersistor
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 

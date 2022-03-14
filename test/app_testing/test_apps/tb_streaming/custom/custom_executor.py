@@ -46,10 +46,13 @@ class CustomExecutor(Executor):
             number = random.random()
 
             # send analytics
-            dxo = create_analytic_dxo(tag="random_number", value=number, data_type=AnalyticsDataType.SCALAR, global_step=r)
+            dxo = create_analytic_dxo(
+                tag="random_number", value=number, data_type=AnalyticsDataType.SCALAR, global_step=r
+            )
             send_analytic_dxo(comp=self, dxo=dxo, fl_ctx=fl_ctx)
-            dxo = create_analytic_dxo(tag="debug_msg", value="Hello world", data_type=AnalyticsDataType.TEXT,
-                                      global_step=r)
+            dxo = create_analytic_dxo(
+                tag="debug_msg", value="Hello world", data_type=AnalyticsDataType.TEXT, global_step=r
+            )
             send_analytic_dxo(comp=self, dxo=dxo, fl_ctx=fl_ctx)
             time.sleep(2.0)
 

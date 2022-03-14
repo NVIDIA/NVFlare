@@ -83,7 +83,7 @@ class ServerDeployer:
             secure_train=secure_train,
             enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
-            overseer_agent=self.overseer_agent
+            overseer_agent=self.overseer_agent,
         )
         return first_server, services
 

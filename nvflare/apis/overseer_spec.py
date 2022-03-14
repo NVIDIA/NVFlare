@@ -18,6 +18,7 @@ from typing import Any, Dict
 
 from .fl_context import FLContext
 
+
 @dataclass
 class SP:
     name: str = ""

@@ -38,9 +38,7 @@ def process_logs(log_path, pid):
 
 
 class SiteLauncher(object):
-    def __init__(
-        self, poc_directory, server_dir_name="server", client_dir_name="client", admin_dir_name="admin", app_path=None
-    ):
+    def __init__(self, poc_directory, server_dir_name="server", client_dir_name="client", admin_dir_name="admin"):
         """
         This class sets up the test environment for a test. It will launch and keep track of servers and clients.
         """
@@ -50,7 +48,6 @@ class SiteLauncher(object):
         self.server_dir_name = server_dir_name
         self.client_dir_name = client_dir_name
         self.admin_dir_name = admin_dir_name
-        self.app_path = app_path
 
         self.server_properties = {}
         self.client_properties = {}
@@ -219,6 +216,6 @@ class SiteLauncher(object):
     def stop_all_sites(self):
         self.stop_server()
 
-    def finalize(self):
+    def cleanup(self):
         print(f"Deleting temporary directory: {self.poc_directory}.")
         shutil.rmtree(self.poc_directory)

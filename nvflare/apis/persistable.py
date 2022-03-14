@@ -16,7 +16,6 @@ from .fl_context import FLContext
 
 
 class StatePersistable:
-
     def get_persist_state(self, fl_ctx: FLContext) -> dict:
         """To generate the persist data of each FLComponent.
 

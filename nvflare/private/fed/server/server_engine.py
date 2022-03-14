@@ -27,7 +27,7 @@ from threading import Lock
 from typing import List, Tuple
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import MachineStatus, ReservedTopic, ReturnCode, FLContextKey, SnapshotKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
@@ -38,6 +38,7 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -407,16 +408,17 @@ class ServerEngine(ServerEngineInternalSpec):
 
         snapshot = FLSnapshot()
         for component_id, component in self.run_manager.components.items():
-            snapshot.save_component_snapshot(component_id=component_id,
-                                             component_state=component.get_persist_state(fl_ctx))
+            snapshot.save_component_snapshot(
+                component_id=component_id, component_state=component.get_persist_state(fl_ctx)
+            )
 
-        snapshot.save_component_snapshot(component_id=SnapshotKey.FL_CONTEXT,
-                                         component_state=copy.deepcopy(get_serializable_data(fl_ctx).props))
+        snapshot.save_component_snapshot(
+            component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
+        )
 
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         data = zip_directory_to_bytes(workspace.get_run_dir(self.run_number), "")
-        snapshot.save_component_snapshot(component_id=SnapshotKey.WORKSPACE,
-                                         component_state={"content": data})
+        snapshot.save_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
 
         snapshot.completed = completed
 

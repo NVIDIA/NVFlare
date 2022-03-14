@@ -75,7 +75,7 @@ class BaseClientDeployer:
             compression=compression,
             enable_byoc=self.enable_byoc,
             overseer_agent=self.overseer_agent,
-            args=args
+            args=args,
         )
         return self.federated_client
 

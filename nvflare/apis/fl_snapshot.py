@@ -14,7 +14,7 @@
 
 
 class FLSnapshot:
-    """FLSnapshot keeps the a snapshot of all the FLComponent states.
+    """FLSnapshot keeps a snapshot of all the FLComponent states.
 
     The format is:
             { component_id: component_state_dict }
@@ -23,31 +23,29 @@ class FLSnapshot:
     def __init__(self) -> None:
         super().__init__()
         self.component_states = {}
-
         self.completed = False
 
     def get_component_snapshot(self, component_id: str) -> dict:
-        """Get the persist state of a particular FL component.
+        """Get a state snapshot of a particular FL component.
 
         Args:
             component_id: Component ID
 
-        Returns: component state dict
-
+        Returns:
+            A component state dict.
         """
         return self.component_states.get(component_id)
 
     def save_component_snapshot(self, component_id: str, component_state: dict):
-        """Call to load the Persistable from the persisted location.
+        """Set the snapshot of a particular FL component.
+
+        TODO:: change method name to set.
 
         Args:
             component_id: Component ID
             component_state: component state dict
-
-        Returns:
-
         """
         self.component_states[component_id] = component_state
 
-    def get_snapshot(self):
+    def get_snapshot(self) -> dict:
         return self.component_states
