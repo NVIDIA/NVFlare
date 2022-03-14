@@ -74,7 +74,7 @@ class ServerRunner(FLComponent):
         self.abort_signal = Signal()
         self.wf_lock = threading.Lock()
         self.current_wf = None
-        self.current_wf_index = None
+        self.current_wf_index = 0
         self.status = "init"
 
     def _execute_run(self):
@@ -389,4 +389,4 @@ class ServerRunner(FLComponent):
 
     def restore(self, state_data: dict, fl_ctx: FLContext):
         self.run_num = state_data.get("run_number")
-        self.current_wf_index = state["current_wf_index"]
+        self.current_wf_index = state_data["current_wf_index"]
