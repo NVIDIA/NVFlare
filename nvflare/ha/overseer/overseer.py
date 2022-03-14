@@ -74,6 +74,8 @@ def promote():
 
 @app.route("/api/v1/refresh")
 def refresh():
+    if request.headers.get("X-USER") not in privilege_dict.get("super", {}):
+        return jsonify({"Error": "No rights"})
     do_refresh()
     return jsonify({"Status": "Success"})
 

@@ -84,7 +84,7 @@ def main():
 
 
 def simple_callback(overseer_agent):
-    print("\nGot callback")
+    print(f"\nGot callback {overseer_agent.get_primary_sp()}")
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ class AuthPolicyBuilder(Builder):
             if self.disabled:
                 users[admin.name] = {"org": admin.org, "roles": ["super"]}
             else:
-                for role in admin.props.get("roles"):
+                for role in admin.props.get("roles", {}):
                     if role not in self.roles:
                         raise ValueError(f"Admin {admin.name}'s role {role} not defined in AuthPolicy")
                 users[admin.name] = {"org": admin.org, "roles": admin.props.get("roles")}

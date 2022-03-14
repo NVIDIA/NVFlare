@@ -30,8 +30,10 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: |
           export PYTHONPATH=$(pwd)
+          rm -rf /tmp/snapshot-storage
           cd test/app_testing
           ./run_example_tests.sh
+          rm -rf /tmp/snapshot-storage
 
   app-tests:
     runs-on: self-hosted
@@ -44,8 +46,10 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: |
           export PYTHONPATH=$(pwd)
+          rm -rf /tmp/snapshot-storage
           cd test/app_testing
           ./run_app_tests.sh
+          rm -rf /tmp/snapshot-storage
 
   wheel-build:
     runs-on: self-hosted

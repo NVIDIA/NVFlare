@@ -84,6 +84,8 @@ setup(
         "google-api-python-client",
         "cryptography",
         "tenseal==0.3.0",
+        "gunicorn",
+        "flask"
     ],
     entry_points={
         "console_scripts": [
