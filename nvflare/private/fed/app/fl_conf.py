@@ -343,4 +343,3 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
                 admin["download_dir"] = os.path.join(os.path.dirname(self.app_root), admin["download_dir"])
         except Exception:
             raise ValueError("Client config error: '{}'".format(self.admin_config_file_name))
-
