@@ -36,6 +36,7 @@ def serialize_pri_key(pri_key):
 def serialize_cert(cert):
     return cert.public_bytes(serialization.Encoding.PEM)
 
+
 class CertBuilder(Builder):
     def __init__(self):
         """Build certificate chain for every participant.
@@ -87,11 +88,8 @@ class CertBuilder(Builder):
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
         pkcs12 = serialization.pkcs12.serialize_key_and_certificates(
-            subject.encode('utf-8'),
-            pri_key,
-            cert,
-            None,
-            serialization.BestAvailableEncryption(subject.encode('utf-8')))
+            subject.encode("utf-8"), pri_key, cert, None, serialization.BestAvailableEncryption(subject.encode("utf-8"))
+        )
         with open(os.path.join(dest_dir, f"{base_name}.pfx"), "wb") as f:
             f.write(pkcs12)
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
