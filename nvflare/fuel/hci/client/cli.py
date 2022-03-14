@@ -17,7 +17,6 @@ import getpass
 import json
 import os
 import signal
-import threading
 import time
 import traceback
 from datetime import datetime
@@ -25,7 +24,7 @@ from enum import Enum
 from functools import partial
 from typing import List, Optional
 
-from nvflare.apis.overseer_spec import SP, OverseerAgent
+from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
