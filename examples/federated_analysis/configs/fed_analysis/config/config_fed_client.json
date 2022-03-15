@@ -6,7 +6,8 @@
       "executor": {
         "path": "analysis_executor.AnalysisExecutor",
         "args": {
-          "data_root": "PWD/data"
+          "data_root": "PWD/data",
+          "supported_task": "histogram"
         }
       }
     }

@@ -16,6 +16,7 @@ import glob
 import os
 
 import numpy as np
+from analysis_constants import SupportedTasks
 from monai.data import ITKReader, load_decathlon_datalist
 from monai.transforms import LoadImage
 
@@ -27,10 +28,6 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 
 
-class SupportedTasks(object):
-    HISTOGRAM = "histogram"
-
-
 class AnalysisExecutor(Executor):
     def __init__(
         self,
@@ -40,6 +37,7 @@ class AnalysisExecutor(Executor):
         n_bins: int = 256,
         range_min: float = 0.0,
         range_max: float = 255.0,  # assumes BMP/PNG/JPEGSs as input
+        supported_task: str = SupportedTasks.HISTOGRAM,
     ):
         """Executor for federated analysis.
 
@@ -49,8 +47,8 @@ class AnalysisExecutor(Executor):
             min_images: minimum number of images needed to compute histogram (if less images are included in the computation, no statistics will be sent to the server).
             n_bins: number of bins for the histogram.
             range_min: minimum intensity value to include in the histogram.
-            range_max: maximum intensity value to include in the histogram
-
+            range_max: maximum intensity value to include in the histogram.
+            supported_task: task name for histogram computation.
         Returns:
             a Shareable with the computed statistics after `execute()`
         """
@@ -62,6 +60,8 @@ class AnalysisExecutor(Executor):
         self.n_bins = n_bins
         self.range_min = range_min
         self.range_max = range_max
+
+        self.supported_task = supported_task
 
         self.data_list = None
 
@@ -93,7 +93,7 @@ class AnalysisExecutor(Executor):
                 self.log_error(fl_ctx, f"Reading data list for client {client_name} failed!")
                 return make_reply(ReturnCode.ERROR)
 
-            if task_name == SupportedTasks.HISTOGRAM:
+            if task_name == self.supported_task:
                 result_dict = self._compute_histo(fl_ctx, abort_signal)
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
