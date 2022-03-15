@@ -247,8 +247,6 @@ class AdminAPI(AdminAPISpec):
     def _load_client_cmds(self, cmd_modules):
         if cmd_modules:
             for m in cmd_modules:
-                if not isinstance(m, CommandModule):
-                    raise TypeError("cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m)))
                 self.client_cmd_reg.register_module(m, include_invisible=False)
         self.client_cmd_reg.finalize(self.register_command)
 
