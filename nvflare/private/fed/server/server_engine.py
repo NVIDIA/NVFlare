@@ -15,6 +15,8 @@
 import copy
 import gc
 import logging
+import shlex
+import subprocess
 import os
 import pickle
 import re
@@ -151,18 +153,23 @@ class ServerEngine(ServerEngineInternalSpec):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
+            # if self.server.enable_byoc:
+            #     app_custom_folder = os.path.join(app_root, "custom")
+            #     try:
+            #         sys.path.index(app_custom_folder)
+            #     except ValueError:
+            #         self.remove_custom_path()
+            #         sys.path.append(app_custom_folder)
+            #
+            # # future = self.executor.submit(start_server_training, (self.server))
+            # future = self.executor.submit(
+            #     lambda p: start_server_training(*p), [self.server, self.args, app_root, self.run_number, snapshot]
+            # )
+
+            app_custom_folder = ""
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
-                try:
-                    sys.path.index(app_custom_folder)
-                except ValueError:
-                    self.remove_custom_path()
-                    sys.path.append(app_custom_folder)
-
-            # future = self.executor.submit(start_server_training, (self.server))
-            future = self.executor.submit(
-                lambda p: start_server_training(*p), [self.server, self.args, app_root, self.run_number, snapshot]
-            )
+            self._start_runner_process(self.args, app_root, self.run_number, app_custom_folder, snapshot)
 
             start = time.time()
             # Wait for the server App to start properly
@@ -175,6 +182,32 @@ class ServerEngine(ServerEngineInternalSpec):
                 return f"Failed to start server app: {self.engine_info.status}"
 
             return ""
+
+    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, snapshot):
+        new_env = os.environ.copy()
+        if app_custom_folder != "":
+            new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
+
+        if snapshot:
+            restore_snapshot = True
+        else:
+            restore_snapshot = False
+        command_options = ""
+        for t in args.set:
+            command_options += " " + t
+        command = (
+            f"{sys.executable} -m nvflare.private.fed.app.server.worker_process -m "
+            + args.workspace
+            + " -s fed_server.json -r " + app_root
+            + " -n " + str(run_number)
+            + " -t " + str(restore_snapshot)
+            + " --set" + command_options + " print_conf=True"
+        )
+        # use os.setsid to create new process group ID
+
+        command = f"{sys.executable} -m nvflare.private.fed.app.client.sample"
+        process = subprocess.Popen(shlex.split(command, " "))
+        return process
 
     def remove_custom_path(self):
         regex = re.compile(".*/run_.*/custom")
@@ -438,37 +471,37 @@ class ServerEngine(ServerEngineInternalSpec):
         self.executor.shutdown()
 
 
-def start_server_training(server, args, app_root, run_number, snapshot):
-
-    restart_file = os.path.join(args.workspace, "restart.fl")
-    if os.path.exists(restart_file):
-        os.remove(restart_file)
-
-    try:
-        server_config_file_name = os.path.join(app_root, args.server_config)
-
-        conf = ServerJsonConfigurator(
-            config_file_name=server_config_file_name,
-        )
-        conf.configure()
-
-        set_up_run_config(server, conf)
-
-        server.start_run(run_number, app_root, conf, args, snapshot)
-    except BaseException as e:
-        traceback.print_exc()
-        logging.getLogger().warning("FL server execution exception: " + str(e))
-    finally:
-        server.status = ServerStatus.STOPPED
-        server.engine.engine_info.status = MachineStatus.STOPPED
-        server.stop_training()
-        # if trainer:
-        #     trainer.close()
-
-        # Force garbage collection
-        gc.collect()
-
-    # return server.start()
+# def start_server_training(server, args, app_root, run_number, snapshot):
+#
+#     restart_file = os.path.join(args.workspace, "restart.fl")
+#     if os.path.exists(restart_file):
+#         os.remove(restart_file)
+#
+#     try:
+#         server_config_file_name = os.path.join(app_root, args.server_config)
+#
+#         conf = ServerJsonConfigurator(
+#             config_file_name=server_config_file_name,
+#         )
+#         conf.configure()
+#
+#         set_up_run_config(server, conf)
+#
+#         server.start_run(run_number, app_root, conf, args, snapshot)
+#     except BaseException as e:
+#         traceback.print_exc()
+#         logging.getLogger().warning("FL server execution exception: " + str(e))
+#     finally:
+#         server.status = ServerStatus.STOPPED
+#         server.engine.engine_info.status = MachineStatus.STOPPED
+#         server.stop_training()
+#         # if trainer:
+#         #     trainer.close()
+#
+#         # Force garbage collection
+#         gc.collect()
+#
+#     # return server.start()
 
 
 def server_shutdown(server, touch_file):
