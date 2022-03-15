@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.widgets.intime_model_selection import IntimeModelSelection
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 
 
 class MockSimpleEngine:
@@ -42,7 +42,7 @@ class MockSimpleEngine:
         return True
 
 
-class TestInTimeModelSelection:
+class TestInTimeModelSelector:
     @pytest.mark.parametrize(
         "initial,received,expected",
         [
@@ -65,7 +65,7 @@ class TestInTimeModelSelection:
     )
     def test_model_selection(self, initial, received, expected):
         aggregation_weights = {k: v["weight"] for k, v in received.items()}
-        handler = IntimeModelSelection(aggregation_weights=aggregation_weights)
+        handler = IntimeModelSelector(aggregation_weights=aggregation_weights)
         handler.best_val_metric = initial
         engine = MockSimpleEngine()
         fl_ctx = engine.fl_ctx_mgr.new_context()

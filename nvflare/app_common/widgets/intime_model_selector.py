@@ -24,7 +24,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
 
 
-class IntimeModelSelection(Widget):
+class IntimeModelSelector(Widget):
     def __init__(self, weigh_by_local_iter=False, aggregation_weights=None):
         """Handler to determine if the model is globally best.
 
