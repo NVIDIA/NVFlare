@@ -16,15 +16,15 @@ import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.widgets.widget import Widget
 
 
-class IntimeModelSelectionHandler(FLComponent):
+class IntimeModelSelectionHandler(Widget):
     def __init__(self, weigh_by_local_iter=False, aggregation_weights=None):
         """Handler to determine if the model is globally best.
 
@@ -73,7 +73,7 @@ class IntimeModelSelectionHandler(FLComponent):
             return False
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
-            self.log_debug(fl_ctx, "I cannot handle {}".format(dxo.data_kind))
+            self.log_debug(fl_ctx, "cannot handle {}".format(dxo.data_kind))
             return False
 
         if dxo.data is None:
