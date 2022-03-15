@@ -74,10 +74,12 @@ class ServerRunner(FLComponent):
         self.abort_signal = Signal()
         self.wf_lock = threading.Lock()
         self.current_wf = None
+        self.current_wf_index = 0
         self.status = "init"
 
     def _execute_run(self):
-        for wf in self.config.workflows:
+        while self.current_wf_index < len(self.config.workflows):
+            wf = self.config.workflows[self.current_wf_index]
             try:
                 with self.engine.new_context() as fl_ctx:
                     self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.responder)))
@@ -126,6 +128,7 @@ class ServerRunner(FLComponent):
                 # Stopped the server runner from the current responder, not continue the following responders.
                 if self.abort_signal.triggered:
                     break
+            self.current_wf_index += 1
 
     def run(self):
         with self.engine.new_context() as fl_ctx:
@@ -382,7 +385,8 @@ class ServerRunner(FLComponent):
         self.log_info(fl_ctx, "asked to abort - triggered abort_signal to stop the RUN")
 
     def get_persist_state(self, fl_ctx: FLContext) -> dict:
-        return {"run_number": self.run_num}
+        return {"run_number": self.run_num, "current_wf_index": self.current_wf_index}
 
     def restore(self, state_data: dict, fl_ctx: FLContext):
         self.run_num = state_data.get("run_number")
+        self.current_wf_index = state_data.get("current_wf_index", 0)
