@@ -110,6 +110,15 @@ class FilesystemStorage(StorageSpec):
         if self._object_exists(full_uri) and not overwrite_existing:
             raise Exception("object {} already exists and overwrite_existing is False".format(uri))
 
+        path_parts = Path(uri).parts
+        for i in range(0, len(path_parts) - 1):
+            parent_path = str(Path(*path_parts[0:i]))
+            if self._object_exists(os.path.join(self.root_dir, parent_path)):
+                raise Exception("cannot create object {} inside preexisting object {}".format(uri, parent_path))
+
+        if not self._object_exists(full_uri) and (os.path.exists(full_uri) and os.listdir(full_uri)):
+            raise Exception("cannot create object {} at nonempty directory".format(uri))
+
         data_path = os.path.join(full_uri, "data")
         meta_path = os.path.join(full_uri, "meta")
 
