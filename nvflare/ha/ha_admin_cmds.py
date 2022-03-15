@@ -15,7 +15,6 @@
 import logging
 
 from nvflare.fuel.hci.client.api_status import APIStatus
-
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 
 

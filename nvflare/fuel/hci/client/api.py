@@ -21,8 +21,7 @@ import time
 import traceback
 from datetime import datetime
 
-from nvflare.apis.overseer_spec import OverseerAgent, SP
-
+from nvflare.apis.overseer_spec import SP, OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
 from nvflare.fuel.hci.proto import make_error
