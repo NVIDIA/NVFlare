@@ -19,7 +19,7 @@
     },
     {
       "id": "event_recorder",
-      "name": "nvflare.widgets.event_recorder.ServerEventRecorder",
+      "name": "ServerEventRecorder",
       "args": {}
     },
     {
