@@ -213,7 +213,7 @@ class FileTransferModule(CommandModule):
     def upload_file(self, args, api: AdminAPISpec, cmd_name, file_to_str_func):
         full_cmd_name = _server_cmd_name(cmd_name)
         if len(args) < 2:
-            return {"status": APIStatus.ERROR_COMMAND_SYNTAX, "details": "syntax error: missing file names"}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "syntax error: missing file names"}
 
         parts = [full_cmd_name]
         for i in range(1, len(args)):
@@ -238,7 +238,7 @@ class FileTransferModule(CommandModule):
     def download_file(self, args, api: AdminAPISpec, cmd_name, str_to_file_func):
         full_cmd_name = _server_cmd_name(cmd_name)
         if len(args) < 2:
-            return {"status": APIStatus.ERROR_COMMAND_SYNTAX, "details": "syntax error: missing file names"}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "syntax error: missing file names"}
 
         parts = [full_cmd_name]
         for i in range(1, len(args)):
@@ -257,7 +257,7 @@ class FileTransferModule(CommandModule):
 
     def upload_folder(self, args, api: AdminAPISpec):
         if len(args) != 2:
-            return {"status": APIStatus.ERROR_COMMAND_SYNTAX, "details": "usage: upload_folder folder_name"}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: upload_folder folder_name"}
 
         folder_name = args[1]
         if folder_name.endswith("/"):
@@ -281,7 +281,7 @@ class FileTransferModule(CommandModule):
 
     def download_folder(self, args, api: AdminAPISpec):
         if len(args) != 2:
-            return {"status": APIStatus.ERROR_COMMAND_SYNTAX, "details": "usage: download_folder folder_name"}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_folder folder_name"}
 
         parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_FOLDER), args[1]]
         command = join_args(parts)

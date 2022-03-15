@@ -17,7 +17,6 @@ import getpass
 import json
 import os
 import signal
-import threading
 import time
 import traceback
 from datetime import datetime
@@ -25,7 +24,7 @@ from enum import Enum
 from functools import partial
 from typing import List, Optional
 
-from nvflare.apis.overseer_spec import SP, OverseerAgent
+from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
@@ -58,8 +57,8 @@ class AdminClient(cmd.Cmd):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
     Args:
-        host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
-        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
+        host: cn provisioned for the server, with this fully qualified domain name resolving to the IP of the FL server. This may be set by the OverseerAgent.
+        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int if provided. This may be set by the OverseerAgent.
         prompt: prompt to use for the command prompt
         ca_cert: path to CA Cert file, by default provisioned rootCA.pem
         client_cert: path to admin client Cert file, by default provisioned as client.crt
@@ -68,9 +67,7 @@ class AdminClient(cmd.Cmd):
         require_login: whether to require login
         credential_type: what type of credential to use
         cmd_modules: command modules to load and register
-        overseer_end_point: end point for the overseer in order to find the active server
-        project: project name to provide overseer
-        name: name of the provisioned admin to provide to the overseer
+        overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
         debug: whether to print debug messages. False by default.
     """
 
@@ -103,6 +100,8 @@ class AdminClient(cmd.Cmd):
         self.out_file = None
         self.no_stdout = False
 
+        if not isinstance(overseer_agent, OverseerAgent):
+            raise TypeError("overseer_agent was not properly initialized.")
         if not isinstance(credential_type, CredentialType):
             raise TypeError("invalid credential_type {}".format(credential_type))
 
@@ -117,6 +116,8 @@ class AdminClient(cmd.Cmd):
 
         poc = True if self.credential_type == CredentialType.PASSWORD else False
 
+        self._get_login_creds()
+
         self.api = AdminAPI(
             host=host,
             port=port,
@@ -126,38 +127,14 @@ class AdminClient(cmd.Cmd):
             server_cn=server_cn,
             cmd_modules=modules,
             overseer_agent=self.overseer_agent,
+            auto_login=True,
+            user_name=self.user_name,
+            password=self.password,
             debug=self.debug,
             poc=poc,
         )
 
         signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
-
-        self.ssid = None
-
-        if self.credential_type == CredentialType.CERT:
-            if self.overseer_agent:
-                self.overseer_agent.set_secure_context(ca_path=ca_cert, cert_path=client_cert, prv_key_path=client_key)
-
-        self.overseer_agent.start(self.overseer_callback)
-
-    def overseer_callback(self, overseer_agent):
-        sp = overseer_agent.get_primary_sp()
-        self.set_primary_sp(sp)
-
-    def set_primary_sp(self, sp: SP):
-        if sp and sp.primary is True:
-            if self.api.host != sp.name or self.api.port != int(sp.admin_port) or self.ssid != sp.service_session_id:
-                self.api.host = sp.name
-                self.api.port = int(sp.admin_port)
-                self.ssid = sp.service_session_id
-                print(f"Got primary SP. Host: {self.api.host} Admin_port: {self.api.port} SSID: {self.ssid}")
-
-                thread = threading.Thread(target=self._login_sp)
-                thread.start()
-
-    def _login_sp(self):
-        self.do_bye("logout")
-        self.login()
 
     def session_ended(self, message):
         self.write_error(message)
@@ -320,7 +297,7 @@ class AdminClient(cmd.Cmd):
             ent = entries[0]
             resp = ent.handler(args, self.api)
             self.print_resp(resp)
-            if resp["status"] == APIStatus.ERROR_INACTIVE_SESSION:
+            if resp.get("status") == APIStatus.ERROR_INACTIVE_SESSION:
                 return True
             return
 
@@ -432,13 +409,23 @@ class AdminClient(cmd.Cmd):
     def run(self):
 
         try:
+            self.stdout.write("Waiting for token from successful login...\n")
             while self.api.token is None:
                 time.sleep(1.0)
+                if self.api.shutdown_received:
+                    return False
 
             # self.api.start_session_monitor(self.session_ended)
+            # above line was commented out, but if we want to use it, need to be logged in to call server_execute("_check_session") and consider how SP changes impact this
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
         finally:
             self.overseer_agent.end()
+
+    def _get_login_creds(self):
+        self.user_name = input("User Name: ")
+        if self.credential_type == CredentialType.PASSWORD:
+            self.password = getpass.getpass("Password: ")
+            self.pwd = hash_password(self.password)
 
     def login(self):
         if self.require_login:
