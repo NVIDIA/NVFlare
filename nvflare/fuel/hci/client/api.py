@@ -208,7 +208,9 @@ class AdminAPI(AdminAPISpec):
                 self.host = sp.name
                 self.port = int(sp.admin_port)
                 self.ssid = sp.service_session_id
-                print(f"Got primary SP {self.host}:{sp.fl_port}:{self.port} from overseer. Host: {self.host} Admin_port: {self.port} SSID: {self.ssid}")
+                print(
+                    f"Got primary SP {self.host}:{sp.fl_port}:{self.port} from overseer. Host: {self.host} Admin_port: {self.port} SSID: {self.ssid}"
+                )
 
                 thread = threading.Thread(target=self._login_sp)
                 thread.start()

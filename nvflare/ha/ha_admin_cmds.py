@@ -50,8 +50,8 @@ class HACommandModule(CommandModule):
                     name="_end_overseer_agent",
                     description="end the overseer agent thread",
                     usage="_end_overseer_agent",
-                    handler_func=self._end_overseer_agent
-                )
+                    handler_func=self._end_overseer_agent,
+                ),
             ],
         )
 
