@@ -24,12 +24,12 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
 
 
-class IntimeModelSelectionHandler(Widget):
+class IntimeModelSelection(Widget):
     def __init__(self, weigh_by_local_iter=False, aggregation_weights=None):
         """Handler to determine if the model is globally best.
 
         Args:
-            weigh_by_local_iter (bool, optional): whether the metrics should be weighted by trainer's iteration number. Defaults to False.
+            weigh_by_local_iter (bool, optional): whether the metrics should be weighted by trainer's iteration number.
             aggregation_weights (dict, optional): a mapping of client name to float for aggregation. Defaults to None.
         """
         super().__init__()
@@ -43,12 +43,6 @@ class IntimeModelSelectionHandler(Widget):
         self._reset_stats()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """Perform the handler process based on the event_type.
-
-        Args:
-            event_type (str): event type delivered from workflow
-            fl_ctx (FLContext): FL context, including peer context and other information
-        """
         if event_type == EventType.START_RUN:
             self._startup(fl_ctx)
         elif event_type == EventType.BEFORE_PROCESS_SUBMISSION:

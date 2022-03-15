@@ -22,8 +22,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
-
-from .widget import Widget
+from nvflare.widgets.widget import Widget
 
 
 class _CtxPropReq(object):
