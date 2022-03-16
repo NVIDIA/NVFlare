@@ -27,7 +27,67 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.private.defs import SpecialTaskName
-from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareeable_data, shareable_to_modeldata
+from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
+
+
+def _get_client_state(project_name, token, ssid, fl_ctx: FLContext):
+    """Client's metadata used to authenticate and communicate.
+
+    Args:
+        project_name: FL study project name
+        token: client token
+        ssid: service session ID
+        fl_ctx: FLContext
+
+    Returns:
+        A ClientState message
+
+    """
+    state_message = fed_msg.ClientState(token=token, ssid=ssid)
+    state_message.meta.project.name = project_name
+    state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+
+    context_data = make_context_data(fl_ctx)
+    state_message.context["fl_context"].CopyFrom(context_data)
+
+    return state_message
+
+
+def _get_client_ip():
+    """Return localhost IP.
+
+    More robust than ``socket.gethostbyname(socket.gethostname())``. See
+    https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
+    for more details.
+
+    Returns:
+        The host IP
+
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
+
+
+def _get_communication_data(shareable, client_state, fl_ctx: FLContext, execute_task_name):
+    contrib = fed_msg.Contribution()
+    # set client auth. data
+    contrib.client.CopyFrom(client_state)
+    contrib.task_name = execute_task_name
+
+    current_model = shareable_to_modeldata(shareable, fl_ctx)
+    contrib.data.CopyFrom(current_model)
+
+    s = Struct()
+    contrib.meta_data.CopyFrom(s)
+
+    return contrib
 
 
 class Communicator:
@@ -102,47 +162,6 @@ class Communicator:
             channel = grpc.insecure_channel(**channel_dict, compression=self.compression)
         return channel
 
-    def get_client_state(self, project_name, token, ssid, fl_ctx: FLContext):
-        """Client's metadata used to authenticate and communicate.
-
-        Args:
-            project_name: FL study project name
-            token: FL client token
-            fl_ctx: FLContext
-
-        Returns:
-            A ClientState message
-
-        """
-        state_message = fed_msg.ClientState(token=token, ssid=ssid)
-        state_message.meta.project.name = project_name
-        state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-
-        context_data = make_context_data(fl_ctx)
-        state_message.context["fl_context"].CopyFrom(context_data)
-
-        return state_message
-
-    def get_client_ip(self):
-        """Return localhost IP.
-
-        More robust than ``socket.gethostbyname(socket.gethostname())``. See
-        https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
-        for more details.
-
-        Returns: The host IP
-
-        """
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
-            ip = s.getsockname()[0]
-        except Exception:
-            ip = "127.0.0.1"
-        finally:
-            s.close()
-        return ip
-
     def client_registration(self, client_name, servers, project_name):
         """Client's metadata used to authenticate and communicate.
 
@@ -155,18 +174,15 @@ class Communicator:
             The client's token
 
         """
-        local_ip = self.get_client_ip()
+        local_ip = _get_client_ip()
 
         login_message = fed_msg.ClientLogin(client_name=client_name, client_ip=local_ip)
         login_message.meta.project.name = project_name
 
-        result, retry = None, self.retry
-        # retry = 1500  # retry register for 2 hours (7500s)
         with self.set_up_channel(servers[project_name]) as channel:
             stub = fed_service.FederatedTrainingStub(channel)
             while True:
                 try:
-                    start_time = time.time()
                     result = stub.Register(login_message)
                     token = result.token
                     ssid = result.ssid
@@ -177,8 +193,6 @@ class Communicator:
                         servers[project_name],
                         grpc_error,
                         "client_registration",
-                        start_time,
-                        retry,
                         verbose=self.verbose,
                     )
                     excep = FLCommunicationError(grpc_error)
@@ -186,7 +200,6 @@ class Communicator:
                         status_code = grpc_error.code()
                         if grpc.StatusCode.UNAUTHENTICATED == status_code:
                             raise excep
-                    # retry -= 1
                     time.sleep(5)
             if self.should_stop:
                 raise excep
@@ -202,47 +215,39 @@ class Communicator:
             servers: FL servers
             project_name: FL study project name
             token: client token
+            ssid: service session ID
             fl_ctx: FLContext
 
         Returns:
             A CurrentTask message from server
 
         """
-        global_model, retry = None, self.retry
+        task, retry = None, self.retry
         with self.set_up_channel(servers[project_name]) as channel:
             stub = fed_service.FederatedTrainingStub(channel)
             while retry > 0:
-                # get the global model
                 try:
                     start_time = time.time()
-                    global_model = stub.GetTask(self.get_client_state(project_name, token, ssid, fl_ctx))
+                    task = stub.GetTask(_get_client_state(project_name, token, ssid, fl_ctx))
                     # Clear the stopping flag
                     # if the connection to server recovered.
                     self.should_stop = False
 
                     end_time = time.time()
 
-                    task = fed_msg.CurrentTask()
-                    task.meta.CopyFrom(global_model.meta)
-                    task.meta_data.CopyFrom(global_model.meta_data)
-                    task.data.CopyFrom(global_model.data)
-                    task.task_name = global_model.task_name
-
-                    if global_model.task_name == SpecialTaskName.TRY_AGAIN:
+                    if task.task_name == SpecialTaskName.TRY_AGAIN:
                         self.logger.debug(
                             f"Received from {project_name} server "
-                            f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+                            f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
                         )
                     else:
                         self.logger.info(
                             f"Received from {project_name} server "
-                            f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+                            f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
                         )
                     return task
                 except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(
-                        servers[project_name], grpc_error, "getTask", start_time, retry, verbose=self.verbose
-                    )
+                    self.grpc_error_handler(servers[project_name], grpc_error, "getTask", verbose=self.verbose)
                     excep = FLCommunicationError(grpc_error)
                     retry -= 1
                     time.sleep(5)
@@ -261,6 +266,7 @@ class Communicator:
             servers: FL servers
             project_name: server project name
             token: client token
+            ssid: service session ID
             fl_ctx: fl_ctx
             client_name: client name
             shareable: execution task result shareable
@@ -269,9 +275,9 @@ class Communicator:
         Returns:
             A FederatedSummary message from the server.
         """
-        client_state = self.get_client_state(project_name, token, ssid, fl_ctx)
+        client_state = _get_client_state(project_name, token, ssid, fl_ctx)
         client_state.client_name = client_name
-        contrib = self._get_communication_data(shareable, client_state, fl_ctx, execute_task_name)
+        contrib = _get_communication_data(shareable, client_state, fl_ctx, execute_task_name)
 
         server_msg, retry = None, self.retry
         with self.set_up_channel(servers[project_name]) as channel:
@@ -296,9 +302,7 @@ class Communicator:
                         if grpc_error.details().startswith("Contrib"):
                             self.logger.info(f"submitUpdate failed: {grpc_error.details()}")
                             break  # outdated contribution, no need to retry
-                    self.grpc_error_handler(
-                        servers[project_name], grpc_error, "submitUpdate", start_time, retry, verbose=self.verbose
-                    )
+                    self.grpc_error_handler(servers[project_name], grpc_error, "submitUpdate", verbose=self.verbose)
                     retry -= 1
                     time.sleep(5)
         return server_msg
@@ -312,6 +316,7 @@ class Communicator:
             servers: FL servers
             project_name: server project name
             token: client token
+            ssid: service session ID
             fl_ctx: fl_ctx
             client_name: client name
             shareable: aux message shareable
@@ -322,7 +327,7 @@ class Communicator:
             An AuxReply message from server
 
         """
-        client_state = self.get_client_state(project_name, token, ssid, fl_ctx)
+        client_state = _get_client_state(project_name, token, ssid, fl_ctx)
         client_state.client_name = client_name
 
         aux_message = fed_msg.AuxMessage()
@@ -330,7 +335,7 @@ class Communicator:
         aux_message.client.CopyFrom(client_state)
 
         # shareable.set_header("Topic", topic)
-        aux_message.data["data"].CopyFrom(make_shareeable_data(shareable))
+        aux_message.data["data"].CopyFrom(make_shareable_data(shareable))
         aux_message.data["fl_context"].CopyFrom(make_context_data(fl_ctx))
 
         server_msg, retry = None, self.retry
@@ -338,7 +343,6 @@ class Communicator:
             stub = fed_service.FederatedTrainingStub(channel)
             while retry > 0:
                 try:
-                    start_time = time.time()
                     self.logger.debug(f"Send AuxMessage to {project_name} server")
                     server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
                     # Clear the stopping flag
@@ -347,9 +351,7 @@ class Communicator:
 
                     break
                 except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(
-                        servers[project_name], grpc_error, "AuxCommunicate", start_time, retry, verbose=self.verbose
-                    )
+                    self.grpc_error_handler(servers[project_name], grpc_error, "AuxCommunicate", verbose=self.verbose)
                     retry -= 1
                     time.sleep(5)
         return server_msg
@@ -374,7 +376,7 @@ class Communicator:
                 try:
                     start_time = time.time()
                     self.logger.info(f"Quitting server: {task_name}")
-                    server_message = stub.Quit(self.get_client_state(task_name, token, ssid, fl_ctx))
+                    server_message = stub.Quit(_get_client_state(task_name, token, ssid, fl_ctx))
                     # Clear the stopping flag
                     # if the connection to server recovered.
                     self.should_stop = False
@@ -385,7 +387,7 @@ class Communicator:
                     )
                     break
                 except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(servers[task_name], grpc_error, "quit_remote", start_time, retry)
+                    self.grpc_error_handler(servers[task_name], grpc_error, "quit_remote")
                     retry -= 1
                     time.sleep(3)
         return server_message
@@ -408,38 +410,18 @@ class Communicator:
                         break
                     except grpc.RpcError as grpc_error:
                         self.logger.debug(grpc_error)
-                        excep = FLCommunicationError(grpc_error)
                         retry -= 1
                         time.sleep(5)
-                        # pass
-                # if retry <= 0:
-                #     raise excep
 
                 time.sleep(30)
 
-    def _get_communication_data(self, shareable, client_state, fl_ctx: FLContext, execute_task_name):
-        contrib = fed_msg.Contribution()
-        # set client auth. data
-        contrib.client.CopyFrom(client_state)
-        contrib.task_name = execute_task_name
-
-        current_model = shareable_to_modeldata(shareable, fl_ctx)
-        contrib.data.CopyFrom(current_model)
-
-        s = Struct()
-        contrib.meta_data.CopyFrom(s)
-
-        return contrib
-
-    def grpc_error_handler(self, service, grpc_error, action, start_time, retry, verbose=False):
+    def grpc_error_handler(self, service, grpc_error, action, verbose=False):
         """Handling grpc exceptions.
 
         Args:
             service: FL service
             grpc_error: grpc error
             action: action to take
-            start_time: communication start time
-            retry: retry number
             verbose: verbose to error print out
         """
         status_code = None
@@ -452,7 +434,7 @@ class Communicator:
                 self.should_stop = False
                 return
 
-        self.logger.error(f"Action: {action} grpc communication error. Keep retry...")
+        self.logger.error(f"Action: {action} grpc communication error.")
         if grpc.StatusCode.UNAVAILABLE == status_code:
             self.logger.error(f"Could not connect to server: {service.get('target')}\t {grpc_error.details()}")
             self.should_stop = True
