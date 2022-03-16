@@ -92,9 +92,11 @@ the client config should have the following in order to configure it as an Execu
 
 .. note::
 
-    Configuration of Executor Tasks is ignored here.
-
-Please follow :ref:`quickstart:Quickstart` to learn more.
+    In some examples, "name" is used to identify the class of a component instead of "path". When a component is
+    specified by "name", the system will scan the ``nvflare`` package for the class name, so this notation may be
+    simpler than using the entire path to the class for the component if it is inside the ``nvflare`` package. If the
+    component you are using is not in the ``nvflare`` package, please use "path" and make sure that the path is
+    accessible with the configured PYTHONPATH.
 
 .. _troubleshooting_byoc:
 
