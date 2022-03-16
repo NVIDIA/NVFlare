@@ -689,7 +689,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             snapshot = self.snapshot_persistor.retrieve()
             if snapshot and not snapshot.completed:
                 data = snapshot.get_component_snapshot(SnapshotKey.SERVER_RUNNER)
-                self.engine.run_number = data.get("run_number")
+                self.engine.set_run_number(int(data.get("run_number")))
 
                 # Restore the workspace
                 workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
