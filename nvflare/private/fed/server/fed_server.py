@@ -44,7 +44,6 @@ from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
-
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -595,6 +594,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.run_manager.add_handler(fed_event_runner)
 
         try:
+            self.server_runner = ServerRunner(config=self.runner_config, run_num=run_number, engine=self.engine)
+            self.run_manager.add_handler(self.server_runner)
+            self.run_manager.add_component("_Server_Runner", self.server_runner)
+
             with self.engine.new_context() as fl_ctx:
 
                 if snapshot:
@@ -606,14 +609,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
                 fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
                 fl_ctx.set_prop(FLContextKey.SECURE_MODE, self.secure_train, private=True, sticky=True)
-
-            self.server_runner = ServerRunner(config=self.runner_config, run_num=run_number, engine=self.engine)
-            self.run_manager.add_handler(self.server_runner)
-            self.run_manager.add_component("_Server_Runner", self.server_runner)
+                fl_ctx.set_prop(FLContextKey.RUNNER, self.server_runner, private=True, sticky=True)
 
             engine_thread = threading.Thread(target=self.run_engine)
             engine_thread.start()
 
+            self.engine.engine_info.status = MachineStatus.STARTED
             while self.engine.engine_info.status != MachineStatus.STOPPED:
                 if self.engine.asked_to_stop:
                     self.engine.abort_app_on_server()
@@ -689,7 +690,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             snapshot = self.snapshot_persistor.retrieve()
             if snapshot and not snapshot.completed:
                 data = snapshot.get_component_snapshot(SnapshotKey.SERVER_RUNNER)
-                self.engine.run_number = data.get("run_number")
+                self.engine.set_run_number(int(data.get("run_number")))
 
                 # Restore the workspace
                 workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")

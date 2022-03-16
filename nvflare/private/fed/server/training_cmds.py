@@ -331,7 +331,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         run_info = engine.get_run_info()
         message = new_message(conn, topic=TrainingTopic.START, body="")
-        message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
+        # message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
+        message.set_header(RequestHeader.RUN_NUM, "7")
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
         return True

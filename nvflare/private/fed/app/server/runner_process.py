@@ -17,18 +17,14 @@
 import argparse
 import logging
 import os
-import sys
 
-from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.hci.server.authz import AuthorizationService
-from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
-from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
+
 from nvflare.apis.fl_constant import MachineStatus
+from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.admin import FedAdminServer
-from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 from nvflare.private.fed.server.server_status import ServerStatus
 
 
@@ -43,6 +39,7 @@ def main():
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--run_number", "-n", type=str, help="RUn_number", required=True)
     parser.add_argument("--snapshot", "-t", type=bool, help="snapshot", required=True)
+    parser.add_argument("--port", "-p", type=str, help="port", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -59,12 +56,7 @@ def main():
     logger = logging.getLogger()
     args.log_config = None
 
-    # try:
-    #     remove_restart_file(args)
-    # except BaseException:
-    #     print("Could not remove the restart.fl / shutdown.fl file.  Please check your system before starting FL.")
-    #     sys.exit(-1)
-
+    command_agent = None
     try:
         os.chdir(args.workspace)
 
@@ -93,12 +85,16 @@ def main():
             # create the FL server
             _, server = deployer.create_fl_server(args, secure_train=secure_train)
 
+            command_agent = ServerCommandAgent(int(args.port))
+            command_agent.start(server.engine)
+
             snapshot = None
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve()
 
             start_server_training(server, args, args.app_root, args.run_number, snapshot)
         finally:
+            command_agent.shutdown()
             deployer.close()
 
     except ConfigError as ex:
@@ -108,10 +104,6 @@ def main():
 
 
 def start_server_training(server, args, app_root, run_number, snapshot):
-
-    # restart_file = os.path.join(args.workspace, "restart.fl")
-    # if os.path.exists(restart_file):
-    #     os.remove(restart_file)
 
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)
@@ -123,7 +115,7 @@ def start_server_training(server, args, app_root, run_number, snapshot):
 
         set_up_run_config(server, conf)
 
-        server.engine.set_run_number(run_number)
+        server.engine.set_run_number(int(run_number))
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
@@ -144,8 +136,4 @@ if __name__ == "__main__":
     """
     This is the program when starting the child process for running the NVIDIA FLARE server runner.
     """
-    print("11111111111111111")
-    import pydevd
-    f = pydevd.__file__
-    print(f"pydevd: {f}")
     main()

@@ -13,26 +13,26 @@
 # limitations under the License.
 
 import copy
-import gc
 import logging
-import shlex
-import subprocess
 import os
 import pickle
 import re
+import shlex
 import shutil
+import subprocess
 import sys
-import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor
+from multiprocessing.connection import Client as CommandCLient
 from threading import Lock
 from typing import List, Tuple
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey, \
+    AdminCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
@@ -40,7 +40,6 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -153,34 +152,13 @@ class ServerEngine(ServerEngineInternalSpec):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-            # if self.server.enable_byoc:
-            #     app_custom_folder = os.path.join(app_root, "custom")
-            #     try:
-            #         sys.path.index(app_custom_folder)
-            #     except ValueError:
-            #         self.remove_custom_path()
-            #         sys.path.append(app_custom_folder)
-            #
-            # # future = self.executor.submit(start_server_training, (self.server))
-            # future = self.executor.submit(
-            #     lambda p: start_server_training(*p), [self.server, self.args, app_root, self.run_number, snapshot]
-            # )
 
             app_custom_folder = ""
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
             self._start_runner_process(self.args, app_root, self.run_number, app_custom_folder, snapshot)
 
-            start = time.time()
-            # Wait for the server App to start properly
-            while self.engine_info.status == MachineStatus.STARTING:
-                time.sleep(0.3)
-                if time.time() - start > 300.0:
-                    return "Could not start the server app."
-
-            if self.engine_info.status != MachineStatus.STARTED:
-                return f"Failed to start server app: {self.engine_info.status}"
-
+            self.engine_info.status = MachineStatus.STARTED
             return ""
 
     def _start_runner_process(self, args, app_root, run_number, app_custom_folder, snapshot):
@@ -188,6 +166,7 @@ class ServerEngine(ServerEngineInternalSpec):
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
 
+        self.open_port = get_open_ports(1)[0]
         if snapshot:
             restore_snapshot = True
         else:
@@ -196,17 +175,18 @@ class ServerEngine(ServerEngineInternalSpec):
         for t in args.set:
             command_options += " " + t
         command = (
-            f"{sys.executable} -m nvflare.private.fed.app.server.worker_process -m "
+            f"{sys.executable} -m nvflare.private.fed.app.server.runner_process -m "
             + args.workspace
             + " -s fed_server.json -r " + app_root
             + " -n " + str(run_number)
             + " -t " + str(restore_snapshot)
+            + " -p " + str(self.open_port)
             + " --set" + command_options + " print_conf=True"
         )
         # use os.setsid to create new process group ID
 
-        command = f"{sys.executable} -m nvflare.private.fed.app.client.sample"
-        process = subprocess.Popen(shlex.split(command, " "))
+        # command = f"{sys.executable} -m nvflare.private.fed.app.server.worker_process"
+        process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
         return process
 
     def remove_custom_path(self):
@@ -233,7 +213,16 @@ class ServerEngine(ServerEngineInternalSpec):
         self.logger.info("Abort the server app run.")
         # self.server.stop_training()
         self.server.shutdown = True
-        self.server.abort_run()
+        # self.server.abort_run()
+        command_conn = self.get_command_conn()
+
+        if command_conn:
+            data = {"command": AdminCommandNames.ABORT, "data": {}}
+            command_conn.send(data)
+            status_message = command_conn.recv()
+            command_conn.close()
+
+        self.engine_info.status = MachineStatus.STOPPED
         return ""
 
     def check_app_start_readiness(self) -> str:
@@ -432,6 +421,14 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return results
 
+    def get_command_conn(self):
+        try:
+            address = ("localhost", self.open_port)
+            command_conn = CommandCLient(address, authkey="client process secret password".encode())
+            return command_conn
+        except Exception as e:
+            return None
+
     def persist_components(self, fl_ctx: FLContext, completed: bool):
 
         # Call the State Persistor to persist all the component states
@@ -469,39 +466,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def close(self):
         self.executor.shutdown()
-
-
-# def start_server_training(server, args, app_root, run_number, snapshot):
-#
-#     restart_file = os.path.join(args.workspace, "restart.fl")
-#     if os.path.exists(restart_file):
-#         os.remove(restart_file)
-#
-#     try:
-#         server_config_file_name = os.path.join(app_root, args.server_config)
-#
-#         conf = ServerJsonConfigurator(
-#             config_file_name=server_config_file_name,
-#         )
-#         conf.configure()
-#
-#         set_up_run_config(server, conf)
-#
-#         server.start_run(run_number, app_root, conf, args, snapshot)
-#     except BaseException as e:
-#         traceback.print_exc()
-#         logging.getLogger().warning("FL server execution exception: " + str(e))
-#     finally:
-#         server.status = ServerStatus.STOPPED
-#         server.engine.engine_info.status = MachineStatus.STOPPED
-#         server.stop_training()
-#         # if trainer:
-#         #     trainer.close()
-#
-#         # Force garbage collection
-#         gc.collect()
-#
-#     # return server.start()
 
 
 def server_shutdown(server, touch_file):
