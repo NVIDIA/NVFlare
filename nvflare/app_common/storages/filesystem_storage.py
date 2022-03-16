@@ -50,6 +50,8 @@ def validate_args(method):
 @validate_class_methods_args
 class FilesystemStorage(StorageSpec):
     def __init__(self, root_dir="/"):
+        if not os.path.isabs(root_dir):
+            raise ValueError("root_dir {} must be an absolute path".format(root_dir))
         self.root_dir = root_dir
 
     def _write(self, path: str, content):
@@ -109,6 +111,15 @@ class FilesystemStorage(StorageSpec):
 
         if self._object_exists(full_uri) and not overwrite_existing:
             raise Exception("object {} already exists and overwrite_existing is False".format(uri))
+
+        path_parts = Path(uri).parts
+        for i in range(1, len(path_parts)):
+            parent_path = str(Path(*path_parts[0:i]))
+            if self._object_exists(os.path.join(self.root_dir, parent_path.lstrip("/"))):
+                raise Exception("cannot create object {} inside preexisting object {}".format(uri, parent_path))
+
+        if not self._object_exists(full_uri) and (os.path.exists(full_uri) and os.listdir(full_uri)):
+            raise Exception("cannot create object {} at nonempty directory".format(uri))
 
         data_path = os.path.join(full_uri, "data")
         meta_path = os.path.join(full_uri, "meta")
@@ -190,6 +201,8 @@ class FilesystemStorage(StorageSpec):
                 for obj in os.listdir(full_dir_path)
                 if self._object_exists(os.path.join(full_dir_path, obj))
             ]
+        else:
+            raise Exception("path {} does not exist".format(dir_path))
 
     def get_meta(self, uri: str) -> dict:
         """Get user defined meta info of the specified object

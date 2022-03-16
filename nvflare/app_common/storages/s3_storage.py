@@ -15,7 +15,6 @@
 import ast
 import inspect
 import io
-import os
 from functools import wraps
 from typing import ByteString, List, Tuple
 
@@ -240,7 +239,7 @@ class S3Storage(StorageSpec):
         - no such object
 
         """
-        if not os.path.exists(uri):
+        if not self._object_exists(uri):
             raise Exception("object {} does not exist".format(uri))
 
         return self.get_meta(uri), self.get_data(uri)
