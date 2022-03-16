@@ -149,6 +149,11 @@ class AdminCommandNames(object):
     AUX_COMMAND = "aux_command"
 
 
+class ServerCommandNames(object):
+
+    GET_RUN_INFO = "get_run_info"
+
+
 class FedEventHeader(object):
 
     TIMESTAMP = "_timestamp"

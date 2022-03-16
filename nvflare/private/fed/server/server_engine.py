@@ -28,7 +28,7 @@ from typing import List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey, \
-    AdminCommandNames
+    AdminCommandNames, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
@@ -307,6 +307,17 @@ class ServerEngine(ServerEngineInternalSpec):
         # )
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
+
+    def get_app_run_info(self) -> RunInfo:
+        command_conn = self.get_command_conn()
+        run_info = None
+        if command_conn:
+            data = {"command": ServerCommandNames.GET_RUN_INFO, "data": {}}
+            command_conn.send(data)
+            run_info = command_conn.recv()
+            command_conn.close()
+
+        return run_info
 
     def set_run_manager(self, run_manager: RunManager):
         self.run_manager = run_manager

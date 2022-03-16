@@ -14,7 +14,7 @@
 
 """FL Admin commands."""
 
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
@@ -69,6 +69,31 @@ class AbortCommand(CommandProcessor):
         return "Aborted the run"
 
 
+class GetRunInfoCommand(CommandProcessor):
+    """To implement the abort command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.ABORT
+
+        """
+        return ServerCommandNames.GET_RUN_INFO
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: abort command message
+
+        """
+        engine = fl_ctx.get_engine()
+        return engine.get_run_info()
+
+
 class ByeCommand(CommandProcessor):
     """To implement the ShutdownCommand."""
 
@@ -99,6 +124,7 @@ class ServerCommands(object):
     commands = [
         AbortCommand(),
         ByeCommand(),
+        GetRunInfoCommand(),
     ]
 
     @staticmethod

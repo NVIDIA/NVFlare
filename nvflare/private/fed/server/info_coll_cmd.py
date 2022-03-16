@@ -83,7 +83,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
-        run_info = engine.get_run_info()
+        run_info = engine.get_app_run_info()
         if not run_info or run_info.run_number < 0:
             conn.append_string("App is not running")
             return False, None

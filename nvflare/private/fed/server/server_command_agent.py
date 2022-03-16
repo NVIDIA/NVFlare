@@ -34,6 +34,7 @@ class ServerCommandAgent(object):
     def start(self, engine):
         self.thread = threading.Thread(target=listen_command, args=[self, engine])
         self.thread.start()
+        print(f"ServerCommandAgent listening on port: {self.listen_port}")
 
         pass
 
