@@ -15,6 +15,7 @@
 import threading
 from multiprocessing.connection import Listener
 
+from nvflare.apis.fl_constant import ServerCommandKey
 from .server_commands import ServerCommands
 
 
@@ -48,8 +49,8 @@ class ServerCommandAgent(object):
                 while not self.asked_to_stop:
                     if conn.poll(1.0):
                         msg = conn.recv()
-                        command_name = msg.get("command")
-                        data = msg.get("data")
+                        command_name = msg.get(ServerCommandKey.COMMAND)
+                        data = msg.get(ServerCommandKey.DATA)
                         command = ServerCommands.get_command(command_name)
                         if command:
                             with engine.new_context() as new_fl_ctx:

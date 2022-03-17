@@ -38,7 +38,7 @@ def main():
     )
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--run_number", "-n", type=str, help="RUn_number", required=True)
-    parser.add_argument("--snapshot", "-t", type=bool, help="snapshot", required=True)
+    # parser.add_argument("--snapshot", "-t", type=bool, help="snapshot", required=True)
     parser.add_argument("--port", "-p", type=str, help="port", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
@@ -55,6 +55,7 @@ def main():
     args.config_folder = config_folder
     logger = logging.getLogger()
     args.log_config = None
+    args.snapshot = kv_list.get("restore_snapshot")
 
     command_agent = None
     try:

@@ -81,6 +81,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
+        self.command_conn = None
+        self.child_process = None
 
     def _get_server_app_folder(self):
         return "app_server"
@@ -156,7 +158,11 @@ class ServerEngine(ServerEngineInternalSpec):
             app_custom_folder = ""
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
-            self._start_runner_process(self.args, app_root, self.run_number, app_custom_folder, snapshot)
+            self.child_process = self._start_runner_process(self.args, app_root, self.run_number, app_custom_folder, snapshot)
+
+            if self.command_conn:
+                self.command_conn.close()
+                self.command_conn = None
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -179,9 +185,8 @@ class ServerEngine(ServerEngineInternalSpec):
             + args.workspace
             + " -s fed_server.json -r " + app_root
             + " -n " + str(run_number)
-            + " -t " + str(restore_snapshot)
             + " -p " + str(self.open_port)
-            + " --set" + command_options + " print_conf=True"
+            + " --set" + command_options + " print_conf=True restore_snapshot=" + str(restore_snapshot)
         )
         # use os.setsid to create new process group ID
 
@@ -214,13 +219,18 @@ class ServerEngine(ServerEngineInternalSpec):
         # self.server.stop_training()
         self.server.shutdown = True
         # self.server.abort_run()
-        command_conn = self.get_command_conn()
 
-        if command_conn:
-            data = {"command": AdminCommandNames.ABORT, "data": {}}
-            command_conn.send(data)
-            status_message = command_conn.recv()
-            command_conn.close()
+        try:
+            self.get_command_conn()
+            if self.command_conn:
+                data = {"command": AdminCommandNames.ABORT, "data": {}}
+                self.command_conn.send(data)
+                status_message = self.command_conn.recv()
+                self.logger.info(f"Abort server: {status_message}")
+        except:
+            if self.child_process:
+                self.child_process.terminate()
+                self.child_process = None
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
@@ -309,13 +319,15 @@ class ServerEngine(ServerEngineInternalSpec):
         return "", data
 
     def get_app_run_info(self) -> RunInfo:
-        command_conn = self.get_command_conn()
         run_info = None
-        if command_conn:
-            data = {"command": ServerCommandNames.GET_RUN_INFO, "data": {}}
-            command_conn.send(data)
-            run_info = command_conn.recv()
-            command_conn.close()
+        try:
+            self.get_command_conn()
+            if self.command_conn:
+                data = {"command": ServerCommandNames.GET_RUN_INFO, "data": {}}
+                self.command_conn.send(data)
+                run_info = self.command_conn.recv()
+        except:
+            pass
 
         return run_info
 
@@ -433,12 +445,12 @@ class ServerEngine(ServerEngineInternalSpec):
         return results
 
     def get_command_conn(self):
-        try:
-            address = ("localhost", self.open_port)
-            command_conn = CommandCLient(address, authkey="client process secret password".encode())
-            return command_conn
-        except Exception as e:
-            return None
+        if not self.command_conn:
+            try:
+                address = ("localhost", self.open_port)
+                self.command_conn = CommandCLient(address, authkey="client process secret password".encode())
+            except Exception as e:
+                pass
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
 

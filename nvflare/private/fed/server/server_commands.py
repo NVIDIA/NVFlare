@@ -14,9 +14,13 @@
 
 """FL Admin commands."""
 
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandNames
+import copy
+import time
+
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandNames, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 
 
 class CommandProcessor(object):
@@ -66,6 +70,8 @@ class AbortCommand(CommandProcessor):
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.abort(fl_ctx)
+        # wait for the runner process gracefully abort the run.
+        time.sleep(3.)
         return "Aborted the run"
 
 
@@ -75,7 +81,7 @@ class GetRunInfoCommand(CommandProcessor):
     def get_command_name(self) -> str:
         """To get the command name.
 
-        Returns: AdminCommandNames.ABORT
+        Returns: ServerCommandNames.GET_RUN_INFO
 
         """
         return ServerCommandNames.GET_RUN_INFO
@@ -87,11 +93,118 @@ class GetRunInfoCommand(CommandProcessor):
             data: process data
             fl_ctx: FLContext
 
-        Returns: abort command message
+        Returns: Engine run_info
 
         """
         engine = fl_ctx.get_engine()
         return engine.get_run_info()
+
+
+class GetTaskCommand(CommandProcessor):
+    """To implement the server GetTask command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.GET_TASK
+
+        """
+        return ServerCommandNames.GET_TASK
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: task data
+
+        """
+
+        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        client = data.get_header(ServerCommandKey.FL_CLIENT)
+        fl_ctx.set_peer_context(shared_fl_ctx)
+        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
+        data = {
+            ServerCommandKey.TASK_NAME: taskname,
+            ServerCommandKey.TASK_ID: task_id,
+            ServerCommandKey.SHAREABLE: shareable,
+            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props)
+        }
+        return data
+
+
+class SubmitUpdateCommand(CommandProcessor):
+    """To implement the server GetTask command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.SUBMIT_UPDATE
+
+        """
+        return ServerCommandNames.SUBMIT_UPDATE
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+
+        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        client = data.get_header(ServerCommandKey.FL_CLIENT)
+        fl_ctx.set_peer_context(shared_fl_ctx)
+        contribution_task_name = data.get_header(ServerCommandKey.TASK_NAME)
+        task_id = data.get_header(ServerCommandKey.TASK_ID)
+        shareable = data.get_header(ServerCommandKey.SHAREABLE)
+        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
+
+        return ""
+
+
+class AuxCommunicateCommand(CommandProcessor):
+    """To implement the server GetTask command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.AUX_COMMUNICATE
+
+        """
+        return ServerCommandNames.AUX_COMMUNICATE
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: task data
+
+        """
+
+        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        topic = data.get_header(ServerCommandKey.TOPIC)
+        shareable = data.get_header(ServerCommandKey.SHAREABLE)
+        fl_ctx.set_peer_context(shared_fl_ctx)
+
+        engine = fl_ctx.get_engine()
+        reply = engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+
+        data = {
+            ServerCommandKey.AUX_REPLY: reply,
+            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props)
+        }
+        return data
 
 
 class ByeCommand(CommandProcessor):
@@ -125,6 +238,9 @@ class ServerCommands(object):
         AbortCommand(),
         ByeCommand(),
         GetRunInfoCommand(),
+        GetTaskCommand(),
+        SubmitUpdateCommand(),
+        AuxCommunicateCommand(),
     ]
 
     @staticmethod
