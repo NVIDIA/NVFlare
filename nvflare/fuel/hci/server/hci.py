@@ -23,7 +23,7 @@ from nvflare.fuel.hci.security import get_certificate_common_name
 
 from .reg import ServerCommandRegister
 
-MAX_ADMIN_CONNECTIONS = 128
+MAX_ADMIN_CONNECTIONS = 16
 
 
 class _MsgHandler(socketserver.BaseRequestHandler):
