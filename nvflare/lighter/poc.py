@@ -42,11 +42,20 @@ def main():
 
     file_dir_path = pathlib.Path(__file__).parent.absolute()
     poc_zip_path = file_dir_path.parent / "poc.zip"
+    poc_folder_path = file_dir_path.parent / "poc"
     answer = input("This will delete poc folder in current directory and create a new one. Is it OK to proceed? (y/N) ")
     if answer.strip().upper() == "Y":
         dest_poc_folder = os.path.join(os.getcwd(), "poc")
         shutil.rmtree(dest_poc_folder, ignore_errors=True)
-        shutil.unpack_archive(poc_zip_path)
+        try:
+            shutil.unpack_archive(poc_zip_path)
+        except shutil.ReadError:
+            print(f"poc.zip not found at {poc_zip_path}, try to use template poc folder")
+            try:
+                shutil.copytree(poc_folder_path, dest_poc_folder)
+            except BaseException:
+                print(f"Unable to copy poc folder from {poc_folder_path}.  Exit")
+                exit(1)
         for root, dirs, files in os.walk(dest_poc_folder):
             for file in files:
                 if file.endswith(".sh"):
