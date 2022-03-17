@@ -21,7 +21,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.private.event import fire_event
-from nvflare.widgets.fed_event_runner import ClientFedEventRunner
+from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
