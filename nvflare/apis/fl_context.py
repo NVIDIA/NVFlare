@@ -128,7 +128,7 @@ class FLContext(object):
         return self.get_prop(key=ReservedKey.ENGINE, default=None)
 
     def get_run_number(self):
-        return int(self.get_prop(key=ReservedKey.RUN_NUM, default=None))
+        return self.get_prop(key=ReservedKey.RUN_NUM, default=None)
 
     def get_identity_name(self):
         return self.get_prop(key=ReservedKey.IDENTITY_NAME, default="")

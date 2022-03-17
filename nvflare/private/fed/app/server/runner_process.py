@@ -93,7 +93,7 @@ def main():
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve()
 
-            start_server_training(server, args, args.app_root, args.run_number, snapshot)
+            start_server_training(server, args, args.app_root, int(args.run_number), snapshot)
         finally:
             command_agent.shutdown()
             deployer.close()
@@ -116,7 +116,7 @@ def start_server_training(server, args, app_root, run_number, snapshot):
 
         set_up_run_config(server, conf)
 
-        server.engine.set_run_number(int(run_number))
+        server.engine.set_run_number(run_number)
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
