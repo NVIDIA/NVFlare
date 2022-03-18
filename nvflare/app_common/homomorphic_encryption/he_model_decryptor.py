@@ -130,14 +130,14 @@ class HEModelDecryptor(Filter):
         self.log_info(fl_ctx, "Running decryption...")
         dxo = from_shareable(shareable)
 
-        encrypted_algo = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
-        if encrypted_algo != he.HE_ALGORITHM_CKKS:
-            self.log_error(fl_ctx, "shareable is not HE CKKS encrypted")
-            return shareable
-
         encrypted_layers = dxo.get_meta_prop(key=MetaKey.PROCESSED_KEYS, default=None)
         if not encrypted_layers:
             self.log_warning(fl_ctx, "dxo does not contain PROCESSED_KEYS (do nothing)")
+            return shareable
+
+        encrypted_algo = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
+        if encrypted_algo != he.HE_ALGORITHM_CKKS:
+            self.log_error(fl_ctx, "shareable is not HE CKKS encrypted")
             return shareable
 
         n_encrypted, n_total = count_encrypted_layers(encrypted_layers)
