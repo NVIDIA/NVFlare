@@ -54,7 +54,7 @@ class IntimeModelSelector(Widget):
         self._reset_stats()
 
     def _reset_stats(self):
-        self.validation_mertic_weighted_sum = 0
+        self.validation_metric_weighted_sum = 0
         self.validation_metric_sum_of_weights = 0
 
     def _before_accept(self, fl_ctx: FLContext):
@@ -105,7 +105,7 @@ class IntimeModelSelector(Widget):
         aggregation_weights = self.aggregation_weights.get(client_name, 1.0)
         self.log_debug(fl_ctx, f"aggregation weight: {aggregation_weights}")
 
-        self.validation_mertic_weighted_sum += validation_metric * n_iter * aggregation_weights
+        self.validation_metric_weighted_sum += validation_metric * n_iter * aggregation_weights
         self.validation_metric_sum_of_weights += n_iter
         return True
 
@@ -113,7 +113,7 @@ class IntimeModelSelector(Widget):
         if self.validation_metric_sum_of_weights == 0:
             self.log_debug(fl_ctx, "nothing accumulated")
             return False
-        self.val_metric = self.validation_mertic_weighted_sum / self.validation_metric_sum_of_weights
+        self.val_metric = self.validation_metric_weighted_sum / self.validation_metric_sum_of_weights
         self.logger.debug(f"weighted validation metric {self.val_metric}")
         if self.val_metric > self.best_val_metric:
             self.best_val_metric = self.val_metric
@@ -125,3 +125,9 @@ class IntimeModelSelector(Widget):
 
         self._reset_stats()
         return True
+
+
+class IntimeModelSelectionHandler(IntimeModelSelector):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger.warning("'IntimeModelSelectionHandler' was renamed to 'IntimeModelSelector'")
