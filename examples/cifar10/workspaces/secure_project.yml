@@ -9,7 +9,8 @@ participants:
     org: nvidia
     fed_learn_port: 8002
     admin_port: 8003
-    # enable_byoc: true would allow loading python codes in app.  Default is false. Needs to be enabled for each site if desired.
+    # `enable_byoc: true` would allow loading python codes in app.  Default is false.
+    # Needs to be enabled for each site if desired. Also enable `allow_byoc` for your admin group below.
   - name: site-1
     type: client
     org: nvidia
