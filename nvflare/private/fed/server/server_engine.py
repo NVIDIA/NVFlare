@@ -30,7 +30,7 @@ from typing import List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey, \
-    AdminCommandNames, ServerCommandNames
+    AdminCommandNames, ServerCommandNames, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
@@ -165,8 +165,9 @@ class ServerEngine(ServerEngineInternalSpec):
             threading.Thread(target=self.wait_for_complete).start()
 
             if self.command_conn:
-                self.command_conn.close()
-                self.command_conn = None
+                with self.lock:
+                    self.command_conn.close()
+                    self.command_conn = None
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -176,8 +177,9 @@ class ServerEngine(ServerEngineInternalSpec):
             try:
                 self.get_command_conn()
                 if self.command_conn:
-                    data = {"command": ServerCommandNames.HEARTBEAT, "data": {}}
-                    self.command_conn.send(data)
+                    with self.lock:
+                        data = {ServerCommandKey.COMMAND: ServerCommandNames.HEARTBEAT, ServerCommandKey.DATA: {}}
+                        self.command_conn.send(data)
                 time.sleep(1.0)
             except BaseException:
                 self.child_process = None
@@ -241,10 +243,11 @@ class ServerEngine(ServerEngineInternalSpec):
         try:
             self.get_command_conn()
             if self.command_conn:
-                data = {"command": AdminCommandNames.ABORT, "data": {}}
-                self.command_conn.send(data)
-                status_message = self.command_conn.recv()
-                self.logger.info(f"Abort server: {status_message}")
+                with self.lock:
+                    data = {ServerCommandKey.COMMAND: AdminCommandNames.ABORT, ServerCommandKey.DATA: {}}
+                    self.command_conn.send(data)
+                    status_message = self.command_conn.recv()
+                    self.logger.info(f"Abort server: {status_message}")
         except:
             if self.child_process:
                 self.child_process.terminate()
@@ -341,9 +344,10 @@ class ServerEngine(ServerEngineInternalSpec):
         try:
             self.get_command_conn()
             if self.command_conn:
-                data = {"command": ServerCommandNames.GET_RUN_INFO, "data": {}}
-                self.command_conn.send(data)
-                run_info = self.command_conn.recv()
+                with self.lock:
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_RUN_INFO, ServerCommandKey.DATA: {}}
+                    self.command_conn.send(data)
+                    run_info = self.command_conn.recv()
         except:
             pass
 
