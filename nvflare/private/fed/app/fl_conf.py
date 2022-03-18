@@ -22,8 +22,8 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext
 from nvflare.private.defs import SSLConstants
-from nvflare.private.fed.client.base_client_deployer import BaseClientDeployer
-from nvflare.private.fed.server.server_deployer import ServerDeployer
+from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
+from nvflare.private.fed.app.deployer.server_deployer import ServerDeployer
 from nvflare.private.json_configer import JsonConfigurator
 
 from .fl_app_validator import FLAppValidator
