@@ -30,7 +30,7 @@ class FLComponent(StatePersistable):
         """Init FLComponent.
 
         The FLComponent is the base class of all FL Components.
-        (executors, controllers, responders, filters, aggregrators, and widgets are all FLComponents)
+        (executors, controllers, responders, filters, aggregators, and widgets are all FLComponents)
 
         FLComponents have the capability to handle and fire events and contain various methods for logging.
         """
