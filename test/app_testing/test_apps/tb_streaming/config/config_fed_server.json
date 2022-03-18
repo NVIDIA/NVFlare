@@ -19,7 +19,7 @@
     },
     {
       "id": "event_recorder",
-      "path": "nvflare.app_common.handlers.event_recorder.ServerEventRecorder",
+      "name": "ServerEventRecorder",
       "args": {}
     },
     {

@@ -16,20 +16,20 @@ import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.widgets.widget import Widget
 
 
-class IntimeModelSelectionHandler(FLComponent):
+class IntimeModelSelector(Widget):
     def __init__(self, weigh_by_local_iter=False, aggregation_weights=None):
         """Handler to determine if the model is globally best.
 
         Args:
-            weigh_by_local_iter (bool, optional): whether the metrics should be weighted by trainer's iteration number. Defaults to False.
+            weigh_by_local_iter (bool, optional): whether the metrics should be weighted by trainer's iteration number.
             aggregation_weights (dict, optional): a mapping of client name to float for aggregation. Defaults to None.
         """
         super().__init__()
@@ -43,12 +43,6 @@ class IntimeModelSelectionHandler(FLComponent):
         self._reset_stats()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """Perform the handler process based on the event_type.
-
-        Args:
-            event_type (str): event type delivered from workflow
-            fl_ctx (FLContext): FL context, including peer context and other information
-        """
         if event_type == EventType.START_RUN:
             self._startup(fl_ctx)
         elif event_type == EventType.BEFORE_PROCESS_SUBMISSION:
@@ -60,7 +54,7 @@ class IntimeModelSelectionHandler(FLComponent):
         self._reset_stats()
 
     def _reset_stats(self):
-        self.validation_mertic_weighted_sum = 0
+        self.validation_metric_weighted_sum = 0
         self.validation_metric_sum_of_weights = 0
 
     def _before_accept(self, fl_ctx: FLContext):
@@ -73,7 +67,7 @@ class IntimeModelSelectionHandler(FLComponent):
             return False
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
-            self.log_debug(fl_ctx, "I cannot handle {}".format(dxo.data_kind))
+            self.log_debug(fl_ctx, "cannot handle {}".format(dxo.data_kind))
             return False
 
         if dxo.data is None:
@@ -111,7 +105,7 @@ class IntimeModelSelectionHandler(FLComponent):
         aggregation_weights = self.aggregation_weights.get(client_name, 1.0)
         self.log_debug(fl_ctx, f"aggregation weight: {aggregation_weights}")
 
-        self.validation_mertic_weighted_sum += validation_metric * n_iter * aggregation_weights
+        self.validation_metric_weighted_sum += validation_metric * n_iter * aggregation_weights
         self.validation_metric_sum_of_weights += n_iter
         return True
 
@@ -119,7 +113,7 @@ class IntimeModelSelectionHandler(FLComponent):
         if self.validation_metric_sum_of_weights == 0:
             self.log_debug(fl_ctx, "nothing accumulated")
             return False
-        self.val_metric = self.validation_mertic_weighted_sum / self.validation_metric_sum_of_weights
+        self.val_metric = self.validation_metric_weighted_sum / self.validation_metric_sum_of_weights
         self.logger.debug(f"weighted validation metric {self.val_metric}")
         if self.val_metric > self.best_val_metric:
             self.best_val_metric = self.val_metric
@@ -131,3 +125,9 @@ class IntimeModelSelectionHandler(FLComponent):
 
         self._reset_stats()
         return True
+
+
+class IntimeModelSelectionHandler(IntimeModelSelector):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger.warning("'IntimeModelSelectionHandler' was renamed to 'IntimeModelSelector'")
