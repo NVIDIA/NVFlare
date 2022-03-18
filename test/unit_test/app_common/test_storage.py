@@ -22,7 +22,8 @@ from pathlib import Path
 import pytest
 
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
-from nvflare.app_common.storages.s3_storage import S3Storage
+
+# from nvflare.app_common.storages.s3_storage import S3Storage
 
 
 def random_string(length):
@@ -84,7 +85,7 @@ class TestStorage:
 
     """
 
-    @pytest.mark.parametrize("n_files", [10, 200])
+    @pytest.mark.parametrize("n_files", [20, 200])
     @pytest.mark.parametrize("n_folders", [5, 20])
     @pytest.mark.parametrize("path_depth", [3, 10])
     def test_large_storage(self, n_folders, n_files, path_depth, storage):
@@ -119,14 +120,17 @@ class TestStorage:
                     meta = random_meta()
                     f.write(pickle.dumps(meta))
 
-                self.test_create_object(storage, filepath, data, meta, unittest=False)
-                self.test_invalid_create_object(storage, filepath, random_data(), random_meta(), unittest=False)
+                self.test_create_read(storage, filepath, data, meta, unittest=False)
+                self.test_create_overwrite(storage, filepath, data, meta, unittest=False)
+
+                self.test_create_nonempty(storage, filepath, random_data(), random_meta(), unittest=False)
+                self.test_create_inside_prexisting(storage, filepath, random_data(), random_meta(), unittest=False)
 
         verified = 0
         for test_dirpath, _, object_files in os.walk(test_tmp_dir_name):
 
             dirpath = "/" + test_dirpath[len(test_tmp_dir_name) :].lstrip("/")
-            self.test_list_objects(storage, dirpath, dir_to_files, unittest=False)
+            self.test_list(storage, dirpath, dir_to_files, unittest=False)
 
             # if dirpath is an object
             if object_files:
@@ -135,8 +139,10 @@ class TestStorage:
                 with open(os.path.join(test_dirpath, "meta"), "rb") as f:
                     meta = pickle.loads(f.read())
 
-                self.test_read_update_object(storage, dirpath, data, meta, unittest=False)
-                self.test_delete_object(storage, dirpath, unittest=False)
+                self.test_data_read_update(storage, dirpath, data, meta, unittest=False)
+                self.test_meta_read_update(storage, dirpath, data, meta, unittest=False)
+
+                self.test_delete(storage, dirpath, unittest=False)
 
                 verified += 1
 
@@ -154,45 +160,63 @@ class TestStorage:
             ("/test_dir/test_object", "not a byte string", random_meta(), True),
         ],
     )
-    def test_invalid_storage_inputs(self, storage, uri, data, meta, overwrite_existing):
+    def test_invalid_inputs(self, storage, uri, data, meta, overwrite_existing):
         invalid_uri = 1234
         invalid_data = "not a byte string"
         invalid_meta = "not a dict"
         invalid_bool = "not a bool"
 
-        with pytest.raises(Exception):
+        with pytest.raises(TypeError):
             storage.create_object(uri, data, meta, overwrite_existing)
 
         if uri == invalid_uri or meta == invalid_meta or overwrite_existing == invalid_bool:
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.update_meta(uri, meta, overwrite_existing)
 
         if uri == invalid_uri or data == invalid_data:
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.update_data(uri, data)
 
         if uri == invalid_uri:
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.list_objects(uri)
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.get_meta(uri)
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.get_full_meta(uri)
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.get_data(uri)
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.get_detail(uri)
-            with pytest.raises(Exception):
+            with pytest.raises(TypeError):
                 storage.delete_object(uri)
 
     @pytest.mark.parametrize(
         "uri, data, meta, unittest",
         [("/test_dir/test_object", random_data(), random_meta(), True)],
     )
-    def test_create_object(self, storage, uri, data, meta, unittest):
+    def test_create_read(self, storage, uri, data, meta, unittest):
+        storage.create_object(uri, data, meta, overwrite_existing=True)
+
+        # get_data()
+        assert storage.get_data(uri) == data
+        assert storage.get_detail(uri)[1] == data
+
+        # get_meta()
+        assert storage.get_meta(uri) == meta
+        assert storage.get_detail(uri)[0] == meta
+
+        if unittest:
+            storage.delete_object(uri)
+
+    @pytest.mark.parametrize(
+        "uri, data, meta, unittest",
+        [("/test_dir/test_object", random_data(), random_meta(), True)],
+    )
+    def test_create_overwrite(self, storage, uri, data, meta, unittest):
         storage.create_object(uri, random_data(), random_meta(), overwrite_existing=True)
         storage.create_object(uri, data, meta, overwrite_existing=True)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             storage.create_object(uri, data, meta, overwrite_existing=False)
 
         if unittest:
@@ -202,13 +226,24 @@ class TestStorage:
         "uri, data, meta, unittest",
         [("/test_dir/test_object", random_data(), random_meta(), True)],
     )
-    def test_invalid_create_object(self, storage, uri, data, meta, unittest):
+    def test_create_nonempty(self, storage, uri, data, meta, unittest):
         if unittest:
             storage.create_object(uri, data, meta, True)
 
         # cannot create object at nonempty directory
         with pytest.raises(Exception):
             storage.create_object(os.path.split(uri)[0], random_data(), random_meta(), overwrite_existing=True)
+
+        if unittest:
+            storage.delete_object(uri)
+
+    @pytest.mark.parametrize(
+        "uri, data, meta, unittest",
+        [("/test_dir/test_object", random_data(), random_meta(), True)],
+    )
+    def test_create_inside_prexisting(self, storage, uri, data, meta, unittest):
+        if unittest:
+            storage.create_object(uri, data, meta, True)
 
         # cannot create object inside a prexisiting object
         with pytest.raises(Exception):
@@ -223,7 +258,7 @@ class TestStorage:
         "dirpath, dir_to_files, unittest",
         [("/test_dir/test_object", defaultdict(list), True)],
     )
-    def test_list_objects(self, storage, dirpath, dir_to_files, unittest):
+    def test_list(self, storage, dirpath, dir_to_files, unittest):
         if unittest:
             dir_to_files = defaultdict(list)
             for i in range(10):
@@ -231,7 +266,6 @@ class TestStorage:
                 storage.create_object(object_uri, random_data(), random_meta(), overwrite_existing=True)
                 dir_to_files[dirpath].append(object_uri)
 
-        # list_objects()
         assert set(storage.list_objects(dirpath)) == set(dir_to_files.get(dirpath, []))
 
         if unittest:
@@ -243,34 +277,33 @@ class TestStorage:
         "uri, unittest",
         [("/test_dir/test_object", True)],
     )
-    def test_delete_object(self, storage, uri, unittest):
+    def test_delete(self, storage, uri, unittest):
         if unittest:
             storage.create_object(uri, random_data(), random_meta(), overwrite_existing=True)
 
-        # delete_object()
         storage.delete_object(uri)
 
         # methods on non-existent object
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             data3 = random_data()
             storage.update_data(uri, data3)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             meta4 = random_meta()
             storage.update_meta(uri, meta4, replace=True)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             storage.get_data(uri)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             storage.get_meta(uri)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             storage.get_detail(uri)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             storage.delete_object(uri)
 
     @pytest.mark.parametrize(
         "uri, data, meta, unittest",
         [("/test_dir/test_object", random_data(), random_meta(), True)],
     )
-    def test_read_update_object(self, storage, uri, data, meta, unittest):
+    def test_data_read_update(self, storage, uri, data, meta, unittest):
         if unittest:
             storage.create_object(uri, data, meta, overwrite_existing=True)
 
@@ -283,6 +316,17 @@ class TestStorage:
         storage.update_data(uri, data2)
         assert storage.get_data(uri) == data2
         assert storage.get_detail(uri)[1] == data2
+
+        if unittest:
+            storage.delete_object(uri)
+
+    @pytest.mark.parametrize(
+        "uri, data, meta, unittest",
+        [("/test_dir/test_object", random_data(), random_meta(), True)],
+    )
+    def test_meta_read_update(self, storage, uri, data, meta, unittest):
+        if unittest:
+            storage.create_object(uri, data, meta, overwrite_existing=True)
 
         # get_meta()
         assert storage.get_meta(uri) == meta
