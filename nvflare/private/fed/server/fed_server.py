@@ -700,6 +700,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                 time.sleep(3)
 
+            if engine_thread.is_alive():
+                engine_thread.join()
+
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.engine.run_manager = None

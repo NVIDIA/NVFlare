@@ -155,6 +155,7 @@ class ServerCommandNames(object):
     GET_TASK = "get_task"
     SUBMIT_UPDATE = "submit_update"
     AUX_COMMUNICATE = "aux_communicate"
+    HEARTBEAT = "heartbeat"
 
 
 class ServerCommandKey(object):

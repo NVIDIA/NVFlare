@@ -18,12 +18,11 @@ import argparse
 import logging
 import os
 
-from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
-
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
 

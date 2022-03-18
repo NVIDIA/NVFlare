@@ -21,6 +21,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandCLient
 from threading import Lock
@@ -160,12 +162,28 @@ class ServerEngine(ServerEngineInternalSpec):
                 app_custom_folder = os.path.join(app_root, "custom")
             self.child_process = self._start_runner_process(self.args, app_root, self.run_number, app_custom_folder, snapshot)
 
+            threading.Thread(target=self.wait_for_complete).start()
+
             if self.command_conn:
                 self.command_conn.close()
                 self.command_conn = None
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
+
+    def wait_for_complete(self):
+        while True:
+            try:
+                self.get_command_conn()
+                if self.command_conn:
+                    data = {"command": ServerCommandNames.HEARTBEAT, "data": {}}
+                    self.command_conn.send(data)
+                time.sleep(1.0)
+            except BaseException:
+                self.child_process = None
+                self.command_conn = None
+                self.engine_info.status = MachineStatus.STOPPED
+                break
 
     def _start_runner_process(self, args, app_root, run_number, app_custom_folder, snapshot):
         new_env = os.environ.copy()
