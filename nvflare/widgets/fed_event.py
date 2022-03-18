@@ -211,7 +211,7 @@ class ClientFedEventRunner(FedEventRunner):
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
         if not self.ready:
-            self.log_warning(fl_ctx, "Engine in not ready, skip the aux event firing.", local_logging=True)
+            self.log_warning(fl_ctx, "Engine in not ready, skip the aux event firing.")
             return
 
         if not isinstance(self.engine, ClientEngineSpec):
