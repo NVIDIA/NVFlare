@@ -36,7 +36,7 @@
     {
       "id": "analytic_sender",
       "name": "AnalyticsSender",
-      "args": {}
+      "args": {"event_type": "analytix_log_stats"}
     },
     {
       "id": "tb_analytics_receive",
