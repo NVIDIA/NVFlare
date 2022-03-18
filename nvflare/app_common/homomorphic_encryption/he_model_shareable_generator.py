@@ -122,6 +122,10 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
             )
         elif dxo.data_kind == DataKind.WEIGHTS:
             weights = dxo.data
+            for v_name in weights.keys():
+                if encrypt_layers[v_name]:
+                    self.log_info(fl_ctx, f"serialize encrypted {dxo.data_kind}: {v_name}")
+                    weights[v_name] = weights[v_name].serialize()
             base_model[ModelLearnableKey.WEIGHTS] = weights
         else:
             raise NotImplementedError(f"data type {dxo.data_kind} not supported!")
