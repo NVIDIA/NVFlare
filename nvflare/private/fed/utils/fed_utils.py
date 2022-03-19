@@ -23,14 +23,14 @@ def shareable_to_modeldata(shareable, fl_ctx):
     # make_init_proto message
     model_data = ModelData()  # create an empty message
 
-    model_data.params["data"].CopyFrom(make_shareeable_data(shareable))
+    model_data.params["data"].CopyFrom(make_shareable_data(shareable))
 
     context_data = make_context_data(fl_ctx)
     model_data.params["fl_context"].CopyFrom(context_data)
     return model_data
 
 
-def make_shareeable_data(shareable):
+def make_shareable_data(shareable):
     return bytes_to_proto(shareable.to_bytes())
 
 
