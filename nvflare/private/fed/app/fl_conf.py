@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FL Server / Client startup config."""
+"""FL Server / Client startup configer."""
 
 import logging
 import logging.config
@@ -21,11 +21,12 @@ import os
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext
-from nvflare.private.fed.client.base_client_deployer import BaseClientDeployer
+from nvflare.private.defs import SSLConstants
 from nvflare.private.json_configer import JsonConfigurator
 
+from .deployer.base_client_deployer import BaseClientDeployer
+from .deployer.server_deployer import ServerDeployer
 from .fl_app_validator import FLAppValidator
-from .trainers.server_deployer import ServerDeployer
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["server", "client", "app"]
@@ -96,12 +97,12 @@ class FLServerStarterConfiger(JsonConfigurator):
         # loading server specifications
         try:
             for server in self.config_data["servers"]:
-                if server.get("ssl_private_key"):
-                    server["ssl_private_key"] = os.path.join(self.app_root, server["ssl_private_key"])
-                if server.get("ssl_cert"):
-                    server["ssl_cert"] = os.path.join(self.app_root, server["ssl_cert"])
-                if server.get("ssl_root_cert"):
-                    server["ssl_root_cert"] = os.path.join(self.app_root, server["ssl_root_cert"])
+                if server.get(SSLConstants.PRIVATE_KEY):
+                    server[SSLConstants.PRIVATE_KEY] = os.path.join(self.app_root, server[SSLConstants.PRIVATE_KEY])
+                if server.get(SSLConstants.CERT):
+                    server[SSLConstants.CERT] = os.path.join(self.app_root, server[SSLConstants.CERT])
+                if server.get(SSLConstants.ROOT_CERT):
+                    server[SSLConstants.ROOT_CERT] = os.path.join(self.app_root, server[SSLConstants.ROOT_CERT])
         except Exception:
             raise ValueError("Server config error: '{}'".format(self.server_config_file_name))
 
@@ -222,8 +223,6 @@ class FLClientStarterConfiger(JsonConfigurator):
             config_ctx: config context
             node: element node
         """
-        # JsonConfigurator.process_config_element(self, config_ctx, node)
-
         element = node.element
         path = node.path()
 
@@ -245,12 +244,12 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         try:
             client = self.config_data["client"]
-            if client.get("ssl_private_key"):
-                client["ssl_private_key"] = os.path.join(self.app_root, client["ssl_private_key"])
-            if client.get("ssl_cert"):
-                client["ssl_cert"] = os.path.join(self.app_root, client["ssl_cert"])
-            if client.get("ssl_root_cert"):
-                client["ssl_root_cert"] = os.path.join(self.app_root, client["ssl_root_cert"])
+            if client.get(SSLConstants.PRIVATE_KEY):
+                client[SSLConstants.PRIVATE_KEY] = os.path.join(self.app_root, client[SSLConstants.PRIVATE_KEY])
+            if client.get(SSLConstants.CERT):
+                client[SSLConstants.CERT] = os.path.join(self.app_root, client[SSLConstants.CERT])
+            if client.get(SSLConstants.ROOT_CERT):
+                client[SSLConstants.ROOT_CERT] = os.path.join(self.app_root, client[SSLConstants.ROOT_CERT])
         except Exception:
             raise ValueError("Client config error: '{}'".format(self.client_config_file_name))
 
@@ -343,4 +342,4 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
             if admin.get("download_dir"):
                 admin["download_dir"] = os.path.join(os.path.dirname(self.app_root), admin["download_dir"])
         except Exception:
-            raise ValueError("Client config error: '{}'".format(self.client_config_file_name))
+            raise ValueError("Client config error: '{}'".format(self.admin_config_file_name))
