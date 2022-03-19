@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Provides a command line interface for a federated client."""
+"""Federated client launching script."""
 
 import argparse
 import os
@@ -23,65 +23,63 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.private.defs import AppFolderConstants, SSLConstants, WorkspaceConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.fed_client import FederatedClient
 
 
 def main():
-    """Start program of the FL client."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
     )
-
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-
     parser.add_argument("--local_rank", type=int, default=0)
 
     args = parser.parse_args()
     kv_list = parse_vars(args.set)
 
-    args.train_config = "config/config_train.json"
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
-        args.client_config = "config_fed_client.json"
+        args.client_config = AppFolderConstants.CONFIG_FED_CLIENT
     else:
-        args.client_config = config_folder + "/config_fed_client.json"
-    args.env = "config/environment.json"
+        args.client_config = os.path.join(config_folder, AppFolderConstants.CONFIG_FED_CLIENT)
+    # TODO:: remove env and train config since they are not core
+    args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
+    args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
     args.log_config = None
 
-    try:
-        remove_restart_file(args)
-    except BaseException:
-        print("Could not remove the restart.fl / shutdown.fl file.  Please check your system before starting FL.")
-        sys.exit(-1)
+    for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
+        try:
+            f = os.path.join(args.workspace, name)
+            if os.path.exists(f):
+                os.remove(f)
+        except BaseException:
+            print("Could not remove the {} file.  Please check your system before starting FL.".format(name))
+            sys.exit(-1)
 
     rank = args.local_rank
 
     try:
         os.chdir(args.workspace)
-        AuditService.initialize(audit_file_name="audit.log")
+        AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 
-        workspace = os.path.join(args.workspace, "startup")
-
-        # trainer = WorkFlowFactory().create_client_trainer(train_configs, envs)
+        startup = os.path.join(args.workspace, "startup")
         conf = FLClientStarterConfiger(
-            app_root=workspace,
-            # wf_config_file_name="config_train.json",
+            app_root=startup,
             client_config_file_name=args.fed_client,
-            # env_config_file_name="environment.json",
-            log_config_file_name="log.config",
+            log_config_file_name=WorkspaceConstants.LOGGING_CONFIG,
             kv_list=args.set,
         )
         conf.configure()
 
         trainer = conf.base_deployer
 
-        security_check(trainer.secure_train, args)
+        security_check(secure_train=trainer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
 
         federated_client = trainer.create_fed_client(args)
 
@@ -89,9 +87,7 @@ def main():
             print("Waiting for SP....")
             time.sleep(1.0)
 
-        # federated_client.platform = conf.wf_config_data.get("platform", "PT")
         federated_client.use_gpu = False
-        # federated_client.cross_site_validate = kv_list.get("cross_site_validate", True)
         federated_client.config_folder = config_folder
 
         if rank == 0:
@@ -123,27 +119,25 @@ def main():
     except ConfigError as ex:
         print("ConfigError:", str(ex))
     finally:
-        # shutil.rmtree(workspace)
         pass
 
     sys.exit(0)
 
 
-def security_check(secure_train, args):
+def security_check(secure_train: bool, content_folder: str, fed_client_config: str):
     """To check the security content if running in security mode.
 
     Args:
-        secure_train: True/False
-        args: command args
-
+       secure_train (bool): if run in secure mode or not.
+       content_folder (str): the folder to check.
+       fed_client_config (str): fed_client.json
     """
     # initialize the SecurityContentService.
     # must do this before initializing other services since it may be needed by them!
-    startup = os.path.join(args.workspace, "startup")
-    SecurityContentService.initialize(content_folder=startup)
+    SecurityContentService.initialize(content_folder=content_folder)
 
     if secure_train:
-        insecure_list = secure_content_check(args)
+        insecure_list = secure_content_check(fed_client_config)
         if len(insecure_list):
             print("The following files are not secure content.")
             for item in insecure_list:
@@ -151,56 +145,49 @@ def security_check(secure_train, args):
             sys.exit(1)
     # initialize the AuditService, which is used by command processing.
     # The Audit Service can be used in other places as well.
-    AuditService.initialize(audit_file_name="audit.log")
+    AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 
 
-def secure_content_check(args):
+def secure_content_check(config: str):
     """To check the security contents.
 
     Args:
-        args: command args
+        config (str): fed_client.json
 
-    Returns: the insecure content list
-
+    Returns:
+        A list of insecure content.
     """
     insecure_list = []
-    data, sig = SecurityContentService.load_json(args.fed_client)
+    data, sig = SecurityContentService.load_json(config)
     if sig != LoadResult.OK:
-        insecure_list.append(args.fed_client)
+        insecure_list.append(config)
 
     client = data["client"]
-    content, sig = SecurityContentService.load_content(client.get("ssl_cert"))
+    content, sig = SecurityContentService.load_content(client.get(SSLConstants.CERT))
     if sig != LoadResult.OK:
-        insecure_list.append(client.get("ssl_cert"))
-    content, sig = SecurityContentService.load_content(client.get("ssl_private_key"))
+        insecure_list.append(client.get(SSLConstants.CERT))
+    content, sig = SecurityContentService.load_content(client.get(SSLConstants.PRIVATE_KEY))
     if sig != LoadResult.OK:
-        insecure_list.append(client.get("ssl_private_key"))
-    content, sig = SecurityContentService.load_content(client.get("ssl_root_cert"))
+        insecure_list.append(client.get(SSLConstants.PRIVATE_KEY))
+    content, sig = SecurityContentService.load_content(client.get(SSLConstants.ROOT_CERT))
     if sig != LoadResult.OK:
-        insecure_list.append(client.get("ssl_root_cert"))
+        insecure_list.append(client.get(SSLConstants.ROOT_CERT))
 
     return insecure_list
 
 
-def remove_restart_file(args):
-    """To remove the restart.fl file.
-
-    Args:
-        args: command args
-
-    """
-    restart_file = os.path.join(args.workspace, "restart.fl")
-    if os.path.exists(restart_file):
-        os.remove(restart_file)
-    restart_file = os.path.join(args.workspace, "shutdown.fl")
-    if os.path.exists(restart_file):
-        os.remove(restart_file)
-
-
 def create_admin_agent(
-    client_args, client_id, req_processors, secure_train, server_args, federated_client, args, is_multi_gpu, rank
+    client_args,
+    client_id,
+    req_processors,
+    secure_train,
+    server_args,
+    federated_client: FederatedClient,
+    args,
+    is_multi_gpu,
+    rank,
 ):
-    """To create the admin client.
+    """Creates an admin agent.
 
     Args:
         client_args: start client command args
@@ -213,31 +200,31 @@ def create_admin_agent(
         is_multi_gpu: True/False
         rank: client rank process number
 
-    Returns: admin client
-
+    Returns:
+        A FedAdminAgent.
     """
     sender = AdminMessageSender(
         client_name=federated_client.token,
-        root_cert=client_args["ssl_root_cert"],
-        ssl_cert=client_args["ssl_cert"],
-        private_key=client_args["ssl_private_key"],
+        root_cert=client_args[SSLConstants.ROOT_CERT],
+        ssl_cert=client_args[SSLConstants.CERT],
+        private_key=client_args[SSLConstants.PRIVATE_KEY],
         server_args=server_args,
         secure=secure_train,
         is_multi_gpu=is_multi_gpu,
         rank=rank,
     )
+    client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
         sender=sender,
-        app_ctx=ClientEngine(federated_client, federated_client.token, sender, args, rank),
+        app_ctx=client_engine,
     )
     admin_agent.app_ctx.set_agent(admin_agent)
-    federated_client.set_client_engine(admin_agent.app_ctx)
+    federated_client.set_client_engine(client_engine)
     for processor in req_processors:
         admin_agent.register_processor(processor)
 
     return admin_agent
-    # self.admin_agent.start()
 
 
 if __name__ == "__main__":
