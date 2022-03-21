@@ -15,7 +15,6 @@
 import ast
 import inspect
 import io
-import os
 from functools import wraps
 from typing import ByteString, List, Tuple
 
@@ -61,7 +60,7 @@ class S3Storage(StorageSpec):
         except Exception as e:
             if e.message == "Object does not exist":
                 return False
-            raise Exception(e.message)
+            raise e
         return True
 
     def create_object(self, uri: str, data: ByteString, meta: dict, overwrite_existing: bool = False):
@@ -90,7 +89,7 @@ class S3Storage(StorageSpec):
 
         """
         if self._object_exists(uri) and not overwrite_existing:
-            raise Exception("object {} already exists and overwrite_existing is False".format(uri))
+            raise RuntimeError("object {} already exists and overwrite_existing is False".format(uri))
 
         self.s3_client.put_object(
             self.bucket_name, uri, data=io.BytesIO(data), length=-1, metadata={"user_metadata": meta}, part_size=5242880
@@ -114,7 +113,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise Exception("object {} does not exist".format(uri))
+            raise RuntimeError("object {} does not exist".format(uri))
 
         if not replace:
             prev_meta = self.get_meta(uri)
@@ -146,7 +145,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise Exception("object {} does not exist".format(uri))
+            raise RuntimeError("object {} does not exist".format(uri))
 
         self.s3_client.put_object(
             self.bucket_name,
@@ -187,7 +186,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise Exception("object {} does not exist".format(uri))
+            raise RuntimeError("object {} does not exist".format(uri))
 
         return ast.literal_eval(self.s3_client.stat_object(self.bucket_name, uri)._metadata["x-amz-meta-user_metadata"])
 
@@ -205,7 +204,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise Exception("object {} does not exist".format(uri))
+            raise RuntimeError("object {} does not exist".format(uri))
 
         return self.s3_client.stat_object(self.bucket_name, uri)
 
@@ -223,7 +222,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise Exception("object {} does not exist".format(uri))
+            raise RuntimeError("object {} does not exist".format(uri))
 
         return self.s3_client.get_object(self.bucket_name, uri).data
 
@@ -240,8 +239,8 @@ class S3Storage(StorageSpec):
         - no such object
 
         """
-        if not os.path.exists(uri):
-            raise Exception("object {} does not exist".format(uri))
+        if not self._object_exists(uri):
+            raise RuntimeError("object {} does not exist".format(uri))
 
         return self.get_meta(uri), self.get_data(uri)
 
@@ -259,6 +258,6 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise Exception("object {} does not exist".format(uri))
+            raise RuntimeError("object {} does not exist".format(uri))
 
         self.s3_client.remove_object(self.bucket_name, uri)
