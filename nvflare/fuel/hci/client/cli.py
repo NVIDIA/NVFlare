@@ -85,6 +85,7 @@ class AdminClient(cmd.Cmd):
         credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
         overseer_agent: OverseerAgent = None,
+        timeout: int = 3600,
         debug: bool = False,
     ):
         cmd.Cmd.__init__(self)
@@ -131,6 +132,7 @@ class AdminClient(cmd.Cmd):
             auto_login=True,
             user_name=self.user_name,
             password=self.password,
+            timeout=timeout,
             debug=self.debug,
             poc=poc,
         )
@@ -349,6 +351,10 @@ class AdminClient(cmd.Cmd):
             # exit the client
             self.write_string(self.api.shutdown_msg)
             return True
+
+    def precmd(self, line):
+        self.api._mark_active()
+        return line
 
     def cmdloop(self, intro=None):
         """Repeatedly issue a prompt, accept input, parse an initial prefix

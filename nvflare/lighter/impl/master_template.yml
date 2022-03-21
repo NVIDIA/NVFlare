@@ -140,7 +140,8 @@ fed_admin: |
       "client_key": "client.key",
       "client_cert": "client.crt",
       "ca_cert": "rootCA.pem",
-      "prompt": "> "
+      "prompt": "> ",
+      "timeout": 3600
     }
   }
 

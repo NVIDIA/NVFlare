@@ -104,6 +104,7 @@ def main():
         credential_type=CredentialType.PASSWORD if admin_config.get("cred_type") == "password" else CredentialType.CERT,
         debug=args.with_debug,
         overseer_agent=conf.overseer_agent,
+        timeout=admin_config.get("timeout", 3600),
         # cli_history_size=args.cli_history_size,
     )
 

@@ -27,6 +27,7 @@ from nvflare.fuel.hci.conn import Connection, receive_and_process
 from nvflare.fuel.hci.proto import make_error
 from nvflare.fuel.hci.reg import CommandModule, CommandRegister
 from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.fuel.hci.server.sess import CHECK_SESSION_CMD_NAME
 from nvflare.fuel.hci.table import Table
 from nvflare.ha.ha_admin_cmds import HACommandModule
 
@@ -123,6 +124,7 @@ class AdminAPI(AdminAPISpec):
         auto_login: bool = False,
         user_name: str = None,
         password: str = None,
+        timeout: int = 3600,
         poc: bool = False,
         debug: bool = False,
     ):
@@ -196,6 +198,10 @@ class AdminAPI(AdminAPISpec):
 
         self.sess_monitor_thread = None
         self.sess_monitor_active = False
+
+        self.timeout = timeout
+        self.inactivity_time = 0
+        self.sess_last_active_time = time.time()
 
     def _overseer_callback(self, overseer_agent):
         sp = overseer_agent.get_primary_sp()
@@ -275,6 +281,8 @@ class AdminAPI(AdminAPISpec):
         while True:
             time.sleep(interval)
 
+            self.inactivity_time = time.time() - self.sess_last_active_time
+
             if not self.sess_monitor_active:
                 return
 
@@ -285,7 +293,7 @@ class AdminAPI(AdminAPISpec):
             resp = self.server_execute("_check_session")
             status = resp["status"]
 
-            if status == APIStatus.ERROR_INACTIVE_SESSION:
+            if status == APIStatus.ERROR_INACTIVE_SESSION or self.inactivity_time > self.timeout:
                 for item in resp["data"]:
                     if item["type"] == "error":
                         error_msg = item["data"]
@@ -293,6 +301,9 @@ class AdminAPI(AdminAPISpec):
 
         self.server_sess_active = False
         session_ended_callback(error_msg)
+
+    def _mark_active(self):
+        self.sess_last_active_time = time.time()
 
     def logout(self):
         """Send logout command to server."""
@@ -472,6 +483,9 @@ class AdminAPI(AdminAPISpec):
 
         # check client side commands
         entries = self.client_cmd_reg.get_command_entries(cmd_name)
+        if entries:
+            self._mark_active()
+
         if len(entries) > 1:
             return {
                 "status": APIStatus.ERROR_SYNTAX,
@@ -501,6 +515,9 @@ class AdminAPI(AdminAPISpec):
         return self.server_execute(command)
 
     def server_execute(self, command, reply_processor=None):
+        if command != CHECK_SESSION_CMD_NAME:
+            self._mark_active()
+
         if not self.server_sess_active:
             return {"status": APIStatus.ERROR_INACTIVE_SESSION, "details": "API session is inactive"}
 

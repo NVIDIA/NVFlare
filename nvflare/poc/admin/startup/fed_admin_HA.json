@@ -6,6 +6,7 @@
     "download_dir": "transfer",
     "cred_type": "password",
     "prompt": "> ",
+    "timeout": 3600,
     "overseer_agent": {
       "path": "nvflare.ha.overseer_agent.HttpOverseerAgent",
       "args": {
