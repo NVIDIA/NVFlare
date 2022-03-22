@@ -29,6 +29,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandRegister
 from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.fuel.hci.table import Table
 from nvflare.ha.ha_admin_cmds import HACommandModule
+from nvflare.private.fed.server.job_cmds import JobCommandModule
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
@@ -140,6 +141,7 @@ class AdminAPI(AdminAPISpec):
                         "cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m))
                     )
         cmd_modules.append(HACommandModule())
+        # cmd_modules.extend([HACommandModule(), JobCommandModule(upload_dir=upload_dir, download_dir=download_dir)])
 
         self.overseer_agent = overseer_agent
         self.host = host

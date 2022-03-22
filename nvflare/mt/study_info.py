@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Constants for file transfer command module."""
 
-SERVER_MODULE_NAME = "file_transfer"
-SERVER_CMD_UPLOAD_TEXT = "_upload_text_file"
-SERVER_CMD_DOWNLOAD_TEXT = "_download_text_file"
-SERVER_CMD_UPLOAD_BINARY = "_upload_binary_file"
-SERVER_CMD_DOWNLOAD_BINARY = "_download_binary_file"
-SERVER_CMD_UPLOAD_FOLDER = "_upload_folder"
-SERVER_CMD_DOWNLOAD_FOLDER = "_download_folder"
-SERVER_CMD_UPLOAD_JOB = "_upload_job"
-SERVER_CMD_DOWNLOAD_JOB = "_download_job"
-SERVER_CMD_INFO = "_info"
+class StudyInfo:
+    """TODO:: how to get this??"""
+
+    def __init__(self, name, sites):
+        self.name = name
+        self.sites = sites
+
+    def check_site_participate(self, site):
+        """Check if site participate in this study."""
+        for s in self.sites:
+            if site.name == s.name:
+                return True
+        return False
