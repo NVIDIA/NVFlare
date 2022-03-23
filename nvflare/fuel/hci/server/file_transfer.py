@@ -255,7 +255,6 @@ class FileTransferModule(CommandModule):
         meta_b64str = args[1]
         zip_b64str = args[2]
         data_bytes = b64str_to_bytes(zip_b64str)
-        # unzip_all_from_bytes(data_bytes, self.upload_dir)
         meta = pickle.loads(b64str_to_bytes(meta_b64str))
         engine = conn.app_ctx
         meta = engine.job_def_manager.create(meta, data_bytes)

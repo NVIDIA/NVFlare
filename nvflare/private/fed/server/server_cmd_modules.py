@@ -25,10 +25,7 @@ class ServerCommandModules:
         ShellCommandModule(),
         SystemCommandModule(),
         TrainingCommandModule(),
-        JobCommandModule(
-            upload_dir="/workspace/nvflare_provis/workspace/example_project/prod_01/admin@nvidia.com/transfer",
-            download_dir="/workspace/nvflare_provis/workspace/example_project/prod_01/admin@nvidia.com/transferdl",
-        ),
+        JobCommandModule(),
         InfoCollectorCommandModule(),
     ]
 

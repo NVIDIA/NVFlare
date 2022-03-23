@@ -19,9 +19,7 @@ from nvflare.mt.job_def import Job, RunStatus
 
 
 class JobDefManagerSpec(ABC):
-    def __init__(self):
-        """Job Definition Management API."""
-        self.job_index = []
+    """Job Definition Management API."""
 
     @abstractmethod
     def create(self, meta: dict, uploaded_content: bytes) -> Job:

@@ -331,11 +331,9 @@ class FileTransferModule(CommandModule):
             return {"status": APIStatus.ERROR_RUNTIME, "details": "RESOURCE_SPEC is expected in meta.json to be a dict"}
         if not isinstance(meta.get(JobMetaKey.DEPLOY_MAP), dict):
             return {"status": APIStatus.ERROR_RUNTIME, "details": "DEPLOY_MAP is expected in meta.json to be a dict"}
+
         # zip the data
         data = zip_directory_to_bytes(self.upload_dir, folder_name)
-
-        # meta = self.job_def_manager.create(meta, data)
-        # return {"status": APIStatus.SUCCESS, "details": json.dumps(meta, indent=4)}
 
         b64str = bytes_to_b64str(data)
         meta_b64str = bytes_to_b64str(pickle.dumps(meta))
@@ -351,9 +349,6 @@ class FileTransferModule(CommandModule):
         command = join_args(parts)
         reply_processor = _DownloadFolderProcessor(self.download_dir)
         return api.server_execute(command, reply_processor)
-
-    # data_bytes = self.job_def_manager.get_content(job_id)
-    # unzip_all_from_bytes(data_bytes, self.download_dir)
 
     def info(self, args, api: AdminAPISpec):
         msg = f"Local Upload Source: {self.upload_dir}\n"

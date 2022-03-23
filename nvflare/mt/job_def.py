@@ -88,13 +88,14 @@ def job_from_meta(meta: dict) -> Job:
         Job object.
 
     """
-    return Job(
+    job = Job(
         meta.get(JobMetaKey.JOB_ID),
         meta.get(JobMetaKey.STUDY_NAME),
         meta.get(JobMetaKey.RESOURCE_SPEC),
         meta.get(JobMetaKey.DEPLOY_MAP),
         meta,
     )
+    return job
 
 
 def get_site_require_resource_from_job(job: Job) -> Dict[str, Resources]:

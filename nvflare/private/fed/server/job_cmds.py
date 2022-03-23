@@ -14,29 +14,17 @@
 
 import json
 import logging
-import os
 from typing import List
 
-from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
-from nvflare.mt.job_def import JobMetaKey
 
 
 class JobCommandModule(CommandModule):
     """Command module with commands for job management."""
 
-    def __init__(self, upload_dir: str, download_dir: str):  # , job_def_manager: JobDefManagerSpec):
+    def __init__(self):  # , job_def_manager: JobDefManagerSpec):
         self.logger = logging.getLogger(self.__class__.__name__)
-        if not os.path.isdir(upload_dir):
-            raise ValueError("upload_dir {} is not a valid dir".format(upload_dir))
-
-        if not os.path.isdir(download_dir):
-            raise ValueError("download_dir {} is not a valid dir".format(download_dir))
-
-        self.upload_dir = upload_dir
-        self.download_dir = download_dir
 
     def get_spec(self):
         return CommandModuleSpec(

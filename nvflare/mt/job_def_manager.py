@@ -13,49 +13,53 @@
 # limitations under the License.
 
 import datetime
+import os
 import pathlib
 import time
 import uuid
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
+from nvflare.mt.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.storage import StorageSpec
 from nvflare.apis.study_manager_spec import StudyManagerSpec
 from nvflare.mt.job_def import JobMetaKey, Job, job_from_meta
 
 
-class _JobChecker:
-    def check_job(self, meta: dict) -> bool:
+class _JobFilter(ABC):
+    @abstractmethod
+    def filter_job(self, meta: dict) -> bool:
         pass
 
 
-class _StatusChecker(_JobChecker):
+class _StatusFilter(_JobFilter):
     def __init__(self, status_to_check):
         self.result = []
         self.status_to_check = status_to_check
 
-    def check_job(self, meta: dict):
+    def filter_job(self, meta: dict):
         if meta[JobMetaKey.STATUS] == self.status_to_check:
-            self.result.append(meta)
+            self.result.append(job_from_meta(meta))
         return True
 
 
-class _AllJobsChecker(_JobChecker):
+class _AllJobsFilter(_JobFilter):
     def __init__(self):
         self.result = []
 
-    def check_job(self, meta: dict):
-        self.result.append(meta)
+    def filter_job(self, meta: dict):
+        self.result.append(job_from_meta(meta))
         return True
 
 
-class _ReviewerChecker(_JobChecker):
+class _ReviewerFilter(_JobFilter):
     def __init__(self, reviewer_name, study_manager: StudyManagerSpec):
+        """Not used yet, for use in future implementations."""
         self.result = []
         self.reviewer_name = reviewer_name
         self.study_manager = study_manager
 
-    def check_job(self, meta: dict):
+    def filter_job(self, meta: dict):
         study = self.study_manager.get_study(meta[JobMetaKey.STUDY_NAME])
         if study and study.reviewers and self.reviewer_name in study.reviewers:
             # this job requires review from this reviewer
@@ -65,7 +69,7 @@ class _ReviewerChecker(_JobChecker):
                 # already reviewed
                 return True
             else:
-                self.result.append(meta)
+                self.result.append(job_from_meta(meta))
         return True
 
 
@@ -78,10 +82,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self.study_manager = study_manager
 
     def job_uri(self, jid: str):
-        return "/" + self.uri_root + "/" + jid
-
-    def job_result_uri(self, jid: str, result_id: str):
-        return "/" + self.uri_root + "/" + self.result_uri_root + "/" + jid + "/" + result_id
+        return os.path.join(self.uri_root, jid)
 
     def create(self, meta: dict, uploaded_content: bytes) -> Dict[str, Any]:
         # validate meta to make sure it has:
@@ -145,36 +146,36 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self.store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def list_all(self) -> List[Job]:
-        checker = _AllJobsChecker()
-        self._scan(checker)
-        return checker.result
+        job_filter = _AllJobsFilter()
+        self._scan(job_filter)
+        return job_filter.result
 
-    def _scan(self, checker: _JobChecker):
-        jid_paths = self.store.list_objects("/" + self.uri_root)
+    def _scan(self, job_filter: _JobFilter):
+        jid_paths = self.store.list_objects(self.uri_root)
         if not jid_paths:
             return
 
         for jid_path in jid_paths:
             jid = pathlib.PurePath(jid_path).name
-            meta = self.get_job(jid)
+            meta = self.get_job(jid).meta
             if meta:
-                ok = checker.check_job(meta)
+                ok = job_filter.filter_job(meta)
                 if not ok:
                     break
 
     def get_jobs_by_status(self, status) -> List[Job]:
-        checker = _StatusChecker(status)
-        self._scan(checker)
-        return checker.result
+        job_filter = _StatusFilter(status)
+        self._scan(job_filter)
+        return job_filter.result
 
     def get_jobs_waiting_for_review(self, reviewer_name: str) -> List[Dict[str, Any]]:
         # scan the store!
-        checker = _ReviewerChecker(reviewer_name, self.study_manager)
-        self._scan(checker)
-        return checker.result
+        job_filter = _ReviewerFilter(reviewer_name, self.study_manager)
+        self._scan(job_filter)
+        return job_filter.result
 
     def set_approval(self, jid: str, reviewer_name: str, approved: bool, note: str) -> Dict[str, Any]:
-        meta = self.get_job(jid)
+        meta = self.get_job(jid).meta
         if meta:
             approvals = meta.get(JobMetaKey.APPROVALS)
             if not approvals:
