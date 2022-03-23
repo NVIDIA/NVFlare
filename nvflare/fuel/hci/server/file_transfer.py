@@ -283,7 +283,7 @@ class FileTransferModule(CommandModule):
             conn.append_string(b64str)
         except BaseException:
             traceback.print_exc()
-            conn.append_error("Exception occurred during attempt to zip data to send for job: ".format(job_id))
+            conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))
 
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))
