@@ -100,6 +100,8 @@ def main():
         ca_cert=ca_cert,
         client_cert=client_cert,
         client_key=client_key,
+        upload_dir=admin_config.get("upload_dir"),
+        download_dir=admin_config.get("download_dir"),
         require_login=admin_config.get("with_login", True),
         credential_type=CredentialType.PASSWORD if admin_config.get("cred_type") == "password" else CredentialType.CERT,
         debug=args.with_debug,

@@ -31,9 +31,12 @@ from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic,
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.study_manager_spec import StudyManagerSpec
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
+from nvflare.mt.job_def_manager import SimpleJobDefManager
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
@@ -77,6 +80,11 @@ class ServerEngine(ServerEngineInternalSpec):
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # self.job_def_manager = job_def_manager  # todo: need to figure out how to initialize job manager with inputs
+        self.job_def_manager = SimpleJobDefManager(
+            StudyManagerSpec(), FilesystemStorage(root_dir="/workspace/nvflare_provis")
+        )
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor

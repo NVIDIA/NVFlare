@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import pickle
 import shutil
 import tempfile
 import traceback
@@ -30,6 +31,7 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.mt.job_def import JobMetaKey
 
 
 class FileTransferModule(CommandModule):
@@ -96,6 +98,20 @@ class FileTransferModule(CommandModule):
                     description="download a folder to client",
                     usage="download folder_name",
                     handler_func=self.download_folder,
+                    visible=False,
+                ),
+                CommandSpec(
+                    name=ftd.SERVER_CMD_UPLOAD_JOB,
+                    description="upload a job def",
+                    usage="upload_job job_folder_name",
+                    handler_func=self.upload_job,
+                    visible=False,
+                ),
+                CommandSpec(
+                    name=ftd.SERVER_CMD_DOWNLOAD_JOB,
+                    description="download a job",
+                    usage="download_job job_id",
+                    handler_func=self.download_job,
                     visible=False,
                 ),
                 CommandSpec(
@@ -234,6 +250,40 @@ class FileTransferModule(CommandModule):
         except BaseException:
             traceback.print_exc()
             conn.append_error("exception occurred")
+
+    def upload_job(self, conn: Connection, args: List[str]):
+        meta_b64str = args[1]
+        zip_b64str = args[2]
+        data_bytes = b64str_to_bytes(zip_b64str)
+        meta = pickle.loads(b64str_to_bytes(meta_b64str))
+        engine = conn.app_ctx
+        meta = engine.job_def_manager.create(meta, data_bytes)
+        conn.set_prop("meta", meta)
+        conn.set_prop("upload_job_id", meta.get(JobMetaKey.JOB_ID))
+        conn.append_string("Uploaded job {}".format(meta.get(JobMetaKey.JOB_ID)))
+
+    def download_job(self, conn: Connection, args: List[str]):
+        if len(args) != 2:
+            conn.append_error("syntax error: job ID required")
+            return
+
+        job_id = args[1]
+
+        engine = conn.app_ctx
+        data_bytes = engine.job_def_manager.get_content(job_id)
+        job_id_dir = os.path.join(self.download_dir, job_id)
+        if os.path.exists(job_id_dir):
+            shutil.rmtree(job_id_dir)
+        os.mkdir(job_id_dir)
+        unzip_all_from_bytes(data_bytes, job_id_dir)
+
+        try:
+            data = zip_directory_to_bytes(self.download_dir, job_id)
+            b64str = bytes_to_b64str(data)
+            conn.append_string(b64str)
+        except BaseException:
+            traceback.print_exc()
+            conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))
 
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))

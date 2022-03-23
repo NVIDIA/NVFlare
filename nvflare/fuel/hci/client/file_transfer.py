@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
+import pickle
 import traceback
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -28,6 +30,7 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.mt.job_def import JobMetaKey
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
@@ -202,6 +205,18 @@ class FileTransferModule(CommandModule):
                     handler_func=self.download_folder,
                 ),
                 CommandSpec(
+                    name="upload_job",
+                    description="upload application to the server",
+                    usage="upload_job job_folder",
+                    handler_func=self.upload_job,
+                ),
+                CommandSpec(
+                    name="download_job",
+                    description="download job contents from the server",
+                    usage="download_job job_id",
+                    handler_func=self.download_job,
+                ),
+                CommandSpec(
                     name="info",
                     description="show folder setup info",
                     usage="info",
@@ -284,6 +299,53 @@ class FileTransferModule(CommandModule):
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_folder folder_name"}
 
         parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_FOLDER), args[1]]
+        command = join_args(parts)
+        reply_processor = _DownloadFolderProcessor(self.download_dir)
+        return api.server_execute(command, reply_processor)
+
+    def upload_job(self, args, api: AdminAPISpec):
+        if len(args) != 2:
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: upload_job job_folder_name"}
+
+        folder_name = args[1]
+        if folder_name.endswith("/"):
+            folder_name = folder_name.rstrip("/")
+
+        full_path = os.path.join(self.upload_dir, folder_name)
+        if not os.path.isdir(full_path):
+            return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
+
+        meta = {}
+        try:
+            meta_path = os.path.join(full_path, "meta.json")
+            with open(meta_path) as file:
+                meta = json.load(file)
+        except Exception as e:
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Exception while loading required meta.json in job directory: " + str(e),
+            }
+        if not isinstance(meta.get(JobMetaKey.STUDY_NAME), str):
+            return {"status": APIStatus.ERROR_RUNTIME, "details": "STUDY_NAME is expected in meta.json to be a str"}
+        if not isinstance(meta.get(JobMetaKey.RESOURCE_SPEC), dict):
+            return {"status": APIStatus.ERROR_RUNTIME, "details": "RESOURCE_SPEC is expected in meta.json to be a dict"}
+        if not isinstance(meta.get(JobMetaKey.DEPLOY_MAP), dict):
+            return {"status": APIStatus.ERROR_RUNTIME, "details": "DEPLOY_MAP is expected in meta.json to be a dict"}
+
+        # zip the data
+        data = zip_directory_to_bytes(self.upload_dir, folder_name)
+
+        b64str = bytes_to_b64str(data)
+        meta_b64str = bytes_to_b64str(pickle.dumps(meta))
+        parts = [_server_cmd_name(ftd.SERVER_CMD_UPLOAD_JOB), meta_b64str, b64str]
+        command = join_args(parts)
+        return api.server_execute(command)
+
+    def download_job(self, args, api: AdminAPISpec):
+        if len(args) != 2:
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_job job_id"}
+        job_id = args[1]
+        parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB), job_id]
         command = join_args(parts)
         reply_processor = _DownloadFolderProcessor(self.download_dir)
         return api.server_execute(command, reply_processor)
