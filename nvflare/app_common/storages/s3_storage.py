@@ -13,54 +13,46 @@
 # limitations under the License.
 
 import ast
-import inspect
 import io
-from functools import wraps
+import os
+from pathlib import Path
 from typing import ByteString, List, Tuple
 
 from minio import Minio
 from minio.commonconfig import REPLACE, CopySource
 
 from nvflare.apis.storage import StorageSpec
+from nvflare.apis.utils.format_check import validate_class_methods_args
 
-
-def validate_class_methods_args(cls):
-    for name, method in inspect.getmembers(cls, inspect.isfunction):
-        if name != "__init_subclass__":
-            setattr(cls, name, validate_args(method))
-    return cls
-
-
-def validate_args(method):
-    signature = inspect.signature(method)
-
-    @wraps(method)
-    def wrapper(*args, **kwargs):
-        bound_arguments = signature.bind(*args, **kwargs)
-        for name, value in bound_arguments.arguments.items():
-            annotation = signature.parameters[name].annotation
-            if not (annotation is inspect.Signature.empty or isinstance(value, annotation)):
-                raise TypeError(
-                    "argument '{}' of {} must be {} but got {}".format(name, method, annotation, type(value))
-                )
-        return method(*args, **kwargs)
-
-    return wrapper
+URI_ROOT = os.path.abspath(os.sep)
 
 
 @validate_class_methods_args
 class S3Storage(StorageSpec):
     def __init__(self, endpoint, access_key, secret_key, secure, bucket_name):
+        """Init S3Storage.
+
+        Uses S3 bucket to persist objects, with absolute paths as object URIs.
+
+        Args:
+            endpoint: hostname of S3 service
+            access_key: access key (username) of S3 service account
+            secret_key: secret key (password) of S3 service account
+            secure: flag for secure (TLS) mode
+            bucket_name: name of S3 bucket
+
+        """
+
         self.s3_client = Minio(endpoint=endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
+        if not self.s3_client.bucket_exists(bucket_name):
+            self.s3_client.make_bucket(bucket_name)
         self.bucket_name = bucket_name
 
     def _object_exists(self, uri: str):
         try:
             self.s3_client.stat_object(self.bucket_name, uri)
-        except Exception as e:
-            if e.message == "Object does not exist":
-                return False
-            raise e
+        except:
+            return False
         return True
 
     def create_object(self, uri: str, data: ByteString, meta: dict, overwrite_existing: bool = False):
@@ -74,12 +66,12 @@ class S3Storage(StorageSpec):
 
         Returns:
 
-        Raises exception when:
-
-        - invalid URI specification
-        - invalid args
-        - object already exists and overwrite_existing is False
-        - error creating the object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if error creating the object
+                - if object already exists and overwrite_existing is False
+                - if object will be inside prexisiting object
+                - if object will be at a non-empty directory
 
         Examples of URI:
 
@@ -90,6 +82,17 @@ class S3Storage(StorageSpec):
         """
         if self._object_exists(uri) and not overwrite_existing:
             raise RuntimeError("object {} already exists and overwrite_existing is False".format(uri))
+
+        path_parts = Path(uri).parts
+        for i in range(2, len(path_parts)):
+            parent_path = str(Path(*path_parts[0:i]))
+            if self._object_exists(parent_path):
+                raise RuntimeError("cannot create object {} inside preexisting object {}".format(uri, parent_path))
+
+        if not self._object_exists(uri) and (
+            list(self.s3_client.list_objects(self.bucket_name, prefix=uri, include_user_meta=True))
+        ):
+            raise RuntimeError("cannot create object {} at nonempty directory".format(uri))
 
         self.s3_client.put_object(
             self.bucket_name, uri, data=io.BytesIO(data), length=-1, metadata={"user_metadata": meta}, part_size=5242880
@@ -105,11 +108,9 @@ class S3Storage(StorageSpec):
 
         Returns:
 
-        Raises exception when:
-
-        - no such object
-        - invalid args
-        - error updating the object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if object does not exist
 
         """
         if not self._object_exists(uri):
@@ -137,11 +138,9 @@ class S3Storage(StorageSpec):
 
         Returns:
 
-        Raises exception when:
-
-        - no such object
-        - invalid args
-        - error updating the object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if object does not exist
 
         """
         if not self._object_exists(uri):
@@ -164,10 +163,13 @@ class S3Storage(StorageSpec):
 
         Returns: list of URIs of objects
 
+        Raises:
+            TypeError: if invalid argument types
+
         """
-        dir_path = dir_path.rstrip("/") + "/"
+        dir_path = dir_path.rstrip(os.sep) + os.sep
         return [
-            "/" + obj._object_name
+            URI_ROOT + obj._object_name
             for obj in list(self.s3_client.list_objects(self.bucket_name, prefix=dir_path, include_user_meta=True))
             if obj._metadata
         ]
@@ -180,9 +182,9 @@ class S3Storage(StorageSpec):
 
         Returns: meta info of the object.
 
-        Raises exception when:
-
-        - no such object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if object does not exist
 
         """
         if not self._object_exists(uri):
@@ -198,9 +200,9 @@ class S3Storage(StorageSpec):
 
         Returns: meta info of the object.
 
-        Raises exception when:
-
-        - no such object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if object does not exist
 
         """
         if not self._object_exists(uri):
@@ -216,9 +218,9 @@ class S3Storage(StorageSpec):
 
         Returns: data of the object.
 
-        Raises exception when:
-
-        - no such object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if object does not exist
 
         """
         if not self._object_exists(uri):
@@ -234,9 +236,9 @@ class S3Storage(StorageSpec):
 
         Returns: meta info and data of the object.
 
-        Raises exception when:
-
-        - no such object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if object does not exist
 
         """
         if not self._object_exists(uri):
@@ -252,9 +254,9 @@ class S3Storage(StorageSpec):
 
         Returns:
 
-        Raises exception when:
-
-        - no such object
+        Raises:
+            TypeError: if invalid argument types
+            RuntimeError: if object does not exist
 
         """
         if not self._object_exists(uri):
