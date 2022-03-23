@@ -16,16 +16,15 @@ import datetime
 
 
 class Study:
-
     def __init__(
-            self,
-            name: str,
-            description: str,
-            sites: [str],
-            users: [str],
-            start_time: datetime.datetime,
-            end_time: datetime.datetime,
-            reviewers=None
+        self,
+        name: str,
+        description: str,
+        sites: [str],
+        users: [str],
+        start_time: datetime.datetime,
+        end_time: datetime.datetime,
+        reviewers=None,
     ):
         self.name = name
         self.description = description
@@ -38,7 +37,6 @@ class Study:
 
 
 class StudyManagerSpec(object):
-
     def create_study(self, study: Study) -> Study:
         """Create the study object permanently
 

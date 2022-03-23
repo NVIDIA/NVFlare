@@ -20,10 +20,10 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from nvflare.mt.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.storage import StorageSpec
 from nvflare.apis.study_manager_spec import StudyManagerSpec
-from nvflare.mt.job_def import JobMetaKey, Job, job_from_meta
+from nvflare.mt.job_def import Job, JobMetaKey, job_from_meta
+from nvflare.mt.job_def_manager_spec import JobDefManagerSpec, RunStatus
 
 
 class _JobFilter(ABC):

@@ -105,14 +105,14 @@ class FileTransferModule(CommandModule):
                     description="upload a job def",
                     usage="upload_job job_folder_name",
                     handler_func=self.upload_job,
-                    visible=False
+                    visible=False,
                 ),
                 CommandSpec(
                     name=ftd.SERVER_CMD_DOWNLOAD_JOB,
                     description="download a job",
                     usage="download_job job_id",
                     handler_func=self.download_job,
-                    visible=False
+                    visible=False,
                 ),
                 CommandSpec(
                     name=ftd.SERVER_CMD_INFO,
