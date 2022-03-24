@@ -62,8 +62,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         Args:
             client_name: client name
-            run_num: run numbre
-            workspace: workspacee
+            run_num: run number
+            workspace: workspace
             client: FL client object
             components: available FL components
             handlers: available handlers

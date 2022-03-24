@@ -25,10 +25,8 @@ class TaskConstant(object):
 
 class EngineConstant(object):
 
-    FEDERATE_CLIENT = "federate_client"
     FL_TOKEN = "fl_token"
     CLIENT_TOKEN_FILE = "client_token.txt"
-    ENGINE_TASK_NAME = "engine_task_name"
 
 
 class InfoCollectorTopic(object):
@@ -69,17 +67,6 @@ class SysCommandTopic(object):
 
     SYS_INFO = "sys.info"
     SHELL = "sys.shell"
-
-
-class ControlCommandTopic(object):
-
-    DO_COMMAND = "control.do_command"
-
-
-class ControlCommandName(object):
-
-    ABORT_TASK = "abort_task"
-    END_RUN = "end_run"
 
 
 class ClientStatusKey(object):

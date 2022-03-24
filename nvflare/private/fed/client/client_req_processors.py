@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+from .admin import RequestProcessor
 from .info_coll_cmd import ClientInfoProcessor
 from .process_aux_cmd import AuxRequestProcessor
 from .shell_cmd import ShellCommandProcessor
@@ -51,8 +53,6 @@ class ClientRequestProcessors:
 
     @staticmethod
     def register_cmd_module(request_processor):
-        from .admin import RequestProcessor
-
         if not isinstance(request_processor, RequestProcessor):
             raise TypeError("request_processor must be RequestProcessor, but got {}".format(type(request_processor)))
 

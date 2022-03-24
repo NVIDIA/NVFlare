@@ -177,12 +177,12 @@ def _create_connection(listen_port):
     return conn
 
 
-def execute(run_manager, local_rank, exe_conn, executor):
+def execute(run_manager: ClientRunManager, local_rank, exe_conn, executor):
     """To execute the event task and pass to worker_process.
 
     Args:
-        run_manager: Client_Run_Manager
-        local_rank: provcess local rank
+        run_manager (ClientRunManager): client run manager
+        local_rank: process local rank
         exe_conn: execution connection
         executor: local executor
 
@@ -220,11 +220,11 @@ def execute(run_manager, local_rank, exe_conn, executor):
         print("If you abort client you can ignore this exception.")
 
 
-def handle_event(run_manager, local_rank, exe_conn):
+def handle_event(run_manager: ClientRunManager, local_rank, exe_conn):
     """To handle the event.
 
     Args:
-        run_manager: Client_run_manager
+        run_manager (ClientRunManager): a ClientRunManager
         local_rank: process local rank
         exe_conn: execute connection
 

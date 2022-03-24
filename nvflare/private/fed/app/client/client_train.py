@@ -77,11 +77,11 @@ def main():
         )
         conf.configure()
 
-        trainer = conf.base_deployer
+        deployer = conf.base_deployer
 
-        security_check(secure_train=trainer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
+        security_check(secure_train=deployer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
 
-        federated_client = trainer.create_fed_client(args)
+        federated_client = deployer.create_fed_client(args)
 
         while not federated_client.sp_established:
             print("Waiting for SP....")
@@ -99,22 +99,22 @@ def main():
 
         federated_client.start_heartbeat()
 
-        servers = [{t["name"]: t["service"]} for t in trainer.server_config]
+        servers = [{t["name"]: t["service"]} for t in deployer.server_config]
 
         admin_agent = create_admin_agent(
-            trainer.client_config,
-            trainer.client_name,
-            trainer.req_processors,
-            trainer.secure_train,
+            deployer.client_config,
+            deployer.client_name,
+            deployer.req_processors,
+            deployer.secure_train,
             sorted(servers)[0],
             federated_client,
             args,
-            trainer.multi_gpu,
+            deployer.multi_gpu,
             rank,
         )
         admin_agent.start()
 
-        trainer.close()
+        deployer.close()
 
     except ConfigError as ex:
         print("ConfigError:", str(ex))
@@ -219,7 +219,8 @@ def create_admin_agent(
         sender=sender,
         app_ctx=client_engine,
     )
-    admin_agent.app_ctx.set_agent(admin_agent)
+    client_engine.set_agent(admin_agent)
+    assert admin_agent.app_ctx.admin_agent == admin_agent
     federated_client.set_client_engine(client_engine)
     for processor in req_processors:
         admin_agent.register_processor(processor)

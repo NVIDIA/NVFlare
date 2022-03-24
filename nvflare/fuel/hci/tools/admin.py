@@ -48,14 +48,15 @@ def main():
 
     except ConfigError as ex:
         print("ConfigError:", str(ex))
+        return
 
     try:
         admin_config = conf.config_data["admin"]
     except KeyError:
         print("Missing admin section in fed_admin configuration.")
+        return
 
     modules = []
-
     if admin_config.get("with_file_transfer"):
         modules.append(
             FileTransferModule(

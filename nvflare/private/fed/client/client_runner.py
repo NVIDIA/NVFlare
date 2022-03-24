@@ -68,6 +68,9 @@ class ClientRunner(FLComponent):
             task_fetch_interval:  fetch task interval
         """
         FLComponent.__init__(self)
+        if not isinstance(engine, ClientEngineSpec):
+            raise TypeError("engine must be ClientEngineSpec, but got {}".format(type(engine)))
+
         self.task_table = config.task_table
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
@@ -88,10 +91,6 @@ class ClientRunner(FLComponent):
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
-        engine = fl_ctx.get_engine()
-        if not isinstance(engine, ClientEngineSpec):
-            raise TypeError("engine must be ClientEngineSpec, but got {}".format(type(engine)))
-
         if not isinstance(task.data, Shareable):
             self.log_error(
                 fl_ctx, "got invalid task data in assignment: expect Shareable, but got {}".format(type(task.data))
@@ -371,11 +370,7 @@ class ClientRunner(FLComponent):
                     self.end_run_fired = True
 
     def abort(self):
-        """To Abort the current run.
-
-        Returns: N/A
-
-        """
+        """Abort the current run."""
         with self.engine.new_context() as fl_ctx:
             self.log_info(fl_ctx, "ABORT (RUN) command received")
         self._abort_current_task()

@@ -14,7 +14,6 @@
 
 """This is the FLAdmin Client to send the request message to the admin server."""
 
-import threading
 from multiprocessing.dummy import Pool as ThreadPool
 
 import grpc
@@ -25,8 +24,6 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 
 from .admin import Sender
-
-lock = threading.Lock()
 
 
 class AdminMessageSender(Sender):
@@ -106,8 +103,8 @@ class AdminMessageSender(Sender):
         return messages
 
     def _retrieve_client_requests(self, taskname):
+        message_list = []
         try:
-            message_list = []
             with self._set_up_channel(self.servers[taskname]) as channel:
                 stub = admin_service.AdminCommunicatingStub(channel)
 
@@ -117,7 +114,7 @@ class AdminMessageSender(Sender):
                 for i in messages.message:
                     message_list.append(proto_to_message(i))
         except Exception as e:
-            messages = None
+            message_list = []
         return message_list
 
     def send_result(self, message: Message):

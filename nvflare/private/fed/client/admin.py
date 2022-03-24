@@ -17,56 +17,60 @@
 import threading
 import time
 import traceback
+from abc import ABC, abstractmethod
 
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 
 
-class Sender(object):
+class Sender(ABC):
     """The Sender object integrate the agent with the underline messaging system.
 
     Make sure its methods are exception-proof!
     """
 
+    @abstractmethod
     def send_reply(self, reply: Message):
-        """Send the reply to the requester.
+        """Send reply to server.
 
         Args:
             reply: reply message
-
         """
         pass
 
+    @abstractmethod
     def retrieve_requests(self) -> [Message]:
-        """Send the message to retrieve pending requests from the Server.
+        """Retrieve pending requests from server.
 
-        Returns: list of messages.
-
+        Returns:
+            A list of requests
         """
         pass
 
+    @abstractmethod
     def send_result(self, message: Message):
         """Send the processor results to server.
 
         Args:
-            message: message
-
+            message: result message
         """
         pass
 
 
-class RequestProcessor(object):
+class RequestProcessor(ABC):
     """The RequestProcessor is responsible for processing a request."""
 
+    @abstractmethod
     def get_topics(self) -> [str]:
         """Get topics that this processor will handle.
 
-        Returns: list of topics
-
+        Returns:
+            A list of topics
         """
         pass
 
+    @abstractmethod
     def process(self, req: Message, app_ctx) -> Message:
         """Called to process the specified request.
 
@@ -74,8 +78,8 @@ class RequestProcessor(object):
             req: request message
             app_ctx: application context
 
-        Returns: repely message
-
+        Returns:
+            reply message
         """
         pass
 
@@ -114,7 +118,7 @@ class FedAdminAgent(object):
         self.asked_to_stop = False
 
     def register_processor(self, processor: RequestProcessor):
-        """To register the RequestProcessor.
+        """Register a RequestProcessor.
 
         Args:
             processor: RequestProcessor
@@ -129,7 +133,7 @@ class FedAdminAgent(object):
             self.processors[topic] = processor
 
     def start(self):
-        """To start the FedAdminAgent."""
+        """Start the FedAdminAgent."""
         if self.retrieve_reqs_thread is None:
             self.retrieve_reqs_thread = threading.Thread(target=_start_retriever, args=(self,))
 
@@ -200,7 +204,7 @@ class FedAdminAgent(object):
             time.sleep(self.process_poll_interval)
 
     def shutdown(self):
-        """To be called by the Client Engine to gracefully shutdown the agent."""
+        """Shutdown gracefully."""
         self.asked_to_stop = True
 
         if self.retrieve_reqs_thread and self.retrieve_reqs_thread.is_alive():

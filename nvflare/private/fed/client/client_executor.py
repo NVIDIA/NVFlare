@@ -19,33 +19,25 @@ import subprocess
 import sys
 import threading
 import time
+from abc import ABC, abstractmethod
 from multiprocessing.connection import Client
+from typing import Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.common_utils import get_open_ports
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
 from .client_status import ClientStatus, get_status_message
 
 
-class ClientExecutor(object):
-    def __init__(self, uid, startup) -> None:
-        """To init the ClientExecutor.
-
-        Args:
-            uid: client name
-            startup: startup folder
-        """
-        pipe_path = startup + "/comm"
-        if not os.path.exists(pipe_path):
-            os.makedirs(pipe_path)
-
-        self.pipe = FilePipe(root_path=pipe_path, name="training")
+class ClientExecutor(ABC):
+    def __init__(self) -> None:
+        """Init ClientExecutor."""
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    @abstractmethod
     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-        """start_train method to start the FL client training.
+        """Start training.
 
         Args:
             client: the FL client object
@@ -53,12 +45,12 @@ class ClientExecutor(object):
             app_root: the root folder of the running APP
             app_custom_folder: FL application custom folder
             listen_port: port to listen the command.
-
         """
         pass
 
+    @abstractmethod
     def check_status(self, client) -> str:
-        """To check the status of the running client.
+        """Check status.
 
         Args:
             client: the FL client object
@@ -68,22 +60,25 @@ class ClientExecutor(object):
         """
         pass
 
+    @abstractmethod
     def abort_train(self, client):
-        """To abort the client training.
+        """Abort training.
 
         Args:
             client: the FL client object
         """
         pass
 
+    @abstractmethod
     def abort_task(self, client):
-        """To abort the client executing task.
+        """Abort the executing task.
 
         Args:
             client: the FL client object
         """
         pass
 
+    @abstractmethod
     def get_run_info(self) -> dict:
         """Get the run information.
 
@@ -92,51 +87,47 @@ class ClientExecutor(object):
         """
         pass
 
-    def get_errors(self):
+    @abstractmethod
+    def get_errors(self) -> Optional[dict]:
         """Get the error information.
 
         Returns:
-            A dict of error information.
-
+            None if no error, otherwise a dict of error information.
         """
         pass
 
+    @abstractmethod
     def reset_errors(self):
         """Reset the error information."""
         pass
 
-    def send_aux_command(self, shareable: Shareable):
-        """To send the aux command to child process.
+    @abstractmethod
+    def send_aux_command(self, aux_message: Shareable):
+        """Send aux message.
 
         Args:
-            shareable: aux message Shareable
+            aux_message (Shareable): message to sent
         """
         pass
 
-    def cleanup(self):
-        """Cleanup."""
-        self.pipe.clear()
-
 
 class ProcessExecutor(ClientExecutor):
-    """Run the Client executor in a child process."""
+    """Run the client worker process in a child process."""
 
     def __init__(self, uid, startup):
-        """To init the ProcessExecutor.
+        """Init a ProcessExecutor.
 
         Args:
             uid: client name
             startup: startup folder
         """
-        ClientExecutor.__init__(self, uid, startup)
+        super().__init__()
 
         self.startup = startup
-
         self.conn_client = None
-
         self.listen_port = get_open_ports(1)[0]
-
         self.lock = threading.Lock()
+        self.child_process = None
 
     def get_conn_client(self):
         if not self.conn_client:
@@ -145,12 +136,6 @@ class ProcessExecutor(ClientExecutor):
                 self.conn_client = Client(address, authkey="client process secret password".encode())
             except Exception as e:
                 pass
-
-    def create_pipe(self):
-        """Create pipe to communicate between child (training) and main (logic) thread."""
-        pipe = FilePipe(root_path="/fl/server", name="training")
-
-        return pipe
 
     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
         self.listen_port = listen_port
@@ -163,25 +148,24 @@ class ProcessExecutor(ClientExecutor):
         for t in args.set:
             command_options += " " + t
         command = (
-            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-            + args.workspace
-            + " -w "
-            + self.startup
-            + " -s fed_client.json "
-            " --set" + command_options + " print_conf=True"
+            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process"
+            f" --workspace {args.workspace}"
+            f" --startup {self.startup}"
+            f" --fed_client fed_client.json"
+            f" --parent_pid {os.getpid()}"
+            f" --set" + command_options + " print_conf=True"
         )
+        # TODO:: this is only supported in UNIX
         # use os.setsid to create new process group ID
         process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
 
         print("training child process ID: {}".format(process.pid))
 
-        client.process = process
+        self.child_process = process
         client.multi_gpu = False
 
         client.status = ClientStatus.STARTED
-        thread = threading.Thread(
-            target=self.wait_training_process_finish, args=(client, args, app_root, app_custom_folder)
-        )
+        thread = threading.Thread(target=self.wait_training_process_finish, args=(client,))
         thread.start()
 
     def check_status(self, client):
@@ -196,11 +180,11 @@ class ProcessExecutor(ClientExecutor):
                 return status_message
             else:
                 return get_status_message(client.status)
-        except:
-            self.logger.error("check_status() execution exception.")
+        except Exception as e:
+            self.logger.error(f"check_status() execution exception: {e}")
             return "execution exception. Please try again."
 
-    def get_run_info(self):
+    def get_run_info(self) -> dict:
         try:
             self.get_conn_client()
 
@@ -211,11 +195,11 @@ class ProcessExecutor(ClientExecutor):
                 return run_info
             else:
                 return {}
-        except:
-            self.logger.error("get_run_info() execution exception.")
+        except Exception as e:
+            self.logger.error(f"get_run_info() execution exception: {e}")
             return {"error": "no info collector. Please try again."}
 
-    def get_errors(self):
+    def get_errors(self) -> Optional[dict]:
         try:
             self.get_conn_client()
 
@@ -226,8 +210,8 @@ class ProcessExecutor(ClientExecutor):
                 return errors_info
             else:
                 return None
-        except:
-            self.logger.error("get_errors() execution exception.")
+        except Exception as e:
+            self.logger.error(f"get_errors() execution exception: {e}")
             return None
 
     def reset_errors(self):
@@ -237,14 +221,14 @@ class ProcessExecutor(ClientExecutor):
             if self.conn_client:
                 data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
                 self.conn_client.send(data)
-        except:
-            self.logger.error("reset_errors() execution exception.")
+        except Exception as e:
+            self.logger.error(f"reset_errors() execution exception: {e}")
 
-    def send_aux_command(self, shareable: Shareable):
+    def send_aux_command(self, aux_message: Shareable) -> Shareable:
         try:
             self.get_conn_client()
             if self.conn_client:
-                data = {"command": AdminCommandNames.AUX_COMMAND, "data": shareable}
+                data = {"command": AdminCommandNames.AUX_COMMAND, "data": aux_message}
                 self.conn_client.send(data)
                 reply = self.conn_client.recv()
                 return reply
@@ -256,28 +240,21 @@ class ProcessExecutor(ClientExecutor):
     def abort_train(self, client):
         if client.status == ClientStatus.STARTED:
             with self.lock:
-                if client.process:
-                    # kill the sub-process group directly
+                if self.child_process:
+                    # wait for client to handle abort
                     if self.conn_client:
                         data = {"command": AdminCommandNames.ABORT, "data": {}}
                         self.conn_client.send(data)
                         self.logger.debug("abort sent")
-                        # wait for client to handle abort
                         time.sleep(2.0)
 
                     # kill the sub-process group directly
-                    try:
-                        os.killpg(os.getpgid(client.process.pid), 9)
-                        self.logger.debug("kill signal sent")
-                    except Exception as e:
-                        pass
-                    client.process.terminate()
+                    self._kill_child_client_process()
                     self.logger.debug("terminated")
 
                 if self.conn_client:
                     self.conn_client.close()
                 self.conn_client = None
-                self.cleanup()
 
         self.logger.info("Client training was terminated.")
 
@@ -288,7 +265,7 @@ class ProcessExecutor(ClientExecutor):
                 self.conn_client.send(data)
                 self.logger.debug("abort_task sent")
 
-    def wait_training_process_finish(self, client, args, app_root, app_custom_folder):
+    def wait_training_process_finish(self, client):
         # wait for the listen_command thread to start, and send "start" message to wake up the connection.
         start = time.time()
         while True:
@@ -302,24 +279,33 @@ class ProcessExecutor(ClientExecutor):
                 break
 
         self.logger.info("waiting for process to finish.")
-        client.process.wait()
-        returncode = client.process.returncode
+        self.child_process.wait()
+        returncode = self.child_process.returncode
         self.logger.info(f"process finished with execution code: {returncode}")
 
         with self.lock:
-            client.process = None
+            self.child_process = None
 
             if self.conn_client:
                 self.conn_client.close()
             self.conn_client = None
 
-        # Not to run cross_validation in a new process anymore
-        client.cross_site_validate = False
         client.status = ClientStatus.STOPPED
+
+    def _kill_child_client_process(self):
+        try:
+            os.killpg(os.getpgid(self.child_process.pid), 9)
+            self.logger.debug("kill child signal sent")
+        except Exception:
+            pass
+        self.child_process.terminate()
+        self.child_process = None
 
     def close(self):
         if self.conn_client:
             data = {"command": AdminCommandNames.SHUTDOWN, "data": {}}
             self.conn_client.send(data)
             self.conn_client = None
-        self.cleanup()
+        with self.lock:
+            if self.child_process:
+                self._kill_child_client_process()
