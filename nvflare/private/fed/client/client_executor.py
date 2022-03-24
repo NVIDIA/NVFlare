@@ -249,7 +249,7 @@ class ProcessExecutor(ClientExecutor):
                         time.sleep(2.0)
 
                     # kill the sub-process group directly
-                    self._kill_child_client_process()
+                    self._kill_child_process()
                     self.logger.debug("terminated")
 
                 if self.conn_client:
@@ -292,7 +292,7 @@ class ProcessExecutor(ClientExecutor):
 
         client.status = ClientStatus.STOPPED
 
-    def _kill_child_client_process(self):
+    def _kill_child_process(self):
         try:
             os.killpg(os.getpgid(self.child_process.pid), 9)
             self.logger.debug("kill child signal sent")
@@ -308,4 +308,4 @@ class ProcessExecutor(ClientExecutor):
             self.conn_client = None
         with self.lock:
             if self.child_process:
-                self._kill_child_client_process()
+                self._kill_child_process()
