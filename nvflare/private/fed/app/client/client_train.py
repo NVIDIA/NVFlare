@@ -220,7 +220,6 @@ def create_admin_agent(
         app_ctx=client_engine,
     )
     client_engine.set_agent(admin_agent)
-    assert admin_agent.app_ctx.admin_agent == admin_agent
     federated_client.set_client_engine(client_engine)
     for processor in req_processors:
         admin_agent.register_processor(processor)
