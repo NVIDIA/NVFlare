@@ -145,7 +145,7 @@ class StaticFileBuilder(Builder):
             config["overseer_agent"] = overseer_agent
         if self.snapshot_persistor:
             config["snapshot_persistor"] = self.snapshot_persistor
-        self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
+        self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, sort_keys=True, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
@@ -213,7 +213,7 @@ class StaticFileBuilder(Builder):
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
 
-        self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config), "t")
+        self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, sort_keys=True, indent=2), "t")
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
@@ -274,7 +274,7 @@ class StaticFileBuilder(Builder):
             overseer_agent.pop("overseer_exists", None)
             agent_config["overseer_agent"] = overseer_agent
         config["admin"].update(agent_config)
-        self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config), "t")
+        self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config, sort_keys=True, indent=2), "t")
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
