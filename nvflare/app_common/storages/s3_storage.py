@@ -25,6 +25,7 @@ from nvflare.apis.storage import StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 
 URI_ROOT = os.path.abspath(os.sep)
+_USER_META_KEY = "user_metadata"
 
 
 @validate_class_methods_args
@@ -41,11 +42,16 @@ class S3Storage(StorageSpec):
             secure: flag for secure (TLS) mode
             bucket_name: name of S3 bucket
 
-        """
+        Raises:
+            RuntimeError: error creating minio S3 client and bucket
 
-        self.s3_client = Minio(endpoint=endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
-        if not self.s3_client.bucket_exists(bucket_name):
-            self.s3_client.make_bucket(bucket_name)
+        """
+        try:
+            self.s3_client = Minio(endpoint=endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
+            if not self.s3_client.bucket_exists(bucket_name):
+                self.s3_client.make_bucket(bucket_name)
+        except Exception as e:
+            raise RuntimeError("Error creating minio s3 client: {}".format(str(e)))
         self.bucket_name = bucket_name
 
     def _object_exists(self, uri: str):
@@ -68,7 +74,8 @@ class S3Storage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if error creating the object
+            RuntimeError:
+                - if error creating the object
                 - if object already exists and overwrite_existing is False
                 - if object will be inside prexisiting object
                 - if object will be at a non-empty directory
@@ -89,14 +96,25 @@ class S3Storage(StorageSpec):
             if self._object_exists(parent_path):
                 raise RuntimeError("cannot create object {} inside preexisting object {}".format(uri, parent_path))
 
-        if not self._object_exists(uri) and (
-            list(self.s3_client.list_objects(self.bucket_name, prefix=uri, include_user_meta=True))
-        ):
+        try:
+            dir_is_nonempty = list(self.s3_client.list_objects(self.bucket_name, prefix=uri, include_user_meta=True))
+        except Exception as e:
+            raise RuntimeError("error listing objects: {}".format(str(e)))
+
+        if not self._object_exists(uri) and dir_is_nonempty:
             raise RuntimeError("cannot create object {} at nonempty directory".format(uri))
 
-        self.s3_client.put_object(
-            self.bucket_name, uri, data=io.BytesIO(data), length=-1, metadata={"user_metadata": meta}, part_size=5242880
-        )
+        try:
+            self.s3_client.put_object(
+                self.bucket_name,
+                uri,
+                data=io.BytesIO(data),
+                length=-1,
+                metadata={_USER_META_KEY: meta},
+                part_size=5242880,
+            )
+        except Exception as e:
+            raise RuntimeError("error putting object into bucket: {}".format(str(e)))
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Update the meta info of the specified object
@@ -110,7 +128,9 @@ class S3Storage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            RuntimeError:
+                - if object does not exist
+                - if error copying object
 
         """
         if not self._object_exists(uri):
@@ -121,13 +141,16 @@ class S3Storage(StorageSpec):
             prev_meta.update(meta)
             meta = prev_meta
 
-        self.s3_client.copy_object(
-            self.bucket_name,
-            uri,
-            CopySource(self.bucket_name, uri),
-            metadata={"user_metadata": meta},
-            metadata_directive=REPLACE,
-        )
+        try:
+            self.s3_client.copy_object(
+                self.bucket_name,
+                uri,
+                CopySource(self.bucket_name, uri),
+                metadata={_USER_META_KEY: meta},
+                metadata_directive=REPLACE,
+            )
+        except Exception as e:
+            raise RuntimeError("error copying object: {}".format(str(e)))
 
     def update_data(self, uri: str, data: ByteString):
         """Update the data info of the specified object
@@ -140,20 +163,25 @@ class S3Storage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            RuntimeError:
+                - if object does not exist
+                - if error putting object into bucket
 
         """
         if not self._object_exists(uri):
             raise RuntimeError("object {} does not exist".format(uri))
 
-        self.s3_client.put_object(
-            self.bucket_name,
-            uri,
-            data=io.BytesIO(data),
-            length=-1,
-            metadata={"user_metadata": self.get_meta(uri)},
-            part_size=5242880,
-        )
+        try:
+            self.s3_client.put_object(
+                self.bucket_name,
+                uri,
+                data=io.BytesIO(data),
+                length=-1,
+                metadata={_USER_META_KEY: self.get_meta(uri)},
+                part_size=5242880,
+            )
+        except Exception as e:
+            raise RuntimeError("error putting object into bucket: {}".format(str(e)))
 
     def list_objects(self, dir_path: str) -> List[str]:
         """List all objects in the specified path.
@@ -161,18 +189,23 @@ class S3Storage(StorageSpec):
         Args:
             path: the path to the objects
 
-        Returns: list of URIs of objects
+        Returns:
+            list of URIs of objects
 
         Raises:
             TypeError: if invalid argument types
+            RuntimeError: if error listing objects
 
         """
         dir_path = dir_path.rstrip(os.sep) + os.sep
-        return [
-            URI_ROOT + obj._object_name
-            for obj in list(self.s3_client.list_objects(self.bucket_name, prefix=dir_path, include_user_meta=True))
-            if obj._metadata
-        ]
+        try:
+            return [
+                URI_ROOT + obj._object_name
+                for obj in list(self.s3_client.list_objects(self.bucket_name, prefix=dir_path, include_user_meta=True))
+                if obj._metadata
+            ]
+        except Exception as e:
+            raise RuntimeError("error listing objects: {}".format(str(e)))
 
     def get_meta(self, uri: str) -> dict:
         """Get user defined meta info of the specified object
@@ -180,17 +213,25 @@ class S3Storage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            RuntimeError:
+                - if object does not exist
+                - if error accessing object
 
         """
         if not self._object_exists(uri):
             raise RuntimeError("object {} does not exist".format(uri))
 
-        return ast.literal_eval(self.s3_client.stat_object(self.bucket_name, uri)._metadata["x-amz-meta-user_metadata"])
+        try:
+            return ast.literal_eval(
+                self.s3_client.stat_object(self.bucket_name, uri)._metadata["x-amz-meta-{}".format(_USER_META_KEY)]
+            )
+        except Exception as e:
+            raise RuntimeError("error accessing object: {}".format(str(e)))
 
     def get_full_meta(self, uri: str) -> dict:
         """Get full meta info of the specified object
@@ -198,17 +239,23 @@ class S3Storage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            RuntimeError:
+                - if object does not exist
+                - if error accessing object
 
         """
         if not self._object_exists(uri):
             raise RuntimeError("object {} does not exist".format(uri))
 
-        return self.s3_client.stat_object(self.bucket_name, uri)
+        try:
+            return self.s3_client.stat_object(self.bucket_name, uri)
+        except Exception as e:
+            raise RuntimeError("error accessing object: {}".format(str(e)))
 
     def get_data(self, uri: str) -> bytes:
         """Get data of the specified object
@@ -216,17 +263,23 @@ class S3Storage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: data of the object.
+        Returns:
+            data of the object.
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            RuntimeError:
+                - if object does not exist
+                - if error accessing object
 
         """
         if not self._object_exists(uri):
             raise RuntimeError("object {} does not exist".format(uri))
 
-        return self.s3_client.get_object(self.bucket_name, uri).data
+        try:
+            return self.s3_client.get_object(self.bucket_name, uri).data
+        except Exception as e:
+            raise RuntimeError("error accessing object: {}".format(str(e)))
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Get both data and meta of the specified object
@@ -234,7 +287,8 @@ class S3Storage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: meta info and data of the object.
+        Returns:
+            meta info and data of the object.
 
         Raises:
             TypeError: if invalid argument types
@@ -256,10 +310,15 @@ class S3Storage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            RuntimeError:
+                - if object does not exist
+                - if error removing object
 
         """
         if not self._object_exists(uri):
             raise RuntimeError("object {} does not exist".format(uri))
 
-        self.s3_client.remove_object(self.bucket_name, uri)
+        try:
+            self.s3_client.remove_object(self.bucket_name, uri)
+        except Exception as e:
+            raise RuntimeError("error removing object: {}".format(str(e)))

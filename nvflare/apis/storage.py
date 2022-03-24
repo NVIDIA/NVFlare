@@ -97,7 +97,8 @@ class StorageSpec(ABC):
         Args:
             path: the path to the objects
 
-        Returns: list of URIs of objects
+        Returns:
+            list of URIs of objects
 
         """
         pass
@@ -109,7 +110,8 @@ class StorageSpec(ABC):
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises exception when:
         - invalid args
@@ -125,7 +127,8 @@ class StorageSpec(ABC):
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises exception when:
         - invalid args
@@ -141,7 +144,8 @@ class StorageSpec(ABC):
         Args:
             uri: URI of the object
 
-        Returns: data of the object.
+        Returns:
+            data of the object.
 
         Raises exception when:
         - invalid args
@@ -157,7 +161,8 @@ class StorageSpec(ABC):
         Args:
             uri: URI of the object
 
-        Returns: meta info and data of the object.
+        Returns:
+            meta info and data of the object.
 
         Raises exception when:
         - invalid args

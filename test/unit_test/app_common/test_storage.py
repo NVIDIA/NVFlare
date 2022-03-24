@@ -46,22 +46,18 @@ def random_meta():
     return {random.getrandbits(8): random.getrandbits(8) for _ in range(32)}
 
 
-tmp_dir = None
-storages = defaultdict()
-minio_ps = None
-
-
 @pytest.mark.xdist_group(name="storage_tests_group")
-@pytest.mark.parametrize("storage", [FilesystemStorage, S3Storage])
+@pytest.mark.parametrize("storage", ["FilesystemStorage", "S3Storage"])
 class TestStorage:
+
+    tmp_dir = None
+    storages = defaultdict()
+    minio_ps = None
 
     @classmethod
     def setup_class(cls):
-        global tmp_dir
-        global minio_ps
-
-        tmp_dir = tempfile.TemporaryDirectory()
-        tmp_dir_name = tmp_dir.name
+        cls.tmp_dir = tempfile.TemporaryDirectory()
+        tmp_dir_name = cls.tmp_dir.name
 
         # start local minio server as a compatible S3 bucket for testing
 
@@ -73,23 +69,23 @@ class TestStorage:
 
         env = os.environ.update({"MINIO_ROOT_USER": "admin", "MINIO_ROOT_PASSWORD": "password"})
         for command in commands:
-            minio_ps = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
+            cls.minio_ps = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
             if command[0] != "./minio":
-                minio_ps.communicate()
+                cls.minio_ps.communicate()
 
         time.sleep(15)
 
-        storages[FilesystemStorage] = FilesystemStorage(root_dir=os.path.join(tmp_dir_name, "filesystem-storage"))
-        storages[S3Storage] = S3Storage(endpoint="localhost:9000", access_key="admin", secret_key="password", secure=False, bucket_name="nvflare-storage")
+        cls.storages["FilesystemStorage"] = FilesystemStorage(root_dir=os.path.join(tmp_dir_name, "filesystem-storage"))
+        cls.storages["S3Storage"] = S3Storage(endpoint="localhost:9000", access_key="admin", secret_key="password", secure=False, bucket_name="nvflare-storage")
 
         print("Finished setup.")
 
     @classmethod
     def teardown_class(cls):
         os.remove("minio")
-        if isinstance(minio_ps, subprocess.Popen):
-            minio_ps.kill()
-        tmp_dir.cleanup()
+        if isinstance(cls.minio_ps, subprocess.Popen):
+            cls.minio_ps.kill()
+        cls.tmp_dir.cleanup()
 
         print("Finished teardown.")
 
@@ -97,7 +93,7 @@ class TestStorage:
     @pytest.mark.parametrize("n_folders", [5, 20])
     @pytest.mark.parametrize("path_depth", [3, 10])
     def test_large_storage(self, n_folders, n_files, path_depth, storage):
-        storage = storages[storage]
+        storage = self.storages[storage]
         test_tmp_dir = tempfile.TemporaryDirectory()
         test_tmp_dir_name = test_tmp_dir.name
         dir_to_files = defaultdict(list)
@@ -172,7 +168,7 @@ class TestStorage:
         ],
     )
     def test_invalid_inputs(self, storage, uri, data, meta, overwrite_existing):
-        storage = storages[storage]
+        storage = self.storages[storage]
 
         invalid_uri = 1234
         invalid_data = "not a byte string"
@@ -210,7 +206,7 @@ class TestStorage:
     )
     def test_create_read(self, storage, uri, data, meta, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
 
         storage.create_object(uri, data, meta, overwrite_existing=True)
 
@@ -231,7 +227,7 @@ class TestStorage:
     )
     def test_create_overwrite(self, storage, uri, data, meta, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
 
         storage.create_object(uri, random_data(), random_meta(), overwrite_existing=True)
         storage.create_object(uri, data, meta, overwrite_existing=True)
@@ -247,7 +243,7 @@ class TestStorage:
     )
     def test_create_nonempty(self, storage, uri, data, meta, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
             storage.create_object(uri, data, meta, True)
 
         # cannot create object at nonempty directory
@@ -263,7 +259,7 @@ class TestStorage:
     )
     def test_create_inside_prexisting(self, storage, uri, data, meta, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
             storage.create_object(uri, data, meta, True)
 
         # cannot create object inside a prexisiting object
@@ -281,7 +277,7 @@ class TestStorage:
     )
     def test_list(self, storage, dirpath, dir_to_files, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
             dir_to_files = defaultdict(list)
             for i in range(10):
                 object_uri = os.path.join(dirpath, str(i))
@@ -301,7 +297,7 @@ class TestStorage:
     )
     def test_delete(self, storage, uri, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
             storage.create_object(uri, random_data(), random_meta(), overwrite_existing=True)
 
         storage.delete_object(uri)
@@ -328,7 +324,7 @@ class TestStorage:
     )
     def test_data_read_update(self, storage, uri, data, meta, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
             storage.create_object(uri, data, meta, overwrite_existing=True)
 
         # get_data()
@@ -350,7 +346,7 @@ class TestStorage:
     )
     def test_meta_read_update(self, storage, uri, data, meta, unittest):
         if unittest:
-            storage = storages[storage]
+            storage = self.storages[storage]
             storage.create_object(uri, data, meta, overwrite_existing=True)
 
         # get_meta()

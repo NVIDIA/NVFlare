@@ -81,7 +81,8 @@ class FilesystemStorage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if error creating the object
+            RuntimeError:
+                - if error creating the object
                 - if object already exists and overwrite_existing is False
                 - if object will be inside prexisiting object
                 - if object will be at a non-empty directory
@@ -169,7 +170,8 @@ class FilesystemStorage(StorageSpec):
         Args:
             path: the path to the objects
 
-        Returns: list of URIs of objects
+        Returns:
+            list of URIs of objects
 
         Raises:
             TypeError: if invalid argument types
@@ -193,7 +195,8 @@ class FilesystemStorage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises:
             TypeError: if invalid argument types
@@ -213,7 +216,8 @@ class FilesystemStorage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises:
             TypeError: if invalid argument types
@@ -228,7 +232,8 @@ class FilesystemStorage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: data of the object.
+        Returns:
+            data of the object.
 
         Raises:
             TypeError: if invalid argument types
@@ -248,7 +253,8 @@ class FilesystemStorage(StorageSpec):
         Args:
             uri: URI of the object
 
-        Returns: meta info and data of the object.
+        Returns:
+            meta info and data of the object.
 
         Raises:
             TypeError: if invalid argument types
