@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import math
 import os
 import shlex
 import subprocess
@@ -53,7 +52,6 @@ class ClientExecutor(object):
             app_root: the root folder of the running APP
             app_custom_folder: FL application custom folder
             listen_port: port to listen the command.
-
         """
         pass
 
@@ -150,6 +148,7 @@ class ProcessExecutor(ClientExecutor):
         self.listen_port = 6000
 
         self.lock = threading.Lock()
+        self.child_process = None
 
     def get_conn_client(self):
         if not self.conn_client:
@@ -166,14 +165,6 @@ class ProcessExecutor(ClientExecutor):
         return pipe
 
     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-        # self.pool = multiprocessing.Pool(processes=1)
-        # result = self.pool.apply_async(_start_client, (client, args, app_root))
-
-        # self.conn_client, child_conn = mp.Pipe()
-        # process = multiprocessing.Process(target=_start_client, args=(client, args, app_root, child_conn, self.pipe))
-        # # process = multiprocessing.Process(target=_start_new)
-        # process.start()
-
         self.listen_port = listen_port
 
         new_env = os.environ.copy()
@@ -184,25 +175,24 @@ class ProcessExecutor(ClientExecutor):
         for t in args.set:
             command_options += " " + t
         command = (
-            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-            + args.workspace
-            + " -w "
-            + self.startup
-            + " -s fed_client.json "
-            " --set" + command_options + " print_conf=True"
+            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process"
+            f" --workspace {args.workspace}"
+            f" --startup {self.startup}"
+            f" --fed_client fed_client.json"
+            f" --parent_pid {os.getpid()}"
+            f" --set" + command_options + " print_conf=True"
         )
+        # TODO:: this is only supported in UNIX
         # use os.setsid to create new process group ID
         process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
 
         print("training child process ID: {}".format(process.pid))
 
-        client.process = process
+        self.child_process = process
         client.multi_gpu = False
 
         client.status = ClientStatus.STARTED
-        thread = threading.Thread(
-            target=self.wait_training_process_finish, args=(client, args, app_root, app_custom_folder)
-        )
+        thread = threading.Thread(target=self.wait_training_process_finish, args=(client,))
         thread.start()
 
     def check_status(self, client):
@@ -217,8 +207,8 @@ class ProcessExecutor(ClientExecutor):
                 return status_message
             else:
                 return get_status_message(client.status)
-        except:
-            self.logger.error("Check_status execution exception.")
+        except Exception as e:
+            self.logger.error(f"check_status() execution exception: {e}")
             return "execution exception. Please try again."
 
     def get_run_info(self):
@@ -232,8 +222,8 @@ class ProcessExecutor(ClientExecutor):
                 return run_info
             else:
                 return {}
-        except:
-            self.logger.error("get_run_info() execution exception.")
+        except Exception as e:
+            self.logger.error(f"get_run_info() execution exception: {e}")
             return {"error": "no info collector. Please try again."}
 
     def get_errors(self):
@@ -247,8 +237,8 @@ class ProcessExecutor(ClientExecutor):
                 return errors_info
             else:
                 return None
-        except:
-            self.logger.error("get_errors() execution exception.")
+        except Exception as e:
+            self.logger.error(f"get_errors() execution exception: {e}")
             return None
 
     def reset_errors(self):
@@ -258,8 +248,8 @@ class ProcessExecutor(ClientExecutor):
             if self.conn_client:
                 data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
                 self.conn_client.send(data)
-        except:
-            self.logger.error("reset_errors() execution exception.")
+        except Exception as e:
+            self.logger.error(f"reset_errors() execution exception: {e}")
 
     def send_aux_command(self, shareable: Shareable):
         try:
@@ -275,38 +265,20 @@ class ProcessExecutor(ClientExecutor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def abort_train(self, client):
-        # if client.status == ClientStatus.CROSS_SITE_VALIDATION:
-        #     # Only aborts cross site validation.
-        #     client.abort()
-        # elif client.status == ClientStatus.TRAINING_STARTED:
         if client.status == ClientStatus.STARTED:
             with self.lock:
-                if client.process:
-                    # if client.platform == 'PT' and client.multi_gpu:
-                    #     # kill the sub-process group directly
-                    #     os.killpg(os.getpgid(client.process.pid), 9)
-                    # else:
-                    #     client.process.terminate()
-
-                    # kill the sub-process group directly
+                if self.child_process:
+                    # wait for client to handle abort
                     if self.conn_client:
                         data = {"command": AdminCommandNames.ABORT, "data": {}}
                         self.conn_client.send(data)
                         self.logger.debug("abort sent")
-                        # wait for client to handle abort
                         time.sleep(2.0)
 
                     # kill the sub-process group directly
-                    try:
-                        os.killpg(os.getpgid(client.process.pid), 9)
-                        self.logger.debug("kill signal sent")
-                    except Exception as e:
-                        pass
-                    client.process.terminate()
+                    self._kill_child_process()
                     self.logger.debug("terminated")
 
-                # if self.pool:
-                #     self.pool.terminate()
                 if self.conn_client:
                     self.conn_client.close()
                 self.conn_client = None
@@ -321,7 +293,7 @@ class ProcessExecutor(ClientExecutor):
                 self.conn_client.send(data)
                 self.logger.debug("abort_task sent")
 
-    def wait_training_process_finish(self, client, args, app_root, app_custom_folder):
+    def wait_training_process_finish(self, client):
         # wait for the listen_command thread to start, and send "start" message to wake up the connection.
         start = time.time()
         while True:
@@ -335,84 +307,34 @@ class ProcessExecutor(ClientExecutor):
                 break
 
         self.logger.info("waiting for process to finish.")
-        client.process.wait()
-        returncode = client.process.returncode
+        self.child_process.wait()
+        returncode = self.child_process.returncode
         self.logger.info(f"process finished with execution code: {returncode}")
 
         with self.lock:
-            client.process = None
+            self.child_process = None
 
             if self.conn_client:
                 self.conn_client.close()
             self.conn_client = None
 
-        # # result.get()
-        # self.pool.close()
-        # self.pool.join()
-        # self.pool.terminate()
-
-        # Not to run cross_validation in a new process any more.
-        client.cross_site_validate = False
-
         client.status = ClientStatus.STOPPED
+
+    def _kill_child_process(self):
+        try:
+            os.killpg(os.getpgid(self.child_process.pid), 9)
+            self.logger.debug("kill child signal sent")
+        except Exception:
+            pass
+        self.child_process.terminate()
+        self.child_process = None
 
     def close(self):
         if self.conn_client:
             data = {"command": AdminCommandNames.SHUTDOWN, "data": {}}
             self.conn_client.send(data)
             self.conn_client = None
+        with self.lock:
+            if self.child_process:
+                self._kill_child_process()
         self.cleanup()
-
-
-# class ThreadExecutor(ClientExecutor):
-#     def __init__(self, client, executor):
-#         self.client = client
-#         self.executor = executor
-
-#     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-#         future = self.executor.submit(lambda p: _start_client(*p), [client, args, app_root])
-
-#     def start_mgpu_train(self, client, args, app_root, gpu_number, app_custom_folder, listen_port):
-#         self.start_train(client, args, app_root)
-
-#     def check_status(self, client):
-#         return get_status_message(self.client.status)
-
-#     def abort_train(self, client):
-#         self.client.train_end = True
-#         self.client.fitter.train_ctx.ask_to_stop_immediately()
-#         self.client.fitter.train_ctx.set_prop("early_end", True)
-#         # self.client.model_manager.close()
-#         # self.client.status = ClientStatus.TRAINING_STOPPED
-#         return "Aborting the client..."
-
-
-def update_client_properties(client, trainer):
-    # servers = [{t['name']: t['service']} for t in trainer.server_config]
-    retry_timeout = 30
-    # if trainer.client_config['retry_timeout']:
-    #     retry_timeout = trainer.client_config['retry_timeout']
-    client.client_args = trainer.client_config
-    # client.servers = sorted(servers)[0]
-    # client.model_manager.federated_meta = {task_name: list() for task_name in tuple(client.servers)}
-    exclude_vars = trainer.client_config.get("exclude_vars", "dummy")
-    # client.model_manager.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
-    # client.model_manager.privacy_policy = trainer.privacy
-    # client.model_manager.model_reader_writer = trainer.model_reader_writer
-    # client.model_manager.model_validator = trainer.model_validator
-    # client.pool = ThreadPool(len(client.servers))
-    # client.communicator.ssl_args = trainer.client_config
-    # client.communicator.secure_train = trainer.secure_train
-    # client.communicator.model_manager = client.model_manager
-    client.communicator.should_stop = False
-    client.communicator.retry = int(math.ceil(float(retry_timeout) / 5))
-    # client.communicator.outbound_filters = trainer.outbound_filters
-    # client.communicator.inbound_filters = trainer.inbound_filters
-    client.handlers = trainer.handlers
-    # client.inbound_filters = trainer.inbound_filters
-    client.executors = trainer.executors
-    # client.task_inbound_filters = trainer.task_inbound_filters
-    # client.task_outbound_filters = trainer.task_outbound_filters
-    # client.secure_train = trainer.secure_train
-    client.heartbeat_done = False
-    # client.fl_ctx = FLContext()

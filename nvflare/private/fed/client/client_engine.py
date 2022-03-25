@@ -23,20 +23,22 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ClientStatusKey
+from nvflare.private.defs import ClientStatusKey, EngineConstant
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
+from .fed_client import FederatedClient
 
 
 class ClientEngine(ClientEngineInternalSpec):
     """ClientEngine runs in the client parent process."""
 
-    def __init__(self, client, client_name, sender, args, rank, workers=5):
+    def __init__(self, client: FederatedClient, client_name, sender, args, rank, workers=5):
         """To init the ClientEngine.
 
         Args:
@@ -52,8 +54,8 @@ class ClientEngine(ClientEngineInternalSpec):
         self.sender = sender
         self.args = args
         self.rank = rank
-        self.client.process = None
         self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
+        self.admin_agent = None
 
         self.run_number = -1
         self.status = MachineStatus.STOPPED
@@ -66,21 +68,9 @@ class ClientEngine(ClientEngineInternalSpec):
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent
 
-    def _get_open_port(self):
-        import socket
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("", 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-        s.close()
-        return port
-
     def do_validate(self, req: Message):
         self.logger.info("starting cross site validation.")
         future = self.executor.submit(lambda p: _do_validate(*p), [self.sender, req])
-        # thread = threading.Thread(target=_do_validate, args=(self.sender, req))
-        # thread.start()
 
         return "validate process started."
 
@@ -124,7 +114,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
-        open_port = self._get_open_port()
+        open_port = get_open_ports(1)[0]
         self._write_token_file(run_number, open_port)
         self.run_number = run_number
 
@@ -140,17 +130,11 @@ class ClientEngine(ClientEngineInternalSpec):
         return self.client.client_name
 
     def _write_token_file(self, run_number, open_port):
-        token_file = os.path.join(self.args.workspace, "client_token.txt")
+        token_file = os.path.join(self.args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         if os.path.exists(token_file):
             os.remove(token_file)
         with open(token_file, "wt") as f:
             f.write("%s\n%s\n%s\n%s\n" % (self.client.token, run_number, self.client.client_name, open_port))
-
-    def wait_process_complete(self):
-        self.client.process.wait()
-
-        # self.client.cross_validation()
-        self.client.status = ClientStatus.STOPPED
 
     def remove_custom_path(self):
         regex = re.compile(".*/run_.*/custom")
@@ -170,7 +154,6 @@ class ClientEngine(ClientEngineInternalSpec):
             return "Client app is starting, please wait for client to have started before abort."
 
         self.client_executor.abort_train(self.client)
-        # self.run_number = -1
 
         return "Abort signal has been sent to the client App."
 
@@ -183,7 +166,6 @@ class ClientEngine(ClientEngineInternalSpec):
             return "Client app is starting, please wait for started before abort_task."
 
         self.client_executor.abort_task(self.client)
-        # self.run_number = -1
 
         return "Abort signal has been sent to the current task. "
 
@@ -204,8 +186,6 @@ class ClientEngine(ClientEngineInternalSpec):
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
-        # if not os.path.exists('/tmp/tmp'):
-        #     os.makedirs('/tmp/tmp')
         dest = os.path.join(self.args.workspace, "run_" + str(run_num), "app_" + client_name)
         # Remove the previous deployed app.
         if os.path.exists(dest):
@@ -248,7 +228,6 @@ def _do_validate(sender, message):
     print("Generating processing result ......")
     reply = Message(topic=message.topic, body="")
     sender.send_result(reply)
-    pass
 
 
 def _shutdown_client(client, admin_agent, touch_file):
@@ -261,11 +240,7 @@ def _shutdown_client(client, admin_agent, touch_file):
         time.sleep(3)
         client.close()
 
-        if client.process:
-            client.process.terminate()
-
         admin_agent.shutdown()
     except BaseException as e:
         traceback.print_exc()
         print("FL client execution exception: " + str(e))
-        # client.status = ClientStatus.TRAINING_EXCEPTION
