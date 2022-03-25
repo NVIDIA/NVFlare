@@ -13,9 +13,9 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Dict, List
 
-from nvflare.mt.job_def import Job, RunStatus
+from nvflare.apis.job_def import Job, RunStatus
 
 
 class JobDefManagerSpec(ABC):
@@ -41,6 +41,11 @@ class JobDefManagerSpec(ABC):
     @abstractmethod
     def get_job(self, jid: str) -> Job:
         """Get the info for a Job."""
+        pass
+
+    @abstractmethod
+    def get_apps(self, job: Job) -> Dict[str, bytes]:
+        """Get the apps of a Job."""
         pass
 
     @abstractmethod

@@ -30,13 +30,13 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
+from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.study_manager_spec import StudyManagerSpec
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
-from nvflare.mt.job_def_manager import SimpleJobDefManager
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector

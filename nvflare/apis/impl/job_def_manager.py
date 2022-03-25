@@ -15,15 +15,17 @@
 import datetime
 import os
 import pathlib
+import shutil
 import time
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+from nvflare.apis.job_def import Job, JobMetaKey, job_from_meta
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.storage import StorageSpec
 from nvflare.apis.study_manager_spec import StudyManagerSpec
-from nvflare.mt.job_def import Job, JobMetaKey, job_from_meta
-from nvflare.mt.job_def_manager_spec import JobDefManagerSpec, RunStatus
+from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
 
 class _JobFilter(ABC):
@@ -74,12 +76,17 @@ class _ReviewerFilter(_JobFilter):
 
 
 class SimpleJobDefManager(JobDefManagerSpec):
-    def __init__(self, study_manager: StudyManagerSpec, store: StorageSpec, uri_root: str = "jobs"):
+    def __init__(
+        self, study_manager: StudyManagerSpec, store: StorageSpec, uri_root: str = "jobs", temp_dir: str = "/tmp"
+    ):
         super().__init__()
         self.store = store
         self.uri_root = uri_root
         self.result_uri_root = "results"
         self.study_manager = study_manager
+        if not os.path.isdir(temp_dir):
+            raise ValueError("temp_dir {} is not a valid dir".format(temp_dir))
+        self.temp_dir = temp_dir
 
     def job_uri(self, jid: str):
         return os.path.join(self.uri_root, jid)
@@ -134,6 +141,18 @@ class SimpleJobDefManager(JobDefManagerSpec):
         updated_meta = {JobMetaKey.RESULT_LOCATION: result_uri}
         self.store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return self.get_job(jid)
+
+    def get_apps(self, job: Job) -> Dict[str, bytes]:
+        data_bytes = self.store.get_data(self.job_uri(job.job_id))
+        job_id_dir = os.path.join(self.temp_dir, job.job_id)
+        if os.path.exists(job_id_dir):
+            shutil.rmtree(job_id_dir)
+        os.mkdir(job_id_dir)
+        unzip_all_from_bytes(data_bytes, job_id_dir)
+        result_dict = {}
+        for app in job.get_deployment():
+            result_dict[app] = zip_directory_to_bytes(job_id_dir, app)
+        return result_dict
 
     def get_content(self, jid: str) -> bytes:
         return self.store.get_data(self.job_uri(jid))
