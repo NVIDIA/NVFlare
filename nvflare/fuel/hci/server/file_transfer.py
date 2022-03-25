@@ -20,6 +20,7 @@ import traceback
 from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -31,7 +32,6 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.mt.job_def import JobMetaKey
 
 
 class FileTransferModule(CommandModule):

@@ -16,8 +16,6 @@ import copy
 from enum import Enum
 from typing import Dict, List
 
-from .run_manager_spec import Resources
-
 
 class RunStatus(str, Enum):
     SUBMITTED = "SUBMITTED"
@@ -63,14 +61,11 @@ class Job:
 
         self.run_record = None  # run number, dispatched time/UUID, finished time, completion code (normal, aborted)
 
-    def get_num_clients(self):
-        return self.num_clients
-
     def get_deployment(self) -> Dict[str, List[str]]:
         """Return deployment configuration."""
         return self.deploy_map
 
-    def get_resource_requirements(self) -> Dict[str, Resources]:
+    def get_resource_requirements(self):
         """Return app resource requirements."""
         return self.resource_spec
 
@@ -98,7 +93,7 @@ def job_from_meta(meta: dict) -> Job:
     return job
 
 
-def get_site_require_resource_from_job(job: Job) -> Dict[str, Resources]:
+def get_site_require_resource_from_job(job: Job):
     """Get the total resource needed by each site to run this Job."""
     required_resources = job.get_resource_requirements()
     deployment = job.get_deployment()

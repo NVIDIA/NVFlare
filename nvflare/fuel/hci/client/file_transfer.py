@@ -18,6 +18,7 @@ import pickle
 import traceback
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -30,7 +31,6 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.mt.job_def import JobMetaKey
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
