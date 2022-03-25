@@ -12,18 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 from typing import ByteString, List, Tuple
 
 
-class StorageSpec(object):
+class StorageSpec(ABC):
+    """Functional spec of object storage.
+
+    An object is identified by a URI (unique resource identifier).
+    Each object contains:
+        - content (data)
+        - meta info that describes the control info of the object.
 
     """
-    This defines the functional spec of object storage.
-    Object - an object is identified by a URI (unique resource identifier).
-    An object has content (data)
-    An object has meta info that describes the control info of the object.
-    """
 
+    @abstractmethod
     def create_object(self, uri: str, data: ByteString, meta: dict, overwrite_existing: bool):
         """Create a new object or update an existing object
 
@@ -36,7 +39,6 @@ class StorageSpec(object):
         Returns:
 
         Raises exception when:
-
         - invalid URI specification
         - invalid args
         - object already exists and overwrite_existing is False
@@ -51,6 +53,7 @@ class StorageSpec(object):
         """
         pass
 
+    @abstractmethod
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Update the meta info of the specified object
 
@@ -62,14 +65,14 @@ class StorageSpec(object):
         Returns:
 
         Raises exception when:
-
-        - no such object
         - invalid args
+        - no such object
         - error updating the object
 
         """
         pass
 
+    @abstractmethod
     def update_data(self, uri: str, data: ByteString):
         """Update the meta info of the specified object
 
@@ -80,85 +83,95 @@ class StorageSpec(object):
         Returns:
 
         Raises exception when:
-
-        - no such object
         - invalid args
+        - no such object
         - error updating the object
 
         """
         pass
 
+    @abstractmethod
     def list_objects(self, path: str) -> List[str]:
         """List all objects in the specified path.
 
         Args:
             path: the path to the objects
 
-        Returns: list of URIs of objects
+        Returns:
+            list of URIs of objects
 
         """
         pass
 
+    @abstractmethod
     def get_meta(self, uri: str) -> dict:
         """Get user defined meta info of the specified object
 
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises exception when:
-
+        - invalid args
         - no such object
 
         """
         pass
 
+    @abstractmethod
     def get_full_meta(self, uri: str) -> dict:
         """Get full meta info of the specified object
 
         Args:
             uri: URI of the object
 
-        Returns: meta info of the object.
+        Returns:
+            meta info of the object.
 
         Raises exception when:
-
+        - invalid args
         - no such object
 
         """
         pass
 
+    @abstractmethod
     def get_data(self, uri: str) -> bytes:
         """Get data of the specified object
 
         Args:
             uri: URI of the object
 
-        Returns: data of the object.
+        Returns:
+            data of the object.
 
         Raises exception when:
-
+        - invalid args
         - no such object
 
         """
         pass
 
+    @abstractmethod
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Get both data and meta of the specified object
 
         Args:
             uri: URI of the object
 
-        Returns: meta info and data of the object.
+        Returns:
+            meta info and data of the object.
 
         Raises exception when:
-
+        - invalid args
         - no such object
 
         """
         pass
 
+    @abstractmethod
     def delete_object(self, uri: str):
         """Delete specified object
 
@@ -168,7 +181,7 @@ class StorageSpec(object):
         Returns:
 
         Raises exception when:
-
+        - invalid args
         - no such object
 
         """
