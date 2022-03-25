@@ -23,25 +23,40 @@ import yaml
 
 
 def get_input(prompt, item_list, multiple=False):
-    answer = input(prompt)
-    result = None
-    if multiple:
+    while True:
+        answer = input(prompt)
+        result = None
+        if multiple:
+            try:
+                if answer == "":
+                    print("None of the choices is selected.")
+                    result = []
+                else:
+                    trimmed = set(answer.split(","))
+                    result = [item_list[int(i)] for i in trimmed]
+                    print(f"{result} selected after duplicate inputs removed.")
+            except BaseException:
+                print("Input contains errors (non-integer or out of index range)")
+        else:
+            try:
+                result = item_list[int(answer)]
+            except ValueError:
+                print(f"Expect integer but got {answer.__class__.__name__}")
+            except IndexError:
+                print("Number out of index range")
+        if result is not None:
+            break
+    return result
+
+
+def get_date_input(prompt):
+    while True:
+        answer = input(prompt)
         try:
-            if answer == "":
-                result = []
-            else:
-                result = [item_list[int(i)] for i in answer.split(",")]
-        except BaseException:
-            print("Input contains errors (non-integer or out of index range)")
-    else:
-        try:
-            result = item_list[int(answer)]
-        except ValueError:
-            print(f"Expect integer but got {answer.__class__.__name__}")
-        except IndexError:
-            print("Number out of index range")
-    if result is None:
-        exit(1)
+            result = datetime.strptime(answer, "%m/%d/%Y").date().isoformat()
+            break
+        except:
+            print(f"Expect MM/DD/YYYY but got {answer}")
     return result
 
 
@@ -75,49 +90,42 @@ def main():
 
     admin_list_string = ", ".join([f"{i}:{v}" for i, v in enumerate(admin_list)])
     client_list_string = ", ".join([f"{i}:{v}" for i, v in enumerate(client_list)])
-    study_name = input("Please enter the name of this study: ")
-    study_description = input("and brief description: ")
+
+    name = input("Please enter the name of this study: ")
+    description = input("and brief description: ")
     contact = get_input(f"select one admin for contact {admin_list_string}: ", admin_list)
-    participanting_admins = get_input(
-        f"select participanting admins (separated by ',') {admin_list_string} ", admin_list, multiple=True
+
+    participating_admins = get_input(
+        f"select participating_admins admins (separated by ',') {admin_list_string} ", admin_list, multiple=True
     )
-    participanting_clients = get_input(
-        f"select participanting clients (separated by ',') {client_list_string} ", client_list, multiple=True
+    participating_clients = get_input(
+        f"select participating clients (separated by ',') {client_list_string} ", client_list, multiple=True
     )
-    participanting_clients_string = ", ".join([f"{i}:{v}" for i, v in enumerate(participanting_clients)])
-    reviewer_dict = dict()
-    for admin in participanting_admins:
-        reviewed_clients = get_input(
-            f"what clients will reviewer {admin} review {participanting_clients_string} ",
-            participanting_clients,
-            multiple=True,
-        )
-        reviewer_dict[admin] = reviewed_clients
-    start_date = input("input start date of this study (MM/DD/YYYY): ")
-    try:
-        start_date = datetime.strptime(start_date, "%m/%d/%Y").date().isoformat()
-    except:
-        print(f"Expect MM/DD/YYYY but got {start_date}")
-        exit(1)
-    end_date = input("input end date of this study (MM/DD/YYYY): ")
-    try:
-        end_date = datetime.strptime(end_date, "%m/%d/%Y").date().isoformat()
-    except:
-        print(f"Expect MM/DD/YYYY but got {end_date}")
-        exit(1)
+    participating_clients_string = ", ".join([f"{i}:{v}" for i, v in enumerate(participating_clients)])
+    # reviewer_dict = dict()
+    # for admin in participating_admins:
+    #     reviewed_clients = get_input(
+    #         f"what clients will reviewer {admin} review {participating_clients_string} ",
+    #         participating_clients,
+    #         multiple=True,
+    #     )
+    #     reviewer_dict[admin] = reviewed_clients
+    start_date = get_date_input("input start date of this study (MM/DD/YYYY): ")
+    end_date = get_date_input("input end date of this study (MM/DD/YYYY): ")
 
     study_config = dict(
-        study_name=study_name,
-        description=study_description,
+        name=name,
+        description=description,
         contact=contact,
-        participanting_admins=participanting_admins,
-        participanting_clients=participanting_clients,
-        reviewers=reviewer_dict,
+        participating_admins=participating_admins,
+        participating_clients=participating_clients,
+        # reviewers=reviewer_dict,
         start_date=start_date,
         end_date=end_date,
     )
-    with open(f"{study_name}.json", "wt") as f:
+    with open(f"{name}.json", "wt") as f:
         f.write(json.dumps(study_config, indent=2))
+    print(f"study config file was generated at {name}.json")
 
 
 if __name__ == "__main__":
