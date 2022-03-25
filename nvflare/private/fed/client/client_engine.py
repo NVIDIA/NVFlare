@@ -23,7 +23,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ClientStatusKey, EngineConstant
@@ -32,13 +31,12 @@ from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
-from .fed_client import FederatedClient
 
 
 class ClientEngine(ClientEngineInternalSpec):
     """ClientEngine runs in the client parent process."""
 
-    def __init__(self, client: FederatedClient, client_name, sender, args, rank, workers=5):
+    def __init__(self, client, client_name, sender, args, rank, workers=5):
         """To init the ClientEngine.
 
         Args:
@@ -68,9 +66,21 @@ class ClientEngine(ClientEngineInternalSpec):
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent
 
+    def _get_open_port(self):
+        import socket
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+        s.close()
+        return port
+
     def do_validate(self, req: Message):
         self.logger.info("starting cross site validation.")
         future = self.executor.submit(lambda p: _do_validate(*p), [self.sender, req])
+        # thread = threading.Thread(target=_do_validate, args=(self.sender, req))
+        # thread.start()
 
         return "validate process started."
 
@@ -114,7 +124,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
-        open_port = get_open_ports(1)[0]
+        open_port = self._get_open_port()
         self._write_token_file(run_number, open_port)
         self.run_number = run_number
 
@@ -186,6 +196,8 @@ class ClientEngine(ClientEngineInternalSpec):
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
+        # if not os.path.exists('/tmp/tmp'):
+        #     os.makedirs('/tmp/tmp')
         dest = os.path.join(self.args.workspace, "run_" + str(run_num), "app_" + client_name)
         # Remove the previous deployed app.
         if os.path.exists(dest):

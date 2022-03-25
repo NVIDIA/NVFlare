@@ -165,6 +165,13 @@ class ProcessExecutor(ClientExecutor):
         return pipe
 
     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
+        # self.pool = multiprocessing.Pool(processes=1)
+        # result = self.pool.apply_async(_start_client, (client, args, app_root))
+
+        # self.conn_client, child_conn = mp.Pipe()
+        # process = multiprocessing.Process(target=_start_client, args=(client, args, app_root, child_conn, self.pipe))
+        # # process = multiprocessing.Process(target=_start_new)
+        # process.start()
         self.listen_port = listen_port
 
         new_env = os.environ.copy()
@@ -265,6 +272,11 @@ class ProcessExecutor(ClientExecutor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def abort_train(self, client):
+        # if client.status == ClientStatus.CROSS_SITE_VALIDATION:
+        #     # Only aborts cross site validation.
+        #     client.abort()
+        # elif client.status == ClientStatus.TRAINING_STARTED:
+
         if client.status == ClientStatus.STARTED:
             with self.lock:
                 if self.child_process:
@@ -279,6 +291,8 @@ class ProcessExecutor(ClientExecutor):
                     self._kill_child_process()
                     self.logger.debug("terminated")
 
+                # if self.pool:
+                #     self.pool.terminate()
                 if self.conn_client:
                     self.conn_client.close()
                 self.conn_client = None
@@ -318,6 +332,13 @@ class ProcessExecutor(ClientExecutor):
                 self.conn_client.close()
             self.conn_client = None
 
+        # # result.get()
+        # self.pool.close()
+        # self.pool.join()
+        # self.pool.terminate()
+
+        # Not to run cross_validation in a new process anymore.
+        client.cross_site_validate = False
         client.status = ClientStatus.STOPPED
 
     def _kill_child_process(self):
@@ -338,3 +359,57 @@ class ProcessExecutor(ClientExecutor):
             if self.child_process:
                 self._kill_child_process()
         self.cleanup()
+
+
+# class ThreadExecutor(ClientExecutor):
+#     def __init__(self, client, executor):
+#         self.client = client
+#         self.executor = executor
+
+#     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
+#         future = self.executor.submit(lambda p: _start_client(*p), [client, args, app_root])
+
+#     def start_mgpu_train(self, client, args, app_root, gpu_number, app_custom_folder, listen_port):
+#         self.start_train(client, args, app_root)
+
+#     def check_status(self, client):
+#         return get_status_message(self.client.status)
+
+#     def abort_train(self, client):
+#         self.client.train_end = True
+#         self.client.fitter.train_ctx.ask_to_stop_immediately()
+#         self.client.fitter.train_ctx.set_prop("early_end", True)
+#         # self.client.model_manager.close()
+#         # self.client.status = ClientStatus.TRAINING_STOPPED
+#         return "Aborting the client..."
+
+
+def update_client_properties(client, trainer):
+    # servers = [{t['name']: t['service']} for t in trainer.server_config]
+    retry_timeout = 30
+    # if trainer.client_config['retry_timeout']:
+    #     retry_timeout = trainer.client_config['retry_timeout']
+    client.client_args = trainer.client_config
+    # client.servers = sorted(servers)[0]
+    # client.model_manager.federated_meta = {task_name: list() for task_name in tuple(client.servers)}
+    exclude_vars = trainer.client_config.get("exclude_vars", "dummy")
+    # client.model_manager.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
+    # client.model_manager.privacy_policy = trainer.privacy
+    # client.model_manager.model_reader_writer = trainer.model_reader_writer
+    # client.model_manager.model_validator = trainer.model_validator
+    # client.pool = ThreadPool(len(client.servers))
+    # client.communicator.ssl_args = trainer.client_config
+    # client.communicator.secure_train = trainer.secure_train
+    # client.communicator.model_manager = client.model_manager
+    client.communicator.should_stop = False
+    client.communicator.retry = int(math.ceil(float(retry_timeout) / 5))
+    # client.communicator.outbound_filters = trainer.outbound_filters
+    # client.communicator.inbound_filters = trainer.inbound_filters
+    client.handlers = trainer.handlers
+    # client.inbound_filters = trainer.inbound_filters
+    client.executors = trainer.executors
+    # client.task_inbound_filters = trainer.task_inbound_filters
+    # client.task_outbound_filters = trainer.task_outbound_filters
+    # client.secure_train = trainer.secure_train
+    client.heartbeat_done = False
+    # client.fl_ctx = FLContext()

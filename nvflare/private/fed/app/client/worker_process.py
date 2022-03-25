@@ -16,6 +16,7 @@
 
 import argparse
 import os
+import sys
 import threading
 import time
 import traceback
@@ -64,6 +65,7 @@ def main():
     thread = threading.Thread(target=check_parent_alive, args=(args.parent_pid, stop_event))
     thread.start()
 
+    args.train_config = os.path.join("config", "config_train.json")
     config_folder = kv_list.get("config_folder", "")
     secure_train = kv_list.get("secure_train", True)
     if config_folder == "":
@@ -71,9 +73,17 @@ def main():
     else:
         args.client_config = os.path.join(config_folder, "config_fed_client.json")
     args.config_folder = config_folder
-    args.train_config = os.path.join("config", "config_train.json")
     args.env = os.path.join("config", "environment.json")
 
+    try:
+        remove_restart_file(args)
+    except BaseException:
+        print("Could not remove the restart.fl / shutdown.fl file.  Please check your system before starting FL.")
+        sys.exit(-1)
+
+    restart_file = os.path.join(args.workspace, "restart.fl")
+    if os.path.exists(restart_file):
+        os.remove(restart_file)
     print("starting the client .....")
 
     deployer = None
@@ -139,6 +149,7 @@ def main():
             handlers=conf.runner_config.handlers,
             conf=conf,
         )
+        federated_client.run_manager = run_manager
 
         with run_manager.new_context() as fl_ctx:
             fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
@@ -153,6 +164,10 @@ def main():
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 
+            # # Start the thread for responding the inquire
+            # federated_client.stop_listen = False
+            # thread = threading.Thread(target=listen_command, args=[federated_client, int(listen_port), client_runner])
+            # thread.start()
             # Start the command agent
             command_agent = CommandAgent(federated_client, int(listen_port), client_runner)
             command_agent.start(fl_ctx)
@@ -165,12 +180,31 @@ def main():
         traceback.print_exc()
         print("FL client execution exception: " + str(e))
     finally:
+        # if federated_client:
+        #     federated_client.stop_listen = True
+        #     thread.join()
         if command_agent:
             command_agent.shutdown()
         if deployer:
             deployer.close()
         if federated_client:
             federated_client.close()
+        # address = ('localhost', 6000)
+        # conn_client = Client(address, authkey='client process secret password'.encode())
+        # conn_client.send('bye')
+
+
+def remove_restart_file(args):
+    """To remove the restart.fl file.
+    Args:
+        args: command args
+    """
+    restart_file = os.path.join(args.workspace, "restart.fl")
+    if os.path.exists(restart_file):
+        os.remove(restart_file)
+    restart_file = os.path.join(args.workspace, "shutdown.fl")
+    if os.path.exists(restart_file):
+        os.remove(restart_file)
 
 
 if __name__ == "__main__":
