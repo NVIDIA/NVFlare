@@ -117,6 +117,7 @@ class SVTPrivacy(Filter):
         noise = np.random.laplace(scale=self.gamma * 2.0 / self.eps_3, size=accepted.shape)
         self.log_info(fl_ctx, "noise max: {}, median {}".format(np.max(np.abs(noise)), np.median(np.abs(noise))))
         delta_w[accepted] = np.clip(delta_w[accepted] + noise, a_min=-self.gamma, a_max=self.gamma)
+        candidate_idx = list(set(np.arange(delta_w.size)) - set(accepted))
         delta_w[candidate_idx] = 0.0
 
         # resume original format
