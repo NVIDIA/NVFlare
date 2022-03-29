@@ -34,7 +34,7 @@ class StaticFileBuilder(Builder):
     ):
         """Build all static files from template.
 
-        Uses the information from project.yml through study to go through the participants and write the contents of
+        Uses the information from project.yml through project to go through the participants and write the contents of
         each file with the template, and replacing with the appropriate values from project.yml.
 
         Usually, two main categories of files are created in all FL participants, static and dynamic. Static files
@@ -75,7 +75,7 @@ class StaticFileBuilder(Builder):
         default_port = "443" if protocol == "https" else "80"
         port = overseer.props.get("port", default_port)
         replacement_dict = {"port": port}
-        admins = self.study.get_participants_by_type("admin", first_only=False)
+        admins = self.project.get_participants_by_type("admin", first_only=False)
         privilege_dict = dict()
         for admin in admins:
             for role in admin.props.get("roles", {}):
@@ -118,7 +118,7 @@ class StaticFileBuilder(Builder):
         config = json.loads(self.template["fed_server"])
         dest_dir = self.get_kit_dir(server, ctx)
         server_0 = config["servers"][0]
-        server_0["name"] = self.study_name
+        server_0["name"] = self.project_name
         admin_port = server.props.get("admin_port", 8003)
         ctx["admin_port"] = admin_port
         fed_learn_port = server.props.get("fed_learn_port", 8002)
@@ -136,7 +136,7 @@ class StaticFileBuilder(Builder):
                 overseer_agent["args"] = {
                     "role": "server",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
-                    "project": self.study_name,
+                    "project": self.project_name,
                     "name": server.name,
                     "fl_port": str(fed_learn_port),
                     "admin_port": str(admin_port),
@@ -194,7 +194,7 @@ class StaticFileBuilder(Builder):
         fed_learn_port = ctx.get("fed_learn_port")
         server_name = ctx.get("server_name")
         # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
-        config["servers"][0]["name"] = self.study_name
+        config["servers"][0]["name"] = self.project_name
         config["enable_byoc"] = client.enable_byoc
         replacement_dict = {
             "client_name": f"{client.subject}",
@@ -207,7 +207,7 @@ class StaticFileBuilder(Builder):
                 overseer_agent["args"] = {
                     "role": "client",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
-                    "project": self.study_name,
+                    "project": self.project_name,
                     "name": client.subject,
                 }
             overseer_agent.pop("overseer_exists", None)
@@ -268,7 +268,7 @@ class StaticFileBuilder(Builder):
                 overseer_agent["args"] = {
                     "role": "admin",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
-                    "project": self.study_name,
+                    "project": self.project_name,
                     "name": admin.subject,
                 }
             overseer_agent.pop("overseer_exists", None)
@@ -294,18 +294,18 @@ class StaticFileBuilder(Builder):
             "t",
         )
 
-    def build(self, study, ctx):
+    def build(self, project, ctx):
         self.template = ctx.get("template")
-        self.study_name = study.name
-        self.study = study
-        overseer = study.get_participants_by_type("overseer")
+        self.project_name = project.name
+        self.project = project
+        overseer = project.get_participants_by_type("overseer")
         self._build_overseer(overseer, ctx)
-        servers = study.get_participants_by_type("server", first_only=False)
+        servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:
             self._build_server(server, ctx)
 
-        for client in study.get_participants_by_type("client", first_only=False):
+        for client in project.get_participants_by_type("client", first_only=False):
             self._build_client(client, ctx)
 
-        for admin in study.get_participants_by_type("admin", first_only=False):
+        for admin in project.get_participants_by_type("admin", first_only=False):
             self._build_admin(admin, ctx)
