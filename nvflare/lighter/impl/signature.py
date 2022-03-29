@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
-import pickle
 
 from nvflare.lighter.spec import Builder, Study
 from nvflare.lighter.utils import sign_all
@@ -31,9 +31,9 @@ class SignatureBuilder(Builder):
         dest_dir = self.get_kit_dir(server, ctx)
         root_pri_key = ctx.get("root_pri_key")
         signatures = sign_all(dest_dir, root_pri_key)
-        pickle.dump(signatures, open(os.path.join(dest_dir, "signature.pkl"), "wb"))
+        json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
         for p in study.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(p, ctx)
             root_pri_key = ctx.get("root_pri_key")
             signatures = sign_all(dest_dir, root_pri_key)
-            pickle.dump(signatures, open(os.path.join(dest_dir, "signature.pkl"), "wb"))
+            json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
