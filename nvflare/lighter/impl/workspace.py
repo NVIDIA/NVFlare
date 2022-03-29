@@ -17,7 +17,7 @@ import pathlib
 import shutil
 import subprocess
 
-from nvflare.lighter.spec import Builder, Study
+from nvflare.lighter.spec import Builder, Project
 from nvflare.lighter.utils import generate_password
 
 
@@ -68,8 +68,8 @@ class WorkspaceBuilder(Builder):
         shutil.copyfile(os.path.join(file_path, self.template_file), template_file_full_path)
         ctx["template_file"] = self.template_file
 
-    def build(self, study: Study, ctx: dict):
-        dirs = [self.get_kit_dir(p, ctx) for p in study.participants]
+    def build(self, project: Project, ctx: dict):
+        dirs = [self.get_kit_dir(p, ctx) for p in project.participants]
         self._make_dir(dirs)
 
     def finalize(self, ctx: dict):
@@ -97,7 +97,7 @@ class DistributionBuilder(Builder):
         """
         self.zip_password = zip_password
 
-    def build(self, study: Study, ctx: dict):
+    def build(self, project: Project, ctx: dict):
         wip_dir = self.get_wip_dir(ctx)
         dirs = [name for name in os.listdir(wip_dir) if os.path.isdir(os.path.join(wip_dir, name))]
         for dir in dirs:
