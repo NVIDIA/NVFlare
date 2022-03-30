@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
+from abc import ABC, abstractmethod
+from typing import Dict, List
+from datetime import datetime
+
+from .fl_context import FLContext
 
 
 class Study:
@@ -20,32 +24,35 @@ class Study:
         self,
         name: str,
         description: str,
-        sites: [str],
-        users: [str],
-        start_time: datetime.datetime,
-        end_time: datetime.datetime,
+        contact: str,
+        participating_clients: List[str],
+        participating_admins: List[str],
+        start_date: datetime.date,
+        end_date: datetime.date,
         reviewers=None,
     ):
         self.name = name
         self.description = description
-        self.sites = sites
-        self.users = users
-        self.start_time = start_time
-        self.end_time = end_time
+        self.contact = contact
+        self.participating_clients = participating_clients
+        self.participating_admins = participating_admins
+        self.start_date = start_date
+        self.end_date = end_date
         self.reviewers = reviewers
-        self.create_time = None
+        self.created_at = datetime.utcnow().isoformat()
 
 
-class StudyManagerSpec(object):
-    def create_study(self, study: Study) -> Study:
-        """Create the study object permanently
+class StudyManagerSpec(ABC):
+    @abstractmethod
+    def add_study(self, study: Study, fl_ctx: FLContext) -> Study:
+        """Add the study object permanently
 
-        The caller must have validated the sites and users of the study.
+        The caller must have validated the participating_clients and participating_admins of the study.
 
         Validate the study before saving:
         The name of the study must be unique;
-        Sites and users must be defined;
-        Start and end time must make sense.
+        participating_clients and participating_admins must be defined;
+        Start and end date must make sense.
 
         Args:
             study: the caller-provided study info
@@ -55,7 +62,8 @@ class StudyManagerSpec(object):
         """
         pass
 
-    def list_studies(self) -> [str]:
+    @abstractmethod
+    def list_studies(self, fl_ctx: FLContext) -> List[str]:
         """
         List names of all defined studies
 
@@ -64,7 +72,8 @@ class StudyManagerSpec(object):
         """
         pass
 
-    def list_active_studies(self) -> [str]:
+    @abstractmethod
+    def list_active_studies(self, fl_ctx: FLContext) -> List[str]:
         """
         List names of all active studies (started but not ended)
 
@@ -73,7 +82,8 @@ class StudyManagerSpec(object):
         """
         pass
 
-    def get_study(self, name: str) -> Study:
+    @abstractmethod
+    def get_study(self, name: str, fl_ctx: FLContext) -> Study:
         """Get the Study object for the specified name.
 
         Args:
