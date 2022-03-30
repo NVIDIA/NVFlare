@@ -388,5 +388,5 @@ class ServerRunner(FLComponent):
         return {"run_number": self.run_num, "current_wf_index": self.current_wf_index}
 
     def restore(self, state_data: dict, fl_ctx: FLContext):
-        self.run_num = state_data.get("run_number")
-        self.current_wf_index = state_data.get("current_wf_index", 0)
+        self.run_num = int(state_data.get("run_number"))
+        self.current_wf_index = int(state_data.get("current_wf_index", 0))

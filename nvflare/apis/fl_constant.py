@@ -149,6 +149,29 @@ class AdminCommandNames(object):
     AUX_COMMAND = "aux_command"
 
 
+class ServerCommandNames(object):
+
+    GET_RUN_INFO = "get_run_info"
+    GET_TASK = "get_task"
+    SUBMIT_UPDATE = "submit_update"
+    AUX_COMMUNICATE = "aux_communicate"
+    HEARTBEAT = "heartbeat"
+
+
+class ServerCommandKey(object):
+
+    COMMAND = "command"
+    DATA = "data"
+    FL_CONTEXT = "fl_context"
+    PEER_FL_CONTEXT = "peer_fl_ctx"
+    SHAREABLE = "shareable"
+    TASK_NAME = "task_name"
+    TASK_ID = "task_id"
+    FL_CLIENT = "fl_client"
+    TOPIC = "topic"
+    AUX_REPLY = "aux_reply"
+
+
 class FedEventHeader(object):
 
     TIMESTAMP = "_timestamp"

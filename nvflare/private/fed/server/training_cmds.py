@@ -329,9 +329,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return False
 
-        run_info = engine.get_run_info()
+        # run_info = engine.get_run_info()
         message = new_message(conn, topic=TrainingTopic.START, body="")
-        message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
+        # message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
+        message.set_header(RequestHeader.RUN_NUM, "7")
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
         return True
@@ -380,7 +381,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return False
 
-        run_info = engine.get_run_info()
+        run_info = engine.get_app_run_info()
         message = new_message(conn, topic=TrainingTopic.ABORT, body="")
         if run_info:
             message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
@@ -430,7 +431,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return ""
 
-        run_info = engine.get_run_info()
+        run_info = engine.get_app_run_info()
         message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="")
         if run_info:
             message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
@@ -603,7 +604,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             engine_info = engine.get_engine_info()
             conn.append_string(f"FL_app name: {engine_info.app_name}")
             conn.append_string(f"Engine status: {engine_info.status.value}")
-            run_info = engine.get_run_info()
+            # run_info = engine.get_run_info()
             if engine.get_run_number() < 0:
                 conn.append_string("Run number has not been set.")
             else:

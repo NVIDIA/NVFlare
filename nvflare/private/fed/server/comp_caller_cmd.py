@@ -60,7 +60,7 @@ class ComponentCallerCommandModule(CommandModule, CommandUtil):
 
         conn.set_prop(self._CONN_KEY_CALLER, caller)
 
-        run_info = engine.get_run_info()
+        run_info = engine.get_app_run_info()
         if not run_info or run_info.run_number < 0:
             conn.append_string("App is not running")
             return False, None
