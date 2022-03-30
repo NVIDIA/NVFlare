@@ -186,7 +186,6 @@ class ProcessExecutor(ClientExecutor):
             f" --workspace {args.workspace}"
             f" --startup {self.startup}"
             f" --fed_client fed_client.json"
-            f" --parent_pid {os.getpid()}"
             f" --set" + command_options + " print_conf=True"
         )
         # TODO:: this is only supported in UNIX

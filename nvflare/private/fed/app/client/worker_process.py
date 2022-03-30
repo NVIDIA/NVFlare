@@ -21,6 +21,8 @@ import threading
 import time
 import traceback
 
+import psutil
+
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import SecurityContentService
@@ -38,8 +40,7 @@ def check_parent_alive(parent_pid, stop_event: threading.Event):
     while True:
         if stop_event.is_set():
             break
-        # TODO: this check only valid in UNIX
-        if os.getppid() != parent_pid:
+        if psutil.pid_exists(parent_pid):
             # if parent is not alive, kill its worker process
             os.killpg(os.getpgid(os.getpid()), 9)
             break
@@ -54,7 +55,6 @@ def main():
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
     )
-    parser.add_argument("--parent_pid", type=int, help="parent process id", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     parser.add_argument("--local_rank", type=int, default=0)
     args = parser.parse_args()
@@ -62,7 +62,8 @@ def main():
 
     # start parent process checking thread
     stop_event = threading.Event()
-    thread = threading.Thread(target=check_parent_alive, args=(args.parent_pid, stop_event))
+    parent_pid = os.getppid()
+    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
     args.train_config = os.path.join("config", "config_train.json")
