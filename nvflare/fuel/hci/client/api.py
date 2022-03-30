@@ -21,12 +21,14 @@ import time
 import traceback
 from datetime import datetime
 
+from nvflare.apis.overseer_spec import SP, OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
 from nvflare.fuel.hci.proto import make_error
 from nvflare.fuel.hci.reg import CommandModule, CommandRegister
 from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.fuel.hci.table import Table
+from nvflare.ha.ha_admin_cmds import HACommandModule
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
@@ -89,15 +91,19 @@ class AdminAPI(AdminAPISpec):
     """Underlying API to keep certs, keys and connection information and to execute admin commands through do_command.
 
     Args:
-        host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
-        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
+        host: cn provisioned for the server, with this fully qualified domain name resolving to the IP of the FL server. This may be set by the OverseerAgent.
+        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int if provided. This may be set by the OverseerAgent.
         ca_cert: path to CA Cert file, by default provisioned rootCA.pem
         client_cert: path to admin client Cert file, by default provisioned as client.crt
         client_key: path to admin client Key file, by default provisioned as client.key
         upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
         download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
         server_cn: server cn (only used for validating server cn)
-        cmd_modules: command modules to load and register
+        cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
+        overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
+        auto_login: Whether to use stored credentials to automatically log in (required to be True with OverseerAgent to provide high availability)
+        user_name: Username to authenticate with FL server
+        password: Password to authenticate with FL server (not used in secure mode with SSL)
         poc: Whether to enable poc mode for using the proof of concept example without secure communication.
         debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
     """
@@ -114,6 +120,9 @@ class AdminAPI(AdminAPISpec):
         server_cn=None,
         cmd_modules=None,
         overseer_agent=None,
+        auto_login: bool = False,
+        user_name: str = None,
+        password: str = None,
         poc: bool = False,
         debug: bool = False,
     ):
@@ -122,6 +131,17 @@ class AdminAPI(AdminAPISpec):
             from .file_transfer import FileTransferModule
 
             cmd_modules = [FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)]
+        elif not isinstance(cmd_modules, list):
+            raise TypeError("cmd_modules must be a list, but got {}".format(type(cmd_modules)))
+        else:
+            for m in cmd_modules:
+                if not isinstance(m, CommandModule):
+                    raise TypeError(
+                        "cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m))
+                    )
+        cmd_modules.append(HACommandModule())
+
+        self.overseer_agent = overseer_agent
         self.host = host
         self.port = port
         self.poc = poc
@@ -135,12 +155,31 @@ class AdminAPI(AdminAPISpec):
             if len(client_key) <= 0:
                 raise Exception("missing Client Key file name")
             self.client_key = client_key
+            if not isinstance(self.overseer_agent, OverseerAgent):
+                raise Exception("overseer_agent is missing but must be provided for secure context.")
+            self.overseer_agent.set_secure_context(
+                ca_path=self.ca_cert, cert_path=self.client_cert, prv_key_path=self.client_key
+            )
+        if self.overseer_agent:
+            self.overseer_agent.start(self._overseer_callback)
         self.server_cn = server_cn
         self.debug = debug
+
+        # for overseer agent
+        self.ssid = None
 
         # for login
         self.token = None
         self.login_result = None
+        if auto_login:
+            self.auto_login = True
+            if not user_name:
+                raise Exception("for auto_login, user_name is required.")
+            self.user_name = user_name
+            if self.poc:
+                if not password:
+                    raise Exception("for auto_login, password is required for credential_type password.")
+                self.password = password
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
         self.client_cmd_reg = CommandRegister(app_ctx=self)
@@ -158,13 +197,58 @@ class AdminAPI(AdminAPISpec):
         self.sess_monitor_thread = None
         self.sess_monitor_active = False
 
+    def _overseer_callback(self, overseer_agent):
+        sp = overseer_agent.get_primary_sp()
+        self._set_primary_sp(sp)
+
+    def _set_primary_sp(self, sp: SP):
+        if sp and sp.primary is True:
+            if self.host != sp.name or self.port != int(sp.admin_port) or self.ssid != sp.service_session_id:
+                # if needing to log out of previous server, this may be where to issue server_execute("_logout")
+                self.host = sp.name
+                self.port = int(sp.admin_port)
+                self.ssid = sp.service_session_id
+                print(
+                    f"Got primary SP {self.host}:{sp.fl_port}:{self.port} from overseer. Host: {self.host} Admin_port: {self.port} SSID: {self.ssid}"
+                )
+
+                thread = threading.Thread(target=self._login_sp)
+                thread.start()
+
+    def _login_sp(self):
+        if not self._auto_login():
+            print("cannot log in, shutting down...")
+            self.shutdown_received = True
+
+    def _auto_login(self):
+        try_count = 0
+        while try_count < 5:
+            if self.poc:
+                self.login_with_password(username=self.user_name, password=self.password)
+                print(f"login_result: {self.login_result} token: {self.token}")
+                if self.login_result == "OK":
+                    return True
+                elif self.login_result == "REJECT":
+                    print("Incorrect password.")
+                    return False
+                else:
+                    print("Communication Error - please try later")
+                    try_count += 1
+            else:
+                self.login(username=self.user_name)
+                if self.login_result == "OK":
+                    return True
+                elif self.login_result == "REJECT":
+                    print("Incorrect user name or certificate.")
+                    return False
+                else:
+                    print("Communication Error - please try later")
+                    try_count += 1
+        return False
+
     def _load_client_cmds(self, cmd_modules):
         if cmd_modules:
-            if not isinstance(cmd_modules, list):
-                raise TypeError("cmd_modules must be a list")
             for m in cmd_modules:
-                if not isinstance(m, CommandModule):
-                    raise TypeError("cmd_modules must be a list of CommandModule")
                 self.client_cmd_reg.register_module(m, include_invisible=False)
         self.client_cmd_reg.finalize(self.register_command)
 

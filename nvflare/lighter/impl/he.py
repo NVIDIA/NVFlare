@@ -63,13 +63,13 @@ class HEBuilder(Builder):
         self._context.generate_relin_keys()
         self._context.global_scale = 2 ** self.scale_bits
 
-    def build(self, study, ctx):
-        servers = study.get_participants_by_type("server", first_only=False)
+    def build(self, project, ctx):
+        servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:
             dest_dir = self.get_kit_dir(server, ctx)
             with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
                 f.write(self.get_serialized_context())
-        for client in study.get_participants_by_type("client", first_only=False):
+        for client in project.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(client, ctx)
             with open(os.path.join(dest_dir, "client_context.tenseal"), "wb") as f:
                 f.write(self.get_serialized_context(is_client=True))

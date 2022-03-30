@@ -18,7 +18,7 @@
   "components": [
     {
       "id": "event_recorder",
-      "path": "nvflare.app_common.handlers.event_recorder.ClientEventRecorder",
+      "name": "ClientEventRecorder",
       "args": {}
     },
     {
@@ -28,7 +28,7 @@
     },
     {
       "id": "event_to_fed",
-      "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+      "name": "ConvertToFedEvent",
       "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
     }
   ]

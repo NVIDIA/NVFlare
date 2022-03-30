@@ -14,7 +14,7 @@
 
 import json
 import os
-import pickle
+from base64 import b64decode
 from enum import Enum
 
 from cryptography import x509
@@ -36,19 +36,21 @@ class LoadResult(Enum):
 
 
 class SecurityContentManager(object):
-    def __init__(self, content_folder, signature_filename="signature.pkl", root_cert="rootCA.pem"):
+    def __init__(self, content_folder, signature_filename="signature.json", root_cert="rootCA.pem"):
         """Content manager used by SecurityContentService to load secure content.
 
         Args:
             content_folder (str): the folder path that includes signature file
-            signature_filename (str, optional): the signature file (pickled dictionary). Defaults to "signature.pkl".
+            signature_filename (str, optional): the signature file (signed dictionary). Defaults to "signature.json".
             root_cert (str, optional): root CA certificate filename. Defaults to "rootCA.pem".
         """
         self.content_folder = content_folder
         signature_path = os.path.join(self.content_folder, signature_filename)
         rootCA_cert_path = os.path.join(self.content_folder, root_cert)
         if os.path.exists(signature_path) and os.path.exists(rootCA_cert_path):
-            self.signature = pickle.load(open(signature_path, "rb"))
+            self.signature = json.load(open(signature_path, "rt"))
+            for k in self.signature:
+                self.signature[k] = b64decode(self.signature[k].encode("utf-8"))
             cert = x509.load_pem_x509_certificate(open(rootCA_cert_path, "rb").read(), default_backend())
             self.public_key = cert.public_key()
             self.valid_config = True
@@ -98,7 +100,7 @@ class SecurityContentService(object):
     security_content_manager = None
 
     @staticmethod
-    def initialize(content_folder: str, signature_filename="signature.pkl", root_cert="rootCA.pem"):
+    def initialize(content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem"):
         if SecurityContentService.security_content_manager is None:
             SecurityContentService.security_content_manager = SecurityContentManager(
                 content_folder, signature_filename, root_cert

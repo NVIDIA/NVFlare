@@ -23,10 +23,15 @@
     },
     {
       "id": "aggregator",
-      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "name": "InTimeAccumulateWeightedAggregator",
       "args": {
         "expected_data_kind": "WEIGHTS"
       }
+    },
+    {
+      "id": "model_selector",
+      "name": "IntimeModelSelector",
+      "args": {}
     },
     {
       "id": "model_locator",
@@ -37,7 +42,7 @@
     },
     {
       "id": "json_generator",
-      "path": "validation_json_generator.ValidationJsonGenerator",
+      "name": "ValidationJsonGenerator",
       "args": {
       }
     }

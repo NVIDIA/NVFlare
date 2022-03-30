@@ -17,26 +17,21 @@ from .fl_context import FLContext
 
 class StatePersistable:
     def get_persist_state(self, fl_ctx: FLContext) -> dict:
-        """To generate the persist data of each FLComponent.
-
-        Each FLComponent implements this method to generate the persist data from its own state data.
+        """Generate data from state to be persisted.
 
         Args:
             fl_ctx: FLContext
 
-        Returns: serializable persist data
-
+        Returns:
+            A dict serializable persist data
         """
         return {}
 
     def restore(self, state_data: dict, fl_ctx: FLContext):
-        """To restore the FLComponent state from persist data.
+        """Restore the state from persisted data.
 
         Args:
             state_data: serialized persist data
             fl_ctx: FLContext
-
-        Returns: restored FLComponent
-
         """
         pass

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from abc import ABC, abstractmethod
 from threading import Lock
 from typing import List, Optional
@@ -22,13 +23,12 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
 
+ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 
-def send_analytic_dxo(
-    comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = AppEventType.ANALYTIC_EVENT_TYPE
-):
+
+def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = ANALYTIC_EVENT_TYPE):
     """Sends analytic dxo.
 
     Args:
@@ -66,14 +66,19 @@ def create_analytic_dxo(tag: str, value, data_type: AnalyticsDataType, **kwargs)
 
 
 class AnalyticsSender(Widget):
-    def __init__(self):
+    def __init__(self, event_type=ANALYTIC_EVENT_TYPE):
         """Sends analytics data.
 
-        This class implements some common methods follows signatures from PyTorch SummaryWriter.
-        It provides a convenient way for Learner to use.
+        Note::
+            This class implements some common methods follows signatures from PyTorch SummaryWriter.
+            It provides a convenient way for Learner to use.
+
+        Args:
+            event_type (str): event type to fire.
         """
         super().__init__()
         self.engine = None
+        self.event_type = event_type
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -94,7 +99,7 @@ class AnalyticsSender(Widget):
             kwargs["global_step"] = global_step
         dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, **kwargs)
         with self.engine.new_context() as fl_ctx:
-            send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx)
+            send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=self.event_type)
 
     def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
         """Sends a scalar.
@@ -162,7 +167,7 @@ class AnalyticsReceiver(Widget, ABC):
         """
         super().__init__()
         if events is None:
-            events = [AppEventType.ANALYTIC_EVENT_TYPE, f"fed.{AppEventType.ANALYTIC_EVENT_TYPE}"]
+            events = [ANALYTIC_EVENT_TYPE, f"fed.{ANALYTIC_EVENT_TYPE}"]
         self.events = events
         self._save_lock = Lock()
         self._end = False

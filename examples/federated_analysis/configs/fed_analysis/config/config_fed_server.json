@@ -10,7 +10,8 @@
       "id": "server_workflow",
       "path": "analysis_controller.AnalysisController",
       "args": {
-        "min_clients": 4
+        "min_clients": 4,
+        "task_name_histogram": "histogram"
       }
     }
   ],

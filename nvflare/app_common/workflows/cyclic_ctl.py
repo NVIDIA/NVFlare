@@ -57,7 +57,11 @@ class CyclicController(Controller):
             raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
         if not isinstance(task_name, str):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
-        self.num_rounds = num_rounds
+        self._num_rounds = num_rounds
+        self._start_round = 0
+        self._end_round = self._start_round + self._num_rounds
+        self._current_round = 0
+        self._last_learnable = None
         self.persistor_id = persistor_id
         self.shareable_generator_id = shareable_generator_id
         self.task_assignment_timeout = task_assignment_timeout
@@ -76,8 +80,8 @@ class CyclicController(Controller):
                 f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance, but got {type(self.shareable_generator)}",
                 fl_ctx,
             )
-        self.last_learnable = self.persistor.load(fl_ctx)
-        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.last_learnable, private=True, sticky=True)
+        self._last_learnable = self.persistor.load(fl_ctx)
+        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._last_learnable, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext):
@@ -88,22 +92,22 @@ class CyclicController(Controller):
 
         # update the global learnable with the received result (shareable)
         # e.g. the received result could be weight_diffs, the learnable could be full weights.
-        self.last_learnable = self.shareable_generator.shareable_to_learnable(client_task.result, fl_ctx)
+        self._last_learnable = self.shareable_generator.shareable_to_learnable(client_task.result, fl_ctx)
 
         # prepare task shareable data for next client
-        task.data = self.shareable_generator.learnable_to_shareable(self.last_learnable, fl_ctx)
+        task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
             engine = fl_ctx.get_engine()
             self.log_debug(fl_ctx, "Cyclic starting.")
 
-            for current_round in range(self.num_rounds):
+            for self._current_round in range(self._start_round, self._end_round):
                 if abort_signal.triggered:
                     return
 
-                self.log_debug(fl_ctx, "Starting current round={}.".format(current_round))
-                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=False)
+                self.log_debug(fl_ctx, "Starting current round={}.".format(self._current_round))
+                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
 
                 # Task for one cyclic
                 targets = engine.get_clients()
@@ -111,8 +115,8 @@ class CyclicController(Controller):
                 targets_names = [t.name for t in targets]
                 self.log_debug(fl_ctx, f"Relay on {targets_names}")
 
-                shareable = self.shareable_generator.learnable_to_shareable(self.last_learnable, fl_ctx)
-                shareable.set_header(AppConstants.CURRENT_ROUND, current_round)
+                shareable = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
+                shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
 
                 task = Task(
                     name=self.task_name,
@@ -128,8 +132,9 @@ class CyclicController(Controller):
                     dynamic_targets=False,
                     abort_signal=abort_signal,
                 )
-                self.persistor.save(self.last_learnable, fl_ctx)
-                self.log_debug(fl_ctx, "Ending current round={}.".format(current_round))
+                self.persistor.save(self._last_learnable, fl_ctx)
+                self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
+                engine.persist_components(fl_ctx, completed=False)
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:
@@ -138,7 +143,7 @@ class CyclicController(Controller):
             self.system_panic(str(e), fl_ctx)
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.persistor.save(learnable=self.last_learnable, fl_ctx=fl_ctx)
+        self.persistor.save(learnable=self._last_learnable, fl_ctx=fl_ctx)
         self.log_debug(fl_ctx, "controller stopped")
 
     def process_result_of_unknown_task(
@@ -150,3 +155,19 @@ class CyclicController(Controller):
         fl_ctx: FLContext,
     ):
         self.log_warning(fl_ctx, f"Dropped result of unknown task: {task_name} from client {client.name}.")
+
+    def get_persist_state(self, fl_ctx: FLContext) -> dict:
+        return {
+            "current_round": self._current_round,
+            "end_round": self._end_round,
+            "last_learnable": self._last_learnable,
+        }
+
+    def restore(self, state_data: dict, fl_ctx: FLContext):
+        try:
+            self._current_round = state_data.get("current_round")
+            self._end_round = state_data.get("end_round")
+            self._last_learnable = state_data.get("last_learnable")
+            self._start_round = self._current_round
+        finally:
+            pass

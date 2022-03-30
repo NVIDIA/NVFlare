@@ -18,11 +18,11 @@ from typing import Dict
 
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
+from nvflare.widgets.widget import Widget
 
 
 class _CtxPropReq(object):
@@ -83,7 +83,7 @@ class _EventStats(object):
         self.peer_ctx_missing = 0
 
 
-class EventRecorder(FLComponent):
+class EventRecorder(Widget):
 
     _KEY_CTX_TYPE = "ctx_type"
     _KEY_EVENT_TYPE = "event_type"

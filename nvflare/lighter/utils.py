@@ -14,6 +14,7 @@
 
 import os
 import random
+from base64 import b64encode
 
 import yaml
 from cryptography.hazmat.primitives import hashes
@@ -40,7 +41,7 @@ def sign_all(content_folder, signing_pri_key):
                 ),
                 algorithm=hashes.SHA256(),
             )
-            signatures[f] = signature
+            signatures[f] = b64encode(signature).decode("utf-8")
     return signatures
 
 

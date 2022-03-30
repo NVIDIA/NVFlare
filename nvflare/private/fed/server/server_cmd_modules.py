@@ -14,13 +14,20 @@
 
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.private.fed.server.info_coll_cmd import InfoCollectorCommandModule
+from nvflare.private.fed.server.job_cmds import JobCommandModule
 from nvflare.private.fed.server.shell_cmd import ShellCommandModule
 from nvflare.private.fed.server.sys_cmd import SystemCommandModule
 from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 
 
 class ServerCommandModules:
-    cmd_modules = [ShellCommandModule(), SystemCommandModule(), TrainingCommandModule(), InfoCollectorCommandModule()]
+    cmd_modules = [
+        ShellCommandModule(),
+        SystemCommandModule(),
+        TrainingCommandModule(),
+        JobCommandModule(),
+        InfoCollectorCommandModule(),
+    ]
 
     @staticmethod
     def register_cmd_module(cmd_module: CommandModule):

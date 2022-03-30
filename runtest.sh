@@ -77,5 +77,5 @@ echo "Done with pydocstyle docstring style checks"
 
 set -e
 echo "Running unit tests"
-pytest --numprocesses=auto test
+pytest --numprocesses=auto --dist loadgroup test
 echo "Done with unit tests"

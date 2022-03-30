@@ -103,4 +103,4 @@ def promote_sp(sp):
         update_sp(current_psp)
         return False, psp
     else:
-        return True, f"Unable to promot {sp_end_point}, either offline or not registered."
+        return True, f"Unable to promote {sp_end_point}, either offline or not registered."
