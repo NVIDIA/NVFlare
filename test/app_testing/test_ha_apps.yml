@@ -1,0 +1,10 @@
+
+
+
+tests:
+  - app_name: pt
+    validators:
+      - test.app_testing.validators.pt_model_validator.PTModelValidator
+  - app_name: cyclic
+    validators:
+      - test.app_testing.validators.tf_model_validator.TFModelValidator
