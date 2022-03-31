@@ -29,14 +29,22 @@ from threading import Lock
 from typing import List, Tuple
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey, \
-    AdminCommandNames, ServerCommandNames, ServerCommandKey
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    FLContextKey,
+    MachineStatus,
+    ReservedTopic,
+    ReturnCode,
+    ServerCommandKey,
+    ServerCommandNames,
+    SnapshotKey,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.study_manager_spec import StudyManagerSpec
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
@@ -45,6 +53,7 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -168,7 +177,9 @@ class ServerEngine(ServerEngineInternalSpec):
             app_custom_folder = ""
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
-            self.child_process = self._start_runner_process(self.args, app_root, self.run_number, app_custom_folder, snapshot)
+            self.child_process = self._start_runner_process(
+                self.args, app_root, self.run_number, app_custom_folder, snapshot
+            )
 
             threading.Thread(target=self.wait_for_complete).start()
 
@@ -211,10 +222,16 @@ class ServerEngine(ServerEngineInternalSpec):
         command = (
             f"{sys.executable} -m nvflare.private.fed.app.server.runner_process -m "
             + args.workspace
-            + " -s fed_server.json -r " + app_root
-            + " -n " + str(run_number)
-            + " -p " + str(self.open_port)
-            + " --set" + command_options + " print_conf=True restore_snapshot=" + str(restore_snapshot)
+            + " -s fed_server.json -r "
+            + app_root
+            + " -n "
+            + str(run_number)
+            + " -p "
+            + str(self.open_port)
+            + " --set"
+            + command_options
+            + " print_conf=True restore_snapshot="
+            + str(restore_snapshot)
         )
         # use os.setsid to create new process group ID
 

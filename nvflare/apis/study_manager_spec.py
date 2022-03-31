@@ -13,8 +13,8 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict, List
 from datetime import datetime
+from typing import List
 
 from .fl_context import FLContext
 
