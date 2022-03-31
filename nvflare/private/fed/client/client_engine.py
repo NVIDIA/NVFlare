@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ClientStatusKey, EngineConstant
+from nvflare.private.defs import ClientStatusKey
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
@@ -52,8 +52,8 @@ class ClientEngine(ClientEngineInternalSpec):
         self.sender = sender
         self.args = args
         self.rank = rank
+        self.client.process = None
         self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
-        self.admin_agent = None
 
         self.run_number = -1
         self.status = MachineStatus.STOPPED
@@ -140,11 +140,17 @@ class ClientEngine(ClientEngineInternalSpec):
         return self.client.client_name
 
     def _write_token_file(self, run_number, open_port):
-        token_file = os.path.join(self.args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
+        token_file = os.path.join(self.args.workspace, "client_token.txt")
         if os.path.exists(token_file):
             os.remove(token_file)
         with open(token_file, "wt") as f:
             f.write("%s\n%s\n%s\n%s\n" % (self.client.token, run_number, self.client.client_name, open_port))
+
+    def wait_process_complete(self):
+        self.client.process.wait()
+
+        # self.client.cross_validation()
+        self.client.status = ClientStatus.STOPPED
 
     def remove_custom_path(self):
         regex = re.compile(".*/run_.*/custom")
@@ -164,6 +170,7 @@ class ClientEngine(ClientEngineInternalSpec):
             return "Client app is starting, please wait for client to have started before abort."
 
         self.client_executor.abort_train(self.client)
+        # self.run_number = -1
 
         return "Abort signal has been sent to the client App."
 
@@ -176,6 +183,7 @@ class ClientEngine(ClientEngineInternalSpec):
             return "Client app is starting, please wait for started before abort_task."
 
         self.client_executor.abort_task(self.client)
+        # self.run_number = -1
 
         return "Abort signal has been sent to the current task. "
 
@@ -240,6 +248,7 @@ def _do_validate(sender, message):
     print("Generating processing result ......")
     reply = Message(topic=message.topic, body="")
     sender.send_result(reply)
+    pass
 
 
 def _shutdown_client(client, admin_agent, touch_file):
@@ -252,7 +261,11 @@ def _shutdown_client(client, admin_agent, touch_file):
         time.sleep(3)
         client.close()
 
+        if client.process:
+            client.process.terminate()
+
         admin_agent.shutdown()
     except BaseException as e:
         traceback.print_exc()
         print("FL client execution exception: " + str(e))
+        # client.status = ClientStatus.TRAINING_EXCEPTION
