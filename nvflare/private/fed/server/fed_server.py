@@ -32,7 +32,7 @@ import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, SnapshotKey, ServerCommandNames, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ServerCommandKey, ServerCommandNames, SnapshotKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
@@ -44,6 +44,7 @@ from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -438,8 +439,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
                     command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
 
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
-                            ServerCommandKey.DATA: command_shareable}
+                    data = {
+                        ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
+                        ServerCommandKey.DATA: command_shareable,
+                    }
                     self.engine.command_conn.send(data)
 
                     return_data = self.engine.command_conn.recv()
@@ -530,8 +533,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_shareable.set_header(ServerCommandKey.TASK_ID, task_id)
                     command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
 
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
-                            ServerCommandKey.DATA: command_shareable}
+                    data = {
+                        ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
+                        ServerCommandKey.DATA: command_shareable,
+                    }
                     self.engine.command_conn.send(data)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
@@ -591,8 +596,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_shareable.set_header(ServerCommandKey.TOPIC, topic)
                     command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
 
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
-                            ServerCommandKey.DATA: command_shareable}
+                    data = {
+                        ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
+                        ServerCommandKey.DATA: command_shareable,
+                    }
                     self.engine.command_conn.send(data)
 
                     return_data = self.engine.command_conn.recv()

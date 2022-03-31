@@ -17,7 +17,7 @@
 import copy
 import time
 
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandNames, ServerCommandKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
@@ -71,7 +71,7 @@ class AbortCommand(CommandProcessor):
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.abort(fl_ctx)
         # wait for the runner process gracefully abort the run.
-        time.sleep(3.)
+        time.sleep(3.0)
         return "Aborted the run"
 
 
@@ -131,7 +131,7 @@ class GetTaskCommand(CommandProcessor):
             ServerCommandKey.TASK_NAME: taskname,
             ServerCommandKey.TASK_ID: task_id,
             ServerCommandKey.SHAREABLE: shareable,
-            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props)
+            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
         }
         return data
 
@@ -202,7 +202,7 @@ class AuxCommunicateCommand(CommandProcessor):
 
         data = {
             ServerCommandKey.AUX_REPLY: reply,
-            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props)
+            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
         }
         return data
 

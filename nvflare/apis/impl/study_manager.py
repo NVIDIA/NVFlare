@@ -15,10 +15,10 @@
 import datetime
 import json
 import tempfile
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
-from nvflare.apis.study_manager_spec import Study, StudyManagerSpec
 from nvflare.apis.storage import StorageSpec
+from nvflare.apis.study_manager_spec import Study, StudyManagerSpec
 
 
 def custom_json_encoder(obj):
