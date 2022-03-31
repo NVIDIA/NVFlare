@@ -64,7 +64,7 @@ class ServerEngine(ServerEngineInternalSpec):
         # TODO:: clean up the server function / requirement here should be BaseServer
         self.server = server
         self.args = args
-        self.run_number = -1
+        self.run_processes = {}
         self.run_manager = None
         self.conf = None
         # TODO:: does this class need client manager?
@@ -91,8 +91,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
-        self.command_conn = None
-        self.child_process = None
+        # self.command_conn = None
+        # self.child_process = None
 
     def _get_server_app_folder(self):
         return "app_server"
@@ -100,18 +100,24 @@ class ServerEngine(ServerEngineInternalSpec):
     def _get_client_app_folder(self, client_name):
         return "app_" + client_name
 
-    def _get_run_folder(self):
-        return os.path.join(self.args.workspace, "run_" + str(self.run_number))
+    def _get_run_folder(self, run_destination):
+        return os.path.join(self.args.workspace, "run_" + str(run_destination))
 
     def get_engine_info(self) -> EngineInfo:
-        if self.run_number > 0:
-            run_folder = os.path.join(self.args.workspace, "run_" + str(self.run_number))
+        self.engine_info.app_names = {}
+        if bool(self.run_processes):
+            self.engine_info.status = MachineStatus.STARTED
+        else:
+            self.engine_info.status = MachineStatus.STOPPED
+
+        for run_number, _ in self.run_processes.items():
+            run_folder = os.path.join(self.args.workspace, "run_" + str(run_number))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
-                    self.engine_info.app_name = f.readline().strip()
+                    self.engine_info.app_names[run_number] = f.readline().strip()
             else:
-                self.engine_info.app_name = "?"
+                self.engine_info.app_names[run_number] = "?"
 
         return self.engine_info
 
@@ -121,21 +127,21 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return None
 
-    def set_run_number(self, num):
-        # status = self.server.status
-        status = self.engine_info.status
-        if status == MachineStatus.STARTING or status == MachineStatus.STARTED:
-            return "run_number can not be changed during the FL app running."
-
-        run_folder = os.path.join(self.args.workspace, "run_" + str(num))
-        if os.path.exists(run_folder):
-            self.run_number = num
-            return "run number already exists. Set the FL run number to {}.".format(num)
-        else:
-            self.run_number = num
-            os.makedirs(run_folder)
-            return "Created a new run folder: run_{}".format(num)
-
+    # def set_run_number(self, num):
+    #     # status = self.server.status
+    #     status = self.engine_info.status
+    #     if status == MachineStatus.STARTING or status == MachineStatus.STARTED:
+    #         return "run_number can not be changed during the FL app running."
+    #
+    #     run_folder = os.path.join(self.args.workspace, "run_" + str(num))
+    #     if os.path.exists(run_folder):
+    #         self.run_number = num
+    #         return "run number already exists. Set the FL run number to {}.".format(num)
+    #     else:
+    #         self.run_number = num
+    #         os.makedirs(run_folder)
+    #         return "Created a new run folder: run_{}".format(num)
+    #
     def delete_run_number(self, num):
         run_number_folder = os.path.join(self.args.workspace, "run_" + str(num))
         if os.path.exists(run_number_folder):
@@ -151,15 +157,16 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, snapshot=None) -> str:
-        if self.run_number == -1:
-            return "Please set a run number."
+    def start_app_on_server(self, run_destination: str, snapshot=None) -> str:
+        # if self.run_number == -1:
+        #     return "Please set a run number."
 
         status = self.engine_info.status
-        if status == MachineStatus.STARTING or status == MachineStatus.STARTED:
-            return "Server already starting or started."
+        # if status == MachineStatus.STARTING or status == MachineStatus.STARTED:
+        if run_destination in self.run_processes.keys():
+            return f"Server run_{run_destination} already started."
         else:
-            app_root = os.path.join(self._get_run_folder(), self._get_server_app_folder())
+            app_root = os.path.join(self._get_run_folder(run_destination), self._get_server_app_folder())
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
@@ -168,30 +175,33 @@ class ServerEngine(ServerEngineInternalSpec):
             app_custom_folder = ""
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
-            self.child_process = self._start_runner_process(self.args, app_root, self.run_number, app_custom_folder, snapshot)
+            self.child_process = self._start_runner_process(self.args, app_root, run_destination, app_custom_folder,
+                                                            snapshot)
 
-            threading.Thread(target=self.wait_for_complete).start()
+            # threading.Thread(target=self.wait_for_complete).start()
 
-            if self.command_conn:
-                with self.lock:
-                    self.command_conn.close()
-                    self.command_conn = None
+            # if self.command_conn:
+            #     with self.lock:
+            #         self.command_conn.close()
+            #         self.command_conn = None
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
 
-    def wait_for_complete(self):
+    def wait_for_complete(self, run_number):
         while True:
             try:
-                self.get_command_conn()
-                if self.command_conn:
-                    with self.lock:
+                with self.lock:
+                    command_conn = self.get_command_conn(run_number)
+                    if command_conn:
                         data = {ServerCommandKey.COMMAND: ServerCommandNames.HEARTBEAT, ServerCommandKey.DATA: {}}
-                        self.command_conn.send(data)
+                        command_conn.send(data)
                 time.sleep(1.0)
             except BaseException:
-                self.child_process = None
-                self.command_conn = None
+                # self.child_process = None
+                # self.command_conn = None
+                with self.lock:
+                    self.run_processes.pop(run_number)
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
@@ -209,17 +219,25 @@ class ServerEngine(ServerEngineInternalSpec):
         for t in args.set:
             command_options += " " + t
         command = (
-            f"{sys.executable} -m nvflare.private.fed.app.server.runner_process -m "
-            + args.workspace
-            + " -s fed_server.json -r " + app_root
-            + " -n " + str(run_number)
-            + " -p " + str(self.open_port)
-            + " --set" + command_options + " print_conf=True restore_snapshot=" + str(restore_snapshot)
+                f"{sys.executable} -m nvflare.private.fed.app.server.runner_process -m "
+                + args.workspace
+                + " -s fed_server.json -r " + app_root
+                + " -n " + str(run_number)
+                + " -p " + str(self.open_port)
+                + " --set" + command_options + " print_conf=True restore_snapshot=" + str(restore_snapshot)
         )
         # use os.setsid to create new process group ID
 
         # command = f"{sys.executable} -m nvflare.private.fed.app.server.worker_process"
         process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
+
+        threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
+
+        with self.lock:
+            self.run_processes[run_number] = {"_port": self.open_port,
+                                              "_conn": None,
+                                              "_child_process": process
+                                              }
         return process
 
     def remove_custom_path(self):
@@ -236,7 +254,7 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before abort."
         return ""
 
-    def abort_app_on_server(self) -> str:
+    def abort_app_on_server(self, run_destination: str) -> str:
         status = self.engine_info.status
         if status == MachineStatus.STOPPED:
             return "Server app has not started."
@@ -249,25 +267,28 @@ class ServerEngine(ServerEngineInternalSpec):
         # self.server.abort_run()
 
         try:
-            self.get_command_conn()
-            if self.command_conn:
-                with self.lock:
+            with self.lock:
+                command_conn = self.get_command_conn(run_destination)
+                if command_conn:
                     data = {ServerCommandKey.COMMAND: AdminCommandNames.ABORT, ServerCommandKey.DATA: {}}
-                    self.command_conn.send(data)
-                    status_message = self.command_conn.recv()
+                    command_conn.send(data)
+                    status_message = command_conn.recv()
                     self.logger.info(f"Abort server: {status_message}")
         except:
-            if self.child_process:
-                self.child_process.terminate()
-                self.child_process = None
+            with self.lock:
+                child_process = self.run_processes.get(run_destination, {}).get("_child_process", None)
+                if child_process:
+                    child_process.terminate()
+        finally:
+            with self.lock:
+                self.run_processes.pop(run_destination)
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
 
-    def check_app_start_readiness(self) -> str:
-        status = self.engine_info.status
-        if status != MachineStatus.STARTING and status != MachineStatus.STARTED:
-            return "Server app has not started."
+    def check_app_start_readiness(self, run_destination: str) -> str:
+        if not run_destination in self.run_processes.keys():
+            return f"Server app run_{run_destination} has not started."
         return ""
 
     def shutdown_server(self) -> str:
@@ -331,8 +352,8 @@ class ServerEngine(ServerEngineInternalSpec):
         return clients, invalid_inputs
 
     def get_app_data(self, app_name: str) -> Tuple[str, object]:
-        if self.run_number == -1:
-            return "Please set a FL run number.", None
+        # if self.run_number == -1:
+        #     return "Please set a FL run number.", None
 
         # folder = self._get_run_folder()
         # data = zip_directory_to_bytes(folder, self._get_client_app_folder(client_name))
@@ -347,15 +368,15 @@ class ServerEngine(ServerEngineInternalSpec):
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
 
-    def get_app_run_info(self) -> RunInfo:
+    def get_app_run_info(self, run_number) -> RunInfo:
         run_info = None
         try:
-            self.get_command_conn()
-            if self.command_conn:
-                with self.lock:
+            with self.lock:
+                command_conn = self.get_command_conn(run_number)
+                if command_conn:
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_RUN_INFO, ServerCommandKey.DATA: {}}
-                    self.command_conn.send(data)
-                    run_info = self.command_conn.recv()
+                    command_conn.send(data)
+                    run_info = command_conn.recv()
         except:
             pass
 
@@ -389,8 +410,8 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_staging_path_of_app(self, app_name: str) -> str:
         return os.path.join(self.server.admin_server.file_upload_dir, app_name)
 
-    def deploy_app_to_server(self, app_name: str, app_staging_path: str) -> str:
-        return self.deploy_app(app_name, "app_server")
+    def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
+        return self.deploy_app(run_destination, app_name, "app_server")
 
     def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
         return self.deploy_app(app_name, "app_" + client_name)
@@ -401,19 +422,19 @@ class ServerEngine(ServerEngineInternalSpec):
     def ask_to_stop(self):
         self.asked_to_stop = True
 
-    def deploy_app(self, src, dest):
-        if self.run_number == -1:
-            return "Please set a run number."
+    def deploy_app(self, run_destination, src, dest):
+        # if self.run_number == -1:
+        #     return "Please set a run number."
 
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, src)
-        fullpath_dest = os.path.join(self._get_run_folder(), dest)
+        fullpath_dest = os.path.join(self._get_run_folder(run_destination), dest)
         if not os.path.exists(fullpath_src):
             return f"App folder '{src}' does not exist in staging area."
         if os.path.exists(fullpath_dest):
             shutil.rmtree(fullpath_dest)
         shutil.copytree(fullpath_src, fullpath_dest)
 
-        app_file = os.path.join(self._get_run_folder(), "fl_app.txt")
+        app_file = os.path.join(self._get_run_folder(run_destination), "fl_app.txt")
         if os.path.exists(app_file):
             os.remove(app_file)
         with open(app_file, "wt") as f:
@@ -474,13 +495,19 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return results
 
-    def get_command_conn(self):
-        if not self.command_conn:
+    def get_command_conn(self, run_number):
+        port = self.run_processes.get(run_number, {}).get("_port")
+        command_conn = self.run_processes.get(run_number, {}).get("_conn", None)
+
+        if not command_conn:
             try:
-                address = ("localhost", self.open_port)
-                self.command_conn = CommandCLient(address, authkey="client process secret password".encode())
+                address = ("localhost", port)
+                command_conn = CommandCLient(address, authkey="client process secret password".encode())
+
+                self.run_processes[run_number]["_conn"] = command_conn
             except Exception as e:
                 pass
+        return command_conn
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
 
@@ -500,7 +527,7 @@ class ServerEngine(ServerEngineInternalSpec):
         )
 
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        data = zip_directory_to_bytes(workspace.get_run_dir(self.run_number), "")
+        data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
         snapshot.save_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
 
         snapshot.completed = completed

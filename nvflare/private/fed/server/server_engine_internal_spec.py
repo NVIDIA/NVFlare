@@ -30,7 +30,7 @@ class EngineInfo(object):
         self.start_time = time.time()
         self.status = MachineStatus.STOPPED
 
-        self.app_name = "?"
+        self.app_names = {}
 
 
 class ServerEngineInternalSpec(ServerEngineSpec, ABC):
@@ -52,12 +52,13 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def deploy_app_to_server(self, app_name: str, app_staging_path: str) -> str:
+    def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
         """Deploy the specified app to the server.
 
         Copy the app folder tree from staging area to the server's RUN area
 
         Args:
+            run_destination: destination of the app to be deployed
             app_name: name of the app to be deployed
             app_staging_path: the full path to the app folder in staging area
 
@@ -91,7 +92,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def get_app_run_info(self) -> RunInfo:
+    def get_app_run_info(self, run_number) -> RunInfo:
         """Get the app RunInfo from the child process.
 
         Returns:
@@ -131,7 +132,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def start_app_on_server(self) -> str:
+    def start_app_on_server(self, run_destination: str) -> str:
         """Start the FL app on Server.
 
         Returns:
@@ -139,7 +140,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def check_app_start_readiness(self) -> str:
+    def check_app_start_readiness(self, run_destination: str) -> str:
         """Check whether the app is ready to start.
 
         Returns:
@@ -151,7 +152,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """Abort the application on the specified clients."""
         pass
 
-    def abort_app_on_server(self):
+    def abort_app_on_server(self, run_destination: str):
         """Abort the application on the server."""
         pass
 

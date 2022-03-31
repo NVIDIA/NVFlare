@@ -431,18 +431,19 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx):
         try:
-            self.engine.get_command_conn()
-            if self.engine.command_conn:
-                with self.engine.lock:
+            with self.engine.lock:
+                run_number = shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(run_number))
+                if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
                     command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
 
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
                             ServerCommandKey.DATA: command_shareable}
-                    self.engine.command_conn.send(data)
+                    command_conn.send(data)
 
-                    return_data = self.engine.command_conn.recv()
+                    return_data = command_conn.recv()
                     taskname = return_data.get(ServerCommandKey.TASK_NAME)
                     task_id = return_data.get(ServerCommandKey.TASK_ID)
                     shareable = return_data.get(ServerCommandKey.SHAREABLE)
@@ -520,9 +521,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _submit_update(self, client, contribution_task_name, shareable, shared_fl_context, task_id):
         try:
-            self.engine.get_command_conn()
-            if self.engine.command_conn:
-                with self.engine.lock:
+            with self.engine.lock:
+                run_number = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(run_number))
+                if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
                     command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
@@ -532,7 +534,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
                             ServerCommandKey.DATA: command_shareable}
-                    self.engine.command_conn.send(data)
+                    command_conn.send(data)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
 
@@ -583,9 +585,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:
-            self.engine.get_command_conn()
-            if self.engine.command_conn:
-                with self.engine.lock:
+            with self.engine.lock:
+                run_number = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(run_number))
+                if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
                     command_shareable.set_header(ServerCommandKey.TOPIC, topic)
@@ -593,9 +596,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
                             ServerCommandKey.DATA: command_shareable}
-                    self.engine.command_conn.send(data)
+                    command_conn.send(data)
 
-                    return_data = self.engine.command_conn.recv()
+                    return_data = command_conn.recv()
                     reply = return_data.get(ServerCommandKey.AUX_REPLY)
                     child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
 
@@ -774,11 +777,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             snapshot = self.snapshot_persistor.retrieve()
             if snapshot and not snapshot.completed:
                 data = snapshot.get_component_snapshot(SnapshotKey.SERVER_RUNNER)
-                self.engine.set_run_number(int(data.get("run_number")))
+                # self.engine.set_run_number(int(data.get("run_number")))
+                run_number = data.get("run_number")
 
                 # Restore the workspace
                 workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                dest = os.path.join(self.workspace, "run_" + str(self.engine.run_number))
+                dest = os.path.join(self.workspace, "run_" + str(run_number))
                 if os.path.exists(dest):
                     shutil.rmtree(dest)
 
@@ -786,8 +790,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     os.makedirs(dest)
                 unzip_all_from_bytes(workspace_data, dest)
 
-                self.logger.info(f"Restore the previous snapshot. Run_number: {self.engine.run_number}")
-                self.engine.start_app_on_server(snapshot=snapshot)
+                self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
+                self.engine.start_app_on_server(str(run_number), snapshot=snapshot)
 
             self.server_state = HotState(
                 host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid
