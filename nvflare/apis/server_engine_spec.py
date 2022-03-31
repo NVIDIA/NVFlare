@@ -25,6 +25,7 @@ from .workspace import Workspace
 
 
 class ServerEngineSpec(ABC):
+    @abstractmethod
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         pass
 
