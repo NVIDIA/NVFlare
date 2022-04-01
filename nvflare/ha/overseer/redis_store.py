@@ -18,8 +18,8 @@ redis_db = redis.Redis(charset="utf-8", decode_responses=True)
 SP = "SP"
 
 
-def do_refresh():
-    redis_db.flushdb()
+# def do_refresh():
+#     redis_db.flushdb()
 
 
 def _boolean(sp):
