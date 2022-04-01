@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from typing import List
 
 from .fl_context import FLContext
@@ -27,9 +27,10 @@ class Study:
         contact: str,
         participating_clients: List[str],
         participating_admins: List[str],
-        start_date: datetime.date,
-        end_date: datetime.date,
+        start_date: date,
+        end_date: date,
         reviewers=None,
+        created_at: datetime = None,
     ):
         self.name = name
         self.description = description
@@ -39,7 +40,7 @@ class Study:
         self.start_date = start_date
         self.end_date = end_date
         self.reviewers = reviewers
-        self.created_at = datetime.utcnow().isoformat()
+        self.created_at = created_at
 
 
 class StudyManagerSpec(ABC):
@@ -57,7 +58,10 @@ class StudyManagerSpec(ABC):
         Args:
             study: the caller-provided study info
 
-        Returns: updated study info (e.g. create_time is set)
+        Returns:
+            updated study info (e.g. created_at is set) and an emtpy string if successful
+            None and an error message if the provided study is not valid
+
 
         """
         pass
