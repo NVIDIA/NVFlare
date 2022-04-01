@@ -14,7 +14,6 @@
 
 import json
 import os
-import pickle
 import traceback
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
