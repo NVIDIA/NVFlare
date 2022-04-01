@@ -14,10 +14,10 @@
 
 import torch
 import torchvision.datasets
+from net import SimpleNetwork
 from torchvision import transforms
 
-from net import SimpleNetwork
-from nvflare.apis.dxo import from_shareable, DataKind, DXO
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext

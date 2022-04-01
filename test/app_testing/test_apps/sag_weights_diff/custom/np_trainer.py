@@ -16,9 +16,9 @@ import os
 import time
 
 import numpy as np
-
 from constants import NPConstants
-from nvflare.apis.dxo import DXO, from_shareable, DataKind
+
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext

@@ -16,18 +16,18 @@ import os
 from typing import List
 
 import torch.cuda
-
 from net import SimpleNetwork
+from pt_constants import PTConstants
+
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
-from pt_constants import PTConstants
 
 
 class PTModelLocator(ModelLocator):
-    def __init__(self, exclude_vars=None, model=None):
+    def __init__(self, exclude_vars=None):
         super(PTModelLocator, self).__init__()
 
         self.model = SimpleNetwork()

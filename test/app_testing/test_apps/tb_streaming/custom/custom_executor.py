@@ -15,13 +15,13 @@
 import random
 import time
 
+from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
-from nvflare.apis.analytix import AnalyticsDataType
 
 
 class CustomExecutor(Executor):

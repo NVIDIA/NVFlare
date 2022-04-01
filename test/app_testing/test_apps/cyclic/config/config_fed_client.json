@@ -6,7 +6,7 @@
         "train"
       ],
       "executor": {
-        "path": "trainer.SimpleTrainer",
+        "path": "test.app_testing.tf2.trainer.SimpleTrainer",
         "args": {
           "epochs_per_round": 2
         }

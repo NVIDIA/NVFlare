@@ -12,19 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import pickle
-import json
 
 import tensorflow as tf
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable
+from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from tf2_net import Net
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.abstract.model import make_model_learnable
+
+from .net import Net
 
 
 class TF2ModelPersistor(ModelPersistor):
@@ -83,11 +84,11 @@ class TF2ModelPersistor(ModelPersistor):
         """
 
         if os.path.exists(self._pkl_save_path):
-            self.logger.info(f"Loading server weights")
+            self.logger.info("Loading server weights")
             with open(self._pkl_save_path, "rb") as f:
                 model_learnable = pickle.load(f)
         else:
-            self.logger.info(f"Initializing server model")
+            self.logger.info("Initializing server model")
             network = Net()
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             network.compile(optimizer="adam", loss=loss_fn, metrics=["accuracy"])
@@ -105,7 +106,7 @@ class TF2ModelPersistor(ModelPersistor):
             persist the Model object
 
         Args:
-            model: Model object
+            model_learnable: ModelLearnable object
             fl_ctx: FLContext
         """
         model_learnable_info = {k: str(type(v)) for k, v in model_learnable.items()}

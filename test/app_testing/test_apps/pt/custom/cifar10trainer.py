@@ -16,20 +16,20 @@ import os.path
 
 import torch
 import torchvision
+from net import SimpleNetwork
+from pt_constants import PTConstants
 from torch import nn
 from torchvision import transforms
 
-from net import SimpleNetwork
-from nvflare.apis.dxo import from_shareable, DXO, DataKind, MetaKey
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode, ReservedKey
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import make_model_learnable, model_learnable_to_dxo
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
-from pt_constants import PTConstants
 
 
 class Cifar10Trainer(Executor):
@@ -145,7 +145,7 @@ class Cifar10Trainer(Executor):
                 shareable.set_return_code(ReturnCode.TASK_UNKNOWN)
                 return shareable
         except:
-            self.log_exception(fl_ctx, f"Exception in simple trainer.")
+            self.log_exception(fl_ctx, "Exception in simple trainer.")
             shareable = Shareable()
             shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
             return shareable
