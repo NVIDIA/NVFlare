@@ -35,13 +35,14 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import FLSnapshot
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.study_manager_spec import StudyManagerSpec
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
+from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -473,6 +474,7 @@ class ServerEngine(ServerEngineInternalSpec):
         request.set_peer_props(fl_ctx.get_all_public_props())
 
         message = Message(topic=ReservedTopic.AUX_COMMAND, body=pickle.dumps(request))
+        message.set_header(RequestHeader.RUN_NUM, fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
         requests = {}
         for n in targets:
             requests.update({n: message})

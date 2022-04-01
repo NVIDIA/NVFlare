@@ -23,7 +23,7 @@ from .training_cmds import (  # StartClientMGpuProcessor,
     DeleteRunNumberProcessor,
     DeployProcessor,
     RestartClientProcessor,
-    SetRunNumberProcessor,
+    # SetRunNumberProcessor,
     ShutdownClientProcessor,
     StartAppProcessor,
 )
@@ -45,7 +45,7 @@ class ClientRequestProcessors:
         # StartClientMGpuProcessor(),
         ClientInfoProcessor(),
         AbortTaskProcessor(),
-        SetRunNumberProcessor(),
+        # SetRunNumberProcessor(),
         AuxRequestProcessor(),
     ]
 

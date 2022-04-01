@@ -43,7 +43,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
-    def start_app(self, run_number: int) -> str:
+    def start_app(self, run_number: str) -> str:
         """Start the app for the specified run.
 
         Args:

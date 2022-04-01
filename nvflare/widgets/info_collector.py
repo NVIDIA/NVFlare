@@ -114,7 +114,7 @@ class InfoCollector(Widget):
 
             self.add_error(group_name=group_name, key=key, err=analytic_data.value)
 
-    def get_run_stats(self):
+    def get_run_stats(self, run_destination):
         """Gets status for this current run.
 
         Returns:
@@ -239,10 +239,10 @@ class InfoCollector(Widget):
 
         self.add_info(category_name=self.CATEGORY_ERROR, group_name=group_name, key=key, value=value)
 
-    def get_errors(self):
+    def get_errors(self, run_destination):
         """Gets the error category information."""
         return self.get_category(self.CATEGORY_ERROR)
 
-    def reset_errors(self):
+    def reset_errors(self, run_destination):
         """Resets the error category information."""
         self.reset_category(self.CATEGORY_ERROR)

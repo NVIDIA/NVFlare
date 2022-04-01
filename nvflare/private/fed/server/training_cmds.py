@@ -668,12 +668,18 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 try:
                     body = json.loads(r.reply.body)
                     if r.reply and isinstance(body, dict):
-                        app_name = body.get(ClientStatusKey.APP_NAME, "?")
-                        run_num = body.get(ClientStatusKey.RUN_NUM, "?")
-                        status = body.get(ClientStatusKey.STATUS, "?")
+                        running_jobs = body.get(ClientStatusKey.RUNNING_JOBS)
+                        if running_jobs:
+                            for job in running_jobs:
+                                app_name = job.get(ClientStatusKey.APP_NAME, "?")
+                                run_num = job.get(ClientStatusKey.RUN_NUM, "?")
+                                status = job.get(ClientStatusKey.STATUS, "?")
+                                table.add_row([client_name, app_name, run_num, status])
+                        else:
+                            table.add_row([client_name, app_name, run_num, "No Jobs"])
                 except BaseException:
                     self.logger.error("Bad reply from client")
 
-                table.add_row([client_name, app_name, run_num, status])
+                # table.add_row([client_name, app_name, run_num, status])
             else:
                 table.add_row([client_name, app_name, run_num, "No Reply"])

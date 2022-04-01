@@ -208,3 +208,11 @@ class SnapshotKey(object):
     FL_CONTEXT = "fl_context"
     SERVER_RUNNER = "_Server_Runner"
     WORKSPACE = "_workspace"
+
+
+class RunProcessKey(object):
+
+    LISTEN_PORT = "_listen_port"
+    CONNECTION = "_comm_conn"
+    CHILD_PROCESS = "_child_process"
+    STATUS = "_status"
