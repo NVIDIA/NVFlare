@@ -19,7 +19,7 @@ import json
 import os
 from datetime import datetime
 
-import yaml
+from nvflare.lighter.utils import load_yaml
 
 
 def get_input(prompt, item_list, multiple=False):
@@ -75,7 +75,7 @@ def main():
         print(f"{project_full_path} not found.  Running study requires that file.")
         exit(0)
 
-    project = yaml.load(open(project_full_path, "r"), Loader=yaml.Loader)
+    project = load_yaml(project_full_path)
     api_version = project.get("api_version")
     if api_version not in [3]:
         raise ValueError(f"API version expected 3 but found {api_version}")

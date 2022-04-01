@@ -16,7 +16,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
-import yaml
+from nvflare.lighter.utils import load_yaml
 
 OVERSEER_STORE = os.environ.get("OVERSEER_STORE")
 
@@ -34,7 +34,7 @@ else:
 def load_privilege():
     privilege_file = os.environ.get("AUTHZ_FILE", "privilege.yml")
     try:
-        privilege = yaml.load(open(privilege_file, "tr"), Loader=yaml.Loader)
+        privilege = load_yaml(privilege_file)
     except:
         privilege = dict()
     return privilege
