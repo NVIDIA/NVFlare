@@ -18,7 +18,6 @@ from flask import jsonify, request
 
 from nvflare.ha.overseer.app import app
 from nvflare.ha.overseer.utils import (
-    do_refresh,
     get_all_sp,
     get_primary_sp,
     load_privilege,
@@ -76,8 +75,7 @@ def promote():
 def refresh():
     if request.headers.get("X-USER") not in privilege_dict.get("super", {}):
         return jsonify({"Error": "No rights"})
-    do_refresh()
-    return jsonify({"Status": "Success"})
+    return jsonify({"Status": "Error.  API disabled."})
 
 
 if __name__ == "__main__":

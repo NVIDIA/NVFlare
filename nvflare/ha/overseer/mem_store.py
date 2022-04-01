@@ -19,11 +19,6 @@ data_store["SP"] = dict()
 data_store_lock = threading.Lock()
 
 
-def do_refresh():
-    with data_store_lock:
-        data_store["SP"] = dict()
-
-
 def _primary_key(sp):
     return f'{sp["project"]}/{sp["sp_end_point"]}'
 

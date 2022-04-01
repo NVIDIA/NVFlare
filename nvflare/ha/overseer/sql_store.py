@@ -45,9 +45,9 @@ def _dict_or_empty(sp):
     return sp.asdict() if sp else {}
 
 
-def do_refresh():
-    db.drop_all()
-    db.create_all()
+# def do_refresh():
+#     db.drop_all()
+#     db.create_all()
 
 
 def get_all_sp(project):
