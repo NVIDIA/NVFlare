@@ -54,7 +54,7 @@ In a file called ``np_trainer.py``, import nvflare and numpy.
 Now we will implement the ``execute`` function to enable the clients to perform
 a simple addition of a diff to represent one calculation of training a round.
 
-See :ref:`hello_numpy_np_trainer` or find the full code of ``np_trainer.py`` at
+Find the full code of ``np_trainer.py`` at
 ``examples/hello-numpy-sag/custom/np_trainer.py`` to follow along.
 
 The server sends either the initial weights or any stored weights to each of the clients
