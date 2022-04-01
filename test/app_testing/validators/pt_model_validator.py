@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import os
-from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from test.app_testing.app_result_validator import AppResultValidator
+
+from nvflare.app_common.app_constant import DefaultCheckpointFileName
 
 
 def check_pt_results(server_data, client_data, run_data):
