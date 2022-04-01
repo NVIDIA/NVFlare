@@ -44,7 +44,7 @@ print(sys.path)
 # -- Project information -----------------------------------------------------
 
 project = "NVIDIA FLARE"
-copyright = "2021, NVIDIA"
+copyright = "2021 - 2022, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
@@ -76,7 +76,6 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
-    "sphinxcontrib.exceltable",
 ]
 
 autoclass_content = "both"
