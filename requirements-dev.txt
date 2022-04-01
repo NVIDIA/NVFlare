@@ -3,5 +3,6 @@ pydocstyle
 isort==5.8.0
 flake8==3.9.2
 black==21.5b1
+click==8.0.1
 pytest-xdist
 
