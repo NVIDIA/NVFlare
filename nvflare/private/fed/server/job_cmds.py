@@ -73,6 +73,8 @@ class JobCommandModule(CommandModule):
             conn.append_string("\nJob details for each job:")
             for job in jobs:
                 conn.append_string(json.dumps(job.meta, indent=4))
+        else:
+            conn.append_string("No jobs.")
         conn.append_success("")
 
     def get_job_details(self, conn: Connection, args: List[str]):

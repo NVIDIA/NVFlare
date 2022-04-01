@@ -14,7 +14,6 @@
 
 import json
 import os
-import pickle
 import traceback
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -336,7 +335,8 @@ class FileTransferModule(CommandModule):
         data = zip_directory_to_bytes(self.upload_dir, folder_name)
 
         b64str = bytes_to_b64str(data)
-        meta_b64str = bytes_to_b64str(pickle.dumps(meta))
+        serialized_meta = json.dumps(meta).encode("utf-8")
+        meta_b64str = bytes_to_b64str(serialized_meta)
         parts = [_server_cmd_name(ftd.SERVER_CMD_UPLOAD_JOB), meta_b64str, b64str]
         command = join_args(parts)
         return api.server_execute(command)
