@@ -156,6 +156,8 @@ class ServerCommandNames(object):
     SUBMIT_UPDATE = "submit_update"
     AUX_COMMUNICATE = "aux_communicate"
     HEARTBEAT = "heartbeat"
+    GET_CLIENTS = "get_clients"
+    AUX_SEND = "aux_send"
 
 
 class ServerCommandKey(object):
@@ -170,6 +172,7 @@ class ServerCommandKey(object):
     FL_CLIENT = "fl_client"
     TOPIC = "topic"
     AUX_REPLY = "aux_reply"
+    CLIENTS = "clients"
 
 
 class FedEventHeader(object):

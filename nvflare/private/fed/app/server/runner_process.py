@@ -17,6 +17,8 @@
 import argparse
 import logging
 import os
+import time
+from multiprocessing.connection import Client, Listener
 
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.fuel.common.excepts import ConfigError
@@ -38,7 +40,8 @@ def main():
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--run_number", "-n", type=str, help="RUn_number", required=True)
     # parser.add_argument("--snapshot", "-t", type=bool, help="snapshot", required=True)
-    parser.add_argument("--port", "-p", type=str, help="port", required=True)
+    parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
+    parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -115,7 +118,7 @@ def start_server_training(server, args, app_root, run_number, snapshot):
 
         set_up_run_config(server, conf)
 
-        server.engine.set_run_number(run_number)
+        server.engine.creat_parent_connection(int(args.conn))
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:

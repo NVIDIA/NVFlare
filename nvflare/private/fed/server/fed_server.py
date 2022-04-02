@@ -391,11 +391,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             # engine = fl_ctx.get_engine()
             shared_fl_ctx = pickle.loads(proto_to_bytes(request.context["fl_context"]))
+            run_number = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
             # fl_ctx.set_peer_context(shared_fl_ctx)
 
             with self.lock:
                 # if self.server_runner is None or engine is None or self.engine.run_manager is None:
-                if self.engine.child_process is None:
+                if not run_number in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
                     taskname = SpecialTaskName.END_RUN
                     task_id = ""
@@ -460,9 +461,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def SubmitUpdate(self, request, context):
         """Handle client's submission of the federated updates."""
         # if self.server_runner is None or self.engine.run_manager is None:
-        if self.engine.child_process is None:
-            self.logger.info("ignored result submission since Server Engine isn't ready")
-            context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.submit_result(fl_ctx)
@@ -482,6 +480,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     shareable = Shareable()
                     shareable = shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
                     shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
+
+                    run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
+                    if not run_number in self.engine.run_processes.keys():
+                        self.logger.info("ignored result submission since Server Engine isn't ready")
+                        context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
                     # fl_ctx.set_peer_context(shared_fl_context)
 
@@ -545,15 +548,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self._handle_state_check(context, state_check)
             self._ssid_check(request.client, context)
 
-            # if self.server_runner is None or self.engine.run_manager is None:
-            if self.engine.child_process is None:
-                self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
-                reply = make_reply(ReturnCode.SERVER_NOT_READY)
-                aux_reply = fed_msg.AuxReply()
-                aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
-
-                return aux_reply
-
             contribution = request
 
             client = self.client_manager.validate_client(contribution.client, context)
@@ -566,6 +560,15 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             shareable = Shareable()
             shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
             shared_fl_context = pickle.loads(proto_to_bytes(request.data["fl_context"]))
+
+            run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
+            if not run_number in self.engine.run_processes.keys():
+                self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
+                reply = make_reply(ReturnCode.SERVER_NOT_READY)
+                aux_reply = fed_msg.AuxReply()
+                aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
+
+                return aux_reply
 
             fl_ctx.set_peer_context(shared_fl_context)
             shareable.set_peer_props(shared_fl_context.get_all_public_props())

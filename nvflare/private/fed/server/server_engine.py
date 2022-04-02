@@ -24,9 +24,10 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing.connection import Client as CommandCLient
+from multiprocessing.connection import Client as CommandClient
 from threading import Lock
 from typing import List, Tuple
+from multiprocessing.connection import Listener
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey, \
@@ -92,8 +93,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
-        # self.command_conn = None
-        # self.child_process = None
+        self.parent_conn = None
+        self.parent_conn_lock = Lock()
 
     def _get_server_app_folder(self):
         return "app_server"
@@ -143,6 +144,29 @@ class ServerEngine(ServerEngineInternalSpec):
     #         os.makedirs(run_folder)
     #         return "Created a new run folder: run_{}".format(num)
     #
+    def creat_parent_connection(self, port):
+        while not self.parent_conn:
+            try:
+                address = ("localhost", port)
+                self.parent_conn = CommandClient(address, authkey="parent process secret password".encode())
+            except Exception as e:
+                time.sleep(1.0)
+                pass
+
+        threading.Thread(target=self.heartbeat_to_parent, args=[]).start()
+
+    def heartbeat_to_parent(self):
+        while True:
+            try:
+                with self.parent_conn_lock:
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.HEARTBEAT, ServerCommandKey.DATA: {}}
+                    self.parent_conn.send(data)
+                time.sleep(1.0)
+            except BaseException:
+                # The parent process can not be reached. Terminate the child process.
+                break
+        os.killpg(os.getpgid(os.getpid()), 9)
+
     def delete_run_number(self, num):
         run_number_folder = os.path.join(self.args.workspace, "run_" + str(num))
         if os.path.exists(run_number_folder):
@@ -176,8 +200,12 @@ class ServerEngine(ServerEngineInternalSpec):
             app_custom_folder = ""
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
-            self.child_process = self._start_runner_process(self.args, app_root, run_destination, app_custom_folder,
-                                                            snapshot)
+
+            open_ports = get_open_ports(2)
+            self._start_runner_process(self.args, app_root, run_destination, app_custom_folder,
+                                       open_ports, snapshot)
+
+            threading.Thread(target=self._listen_command, args=(open_ports[0], run_destination)).start()
 
             # threading.Thread(target=self.wait_for_complete).start()
 
@@ -188,6 +216,33 @@ class ServerEngine(ServerEngineInternalSpec):
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
+
+    def _listen_command(self, listen_port, run_destination):
+        address = ("localhost", int(listen_port))
+        listener = Listener(address, authkey="parent process secret password".encode())
+        conn = listener.accept()
+
+        while run_destination in self.run_processes.keys():
+            try:
+                if conn.poll(0.1):
+                    received_data = conn.recv()
+                    command = received_data.get(ServerCommandKey.COMMAND)
+                    data = received_data.get(ServerCommandKey.DATA)
+
+                    if command == ServerCommandNames.GET_CLIENTS:
+                        return_data = {ServerCommandKey.CLIENTS: self.client_manager.clients}
+                        conn.send(return_data)
+                    elif command == ServerCommandNames.AUX_SEND:
+                        targets = data.get("targets")
+                        topic = data.get("topic")
+                        request = data.get("request")
+                        timeout = data.get("timeout")
+                        fl_ctx = data.get("fl_ctx")
+                        replies = self.aux_send(targets=targets, topic=topic, request=request,
+                                                timeout=timeout, fl_ctx=fl_ctx)
+                        conn.send(replies)
+            except:
+                self.logger.warning("Failed to process the child process command.")
 
     def wait_for_complete(self, run_number):
         while True:
@@ -206,12 +261,12 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
-    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, snapshot):
+    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, open_ports, snapshot):
         new_env = os.environ.copy()
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
 
-        self.open_port = get_open_ports(1)[0]
+        listen_port = open_ports[1]
         if snapshot:
             restore_snapshot = True
         else:
@@ -224,7 +279,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 + args.workspace
                 + " -s fed_server.json -r " + app_root
                 + " -n " + str(run_number)
-                + " -p " + str(self.open_port)
+                + " -p " + str(listen_port)
+                + " -c " + str(open_ports[0])
                 + " --set" + command_options + " print_conf=True restore_snapshot=" + str(restore_snapshot)
         )
         # use os.setsid to create new process group ID
@@ -235,7 +291,7 @@ class ServerEngine(ServerEngineInternalSpec):
         threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
 
         with self.lock:
-            self.run_processes[run_number] = {"_port": self.open_port,
+            self.run_processes[run_number] = {"_port": listen_port,
                                               "_conn": None,
                                               "_child_process": process
                                               }
@@ -459,6 +515,12 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         if not targets:
+            with self.parent_conn_lock:
+                data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
+                self.parent_conn.send(data)
+                return_data = self.parent_conn.recv()
+                clients = return_data.get(ServerCommandKey.CLIENTS)
+                self.client_manager.clients = clients
             targets = []
             for t in self.get_clients():
                 targets.append(t.name)
@@ -469,12 +531,26 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return {}
 
+    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+        with self.parent_conn_lock:
+            data = {ServerCommandKey.COMMAND: ServerCommandNames.AUX_SEND,
+                    ServerCommandKey.DATA: {"targets": targets,
+                                            "topic": topic,
+                                            "request": request,
+                                            "timeout": timeout,
+                                            "fl_ctx": get_serializable_data(fl_ctx)}
+                    }
+            self.parent_conn.send(data)
+            return_data = self.parent_conn.recv()
+            results = return_data.get(ServerCommandKey.CLIENTS)
+            return results
+
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         # Send the aux messages through admin_server
         request.set_peer_props(fl_ctx.get_all_public_props())
 
         message = Message(topic=ReservedTopic.AUX_COMMAND, body=pickle.dumps(request))
-        message.set_header(RequestHeader.RUN_NUM, fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
+        message.set_header(RequestHeader.RUN_NUM, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
         requests = {}
         for n in targets:
             requests.update({n: message})
@@ -504,7 +580,7 @@ class ServerEngine(ServerEngineInternalSpec):
         if not command_conn:
             try:
                 address = ("localhost", port)
-                command_conn = CommandCLient(address, authkey="client process secret password".encode())
+                command_conn = CommandClient(address, authkey="client process secret password".encode())
 
                 self.run_processes[run_number]["_conn"] = command_conn
             except Exception as e:
