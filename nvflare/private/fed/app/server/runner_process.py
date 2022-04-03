@@ -17,8 +17,6 @@
 import argparse
 import logging
 import os
-import time
-from multiprocessing.connection import Client, Listener
 
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.fuel.common.excepts import ConfigError

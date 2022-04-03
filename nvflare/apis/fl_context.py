@@ -185,7 +185,7 @@ class FLContextManager(object):
 
     """
 
-    def __init__(self, engine, identity_name: str, run_num: int, public_stickers, private_stickers):
+    def __init__(self, engine, identity_name: str, run_num: str, public_stickers, private_stickers):
         """Init the FLContextManager.
 
         Args:

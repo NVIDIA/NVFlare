@@ -45,7 +45,7 @@ def _get_client_state(project_name, token, ssid, fl_ctx: FLContext):
     """
     state_message = fed_msg.ClientState(token=token, ssid=ssid)
     state_message.meta.project.name = project_name
-    state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+    # state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
 
     context_data = make_context_data(fl_ctx)
     state_message.context["fl_context"].CopyFrom(context_data)

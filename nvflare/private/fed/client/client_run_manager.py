@@ -51,7 +51,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def __init__(
         self,
         client_name: str,
-        run_num: int,
+        run_num: str,
         workspace: Workspace,
         client: FederatedClient,
         components: Dict[str, FLComponent],
@@ -62,7 +62,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         Args:
             client_name: client name
-            run_num: run numbre
+            run_num: run number
             workspace: workspacee
             client: FL client object
             components: available FL components

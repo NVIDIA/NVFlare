@@ -137,12 +137,6 @@ class ClientEngine(ClientEngineInternalSpec):
                 % (self.client.token, self.client.ssid, run_number, self.client.client_name, open_port)
             )
 
-    # def wait_process_complete(self):
-    #     self.client.process.wait()
-    #
-    #     # self.client.cross_validation()
-    #     self.client.status = ClientStatus.STOPPED
-    #
     def remove_custom_path(self):
         regex = re.compile(".*/run_.*/custom")
         custom_paths = list(filter(regex.search, sys.path))

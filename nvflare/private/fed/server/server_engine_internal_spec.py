@@ -250,3 +250,28 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         If a reply is not received from a client, do not put it into the reply dict.
         """
         pass
+
+    def show_stats(self, run_number):
+        """Show_stats of the server.
+
+        Args:
+            run_number: current run_number
+
+        Returns:
+            Component stats of the server
+
+        """
+        pass
+
+    def get_errors(self, run_number):
+        """Get the errors of the server components.
+
+        Args:
+            run_number: current run_number
+
+        Returns:
+            Server components errors.
+
+        """
+        pass
+

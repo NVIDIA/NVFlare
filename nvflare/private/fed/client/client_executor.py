@@ -23,9 +23,7 @@ from multiprocessing.connection import Client
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-
 from .client_status import ClientStatus, get_status_message
 
 
@@ -135,9 +133,6 @@ class ProcessExecutor(ClientExecutor):
 
         self.startup = startup
 
-        # self.conn_client = None
-
-        # self.listen_port = get_open_ports(1)[0]
         self.run_processes = {}
 
         self.lock = threading.Lock()
@@ -163,7 +158,6 @@ class ProcessExecutor(ClientExecutor):
         return pipe
 
     def start_train(self, client, run_number, args, app_root, app_custom_folder, listen_port):
-        # self.listen_port = listen_port
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -185,7 +179,6 @@ class ProcessExecutor(ClientExecutor):
 
         print("training child process ID: {}".format(process.pid))
 
-        # client.process = process
         client.multi_gpu = False
 
         with self.lock:
@@ -194,7 +187,6 @@ class ProcessExecutor(ClientExecutor):
                                               RunProcessKey.CHILD_PROCESS: process,
                                               RunProcessKey.STATUS: ClientStatus.STARTED}
 
-        # client.status = ClientStatus.STARTED
         thread = threading.Thread(
             target=self.wait_training_process_finish, args=(client, run_number, args, app_root, app_custom_folder)
         )
@@ -277,7 +269,6 @@ class ProcessExecutor(ClientExecutor):
 
     def abort_train(self, client, run_number):
         process_status = self.run_processes.get(run_number, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-        # if client.status == ClientStatus.STARTED:
         if process_status == ClientStatus.STARTED:
             with self.lock:
                 try:
@@ -289,10 +280,7 @@ class ProcessExecutor(ClientExecutor):
                             data = {"command": AdminCommandNames.ABORT, "data": {}}
                             conn_client.send(data)
                             self.logger.debug("abort sent")
-                            # wait for client to handle abort
-                            # time.sleep(10.0)
 
-                        # self._terminate_process(child_process)
                         threading.Thread(target=self._terminate_process, args=[child_process]).start()
                 finally:
                     if conn_client:
@@ -317,7 +305,6 @@ class ProcessExecutor(ClientExecutor):
 
     def abort_task(self, client, run_number):
         process_status = self.run_processes.get(run_number, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-        # if client.status == ClientStatus.STARTED:
         if process_status == ClientStatus.STARTED:
             conn_client = self.get_conn_client(run_number)
             if conn_client:
@@ -354,7 +341,6 @@ class ProcessExecutor(ClientExecutor):
 
         # Not to run cross_validation in a new process anymore
         client.cross_site_validate = False
-        # client.status = ClientStatus.STOPPED
 
     def get_status(self, run_number):
         with self.lock:
@@ -362,8 +348,4 @@ class ProcessExecutor(ClientExecutor):
             return process_status
 
     def close(self):
-        # if self.conn_client:
-        #     data = {"command": AdminCommandNames.SHUTDOWN, "data": {}}
-        #     self.conn_client.send(data)
-        #     self.conn_client = None
         self.cleanup()

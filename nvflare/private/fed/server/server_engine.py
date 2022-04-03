@@ -129,21 +129,6 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return None
 
-    # def set_run_number(self, num):
-    #     # status = self.server.status
-    #     status = self.engine_info.status
-    #     if status == MachineStatus.STARTING or status == MachineStatus.STARTED:
-    #         return "run_number can not be changed during the FL app running."
-    #
-    #     run_folder = os.path.join(self.args.workspace, "run_" + str(num))
-    #     if os.path.exists(run_folder):
-    #         self.run_number = num
-    #         return "run number already exists. Set the FL run number to {}.".format(num)
-    #     else:
-    #         self.run_number = num
-    #         os.makedirs(run_folder)
-    #         return "Created a new run folder: run_{}".format(num)
-    #
     def creat_parent_connection(self, port):
         while not self.parent_conn:
             try:
@@ -183,11 +168,6 @@ class ServerEngine(ServerEngineInternalSpec):
         return self._get_all_clients_from_inputs(client_names)
 
     def start_app_on_server(self, run_destination: str, snapshot=None) -> str:
-        # if self.run_number == -1:
-        #     return "Please set a run number."
-
-        status = self.engine_info.status
-        # if status == MachineStatus.STARTING or status == MachineStatus.STARTED:
         if run_destination in self.run_processes.keys():
             return f"Server run_{run_destination} already started."
         else:
@@ -206,13 +186,6 @@ class ServerEngine(ServerEngineInternalSpec):
                                        open_ports, snapshot)
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_destination)).start()
-
-            # threading.Thread(target=self.wait_for_complete).start()
-
-            # if self.command_conn:
-            #     with self.lock:
-            #         self.command_conn.close()
-            #         self.command_conn = None
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -254,8 +227,6 @@ class ServerEngine(ServerEngineInternalSpec):
                         command_conn.send(data)
                 time.sleep(1.0)
             except BaseException:
-                # self.child_process = None
-                # self.command_conn = None
                 with self.lock:
                     self.run_processes.pop(run_number)
                 self.engine_info.status = MachineStatus.STOPPED
@@ -409,9 +380,6 @@ class ServerEngine(ServerEngineInternalSpec):
         return clients, invalid_inputs
 
     def get_app_data(self, app_name: str) -> Tuple[str, object]:
-        # if self.run_number == -1:
-        #     return "Please set a FL run number.", None
-
         # folder = self._get_run_folder()
         # data = zip_directory_to_bytes(folder, self._get_client_app_folder(client_name))
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, app_name)
@@ -480,9 +448,6 @@ class ServerEngine(ServerEngineInternalSpec):
         self.asked_to_stop = True
 
     def deploy_app(self, run_destination, src, dest):
-        # if self.run_number == -1:
-        #     return "Please set a run number."
-
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, src)
         fullpath_dest = os.path.join(self._get_run_folder(run_destination), dest)
         if not os.path.exists(fullpath_src):
