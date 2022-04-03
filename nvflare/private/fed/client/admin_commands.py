@@ -153,7 +153,7 @@ class ShowStatsCommand(CommandProcessor):
             if not isinstance(collector, InfoCollector):
                 raise TypeError("collector must be an instance of InfoCollector, but got {}".format(type(collector)))
 
-            result = collector.get_run_stats(str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
+            result = collector.get_run_stats()
 
         if not result:
             result = "No stats info"
@@ -189,7 +189,7 @@ class ShowErrorsCommand(CommandProcessor):
             if not isinstance(collector, InfoCollector):
                 raise TypeError("collector must be an instance of InfoCollector, but got {}".format(type(collector)))
 
-            result = collector.get_errors(str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
+            result = collector.get_errors()
 
         # CommandAgent is expecting data, could not be None
         if result is None:
@@ -219,7 +219,7 @@ class ResetErrorsCommand(CommandProcessor):
 
         """
         engine = fl_ctx.get_engine()
-        engine.reset_errors(str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
+        engine.reset_errors()
 
 
 class AuxCommand(CommandProcessor):

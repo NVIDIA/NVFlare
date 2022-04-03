@@ -435,7 +435,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     command_conn.send(data)
                     run_info = command_conn.recv()
         except:
-            pass
+            self.logger.error(f"Failed to get_app_run_info from run_{run_number}")
 
         return run_info
 
@@ -542,8 +542,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     }
             self.parent_conn.send(data)
             return_data = self.parent_conn.recv()
-            results = return_data.get(ServerCommandKey.CLIENTS)
-            return results
+            return return_data
 
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         # Send the aux messages through admin_server
@@ -621,6 +620,36 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
+
+    def show_stats(self, run_number):
+        stats = None
+        try:
+            with self.lock:
+                command_conn = self.get_command_conn(run_number)
+                if command_conn:
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.SHOW_STATS,
+                            ServerCommandKey.DATA: {}}
+                    command_conn.send(data)
+                    stats = command_conn.recv()
+        except:
+            self.logger.error(f"Failed to get_stats from run_{run_number}")
+
+        return stats
+
+    def get_errors(self, run_number):
+        stats = None
+        try:
+            with self.lock:
+                command_conn = self.get_command_conn(run_number)
+                if command_conn:
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_ERRORS,
+                            ServerCommandKey.DATA: {}}
+                    command_conn.send(data)
+                    stats = command_conn.recv()
+        except:
+            self.logger.error(f"Failed to get_stats from run_{run_number}")
+
+        return stats
 
     def close(self):
         self.executor.shutdown()

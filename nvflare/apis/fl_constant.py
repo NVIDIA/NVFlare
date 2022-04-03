@@ -158,6 +158,8 @@ class ServerCommandNames(object):
     HEARTBEAT = "heartbeat"
     GET_CLIENTS = "get_clients"
     AUX_SEND = "aux_send"
+    SHOW_STATS = "show_stats"
+    GET_ERRORS = "get_errors"
 
 
 class ServerCommandKey(object):
@@ -173,6 +175,7 @@ class ServerCommandKey(object):
     TOPIC = "topic"
     AUX_REPLY = "aux_reply"
     CLIENTS = "clients"
+    COLLECTOR = "collector"
 
 
 class FedEventHeader(object):

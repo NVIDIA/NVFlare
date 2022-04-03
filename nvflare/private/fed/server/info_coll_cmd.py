@@ -113,8 +113,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         run_destination = conn.get_prop(self.RUN_DESTINATION)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
-            result = collector.get_run_stats(run_destination)
+            result = engine.show_stats(run_destination)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_STATS, body="")
@@ -134,8 +133,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         run_destination = conn.get_prop(self.RUN_DESTINATION)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
-            result = collector.get_errors(run_destination)
+            result = engine.get_errors(run_destination)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="")
@@ -145,7 +143,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
     def reset_errors(self, conn: Connection, args: List[str]):
         run_destination = conn.get_prop(self.RUN_DESTINATION)
         collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
-        collector.reset_errors(run_destination)
+        collector.reset_errors()
         conn.append_string("errors reset")
 
     def _process_stats_replies(self, conn, replies):
