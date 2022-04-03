@@ -109,18 +109,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    # def set_run_number(self, run_num: int) -> str:
-    #     """Set the run number for the next RUN.
-    #
-    #     Args:
-    #         run_num: run number
-    #
-    #     Returns:
-    #         An error message. An empty string if successful.
-    #     """
-    #     pass
-
-    def delete_run_number(self, run_num: int) -> str:
+    def delete_run_number(self, run_num: str) -> str:
         """Delete specified RUN.
 
         The Engine must do status check before the run can be deleted.

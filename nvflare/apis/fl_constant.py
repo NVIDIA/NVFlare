@@ -132,8 +132,7 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
-    SET_RUN_NUMBER = "set_run_number"
-    DELETE_RUN_NUMBER = "delete_run_number"
+    DELETE_RUN = "delete_run"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"

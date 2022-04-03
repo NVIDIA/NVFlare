@@ -42,18 +42,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         return CommandModuleSpec(
             name="training",
             cmd_specs=[
-                # CommandSpec(
-                #     name=AdminCommandNames.SET_RUN_NUMBER,
-                #     description="set the run number",
-                #     usage="set_run_number number",
-                #     handler_func=self.set_run_number,
-                #     authz_func=self.authorize_set_run_number,
-                #     visible=True,
-                # ),
                 CommandSpec(
-                    name=AdminCommandNames.DELETE_RUN_NUMBER,
+                    name=AdminCommandNames.DELETE_RUN,
                     description="delete a run",
-                    usage="delete_run_number number",
+                    usage="delete_run number",
                     handler_func=self.delete_run_number,
                     authz_func=self.authorize_set_run_number,
                     visible=True,
@@ -137,7 +129,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             ],
         )
 
-    # Set Run Number
     def authorize_set_run_number(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing run number")
@@ -155,14 +146,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         return True, FLAuthzContext.new_authz_context(site_names=[self.SITE_SERVER], actions=[Action.TRAIN])
 
-    # def set_run_number(self, conn: Connection, args: List[str]):
-    #     num = int(args[1])
-    #     engine = conn.app_ctx
-    #     if not isinstance(engine, ServerEngineInternalSpec):
-    #         raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-    #     conn.append_string(engine.set_run_number(num))
-    #     self._set_run_number_clients(conn, num)
-
     def _set_run_number_clients(self, conn: Connection, run_number) -> bool:
         engine = conn.app_ctx
         clients = engine.get_clients()
@@ -179,27 +162,23 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return True
 
     def delete_run_number(self, conn: Connection, args: List[str]):
-        num = int(args[1])
+        run_destination = args[1]
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        engine_info = engine.get_engine_info()
+        if run_destination in engine.run_processes.keys():
+            conn.append_error(f"Current running run_{run_destination} can not be deleted.")
+            return
 
-        if engine_info.status == MachineStatus.STARTED or engine_info.status == MachineStatus.STARTING:
-            run_number = engine.get_run_number()
-            if run_number == num:
-                conn.append_error("Current running run_number can not be deleted.")
-                return
-
-        err = engine.delete_run_number(num)
+        err = engine.delete_run_number(run_destination)
         if err:
             conn.append_error(err)
             return
 
         # ask clients to delete this RUN
         message = new_message(conn, topic=TrainingTopic.DELETE_RUN, body="")
-        message.set_header(RequestHeader.RUN_NUM, str(num))
+        message.set_header(RequestHeader.RUN_NUM, str(run_destination))
         clients = engine.get_clients()
         if clients:
             conn.set_prop(self.TARGET_CLIENT_TOKENS, [x.token for x in clients])
@@ -217,9 +196,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        # if engine.get_run_number() < 0:
-        #     conn.append_error("Please set a run number.")
-        #     return False, None
 
         err = self.validate_command_targets(conn, args[3:])
         if err:
@@ -362,16 +338,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             success = self._start_app_on_server(conn, run_destination)
 
             if success:
-                # engine_info = None
-                # start = time.time()
-                # # Wait for the server App to start properly
-                # while engine_info is None or engine_info.status != MachineStatus.STARTED:
-                #     time.sleep(0.3)
-                #     engine_info = engine.get_engine_info()
-                #     if time.time() - start > 60.0:
-                #         conn.append_error("Could not start the server app")
-                #         return
-                #
                 client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
                 if client_names:
                     if not self._start_app_on_clients(conn, run_destination):
