@@ -25,15 +25,15 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandClient
+from multiprocessing.connection import Listener
 from threading import Lock
 from typing import List, Tuple
-from multiprocessing.connection import Listener
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedTopic, ReturnCode, SnapshotKey, \
     AdminCommandNames, ServerCommandNames, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_snapshot import FLSnapshot
+from nvflare.apis.fl_snapshot import RunSnapshot, FLSnapshot
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.study_manager_spec import StudyManagerSpec
@@ -593,7 +593,16 @@ class ServerEngine(ServerEngineInternalSpec):
         #    Make sure to include the current round number
         # 2. call persistence API to save the component states
 
-        snapshot = FLSnapshot()
+        fl_snapshot = self.snapshot_persistor.retrieve()
+        if fl_snapshot:
+            for run_number in list(fl_snapshot.run_snapshots.keys()):
+                snapshot = fl_snapshot.get_snapshot(run_number)
+                if snapshot.completed:
+                    fl_snapshot.remove_snapshot(run_number)
+        else:
+            fl_snapshot = FLSnapshot()
+
+        snapshot = RunSnapshot()
         for component_id, component in self.run_manager.components.items():
             snapshot.save_component_snapshot(
                 component_id=component_id, component_state=component.get_persist_state(fl_ctx)
@@ -609,10 +618,11 @@ class ServerEngine(ServerEngineInternalSpec):
 
         snapshot.completed = completed
 
-        self.server.snapshot_location = self.snapshot_persistor.save(snapshot=snapshot)
+        fl_snapshot.add_snapshot(fl_ctx.get_prop(FLContextKey.CURRENT_RUN), snapshot)
+        self.server.snapshot_location = self.snapshot_persistor.save(snapshot=fl_snapshot)
         self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
 
-    def restore_components(self, snapshot: FLSnapshot, fl_ctx: FLContext):
+    def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
             component.restore(snapshot.get_component_snapshot(component_id=component_id), fl_ctx)
 

@@ -13,8 +13,8 @@
 # limitations under the License.
 
 
-class FLSnapshot:
-    """FLSnapshot keeps a snapshot of all the FLComponent states.
+class RunSnapshot:
+    """RunSnapshot keeps a snapshot of all the FLComponent states.
 
     The format is:
             { component_id: component_state_dict }
@@ -49,3 +49,51 @@ class FLSnapshot:
 
     def get_snapshot(self) -> dict:
         return self.component_states
+
+
+class FLSnapshot:
+    """FLSnapshot keeps a snapshot of all the FLComponent states.
+
+    The format is:
+            { run_number: RunSnapshot }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.run_snapshots = {}
+
+    def add_snapshot(self, run_number: str, snapshot: RunSnapshot):
+        """Add the RunSnapshot for run_number to the FLSnapshot.
+
+        Args:
+            run_number: the run_number
+            snapshot: snapshot of the Run
+
+        Returns:
+
+        """
+        self.run_snapshots[run_number] = snapshot
+
+    def get_snapshot(self, run_number: str) -> RunSnapshot:
+        """Get the RunSnapshot for run_number to the FLSnapshot.
+
+        Args:
+            run_number: the run_number
+
+        Returns: Snapshot of the Run
+
+        """
+        return self.run_snapshots.get(run_number)
+
+    def remove_snapshot(self, run_number: str):
+        """Remove the RunSnapshot for run_number to the FLSnapshot.
+
+        Args:
+            run_number: the run_number
+
+        Returns:
+
+        """
+        if run_number in self.run_snapshots.keys():
+            self.run_snapshots.pop(run_number)
+

@@ -777,24 +777,26 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def _turn_to_hot(self):
         # Restore Snapshot
         with self.snapshot_lock:
-            snapshot = self.snapshot_persistor.retrieve()
-            if snapshot and not snapshot.completed:
-                data = snapshot.get_component_snapshot(SnapshotKey.SERVER_RUNNER)
-                # self.engine.set_run_number(int(data.get("run_number")))
-                run_number = data.get("run_number")
+            fl_snapshot = self.snapshot_persistor.retrieve()
+            if fl_snapshot:
+                for run_number, snapshot in fl_snapshot.run_snapshots.items():
+                    if snapshot and not snapshot.completed:
+                        # data = snapshot.get_component_snapshot(SnapshotKey.SERVER_RUNNER)
+                        # self.engine.set_run_number(int(data.get("run_number")))
+                        # run_number = data.get("run_number")
 
-                # Restore the workspace
-                workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                dest = os.path.join(self.workspace, "run_" + str(run_number))
-                if os.path.exists(dest):
-                    shutil.rmtree(dest)
+                        # Restore the workspace
+                        workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
+                        dest = os.path.join(self.workspace, "run_" + str(run_number))
+                        if os.path.exists(dest):
+                            shutil.rmtree(dest)
 
-                if not os.path.exists(dest):
-                    os.makedirs(dest)
-                unzip_all_from_bytes(workspace_data, dest)
+                        if not os.path.exists(dest):
+                            os.makedirs(dest)
+                        unzip_all_from_bytes(workspace_data, dest)
 
-                self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
-                self.engine.start_app_on_server(str(run_number), snapshot=snapshot)
+                        self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
+                        self.engine.start_app_on_server(str(run_number), snapshot=snapshot)
 
             self.server_state = HotState(
                 host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid

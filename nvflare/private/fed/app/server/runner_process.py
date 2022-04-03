@@ -93,9 +93,11 @@ def main():
 
             snapshot = None
             if args.snapshot:
-                snapshot = server.snapshot_persistor.retrieve()
+                fl_snapshot = server.snapshot_persistor.retrieve()
+                if fl_snapshot:
+                    snapshot = fl_snapshot.get_snapshot(args.run_number)
 
-            start_server_training(server, args, args.app_root, int(args.run_number), snapshot)
+            start_server_training(server, args, args.app_root, args.run_number, snapshot)
         finally:
             command_agent.shutdown()
             deployer.close()
