@@ -60,11 +60,8 @@ def main():
     args = parser.parse_args()
     kv_list = parse_vars(args.set)
 
-    # start parent process checking thread
-    stop_event = threading.Event()
+    # get parent process id
     parent_pid = os.getppid()
-    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
-    thread.start()
 
     args.train_config = os.path.join("config", "config_train.json")
     config_folder = kv_list.get("config_folder", "")
@@ -94,7 +91,12 @@ def main():
     SecurityContentService.initialize(content_folder=startup)
 
     federated_client = None
+    thread = None
     try:
+        # start parent process checking thread
+        stop_event = threading.Event()
+        thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+        thread.start()
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         with open(token_file, "r") as f:
             token = f.readline().strip()
@@ -190,6 +192,9 @@ def main():
             deployer.close()
         if federated_client:
             federated_client.close()
+        if thread and thread.is_alive():
+            thread.join()
+
         # address = ('localhost', 6000)
         # conn_client = Client(address, authkey='client process secret password'.encode())
         # conn_client.send('bye')
