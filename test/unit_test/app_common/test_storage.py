@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
+import json
 import os
-import pickle
 import random
 import subprocess
 import tempfile
@@ -119,11 +120,11 @@ class TestStorage:
                 # use f.write() as reference to compare with storage implementation
                 with open(os.path.join(test_filepath, "data"), "wb") as f:
                     data = random_data()
-                    f.write(pickle.dumps(data))
+                    f.write(data)
 
                 with open(os.path.join(test_filepath, "meta"), "wb") as f:
                     meta = random_meta()
-                    f.write(pickle.dumps(meta))
+                    f.write(json.dumps(str(meta)).encode("utf-8"))
 
                 self.test_create_read(storage, filepath, data, meta, unittest=False)
                 self.test_create_overwrite(storage, filepath, data, meta, unittest=False)
@@ -140,9 +141,9 @@ class TestStorage:
             # if dirpath is an object
             if object_files:
                 with open(os.path.join(test_dirpath, "data"), "rb") as f:
-                    data = pickle.loads(f.read())
+                    data = f.read()
                 with open(os.path.join(test_dirpath, "meta"), "rb") as f:
-                    meta = pickle.loads(f.read())
+                    meta = ast.literal_eval(json.loads(f.read().decode("utf-8")))
 
                 self.test_data_read_update(storage, dirpath, data, meta, unittest=False)
                 self.test_meta_read_update(storage, dirpath, data, meta, unittest=False)

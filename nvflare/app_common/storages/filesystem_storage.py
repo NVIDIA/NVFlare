@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
+import json
 import os
-import pickle
 import shutil
 from pathlib import Path
 from typing import ByteString, List, Tuple
@@ -108,7 +109,7 @@ class FilesystemStorage(StorageSpec):
 
         self._write(data_path + "_tmp", data)
         try:
-            self._write(meta_path, pickle.dumps(meta))
+            self._write(meta_path, json.dumps(str(meta)).encode("utf-8"))
         except Exception as e:
             os.remove(data_path + "_tmp")
             raise e
@@ -136,11 +137,11 @@ class FilesystemStorage(StorageSpec):
             raise RuntimeError("object {} does not exist".format(uri))
 
         if replace:
-            self._write(os.path.join(full_uri, "meta"), pickle.dumps(meta))
+            self._write(os.path.join(full_uri, "meta"), json.dumps(str(meta)).encode("utf-8"))
         else:
             prev_meta = self.get_meta(uri)
             prev_meta.update(meta)
-            self._write(os.path.join(full_uri, "meta"), pickle.dumps(prev_meta))
+            self._write(os.path.join(full_uri, "meta"), json.dumps(str(prev_meta)).encode("utf-8"))
 
     def update_data(self, uri: str, data: ByteString):
         """Update the data info of the specified object
@@ -208,7 +209,7 @@ class FilesystemStorage(StorageSpec):
         if not self._object_exists(full_uri):
             raise RuntimeError("object {} does not exist".format(uri))
 
-        return pickle.loads(self._read(os.path.join(full_uri, "meta")))
+        return ast.literal_eval(json.loads(self._read(os.path.join(full_uri, "meta")).decode("utf-8")))
 
     def get_full_meta(self, uri: str) -> dict:
         """Get full meta info of the specified object
