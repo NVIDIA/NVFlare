@@ -43,6 +43,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot, FLSnapshot
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
+from nvflare.apis.impl.study_manager import StudyManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.study_manager_spec import StudyManagerSpec
 from nvflare.apis.utils.common_utils import get_open_ports
@@ -55,7 +56,6 @@ from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -97,7 +97,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         # self.job_def_manager = job_def_manager  # todo: need to figure out how to initialize job manager with inputs
         self.job_def_manager = SimpleJobDefManager(
-            StudyManagerSpec(), FilesystemStorage(root_dir="/workspace/nvflare_provis")
+            StudyManager(FilesystemStorage()), FilesystemStorage(root_dir="/workspace/nvflare_provis")
         )
 
         self.asked_to_stop = False
@@ -324,7 +324,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def check_app_start_readiness(self, run_destination: str) -> str:
-        if not run_destination in self.run_processes.keys():
+        if run_destination not in self.run_processes.keys():
             return f"Server app run_{run_destination} has not started."
         return ""
 

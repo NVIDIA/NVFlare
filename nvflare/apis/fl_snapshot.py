@@ -96,4 +96,3 @@ class FLSnapshot:
         """
         if run_number in self.run_snapshots.keys():
             self.run_snapshots.pop(run_number)
-

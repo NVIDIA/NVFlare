@@ -69,12 +69,12 @@ GRPC_DEFAULT_OPTIONS = [
 
 class BaseServer(ABC):
     def __init__(
-        self,
-        project_name=None,
-        min_num_clients=2,
-        max_num_clients=10,
-        heart_beat_timeout=600,
-        handlers: Optional[List[FLComponent]] = None,
+            self,
+            project_name=None,
+            min_num_clients=2,
+            max_num_clients=10,
+            heart_beat_timeout=600,
+            handlers: Optional[List[FLComponent]] = None,
     ):
         """Base server that provides the clients management and server deployment."""
         self.project_name = project_name
@@ -209,19 +209,19 @@ class BaseServer(ABC):
 
 class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):
     def __init__(
-        self,
-        project_name=None,
-        min_num_clients=2,
-        max_num_clients=10,
-        wait_after_min_clients=10,
-        cmd_modules=None,
-        heart_beat_timeout=600,
-        handlers: Optional[List[FLComponent]] = None,
-        args=None,
-        secure_train=False,
-        enable_byoc=False,
-        snapshot_persistor=None,
-        overseer_agent=None,
+            self,
+            project_name=None,
+            min_num_clients=2,
+            max_num_clients=10,
+            wait_after_min_clients=10,
+            cmd_modules=None,
+            heart_beat_timeout=600,
+            handlers: Optional[List[FLComponent]] = None,
+            args=None,
+            secure_train=False,
+            enable_byoc=False,
+            snapshot_persistor=None,
+            overseer_agent=None,
     ):
         """Federated server services.
 
@@ -397,7 +397,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             with self.lock:
                 # if self.server_runner is None or engine is None or self.engine.run_manager is None:
-                if not run_number in self.engine.run_processes.keys():
+                if run_number not in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
                     taskname = SpecialTaskName.END_RUN
                     task_id = ""
@@ -483,7 +483,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
 
                     run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-                    if not run_number in self.engine.run_processes.keys():
+                    if run_number not in self.engine.run_processes.keys():
                         self.logger.info("ignored result submission since Server Engine isn't ready")
                         context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
@@ -563,7 +563,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             shared_fl_context = pickle.loads(proto_to_bytes(request.data["fl_context"]))
 
             run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-            if not run_number in self.engine.run_processes.keys():
+            if run_number not in self.engine.run_processes.keys():
                 self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
                 reply = make_reply(ReturnCode.SERVER_NOT_READY)
                 aux_reply = fed_msg.AuxReply()
