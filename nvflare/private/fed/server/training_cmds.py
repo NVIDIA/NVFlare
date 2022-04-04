@@ -134,16 +134,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error("syntax error: missing run number")
             return False, None
 
-        try:
-            num = int(args[1])
-        except ValueError:
-            conn.append_error("run number must be an integer.")
-            return False, None
-
-        if num < 1:
-            conn.append_error("run number must be > 0.")
-            return False, None
-
         return True, FLAuthzContext.new_authz_context(site_names=[self.SITE_SERVER], actions=[Action.TRAIN])
 
     def _set_run_number_clients(self, conn: Connection, run_number) -> bool:
