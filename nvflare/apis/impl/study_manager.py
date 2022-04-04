@@ -51,9 +51,10 @@ class StudyManager(StudyManagerSpec):
         The caller must have validated the participating_clients and participating_admins of the study.
 
         Validate the study before saving:
-        The name of the study must be unique;
-        participating_clients and participating_admins must be defined;
-        Start and end date must make sense.
+
+            - The name of the study must be unique;
+            - participating_clients and participating_admins must be defined;
+            - Start and end date must make sense.
 
         Args:
             study: the caller-provided study info
@@ -62,8 +63,6 @@ class StudyManager(StudyManagerSpec):
         Returns:
             updated study info (e.g. created_at is set) and an emtpy string if successful
             None and an error message if the provided study is not valid
-
-
         """
         if study.name in self._existing_studies:
             return None, "Unable to add duplicated study name."
@@ -80,17 +79,20 @@ class StudyManager(StudyManagerSpec):
         if study.end_date < study.start_date:
             return (
                 None,
-                "Expect end_date later than start_date.  Got start_date={study.start_date} and end_data={study.end_date}",
+                f"Expect end_date later than start_date.  Got start_date={study.start_date} and end_data={study.end_date}",
             )
         study.created_at = datetime.utcnow()
         serialized_study = self._study_to_bytes(study)
         try:
             self._storage.create_object(
-                study.name, serialized_study, {"start_date": study.start_date, "end_date": study.end_date}
+                uri=study.name,
+                data=serialized_study,
+                meta={"start_date": study.start_date, "end_date": study.end_date},
+                overwrite_existing=True,
             )
             self._storage.create_object(
-                StudyManager.STORAGE_KEY,
-                json.dumps(self._existing_studies + [study.name]).encode("utf-8"),
+                uri=StudyManager.STORAGE_KEY,
+                data=json.dumps(self._existing_studies + [study.name]).encode("utf-8"),
                 meta={},
                 overwrite_existing=True,
             )
@@ -101,17 +103,18 @@ class StudyManager(StudyManagerSpec):
         return study, ""
 
     @staticmethod
-    def _study_from_bytes(bytes):
+    def _study_from_bytes(bytes_study):
         try:
-            deserialized_study = json.loads(bytes.decode("utf-8"))
+            deserialized_study = json.loads(bytes_study.decode("utf-8"))
             deserialized_study["start_date"] = date.fromisoformat(deserialized_study.pop("start_date"))
             deserialized_study["end_date"] = date.fromisoformat(deserialized_study.pop("end_date"))
             deserialized_study["created_at"] = datetime.fromisoformat(deserialized_study.pop("created_at"))
             return Study(**deserialized_study)
-        except BaseException as e:
+        except BaseException:
             return None
 
-    def _study_to_bytes(self, study):
+    @staticmethod
+    def _study_to_bytes(study):
         try:
             serialized_study = json.dumps(vars(study), default=custom_json_encoder).encode("utf-8")
             return serialized_study
@@ -119,27 +122,25 @@ class StudyManager(StudyManagerSpec):
             return None
 
     def list_studies(self, fl_ctx: FLContext) -> List[str]:
-        """
-        List names of all defined studies
+        """List names of all defined studies
 
         Args:
             fl_ctx: FLContext
 
-        Returns: list of study names
-
+        Returns:
+            A list of study names
         """
         # either self._storage.list_object() or
         return self._existing_studies
 
     def list_active_studies(self, fl_ctx: FLContext) -> List[str]:
-        """
-        List names of all active studies (started but not ended)
+        """List names of all active studies (started but not ended)
 
         Args:
             fl_ctx: FLContext
 
-        Returns: list of study names
-
+        Returns:
+            A list of study names
         """
         today = date.today()
         active_studies = list()
@@ -153,7 +154,7 @@ class StudyManager(StudyManagerSpec):
                 active_studies.append(st)
             except BaseException as e:
                 self.logger.warning(
-                    f"Inconsistence between internal persisted states.  Expect {st} with meta in storage but got {e}."
+                    f"Inconsistency between internal persisted states.  Expect {st} with meta in storage but got {e}."
                 )
         return active_studies
 
@@ -164,8 +165,8 @@ class StudyManager(StudyManagerSpec):
             name: unique name of the study
             fl_ctx: FLContext
 
-        Returns: the Study object
-
+        Returns:
+            the Study object
         """
         try:
             serialized_study = self._storage.get_data(name)

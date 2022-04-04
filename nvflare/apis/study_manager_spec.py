@@ -14,7 +14,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime
-from typing import List
+from typing import List, Optional, Tuple
 
 from .fl_context import FLContext
 
@@ -45,44 +45,48 @@ class Study:
 
 class StudyManagerSpec(ABC):
     @abstractmethod
-    def add_study(self, study: Study, fl_ctx: FLContext) -> Study:
+    def add_study(self, study: Study, fl_ctx: FLContext) -> Tuple[Optional[Study], str]:
         """Add the study object permanently
 
         The caller must have validated the participating_clients and participating_admins of the study.
 
         Validate the study before saving:
-        The name of the study must be unique;
-        participating_clients and participating_admins must be defined;
-        Start and end date must make sense.
+
+            - The name of the study must be unique;
+            - participating_clients and participating_admins must be defined;
+            - Start and end date must make sense.
 
         Args:
             study: the caller-provided study info
+            fl_ctx: FL context
 
         Returns:
             updated study info (e.g. created_at is set) and an emtpy string if successful
             None and an error message if the provided study is not valid
-
-
         """
         pass
 
     @abstractmethod
     def list_studies(self, fl_ctx: FLContext) -> List[str]:
-        """
-        List names of all defined studies
+        """List names of all defined studies
 
-        Returns: list of study names
+        Args:
+            fl_ctx: FLContext
 
+        Returns:
+            A list of study names
         """
         pass
 
     @abstractmethod
     def list_active_studies(self, fl_ctx: FLContext) -> List[str]:
-        """
-        List names of all active studies (started but not ended)
+        """List names of all active studies (started but not ended)
 
-        Returns: list of study names
+        Args:
+            fl_ctx: FLContext
 
+        Returns:
+            A list of study names
         """
         pass
 
@@ -92,8 +96,9 @@ class StudyManagerSpec(ABC):
 
         Args:
             name: unique name of the study
+            fl_ctx: FLContext
 
-        Returns: the Study object
-
+        Returns:
+            the Study object
         """
         pass
