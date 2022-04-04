@@ -101,14 +101,6 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def get_run_number(self) -> str:
-        """Get the current run_number of the engine.
-
-        Returns:
-            run_number
-        """
-        pass
-
     def delete_run_number(self, run_num: str) -> str:
         """Delete specified RUN.
 

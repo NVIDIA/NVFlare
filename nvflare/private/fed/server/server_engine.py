@@ -167,9 +167,6 @@ class ServerEngine(ServerEngineInternalSpec):
             shutil.rmtree(run_number_folder)
         return ""
 
-    def get_run_number(self):
-        return self.run_number
-
     def get_clients(self) -> [Client]:
         return list(self.client_manager.clients.values())
 
