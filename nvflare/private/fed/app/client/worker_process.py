@@ -92,9 +92,9 @@ def main():
 
     federated_client = None
     thread = None
+    stop_event = threading.Event()
     try:
         # start parent process checking thread
-        stop_event = threading.Event()
         thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
         thread.start()
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
@@ -177,8 +177,6 @@ def main():
 
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
-        stop_event.set()
-
     except BaseException as e:
         traceback.print_exc()
         print("FL client execution exception: " + str(e))
@@ -186,6 +184,7 @@ def main():
         # if federated_client:
         #     federated_client.stop_listen = True
         #     thread.join()
+        stop_event.set()
         if command_agent:
             command_agent.shutdown()
         if deployer:
