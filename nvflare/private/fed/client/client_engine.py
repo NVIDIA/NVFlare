@@ -76,7 +76,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def get_engine_status(self):
         running_jobs = []
-        for run_number in self.client_executor.run_processes.keys():
+        for run_number in self.get_all_run_numbers():
             run_folder = os.path.join(self.args.workspace, "run_" + str(run_number))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
@@ -225,6 +225,9 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def send_aux_command(self, shareable: Shareable, run_number):
         return self.client_executor.send_aux_command(shareable, run_number)
+
+    def get_all_run_numbers(self):
+        return self.client_executor.run_processes.keys()
 
 
 def _do_validate(sender, message):

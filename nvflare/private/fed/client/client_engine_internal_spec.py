@@ -97,10 +97,10 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
-    def set_run_number(self, run_num: int) -> str:
-        """Set the client run_number.
+    def get_all_run_numbers(self) -> []:
+        """Get all the client run_number.
 
-        Returns: error if any
+        Returns: list of all the run_number
 
         """
         pass

@@ -13,13 +13,12 @@
 # limitations under the License.
 
 import time
-from abc import ABC
+from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
-
 from .run_manager import RunInfo, RunManager
 from .server_json_config import ServerJsonConfigurator
 
@@ -41,6 +40,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
     def get_run_info(self) -> RunInfo:
         pass
 
+    @abstractmethod
     def get_staging_path_of_app(self, app_name: str) -> str:
         """Get the staging path of the app waiting to be deployed.
 
@@ -52,6 +52,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
         """Deploy the specified app to the server.
 
@@ -67,6 +68,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
         """Prepare to deploy the specified app to the specified client name.
 
@@ -81,6 +83,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def get_app_data(self, app_name: str) -> (str, object):
         """Get data for deploying the app.
 
@@ -92,6 +95,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def get_app_run_info(self, run_number) -> RunInfo:
         """Get the app RunInfo from the child process.
 
@@ -101,6 +105,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def delete_run_number(self, run_num: str) -> str:
         """Delete specified RUN.
 
@@ -113,6 +118,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def start_app_on_server(self, run_destination: str) -> str:
         """Start the FL app on Server.
 
@@ -121,6 +127,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def check_app_start_readiness(self, run_destination: str) -> str:
         """Check whether the app is ready to start.
 
@@ -129,14 +136,17 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def abort_app_on_clients(self, clients: [str]):
         """Abort the application on the specified clients."""
         pass
 
+    @abstractmethod
     def abort_app_on_server(self, run_destination: str):
         """Abort the application on the server."""
         pass
 
+    @abstractmethod
     def shutdown_server(self) -> str:
         """Shutdown the server.
 
@@ -151,6 +161,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def remove_clients(self, clients: [str]) -> str:
         """Remove specified clients.
 
@@ -162,6 +173,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def restart_server(self) -> str:
         """Restart the server.
 
@@ -173,6 +185,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def set_run_manager(self, run_manager: RunManager):
         """Set the RunManager for server.
 
@@ -181,6 +194,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def set_configurator(self, conf: ServerJsonConfigurator):
         """Set the configurator for server.
 
@@ -189,6 +203,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def build_component(self, config_dict):
         """Build a component from the config_dict.
 
@@ -197,6 +212,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def get_client_name_from_token(self, token: str) -> str:
         """Get the registered client name from communication token.
 
@@ -208,10 +224,12 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def ask_to_stop(self):
         """Ask the engine to stop the current run."""
         pass
 
+    @abstractmethod
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         """Send a request to client(s) via the auxiliary channel.
 
@@ -232,6 +250,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def show_stats(self, run_number):
         """Show_stats of the server.
 
@@ -244,6 +263,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def get_errors(self, run_number):
         """Get the errors of the server components.
 

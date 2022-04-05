@@ -59,7 +59,7 @@ class ServerRunnerConfig(object):
 
 
 class ServerRunner(FLComponent):
-    def __init__(self, config: ServerRunnerConfig, run_num: int, engine: ServerEngineSpec):
+    def __init__(self, config: ServerRunnerConfig, run_num: str, engine: ServerEngineSpec):
         """Server runner class.
 
         Args:

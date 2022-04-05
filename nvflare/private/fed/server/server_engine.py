@@ -41,6 +41,7 @@ from nvflare.apis.fl_constant import (
     SnapshotKey,
 )
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.fl_snapshot import RunSnapshot, FLSnapshot
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.impl.study_manager import StudyManager
@@ -138,7 +139,7 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return None
 
-    def creat_parent_connection(self, port):
+    def create_parent_connection(self, port):
         while not self.parent_conn:
             try:
                 address = ("localhost", port)
@@ -268,9 +269,9 @@ class ServerEngine(ServerEngineInternalSpec):
         threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
 
         with self.lock:
-            self.run_processes[run_number] = {"_port": listen_port,
-                                              "_conn": None,
-                                              "_child_process": process
+            self.run_processes[run_number] = {RunProcessKey.LISTEN_PORT: listen_port,
+                                              RunProcessKey.CONNECTION: None,
+                                              RunProcessKey.CHILD_PROCESS: process
                                               }
         return process
 
@@ -310,7 +311,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     self.logger.info(f"Abort server: {status_message}")
         except:
             with self.lock:
-                child_process = self.run_processes.get(run_destination, {}).get("_child_process", None)
+                child_process = self.run_processes.get(run_destination, {}).get(RunProcessKey.CHILD_PROCESS, None)
                 if child_process:
                     child_process.terminate()
         finally:
@@ -544,15 +545,15 @@ class ServerEngine(ServerEngineInternalSpec):
         return results
 
     def get_command_conn(self, run_number):
-        port = self.run_processes.get(run_number, {}).get("_port")
-        command_conn = self.run_processes.get(run_number, {}).get("_conn", None)
+        port = self.run_processes.get(run_number, {}).get(RunProcessKey.LISTEN_PORT)
+        command_conn = self.run_processes.get(run_number, {}).get(RunProcessKey.CONNECTION, None)
 
         if not command_conn:
             try:
                 address = ("localhost", port)
                 command_conn = CommandClient(address, authkey="client process secret password".encode())
 
-                self.run_processes[run_number]["_conn"] = command_conn
+                self.run_processes[run_number][RunProcessKey.CONNECTION] = command_conn
             except Exception as e:
                 pass
         return command_conn

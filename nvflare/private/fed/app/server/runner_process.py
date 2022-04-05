@@ -23,6 +23,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
+from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
 
@@ -118,7 +119,9 @@ def start_server_training(server, args, app_root, run_number, snapshot):
 
         set_up_run_config(server, conf)
 
-        server.engine.creat_parent_connection(int(args.conn))
+        if not isinstance(server.engine, ServerEngine):
+            raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
+        server.engine.create_parent_connection(int(args.conn))
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
