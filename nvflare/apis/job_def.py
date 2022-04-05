@@ -58,6 +58,7 @@ class Job:
         deploy_map: Deploy map specifying each app and the sites that it should be deployed to
         meta: full contents of the persisted metadata for the job for persistent storage
     """
+
     def __init__(self, job_id, study_name, resource_spec, deploy_map, meta):
         self.job_id = job_id
         self.study = study_name
