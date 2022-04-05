@@ -31,6 +31,7 @@ class StaticFileBuilder(Builder):
         docker_image="",
         snapshot_persistor="",
         overseer_agent="",
+        job_manager="",
     ):
         """Build all static files from template.
 
@@ -47,6 +48,9 @@ class StaticFileBuilder(Builder):
             config_folder: usually "config"
             app_validator: optional path to an app validator to verify that uploaded app has the expected structure
             docker_image: when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
+            snapshot_persistor: a dictionary specifying the snapshot persistor for server to store its snapshots
+            overseer_agent: the overseer agent path
+            job_manager: the job manager path and its args in a dictionary
         """
         self.enable_byoc = enable_byoc
         self.config_folder = config_folder
@@ -54,6 +58,7 @@ class StaticFileBuilder(Builder):
         self.app_validator = app_validator
         self.overseer_agent = overseer_agent
         self.snapshot_persistor = snapshot_persistor
+        self.job_manager = job_manager
 
     def _write(self, file_full_path, content, mode, exe=False):
         mode = mode + "w"
@@ -145,6 +150,8 @@ class StaticFileBuilder(Builder):
             config["overseer_agent"] = overseer_agent
         if self.snapshot_persistor:
             config["snapshot_persistor"] = self.snapshot_persistor
+        if self.job_manager:
+            config["job_manager"] = self.job_manager
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, sort_keys=True, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,

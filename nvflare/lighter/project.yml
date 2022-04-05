@@ -57,6 +57,16 @@ builders:
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
+      job_manager:
+        path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
+        args:
+          study_manager:
+            path: nvflare.apis.impl.study_manager.StudyManager
+            args:
+              storage:
+                path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+          store:
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
       snapshot_persistor:
         path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
         args:
