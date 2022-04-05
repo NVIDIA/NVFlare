@@ -40,27 +40,71 @@ class JobDefManagerSpec(ABC):
 
     @abstractmethod
     def get_job(self, jid: str) -> Job:
-        """Get the info for a Job."""
+        """Get the Job object through the job ID.
+
+        Args:
+            jid: job ID
+
+        Returns: Job object
+
+        """
+        pass
+
+    @abstractmethod
+    def get_app(self, job: Job, app_name: str) -> bytes:
+        """Get the contents of the specified app in bytes.
+
+        Args:
+            job: Job object
+            app_name: name of the app to get
+
+        Returns: content of the specified app in bytes
+
+        """
         pass
 
     @abstractmethod
     def get_apps(self, job: Job) -> Dict[str, bytes]:
-        """Get the apps of a Job."""
+        """Get the all the apps of a Job.
+
+        Args:
+            job: Job object
+
+        Returns: dictionary of app names with the content of the corresponding app encoded in bytes
+
+        """
         pass
 
     @abstractmethod
     def get_content(self, jid: str) -> bytes:
-        """Gets the uploaded content for a Job."""
+        """Gets the entire uploaded content for a Job.
+
+        Args:
+            jid: Job ID
+
+        Returns: uploaded content of the job in bytes
+
+        """
         pass
 
     @abstractmethod
     def set_status(self, jid: str, status):
-        """Set status of an existing Job."""
+        """Set status of an existing Job.
+
+        Args:
+            jid: Job ID
+            status: status to set
+
+        """
         pass
 
     @abstractmethod
     def list_all(self) -> List[Job]:
-        """Return a list of all Jobs."""
+        """Return a list of all Jobs in the system.
+
+        Returns: list of all jobs as Job objects
+
+        """
         pass
 
     @abstractmethod
@@ -80,5 +124,10 @@ class JobDefManagerSpec(ABC):
 
     @abstractmethod
     def delete(self, jid: str):
-        """Deletes the specified Job."""
+        """Deletes the specified Job.
+
+        Args:
+            jid: Job ID
+
+        """
         pass

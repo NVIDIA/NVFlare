@@ -108,7 +108,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return meta
 
     def delete(self, jid: str):
-        return self.store.delete_object(self.job_uri(jid))
+        self.store.delete_object(self.job_uri(jid))
 
     def _validate_meta(self, meta):
         """Validate meta against study.
@@ -142,17 +142,25 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self.store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return self.get_job(jid)
 
+    def get_app(self, job: Job, app_name: str) -> bytes:
+        job_id_dir = self._load_job_data_from_store(job.job_id)
+        return zip_directory_to_bytes(job_id_dir, app_name)
+
     def get_apps(self, job: Job) -> Dict[str, bytes]:
-        data_bytes = self.store.get_data(self.job_uri(job.job_id))
-        job_id_dir = os.path.join(self.temp_dir, job.job_id)
-        if os.path.exists(job_id_dir):
-            shutil.rmtree(job_id_dir)
-        os.mkdir(job_id_dir)
-        unzip_all_from_bytes(data_bytes, job_id_dir)
+        job_id_dir = self._load_job_data_from_store(job.job_id)
         result_dict = {}
         for app in job.get_deployment():
             result_dict[app] = zip_directory_to_bytes(job_id_dir, app)
         return result_dict
+
+    def _load_job_data_from_store(self, jid: str):
+        data_bytes = self.store.get_data(self.job_uri(jid))
+        job_id_dir = os.path.join(self.temp_dir, jid)
+        if os.path.exists(job_id_dir):
+            shutil.rmtree(job_id_dir)
+        os.mkdir(job_id_dir)
+        unzip_all_from_bytes(data_bytes, job_id_dir)
+        return job_id_dir
 
     def get_content(self, jid: str) -> bytes:
         return self.store.get_data(self.job_uri(jid))
