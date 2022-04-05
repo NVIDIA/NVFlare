@@ -21,10 +21,9 @@ import shutil
 import sys
 import webbrowser
 
-import yaml
-
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.spec import Participant, Provisioner, Study
+from nvflare.lighter.utils import load_yaml
 
 
 def main():
@@ -77,7 +76,7 @@ def main():
     project_full_path = os.path.join(current_path, project_file)
     print(f"Project yaml file: {project_full_path}.")
 
-    project = yaml.load(open(project_full_path, "r"), Loader=yaml.Loader)
+    project = load_yaml(project_full_path)
     api_version = project.get("api_version")
     if api_version not in [2]:
         raise ValueError(f"Incompatible API version found in {project_full_path}")
