@@ -30,6 +30,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 from nvflare.fuel.sec.security_content_service import SecurityContentService
+from nvflare.fuel.utils import decomposers
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 
 
@@ -110,6 +111,8 @@ def main():
 
     startup = os.path.join(args.workspace, "startup")
     SecurityContentService.initialize(content_folder=startup)
+
+    decomposers.register_all()
 
     # local_rank = args.local_rank
     local_rank = int(os.environ["LOCAL_RANK"])

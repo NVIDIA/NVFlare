@@ -4,4 +4,5 @@ numpy
 grpcio
 google-api-python-client
 cryptography
+msgpack
 tenseal==0.3.0

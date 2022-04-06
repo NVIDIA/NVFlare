@@ -23,6 +23,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.utils import decomposers
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.admin import FedAdminServer
@@ -82,8 +83,10 @@ def main():
             logger.warning("loglevel warn enabled")
             logger.error("loglevel error enabled")
             logger.critical("loglevel critical enabled")
-        conf.configure()
 
+        decomposers.register_all()
+
+        conf.configure()
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
 

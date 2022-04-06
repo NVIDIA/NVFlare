@@ -22,6 +22,7 @@ import traceback
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import SecurityContentService
+from nvflare.fuel.utils import decomposers
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
@@ -68,6 +69,8 @@ def main():
     restart_file = os.path.join(args.workspace, "restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
+
+    decomposers.register_all()
 
     print("starting the client .....")
 
