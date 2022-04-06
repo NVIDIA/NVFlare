@@ -253,7 +253,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for t in args.set:
             command_options += " " + t
         command = (
-                f"{sys.executable} -m nvflare.private.fed.app.server.runner_process -m "
+                sys.executable + " -m nvflare.private.fed.app.server.runner_process -m "
                 + args.workspace
                 + " -s fed_server.json -r " + app_root
                 + " -n " + str(run_number)
