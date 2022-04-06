@@ -21,7 +21,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic
+from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic, WorkspaceConstants
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.security import Action, FLAuthzContext
@@ -193,11 +193,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return False, None
 
         run_destination = args[1].lower()
-        if not run_destination.startswith("run_"):
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
         destination = run_destination[4:]
-        conn.set_prop(self.RUN_DESTINATION, destination)
+        conn.set_prop(self.RUN_NUMBER, destination)
 
         app_name = args[2]
         app_staging_path = engine.get_staging_path_of_app(app_name)
@@ -263,7 +263,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def deploy_app(self, conn: Connection, args: List[str]):
         app_name = args[2]
 
-        run_destination = conn.get_prop(self.RUN_DESTINATION)
+        run_destination = conn.get_prop(self.RUN_NUMBER)
         target_type = conn.get_prop(self.TARGET_TYPE)
         app_staging_path = conn.get_prop(self.APP_STAGING_PATH)
         if target_type == self.TARGET_TYPE_SERVER:
@@ -285,9 +285,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         conn.append_success("")
 
     # Start App
-    def _start_app_on_server(self, conn: Connection, run_destination: str) -> bool:
+    def _start_app_on_server(self, conn: Connection, run_number: str) -> bool:
         engine = conn.app_ctx
-        err = engine.start_app_on_server(run_destination)
+        err = engine.start_app_on_server(run_number)
         if err:
             conn.append_error(err)
             return False
@@ -315,22 +315,22 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        run_destination = conn.get_prop(self.RUN_DESTINATION)
+        run_number = conn.get_prop(self.RUN_NUMBER)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            if not self._start_app_on_server(conn, run_destination):
+            if not self._start_app_on_server(conn, run_number):
                 return
         elif target_type == self.TARGET_TYPE_CLIENT:
-            if not self._start_app_on_clients(conn, run_destination):
+            if not self._start_app_on_clients(conn, run_number):
                 return
         else:
             # all
-            success = self._start_app_on_server(conn, run_destination)
+            success = self._start_app_on_server(conn, run_number)
 
             if success:
                 client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
                 if client_names:
-                    if not self._start_app_on_clients(conn, run_destination):
+                    if not self._start_app_on_clients(conn, run_number):
                         return
         conn.append_success("")
 
@@ -360,7 +360,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        run_destination = conn.get_prop(self.RUN_DESTINATION)
+        run_destination = conn.get_prop(self.RUN_NUMBER)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
             conn.append_string("Trying to abort all clients before abort server ...")
@@ -396,7 +396,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return ""
 
-        run_destination = conn.get_prop(self.RUN_DESTINATION)
+        run_destination = conn.get_prop(self.RUN_NUMBER)
         # run_info = engine.get_app_run_info()
         message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="")
         # if run_info:
@@ -479,11 +479,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return False, None
 
         run_destination = args[1].lower()
-        if not run_destination.startswith("run_"):
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
         destination = run_destination[4:]
-        conn.set_prop(self.RUN_DESTINATION, destination)
+        conn.set_prop(self.RUN_NUMBER, destination)
 
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[2:])

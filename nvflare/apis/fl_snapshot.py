@@ -36,10 +36,8 @@ class RunSnapshot:
         """
         return self.component_states.get(component_id)
 
-    def save_component_snapshot(self, component_id: str, component_state: dict):
+    def set_component_snapshot(self, component_id: str, component_state: dict):
         """Set the snapshot of a particular FL component.
-
-        TODO:: change method name to set.
 
         Args:
             component_id: Component ID
@@ -52,7 +50,7 @@ class RunSnapshot:
 
 
 class FLSnapshot:
-    """FLSnapshot keeps a snapshot of all the FLComponent states.
+    """FLSnapshot keeps a snapshot of all the current running FL application RunSnapshots.
 
     The format is:
             { run_number: RunSnapshot }
@@ -86,7 +84,7 @@ class FLSnapshot:
         return self.run_snapshots.get(run_number)
 
     def remove_snapshot(self, run_number: str):
-        """Remove the RunSnapshot for run_number to the FLSnapshot.
+        """Remove the RunSnapshot of run_number from the FLSnapshot.
 
         Args:
             run_number: the run_number

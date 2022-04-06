@@ -52,7 +52,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader
+from nvflare.private.defs import RequestHeader, WorkspaceConstants
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -112,7 +112,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return "app_" + client_name
 
     def _get_run_folder(self, run_destination):
-        return os.path.join(self.args.workspace, "run_" + str(run_destination))
+        return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_destination))
 
     def get_engine_info(self) -> EngineInfo:
         self.engine_info.app_names = {}
@@ -122,7 +122,7 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STOPPED
 
         for run_number, _ in self.run_processes.items():
-            run_folder = os.path.join(self.args.workspace, "run_" + str(run_number))
+            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
@@ -162,7 +162,7 @@ class ServerEngine(ServerEngineInternalSpec):
         os.killpg(os.getpgid(os.getpid()), 9)
 
     def delete_run_number(self, num):
-        run_number_folder = os.path.join(self.args.workspace, "run_" + str(num))
+        run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(num))
         if os.path.exists(run_number_folder):
             shutil.rmtree(run_number_folder)
         return ""
@@ -173,11 +173,11 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_destination: str, snapshot=None) -> str:
-        if run_destination in self.run_processes.keys():
-            return f"Server run_{run_destination} already started."
+    def start_app_on_server(self, run_number: str, snapshot=None) -> str:
+        if run_number in self.run_processes.keys():
+            return f"Server run_{run_number} already started."
         else:
-            app_root = os.path.join(self._get_run_folder(run_destination), self._get_server_app_folder())
+            app_root = os.path.join(self._get_run_folder(run_number), self._get_server_app_folder())
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
@@ -188,20 +188,21 @@ class ServerEngine(ServerEngineInternalSpec):
                 app_custom_folder = os.path.join(app_root, "custom")
 
             open_ports = get_open_ports(2)
-            self._start_runner_process(self.args, app_root, run_destination, app_custom_folder,
+            self._start_runner_process(self.args, app_root, run_number, app_custom_folder,
                                        open_ports, snapshot)
 
-            threading.Thread(target=self._listen_command, args=(open_ports[0], run_destination)).start()
+            threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
 
-    def _listen_command(self, listen_port, run_destination):
+    def _listen_command(self, listen_port, run_number):
         address = ("localhost", int(listen_port))
         listener = Listener(address, authkey="parent process secret password".encode())
         conn = listener.accept()
 
-        while run_destination in self.run_processes.keys():
+        while run_number in self.run_processes.keys():
+            clients = self.run_processes.get(run_number).get(RunProcessKey.PARTICIPANTS)
             try:
                 if conn.poll(0.1):
                     received_data = conn.recv()
@@ -209,7 +210,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     data = received_data.get(ServerCommandKey.DATA)
 
                     if command == ServerCommandNames.GET_CLIENTS:
-                        return_data = {ServerCommandKey.CLIENTS: self.client_manager.clients}
+                        return_data = {ServerCommandKey.CLIENTS: clients}
                         conn.send(return_data)
                     elif command == ServerCommandNames.AUX_SEND:
                         targets = data.get("targets")
@@ -270,7 +271,9 @@ class ServerEngine(ServerEngineInternalSpec):
         with self.lock:
             self.run_processes[run_number] = {RunProcessKey.LISTEN_PORT: listen_port,
                                               RunProcessKey.CONNECTION: None,
-                                              RunProcessKey.CHILD_PROCESS: process
+                                              RunProcessKey.CHILD_PROCESS: process,
+                                              # TODO: each run will have its own participants. Use all clients for now.
+                                              RunProcessKey.PARTICIPANTS: self.client_manager.clients
                                               }
         return process
 
@@ -394,7 +397,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         # folder = self.args.workspace
         # data = zip_directory_to_bytes(
-        #     folder, os.path.join("run_" + str(self.run_number), self._get_client_app_folder(client_name))
+        #     folder, os.path.join(WorkspaceConstants.WORKSPACE_PREFIX + str(self.run_number), self._get_client_app_folder(client_name))
         # )
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
@@ -575,17 +578,17 @@ class ServerEngine(ServerEngineInternalSpec):
 
         snapshot = RunSnapshot()
         for component_id, component in self.run_manager.components.items():
-            snapshot.save_component_snapshot(
+            snapshot.set_component_snapshot(
                 component_id=component_id, component_state=component.get_persist_state(fl_ctx)
             )
 
-        snapshot.save_component_snapshot(
+        snapshot.set_component_snapshot(
             component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
         )
 
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
-        snapshot.save_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
+        snapshot.set_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
 
         snapshot.completed = completed
 

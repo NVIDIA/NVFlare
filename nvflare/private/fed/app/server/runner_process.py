@@ -96,7 +96,7 @@ def main():
                 if fl_snapshot:
                     snapshot = fl_snapshot.get_snapshot(args.run_number)
 
-            start_server_training(server, args, args.app_root, args.run_number, snapshot)
+            start_server_app(server, args, args.app_root, args.run_number, snapshot)
         finally:
             command_agent.shutdown()
             deployer.close()
@@ -107,7 +107,7 @@ def main():
         pass
 
 
-def start_server_training(server, args, app_root, run_number, snapshot):
+def start_server_app(server, args, app_root, run_number, snapshot):
 
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)

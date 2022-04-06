@@ -18,7 +18,7 @@ from typing import List
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import InfoCollectorTopic, RequestHeader
+from nvflare.private.defs import InfoCollectorTopic, RequestHeader, WorkspaceConstants
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.widgets.info_collector import InfoCollector
@@ -72,11 +72,11 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             return False, None
 
         run_destination = args[1].lower()
-        if not run_destination.startswith("run_"):
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
         destination = run_destination[4:]
-        conn.set_prop(self.RUN_DESTINATION, destination)
+        conn.set_prop(self.RUN_NUMBER, destination)
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
@@ -110,7 +110,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        run_destination = conn.get_prop(self.RUN_DESTINATION)
+        run_destination = conn.get_prop(self.RUN_NUMBER)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
             result = engine.show_stats(run_destination)
@@ -130,7 +130,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        run_destination = conn.get_prop(self.RUN_DESTINATION)
+        run_destination = conn.get_prop(self.RUN_NUMBER)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
             result = engine.get_errors(run_destination)
@@ -141,7 +141,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             self._process_stats_replies(conn, replies)
 
     def reset_errors(self, conn: Connection, args: List[str]):
-        run_destination = conn.get_prop(self.RUN_DESTINATION)
+        run_destination = conn.get_prop(self.RUN_NUMBER)
         collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
         collector.reset_errors()
         conn.append_string("errors reset")

@@ -26,7 +26,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ClientStatusKey
+from nvflare.private.defs import ClientStatusKey, WorkspaceConstants
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
@@ -55,7 +55,6 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client.process = None
         self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
 
-        # self.run_number = -1
         self.status = MachineStatus.STOPPED
 
         assert workers >= 1, "workers must >= 1"
@@ -77,7 +76,7 @@ class ClientEngine(ClientEngineInternalSpec):
     def get_engine_status(self):
         running_jobs = []
         for run_number in self.get_all_run_numbers():
-            run_folder = os.path.join(self.args.workspace, "run_" + str(run_number))
+            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
@@ -96,12 +95,11 @@ class ClientEngine(ClientEngineInternalSpec):
         return result
 
     def start_app(self, run_number: str) -> str:
-        # status = self.client.status
         status = self.client_executor.get_status(run_number)
-        if status == ClientStatus.STARTING or status == ClientStatus.STARTED:
+        if status == ClientStatus.STARTED:
             return "Client app already started."
 
-        app_root = os.path.join(self.args.workspace, "run_" + str(run_number), "app_" + self.client.client_name)
+        app_root = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number), "app_" + self.client.client_name)
         if not os.path.exists(app_root):
             return "Client app does not exist. Please deploy it before starting client."
 
@@ -144,7 +142,6 @@ class ClientEngine(ClientEngineInternalSpec):
             sys.path.remove(path)
 
     def abort_app(self, run_number: str) -> str:
-        # status = self.client.status
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STOPPED:
             return "Client app already stopped."
@@ -160,7 +157,6 @@ class ClientEngine(ClientEngineInternalSpec):
         return "Abort signal has been sent to the client App."
 
     def abort_task(self, run_number: str) -> str:
-        # status = self.client.status
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.NOT_STARTED:
             return "Client app has not started."
@@ -189,9 +185,7 @@ class ClientEngine(ClientEngineInternalSpec):
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
-        # if not os.path.exists('/tmp/tmp'):
-        #     os.makedirs('/tmp/tmp')
-        dest = os.path.join(self.args.workspace, "run_" + str(run_num), "app_" + client_name)
+        dest = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num), "app_" + client_name)
         # Remove the previous deployed app.
         if os.path.exists(dest):
             shutil.rmtree(dest)
@@ -200,7 +194,7 @@ class ClientEngine(ClientEngineInternalSpec):
             os.makedirs(dest)
         unzip_all_from_bytes(app_data, dest)
 
-        app_file = os.path.join(self.args.workspace, "run_" + str(run_num), "fl_app.txt")
+        app_file = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num), "fl_app.txt")
         if os.path.exists(app_file):
             os.remove(app_file)
         with open(app_file, "wt") as f:
@@ -209,7 +203,7 @@ class ClientEngine(ClientEngineInternalSpec):
         return ""
 
     def delete_run(self, run_num: int) -> str:
-        run_number_folder = os.path.join(self.args.workspace, "run_" + str(run_num))
+        run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
         if os.path.exists(run_number_folder):
             shutil.rmtree(run_number_folder)
         return "Delete run folder: {}".format(run_number_folder)

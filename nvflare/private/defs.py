@@ -119,3 +119,5 @@ class WorkspaceConstants:
     # these two files is used by shell scripts to determine restart / shutdown
     RESTART_FILE = "restart.fl"
     SHUTDOWN_FILE = "shutdown.fl"
+
+    WORKSPACE_PREFIX = "run_"

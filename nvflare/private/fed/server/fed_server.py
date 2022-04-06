@@ -38,13 +38,12 @@ from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, mak
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import SpecialTaskName
+from nvflare.private.defs import SpecialTaskName, WorkspaceConstants
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
-
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -784,7 +783,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     if snapshot and not snapshot.completed:
                         # Restore the workspace
                         workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                        dest = os.path.join(self.workspace, "run_" + str(run_number))
+                        dest = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
                         if os.path.exists(dest):
                             shutil.rmtree(dest)
 

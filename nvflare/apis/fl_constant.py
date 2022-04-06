@@ -221,3 +221,4 @@ class RunProcessKey(object):
     CONNECTION = "_comm_conn"
     CHILD_PROCESS = "_child_process"
     STATUS = "_status"
+    PARTICIPANTS = "_participants"
