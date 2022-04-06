@@ -24,6 +24,7 @@ from typing import Any, Dict, List
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
+from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import StorageSpec
 from nvflare.apis.study_manager_spec import StudyManagerSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
@@ -62,6 +63,10 @@ class _ReviewerFilter(_JobFilter):
         self.reviewer_name = reviewer_name
         engine = fl_ctx.get_engine()
         self.study_manager = engine.get_component("study_manager")
+        if not isinstance(self.study_manager, StudyManagerSpec):
+            raise TypeError(
+                f"engine should have a study manager component of type StudyManagerSpec, but got {type(self.study_manager)}"
+            )
 
     def filter_job(self, meta: dict):
         study = self.study_manager.get_study(meta[JobMetaKey.STUDY_NAME])
@@ -77,6 +82,9 @@ class _ReviewerFilter(_JobFilter):
         return True
 
 
+# TODO:: use try block around storage calls
+
+
 class SimpleJobDefManager(JobDefManagerSpec):
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store", temp_dir: str = "/tmp"):
         super().__init__()
@@ -85,6 +93,15 @@ class SimpleJobDefManager(JobDefManagerSpec):
         if not os.path.isdir(temp_dir):
             raise ValueError("temp_dir {} is not a valid dir".format(temp_dir))
         self.temp_dir = temp_dir
+
+    def _get_job_store(self, fl_ctx):
+        engine = fl_ctx.get_engine()
+        if not isinstance(engine, ServerEngineSpec):
+            raise TypeError(f"engine should be of type ServerEngineSpec, but got {type(engine)}")
+        store = engine.get_component(self.job_store_id)
+        if not isinstance(store, StorageSpec):
+            raise TypeError(f"engine should have a job store component of type StorageSpec, but got {type(store)}")
+        return store
 
     def job_uri(self, jid: str):
         return os.path.join(self.uri_root, jid)
@@ -102,14 +119,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta[JobMetaKey.STATUS] = RunStatus.SUBMITTED
 
         # write it to the store
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         store.create_object(self.job_uri(jid), uploaded_content, meta, overwrite_existing=True)
         return meta
 
     def delete(self, jid: str, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         store.delete_object(self.job_uri(jid))
 
     def _validate_meta(self, meta):
@@ -136,14 +151,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
         pass
 
     def get_job(self, jid: str, fl_ctx: FLContext) -> Job:
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         job_meta = store.get_meta(self.job_uri(jid))
         return job_from_meta(job_meta)
 
     def set_results_uri(self, jid: str, result_uri: str, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         updated_meta = {JobMetaKey.RESULT_LOCATION: result_uri}
         store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return self.get_job(jid, fl_ctx)
@@ -160,8 +173,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return result_dict
 
     def _load_job_data_from_store(self, jid: str, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         data_bytes = store.get_data(self.job_uri(jid))
         job_id_dir = os.path.join(self.temp_dir, jid)
         if os.path.exists(job_id_dir):
@@ -171,36 +183,32 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return job_id_dir
 
     def get_content(self, jid: str, fl_ctx: FLContext) -> bytes:
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         return store.get_data(self.job_uri(jid))
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS: status}
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
-    def list_all(self, fl_ctx: FLContext) -> List[Job]:
+    def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
         job_filter = _AllJobsFilter()
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
     def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        store = engine.get_component(self.job_store_id)
+        store = self._get_job_store(fl_ctx)
         jid_paths = store.list_objects(self.uri_root)
         if not jid_paths:
             return
 
         for jid_path in jid_paths:
             jid = pathlib.PurePath(jid_path).name
-            meta = self.get_job(jid, fl_ctx).meta
+            meta = store.get_meta(self.job_uri(jid))
             if meta:
                 ok = job_filter.filter_job(meta)
                 if not ok:
@@ -211,7 +219,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
-    def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> List[Dict[str, Any]]:
+    def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> List[Job]:
         job_filter = _ReviewerFilter(reviewer_name, fl_ctx)
         self._scan(job_filter, fl_ctx)
         return job_filter.result
@@ -227,7 +235,6 @@ class SimpleJobDefManager(JobDefManagerSpec):
                 meta[JobMetaKey.APPROVALS] = approvals
             approvals[reviewer_name] = (approved, note)
             updated_meta = {JobMetaKey.APPROVALS: approvals}
-            engine = fl_ctx.get_engine()
-            store = engine.get_component(self.job_store_id)
+            store = self._get_job_store(fl_ctx)
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta

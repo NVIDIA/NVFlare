@@ -16,14 +16,16 @@ import json
 import logging
 from typing import List
 
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.private.fed.server.server_engine import ServerEngine
 
 
 class JobCommandModule(CommandModule):
     """Command module with commands for job management."""
 
-    def __init__(self):  # , job_def_manager: JobDefManagerSpec):
+    def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_spec(self):
@@ -65,16 +67,29 @@ class JobCommandModule(CommandModule):
 
     def list_all_jobs(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        jobs = engine.job_def_manager.list_all()
-        if jobs:
-            conn.append_string("Jobs:")
-            for job in jobs:
-                conn.append_string(job.job_id)
-            conn.append_string("\nJob details for each job:")
-            for job in jobs:
-                conn.append_string(json.dumps(job.meta, indent=4))
-        else:
-            conn.append_string("No jobs.")
+        try:
+            if not isinstance(engine, ServerEngine):
+                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+
+            with engine.new_context() as fl_ctx:
+                jobs = job_def_manager.get_all_jobs(fl_ctx)
+            if jobs:
+                conn.append_string("Jobs:")
+                for job in jobs:
+                    conn.append_string(job.job_id)
+                conn.append_string("\nJob details for each job:")
+                for job in jobs:
+                    conn.append_string(json.dumps(job.meta, indent=4))
+            else:
+                conn.append_string("No jobs.")
+        except Exception as e:
+            conn.append_error("exception occurred getting job details: " + str(e))
+            return
         conn.append_success("")
 
     def get_job_details(self, conn: Connection, args: List[str]):
@@ -83,9 +98,16 @@ class JobCommandModule(CommandModule):
         job_id = args[1]
         engine = conn.app_ctx
         try:
-            job = engine.job_def_manager.get_job(job_id)
-            job_meta = job.meta
-            conn.append_string(json.dumps(job_meta, indent=4))
+            if not isinstance(engine, ServerEngine):
+                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                job = job_def_manager.get_job(job_id, fl_ctx)
+            conn.append_string(json.dumps(job.meta, indent=4))
         except Exception as e:
             conn.append_error("exception occurred getting job details: " + str(e))
             return
@@ -96,7 +118,15 @@ class JobCommandModule(CommandModule):
         job_id = args[1]
         engine = conn.app_ctx
         try:
-            engine.job_def_manager.delete(job_id)
+            if not isinstance(engine, ServerEngine):
+                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                job_def_manager.delete(job_id, fl_ctx)
             conn.append_string("Job {} deleted.".format(job_id))
         except Exception as e:
             conn.append_error("exception occurred: " + str(e))
