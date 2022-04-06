@@ -20,7 +20,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-
 from .widget import Widget
 
 
@@ -243,6 +242,6 @@ class InfoCollector(Widget):
         """Gets the error category information."""
         return self.get_category(self.CATEGORY_ERROR)
 
-    def reset_errors(self):
+    def reset_errors(self, run_destination):
         """Resets the error category information."""
         self.reset_category(self.CATEGORY_ERROR)

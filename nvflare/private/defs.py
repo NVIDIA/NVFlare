@@ -88,6 +88,8 @@ class ClientStatusKey(object):
     CURRENT_TASK = "current_task"
     STATUS = "status"
     APP_NAME = "app_name"
+    CLIENT_NAME = "client_name"
+    RUNNING_JOBS = "running_jobs"
 
 
 # TODO:: Remove some of these constants
@@ -117,3 +119,5 @@ class WorkspaceConstants:
     # these two files is used by shell scripts to determine restart / shutdown
     RESTART_FILE = "restart.fl"
     SHUTDOWN_FILE = "shutdown.fl"
+
+    WORKSPACE_PREFIX = "run_"

@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerComm
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.widgets.widget import WidgetID
 
 
 class CommandProcessor(object):
@@ -207,6 +208,61 @@ class AuxCommunicateCommand(CommandProcessor):
         return data
 
 
+class ShowStatsCommand(CommandProcessor):
+    """To implement the show_stats command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.SHOW_STATS
+
+        """
+        return ServerCommandNames.SHOW_STATS
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: Engine run_info
+
+        """
+        engine = fl_ctx.get_engine()
+        collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
+        return collector.get_run_stats()
+
+
+class GetErrorsCommand(CommandProcessor):
+    """To implement the show_errors command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.GET_ERRORS
+
+        """
+        return ServerCommandNames.GET_ERRORS
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: Engine run_info
+
+        """
+        engine = fl_ctx.get_engine()
+        collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
+        errors = collector.get_errors()
+        if not errors:
+            errors = "No Error"
+        return errors
+
+
 class ByeCommand(CommandProcessor):
     """To implement the ShutdownCommand."""
 
@@ -241,6 +297,8 @@ class ServerCommands(object):
         GetTaskCommand(),
         SubmitUpdateCommand(),
         AuxCommunicateCommand(),
+        ShowStatsCommand(),
+        GetErrorsCommand()
     ]
 
     @staticmethod

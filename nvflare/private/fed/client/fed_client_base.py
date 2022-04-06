@@ -28,7 +28,6 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
-
 from .client_status import ClientStatus
 from .communicator import Communicator
 
@@ -138,7 +137,8 @@ class FederatedClientBase:
 
     def _switch_ssid(self):
         if self.engine:
-            self.engine.abort_task(self.engine.run_number)
+            for run_number in self.engine.get_all_run_numbers():
+                self.engine.abort_task(run_number)
         # self.register()
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 

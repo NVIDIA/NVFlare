@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import EngineConstant
+from nvflare.private.defs import EngineConstant, WorkspaceConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -93,7 +93,7 @@ def main():
             )
 
         startup = args.startup
-        app_root = os.path.join(args.workspace, "run_" + str(run_number), "app_" + client_name)
+        app_root = os.path.join(args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number), "app_" + client_name)
 
         app_log_config = os.path.join(app_root, config_folder, "log.config")
         if os.path.exists(app_log_config):
@@ -129,7 +129,7 @@ def main():
         workspace = Workspace(args.workspace, client_name, config_folder)
         run_manager = ClientRunManager(
             client_name=client_name,
-            run_num=int(run_number),
+            run_num=run_number,
             workspace=workspace,
             client=federated_client,
             components=conf.runner_config.components,
@@ -147,7 +147,7 @@ def main():
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
 
-            client_runner = ClientRunner(config=conf.runner_config, run_num=int(run_number), engine=run_manager)
+            client_runner = ClientRunner(config=conf.runner_config, run_num=run_number, engine=run_manager)
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 

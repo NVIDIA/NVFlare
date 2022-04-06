@@ -132,8 +132,7 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
-    SET_RUN_NUMBER = "set_run_number"
-    DELETE_RUN_NUMBER = "delete_run_number"
+    DELETE_RUN = "delete_run"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
@@ -156,6 +155,10 @@ class ServerCommandNames(object):
     SUBMIT_UPDATE = "submit_update"
     AUX_COMMUNICATE = "aux_communicate"
     HEARTBEAT = "heartbeat"
+    GET_CLIENTS = "get_clients"
+    AUX_SEND = "aux_send"
+    SHOW_STATS = "show_stats"
+    GET_ERRORS = "get_errors"
 
 
 class ServerCommandKey(object):
@@ -170,6 +173,8 @@ class ServerCommandKey(object):
     FL_CLIENT = "fl_client"
     TOPIC = "topic"
     AUX_REPLY = "aux_reply"
+    CLIENTS = "clients"
+    COLLECTOR = "collector"
 
 
 class FedEventHeader(object):
@@ -208,3 +213,12 @@ class SnapshotKey(object):
     FL_CONTEXT = "fl_context"
     SERVER_RUNNER = "_Server_Runner"
     WORKSPACE = "_workspace"
+
+
+class RunProcessKey(object):
+
+    LISTEN_PORT = "_listen_port"
+    CONNECTION = "_comm_conn"
+    CHILD_PROCESS = "_child_process"
+    STATUS = "_status"
+    PARTICIPANTS = "_participants"

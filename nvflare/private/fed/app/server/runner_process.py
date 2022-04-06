@@ -23,6 +23,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
+from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
 
@@ -38,7 +39,8 @@ def main():
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--run_number", "-n", type=str, help="RUn_number", required=True)
     # parser.add_argument("--snapshot", "-t", type=bool, help="snapshot", required=True)
-    parser.add_argument("--port", "-p", type=str, help="port", required=True)
+    parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
+    parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -90,9 +92,11 @@ def main():
 
             snapshot = None
             if args.snapshot:
-                snapshot = server.snapshot_persistor.retrieve()
+                fl_snapshot = server.snapshot_persistor.retrieve()
+                if fl_snapshot:
+                    snapshot = fl_snapshot.get_snapshot(args.run_number)
 
-            start_server_training(server, args, args.app_root, int(args.run_number), snapshot)
+            start_server_app(server, args, args.app_root, args.run_number, snapshot)
         finally:
             command_agent.shutdown()
             deployer.close()
@@ -103,7 +107,7 @@ def main():
         pass
 
 
-def start_server_training(server, args, app_root, run_number, snapshot):
+def start_server_app(server, args, app_root, run_number, snapshot):
 
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)
@@ -115,7 +119,9 @@ def start_server_training(server, args, app_root, run_number, snapshot):
 
         set_up_run_config(server, conf)
 
-        server.engine.set_run_number(run_number)
+        if not isinstance(server.engine, ServerEngine):
+            raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
+        server.engine.create_parent_connection(int(args.conn))
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:

@@ -16,6 +16,7 @@ from typing import List
 
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
+from nvflare.private.defs import WorkspaceConstants
 from nvflare.security.security import Action, FLAuthzContext
 
 
@@ -31,6 +32,8 @@ class CommandUtil(object):
     TARGET_TYPE_ALL = "all"
 
     SITE_SERVER = "server"
+
+    RUN_NUMBER = "run_destination"
 
     def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
         """Validate specified args and determine and set target type and target names in the Connection.
@@ -131,7 +134,18 @@ class CommandUtil(object):
         return self._authorize_actions(conn, args[1:], [Action.VIEW])
 
     def authorize_train(self, conn: Connection, args: List[str]):
-        return self._authorize_actions(conn, args[1:], [Action.TRAIN])
+        if len(args) != 3:
+            conn.append_error("syntax error: missing run_destination and target")
+            return False, None
+
+        run_destination = args[1].lower()
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_destination must be run_XXX")
+            return False, None
+        destination = run_destination[4:]
+        conn.set_prop(self.RUN_NUMBER, destination)
+
+        return self._authorize_actions(conn, args[2:], [Action.TRAIN])
 
     def authorize_operate(self, conn: Connection, args: List[str]):
         return self._authorize_actions(conn, args[1:], [Action.OPERATE])

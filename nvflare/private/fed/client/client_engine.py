@@ -23,10 +23,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ClientStatusKey
-
+from nvflare.private.defs import ClientStatusKey, WorkspaceConstants
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
@@ -55,7 +55,6 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client.process = None
         self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
 
-        self.run_number = -1
         self.status = MachineStatus.STOPPED
 
         assert workers >= 1, "workers must >= 1"
@@ -66,16 +65,6 @@ class ClientEngine(ClientEngineInternalSpec):
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent
 
-    def _get_open_port(self):
-        import socket
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("", 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-        s.close()
-        return port
-
     def do_validate(self, req: Message):
         self.logger.info("starting cross site validation.")
         future = self.executor.submit(lambda p: _do_validate(*p), [self.sender, req])
@@ -85,30 +74,32 @@ class ClientEngine(ClientEngineInternalSpec):
         return "validate process started."
 
     def get_engine_status(self):
-        app_name = "?"
-        if self.run_number == -1:
-            run_number = "?"
-        else:
-            run_number = str(self.run_number)
-            run_folder = os.path.join(self.args.workspace, "run_" + str(run_number))
+        running_jobs = []
+        for run_number in self.get_all_run_numbers():
+            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
                     app_name = f.readline().strip()
+            job = {
+                ClientStatusKey.APP_NAME: app_name,
+                ClientStatusKey.RUN_NUM: run_number,
+                ClientStatusKey.STATUS: self.client_executor.check_status(self.client, run_number),
+            }
+            running_jobs.append(job)
 
         result = {
-            ClientStatusKey.APP_NAME: app_name,
-            ClientStatusKey.RUN_NUM: run_number,
-            ClientStatusKey.STATUS: self.client_executor.check_status(self.client),
+            ClientStatusKey.CLIENT_NAME: self.client.client_name,
+            ClientStatusKey.RUNNING_JOBS: running_jobs,
         }
         return result
 
-    def start_app(self, run_number: int) -> str:
-        status = self.client.status
-        if status == ClientStatus.STARTING or status == ClientStatus.STARTED:
+    def start_app(self, run_number: str) -> str:
+        status = self.client_executor.get_status(run_number)
+        if status == ClientStatus.STARTED:
             return "Client app already started."
 
-        app_root = os.path.join(self.args.workspace, "run_" + str(run_number), "app_" + self.client.client_name)
+        app_root = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number), "app_" + self.client.client_name)
         if not os.path.exists(app_root):
             return "Client app does not exist. Please deploy it before starting client."
 
@@ -124,17 +115,12 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
-        open_port = self._get_open_port()
+        open_port = get_open_ports(1)[0]
         self._write_token_file(run_number, open_port)
-        self.run_number = run_number
 
-        self.client_executor.start_train(self.client, self.args, app_root, app_custom_folder, open_port)
+        self.client_executor.start_train(self.client, run_number, self.args, app_root, app_custom_folder, open_port)
 
         return "Start the client app..."
-
-    def set_run_number(self, run_number: int) -> str:
-        self.run_number = run_number
-        return ""
 
     def get_client_name(self):
         return self.client.client_name
@@ -149,20 +135,14 @@ class ClientEngine(ClientEngineInternalSpec):
                 % (self.client.token, self.client.ssid, run_number, self.client.client_name, open_port)
             )
 
-    def wait_process_complete(self):
-        self.client.process.wait()
-
-        # self.client.cross_validation()
-        self.client.status = ClientStatus.STOPPED
-
     def remove_custom_path(self):
         regex = re.compile(".*/run_.*/custom")
         custom_paths = list(filter(regex.search, sys.path))
         for path in custom_paths:
             sys.path.remove(path)
 
-    def abort_app(self, run_number: int) -> str:
-        status = self.client.status
+    def abort_app(self, run_number: str) -> str:
+        status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STOPPED:
             return "Client app already stopped."
 
@@ -172,21 +152,19 @@ class ClientEngine(ClientEngineInternalSpec):
         if status == ClientStatus.STARTING:
             return "Client app is starting, please wait for client to have started before abort."
 
-        self.client_executor.abort_train(self.client)
-        # self.run_number = -1
+        self.client_executor.abort_train(self.client, run_number)
 
         return "Abort signal has been sent to the client App."
 
-    def abort_task(self, run_number: int) -> str:
-        status = self.client.status
+    def abort_task(self, run_number: str) -> str:
+        status = self.client_executor.get_status(run_number)
         if status == ClientStatus.NOT_STARTED:
             return "Client app has not started."
 
         if status == ClientStatus.STARTING:
             return "Client app is starting, please wait for started before abort_task."
 
-        self.client_executor.abort_task(self.client)
-        # self.run_number = -1
+        self.client_executor.abort_task(self.client, run_number)
 
         return "Abort signal has been sent to the current task. "
 
@@ -207,9 +185,7 @@ class ClientEngine(ClientEngineInternalSpec):
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
-        # if not os.path.exists('/tmp/tmp'):
-        #     os.makedirs('/tmp/tmp')
-        dest = os.path.join(self.args.workspace, "run_" + str(run_num), "app_" + client_name)
+        dest = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num), "app_" + client_name)
         # Remove the previous deployed app.
         if os.path.exists(dest):
             shutil.rmtree(dest)
@@ -218,7 +194,7 @@ class ClientEngine(ClientEngineInternalSpec):
             os.makedirs(dest)
         unzip_all_from_bytes(app_data, dest)
 
-        app_file = os.path.join(self.args.workspace, "run_" + str(run_num), "fl_app.txt")
+        app_file = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num), "fl_app.txt")
         if os.path.exists(app_file):
             os.remove(app_file)
         with open(app_file, "wt") as f:
@@ -227,22 +203,25 @@ class ClientEngine(ClientEngineInternalSpec):
         return ""
 
     def delete_run(self, run_num: int) -> str:
-        run_number_folder = os.path.join(self.args.workspace, "run_" + str(run_num))
+        run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
         if os.path.exists(run_number_folder):
             shutil.rmtree(run_number_folder)
         return "Delete run folder: {}".format(run_number_folder)
 
-    def get_current_run_info(self) -> ClientRunInfo:
-        return self.client_executor.get_run_info()
+    def get_current_run_info(self, run_number) -> ClientRunInfo:
+        return self.client_executor.get_run_info(run_number)
 
-    def get_errors(self):
-        return self.client_executor.get_errors()
+    def get_errors(self, run_number):
+        return self.client_executor.get_errors(run_number)
 
-    def reset_errors(self):
-        self.client_executor.reset_errors()
+    def reset_errors(self, run_number):
+        self.client_executor.reset_errors(run_number)
 
-    def send_aux_command(self, shareable: Shareable):
-        return self.client_executor.send_aux_command(shareable)
+    def send_aux_command(self, shareable: Shareable, run_number):
+        return self.client_executor.send_aux_command(shareable, run_number)
+
+    def get_all_run_numbers(self):
+        return self.client_executor.run_processes.keys()
 
 
 def _do_validate(sender, message):

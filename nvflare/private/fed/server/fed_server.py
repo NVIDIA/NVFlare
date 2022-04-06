@@ -38,13 +38,12 @@ from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, mak
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import SpecialTaskName
+from nvflare.private.defs import SpecialTaskName, WorkspaceConstants
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
-
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -69,12 +68,12 @@ GRPC_DEFAULT_OPTIONS = [
 
 class BaseServer(ABC):
     def __init__(
-        self,
-        project_name=None,
-        min_num_clients=2,
-        max_num_clients=10,
-        heart_beat_timeout=600,
-        handlers: Optional[List[FLComponent]] = None,
+            self,
+            project_name=None,
+            min_num_clients=2,
+            max_num_clients=10,
+            heart_beat_timeout=600,
+            handlers: Optional[List[FLComponent]] = None,
     ):
         """Base server that provides the clients management and server deployment."""
         self.project_name = project_name
@@ -209,19 +208,19 @@ class BaseServer(ABC):
 
 class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):
     def __init__(
-        self,
-        project_name=None,
-        min_num_clients=2,
-        max_num_clients=10,
-        wait_after_min_clients=10,
-        cmd_modules=None,
-        heart_beat_timeout=600,
-        handlers: Optional[List[FLComponent]] = None,
-        args=None,
-        secure_train=False,
-        enable_byoc=False,
-        snapshot_persistor=None,
-        overseer_agent=None,
+            self,
+            project_name=None,
+            min_num_clients=2,
+            max_num_clients=10,
+            wait_after_min_clients=10,
+            cmd_modules=None,
+            heart_beat_timeout=600,
+            handlers: Optional[List[FLComponent]] = None,
+            args=None,
+            secure_train=False,
+            enable_byoc=False,
+            snapshot_persistor=None,
+            overseer_agent=None,
     ):
         """Federated server services.
 
@@ -392,11 +391,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             # engine = fl_ctx.get_engine()
             shared_fl_ctx = pickle.loads(proto_to_bytes(request.context["fl_context"]))
+            run_number = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
             # fl_ctx.set_peer_context(shared_fl_ctx)
 
             with self.lock:
                 # if self.server_runner is None or engine is None or self.engine.run_manager is None:
-                if self.engine.child_process is None:
+                if run_number not in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
                     taskname = SpecialTaskName.END_RUN
                     task_id = ""
@@ -432,20 +432,19 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx):
         try:
-            self.engine.get_command_conn()
-            if self.engine.command_conn:
-                with self.engine.lock:
+            with self.engine.lock:
+                run_number = shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(run_number))
+                if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
                     command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
 
-                    data = {
-                        ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
-                        ServerCommandKey.DATA: command_shareable,
-                    }
-                    self.engine.command_conn.send(data)
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
+                            ServerCommandKey.DATA: command_shareable}
+                    command_conn.send(data)
 
-                    return_data = self.engine.command_conn.recv()
+                    return_data = command_conn.recv()
                     taskname = return_data.get(ServerCommandKey.TASK_NAME)
                     task_id = return_data.get(ServerCommandKey.TASK_ID)
                     shareable = return_data.get(ServerCommandKey.SHAREABLE)
@@ -462,9 +461,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def SubmitUpdate(self, request, context):
         """Handle client's submission of the federated updates."""
         # if self.server_runner is None or self.engine.run_manager is None:
-        if self.engine.child_process is None:
-            self.logger.info("ignored result submission since Server Engine isn't ready")
-            context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.submit_result(fl_ctx)
@@ -484,6 +480,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     shareable = Shareable()
                     shareable = shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
                     shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
+
+                    run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
+                    if run_number not in self.engine.run_processes.keys():
+                        self.logger.info("ignored result submission since Server Engine isn't ready")
+                        context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
                     # fl_ctx.set_peer_context(shared_fl_context)
 
@@ -523,9 +524,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _submit_update(self, client, contribution_task_name, shareable, shared_fl_context, task_id):
         try:
-            self.engine.get_command_conn()
-            if self.engine.command_conn:
-                with self.engine.lock:
+            with self.engine.lock:
+                run_number = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(run_number))
+                if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
                     command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
@@ -533,11 +535,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_shareable.set_header(ServerCommandKey.TASK_ID, task_id)
                     command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
 
-                    data = {
-                        ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
-                        ServerCommandKey.DATA: command_shareable,
-                    }
-                    self.engine.command_conn.send(data)
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
+                            ServerCommandKey.DATA: command_shareable}
+                    command_conn.send(data)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
 
@@ -547,15 +547,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             state_check = self.server_state.aux_communicate(fl_ctx)
             self._handle_state_check(context, state_check)
             self._ssid_check(request.client, context)
-
-            # if self.server_runner is None or self.engine.run_manager is None:
-            if self.engine.child_process is None:
-                self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
-                reply = make_reply(ReturnCode.SERVER_NOT_READY)
-                aux_reply = fed_msg.AuxReply()
-                aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
-
-                return aux_reply
 
             contribution = request
 
@@ -569,6 +560,15 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             shareable = Shareable()
             shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
             shared_fl_context = pickle.loads(proto_to_bytes(request.data["fl_context"]))
+
+            run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
+            if run_number not in self.engine.run_processes.keys():
+                self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
+                reply = make_reply(ReturnCode.SERVER_NOT_READY)
+                aux_reply = fed_msg.AuxReply()
+                aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
+
+                return aux_reply
 
             fl_ctx.set_peer_context(shared_fl_context)
             shareable.set_peer_props(shared_fl_context.get_all_public_props())
@@ -588,21 +588,20 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:
-            self.engine.get_command_conn()
-            if self.engine.command_conn:
-                with self.engine.lock:
+            with self.engine.lock:
+                run_number = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(run_number))
+                if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
                     command_shareable.set_header(ServerCommandKey.TOPIC, topic)
                     command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
 
-                    data = {
-                        ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
-                        ServerCommandKey.DATA: command_shareable,
-                    }
-                    self.engine.command_conn.send(data)
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
+                            ServerCommandKey.DATA: command_shareable}
+                    command_conn.send(data)
 
-                    return_data = self.engine.command_conn.recv()
+                    return_data = command_conn.recv()
                     reply = return_data.get(ServerCommandKey.AUX_REPLY)
                     child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
 
@@ -778,23 +777,22 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def _turn_to_hot(self):
         # Restore Snapshot
         with self.snapshot_lock:
-            snapshot = self.snapshot_persistor.retrieve()
-            if snapshot and not snapshot.completed:
-                data = snapshot.get_component_snapshot(SnapshotKey.SERVER_RUNNER)
-                self.engine.set_run_number(int(data.get("run_number")))
+            fl_snapshot = self.snapshot_persistor.retrieve()
+            if fl_snapshot:
+                for run_number, snapshot in fl_snapshot.run_snapshots.items():
+                    if snapshot and not snapshot.completed:
+                        # Restore the workspace
+                        workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
+                        dest = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+                        if os.path.exists(dest):
+                            shutil.rmtree(dest)
 
-                # Restore the workspace
-                workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                dest = os.path.join(self.workspace, "run_" + str(self.engine.run_number))
-                if os.path.exists(dest):
-                    shutil.rmtree(dest)
+                        if not os.path.exists(dest):
+                            os.makedirs(dest)
+                        unzip_all_from_bytes(workspace_data, dest)
 
-                if not os.path.exists(dest):
-                    os.makedirs(dest)
-                unzip_all_from_bytes(workspace_data, dest)
-
-                self.logger.info(f"Restore the previous snapshot. Run_number: {self.engine.run_number}")
-                self.engine.start_app_on_server(snapshot=snapshot)
+                        self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
+                        self.engine.start_app_on_server(str(run_number), snapshot=snapshot)
 
             self.server_state = HotState(
                 host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid

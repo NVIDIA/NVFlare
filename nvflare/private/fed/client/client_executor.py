@@ -21,11 +21,9 @@ import threading
 import time
 from multiprocessing.connection import Client
 
-from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode
+from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-
 from .client_status import ClientStatus, get_status_message
 
 
@@ -44,11 +42,12 @@ class ClientExecutor(object):
         self.pipe = FilePipe(root_path=pipe_path, name="training")
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def start_train(self, client, args, app_root, app_custom_folder, listen_port):
+    def start_train(self, client, run_number, args, app_root, app_custom_folder, listen_port):
         """start_train method to start the FL client training.
 
         Args:
             client: the FL client object
+            run_number: the run_number
             args: admin command arguments for starting the FL client training
             app_root: the root folder of the running APP
             app_custom_folder: FL application custom folder
@@ -57,26 +56,28 @@ class ClientExecutor(object):
         """
         pass
 
-    def check_status(self, client) -> str:
+    def check_status(self, client, run_number) -> str:
         """To check the status of the running client.
 
         Args:
             client: the FL client object
+            run_number: the run_number
 
         Returns:
             A client status message
         """
         pass
 
-    def abort_train(self, client):
+    def abort_train(self, client, run_number):
         """To abort the client training.
 
         Args:
             client: the FL client object
+            run_number: the run_number
         """
         pass
 
-    def abort_task(self, client):
+    def abort_task(self, client, run_number):
         """To abort the client executing task.
 
         Args:
@@ -84,7 +85,7 @@ class ClientExecutor(object):
         """
         pass
 
-    def get_run_info(self) -> dict:
+    def get_run_info(self, run_number) -> dict:
         """Get the run information.
 
         Returns:
@@ -92,7 +93,7 @@ class ClientExecutor(object):
         """
         pass
 
-    def get_errors(self):
+    def get_errors(self, run_number):
         """Get the error information.
 
         Returns:
@@ -101,11 +102,11 @@ class ClientExecutor(object):
         """
         pass
 
-    def reset_errors(self):
+    def reset_errors(self, run_number):
         """Reset the error information."""
         pass
 
-    def send_aux_command(self, shareable: Shareable):
+    def send_aux_command(self, shareable: Shareable, run_number):
         """To send the aux command to child process.
 
         Args:
@@ -132,19 +133,23 @@ class ProcessExecutor(ClientExecutor):
 
         self.startup = startup
 
-        self.conn_client = None
-
-        self.listen_port = get_open_ports(1)[0]
+        self.run_processes = {}
 
         self.lock = threading.Lock()
 
-    def get_conn_client(self):
-        if not self.conn_client:
+    def get_conn_client(self, run_number):
+        listen_port = self.run_processes.get(run_number, {}).get(RunProcessKey.LISTEN_PORT)
+        conn_client = self.run_processes.get(run_number, {}).get(RunProcessKey.CONNECTION, None)
+
+        if not conn_client:
             try:
-                address = ("localhost", self.listen_port)
-                self.conn_client = Client(address, authkey="client process secret password".encode())
+                address = ("localhost", listen_port)
+                conn_client = Client(address, authkey="client process secret password".encode())
+                self.run_processes[run_number][RunProcessKey.CONNECTION] = conn_client
             except Exception as e:
                 pass
+
+        return conn_client
 
     def create_pipe(self):
         """Create pipe to communicate between child (training) and main (logic) thread."""
@@ -152,8 +157,7 @@ class ProcessExecutor(ClientExecutor):
 
         return pipe
 
-    def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-        self.listen_port = listen_port
+    def start_train(self, client, run_number, args, app_root, app_custom_folder, listen_port):
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -175,151 +179,173 @@ class ProcessExecutor(ClientExecutor):
 
         print("training child process ID: {}".format(process.pid))
 
-        client.process = process
         client.multi_gpu = False
 
-        client.status = ClientStatus.STARTED
+        with self.lock:
+            self.run_processes[run_number] = {RunProcessKey.LISTEN_PORT: listen_port,
+                                              RunProcessKey.CONNECTION: None,
+                                              RunProcessKey.CHILD_PROCESS: process,
+                                              RunProcessKey.STATUS: ClientStatus.STARTED}
+
         thread = threading.Thread(
-            target=self.wait_training_process_finish, args=(client, args, app_root, app_custom_folder)
+            target=self.wait_training_process_finish, args=(client, run_number, args, app_root, app_custom_folder)
         )
         thread.start()
 
-    def check_status(self, client):
+    def check_status(self, client, run_number):
         try:
-            self.get_conn_client()
+            with self.lock:
+                conn_client = self.get_conn_client(run_number)
 
-            if self.conn_client:
-                data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
-                self.conn_client.send(data)
-                status_message = self.conn_client.recv()
-                self.logger.debug("check status from process listener......")
-                return status_message
-            else:
-                return get_status_message(client.status)
+                if conn_client:
+                    data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
+                    conn_client.send(data)
+                    status_message = conn_client.recv()
+                    self.logger.debug("check status from process listener......")
+                    return status_message
+                else:
+                    process_status = ClientStatus.NOT_STARTED
+                    return get_status_message(process_status)
         except:
             self.logger.error("check_status() execution exception.")
             return "execution exception. Please try again."
 
-    def get_run_info(self):
+    def get_run_info(self, run_number):
         try:
-            self.get_conn_client()
+            with self.lock:
+                conn_client = self.get_conn_client(run_number)
 
-            if self.conn_client:
-                data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
-                self.conn_client.send(data)
-                run_info = self.conn_client.recv()
-                return run_info
-            else:
-                return {}
+                if conn_client:
+                    data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
+                    conn_client.send(data)
+                    run_info = conn_client.recv()
+                    return run_info
+                else:
+                    return {}
         except:
             self.logger.error("get_run_info() execution exception.")
             return {"error": "no info collector. Please try again."}
 
-    def get_errors(self):
+    def get_errors(self, run_number):
         try:
-            self.get_conn_client()
+            with self.lock:
+                conn_client = self.get_conn_client(run_number)
 
-            if self.conn_client:
-                data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
-                self.conn_client.send(data)
-                errors_info = self.conn_client.recv()
-                return errors_info
-            else:
-                return None
+                if conn_client:
+                    data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
+                    conn_client.send(data)
+                    errors_info = conn_client.recv()
+                    return errors_info
+                else:
+                    return None
         except:
             self.logger.error("get_errors() execution exception.")
             return None
 
-    def reset_errors(self):
+    def reset_errors(self, run_number):
         try:
-            self.get_conn_client()
+            with self.lock:
+                conn_client = self.get_conn_client(run_number)
 
-            if self.conn_client:
-                data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
-                self.conn_client.send(data)
+                if conn_client:
+                    data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
+                    conn_client.send(data)
         except:
             self.logger.error("reset_errors() execution exception.")
 
-    def send_aux_command(self, shareable: Shareable):
+    def send_aux_command(self, shareable: Shareable, run_number):
         try:
-            self.get_conn_client()
-            if self.conn_client:
-                data = {"command": AdminCommandNames.AUX_COMMAND, "data": shareable}
-                self.conn_client.send(data)
-                reply = self.conn_client.recv()
-                return reply
-            else:
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            with self.lock:
+                conn_client = self.get_conn_client(run_number)
+                if conn_client:
+                    data = {"command": AdminCommandNames.AUX_COMMAND, "data": shareable}
+                    conn_client.send(data)
+                    reply = conn_client.recv()
+                    return reply
+                else:
+                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         except:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def abort_train(self, client):
-        if client.status == ClientStatus.STARTED:
+    def abort_train(self, client, run_number):
+        process_status = self.run_processes.get(run_number, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+        if process_status == ClientStatus.STARTED:
             with self.lock:
-                if client.process:
-                    # kill the sub-process group directly
-                    if self.conn_client:
-                        data = {"command": AdminCommandNames.ABORT, "data": {}}
-                        self.conn_client.send(data)
-                        self.logger.debug("abort sent")
-                        # wait for client to handle abort
-                        time.sleep(2.0)
+                try:
+                    child_process = self.run_processes[run_number].get(RunProcessKey.CHILD_PROCESS, None)
+                    if child_process:
+                        # kill the sub-process group directly
+                        conn_client = self.get_conn_client(run_number)
+                        if conn_client:
+                            data = {"command": AdminCommandNames.ABORT, "data": {}}
+                            conn_client.send(data)
+                            self.logger.debug("abort sent")
 
-                    # kill the sub-process group directly
-                    try:
-                        os.killpg(os.getpgid(client.process.pid), 9)
-                        self.logger.debug("kill signal sent")
-                    except Exception as e:
-                        pass
-                    client.process.terminate()
-                    self.logger.debug("terminated")
-
-                if self.conn_client:
-                    self.conn_client.close()
-                self.conn_client = None
-                self.cleanup()
+                        threading.Thread(target=self._terminate_process, args=[child_process]).start()
+                finally:
+                    if conn_client:
+                        conn_client.close()
+                    if run_number in self.run_processes.keys():
+                        self.run_processes.pop(run_number)
+                    self.cleanup()
 
         self.logger.info("Client training was terminated.")
 
-    def abort_task(self, client):
-        if client.status == ClientStatus.STARTED:
-            if self.conn_client:
+    def _terminate_process(self, child_process):
+        # wait for client to handle abort
+        time.sleep(10.0)
+        # kill the sub-process group directly
+        try:
+            os.killpg(os.getpgid(child_process.pid), 9)
+            self.logger.debug("kill signal sent")
+        except Exception as e:
+            pass
+        child_process.terminate()
+        self.logger.debug("terminated")
+
+    def abort_task(self, client, run_number):
+        process_status = self.run_processes.get(run_number, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+        if process_status == ClientStatus.STARTED:
+            conn_client = self.get_conn_client(run_number)
+            if conn_client:
                 data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
-                self.conn_client.send(data)
+                conn_client.send(data)
                 self.logger.debug("abort_task sent")
 
-    def wait_training_process_finish(self, client, args, app_root, app_custom_folder):
+    def wait_training_process_finish(self, client, run_number, args, app_root, app_custom_folder):
         # wait for the listen_command thread to start, and send "start" message to wake up the connection.
         start = time.time()
         while True:
-            self.get_conn_client()
-            if self.conn_client:
-                data = {"command": AdminCommandNames.START_APP, "data": {}}
-                self.conn_client.send(data)
-                break
+            with self.lock:
+                conn_client = self.get_conn_client(run_number)
+                if conn_client:
+                    data = {"command": AdminCommandNames.START_APP, "data": {}}
+                    conn_client.send(data)
+                    break
             time.sleep(1.0)
             if time.time() - start > 15:
                 break
 
         self.logger.info("waiting for process to finish.")
-        client.process.wait()
-        returncode = client.process.returncode
+        child_process = self.run_processes.get(run_number, {}).get(RunProcessKey.CHILD_PROCESS)
+        child_process.wait()
+        returncode = child_process.returncode
         self.logger.info(f"process finished with execution code: {returncode}")
 
         with self.lock:
-            client.process = None
-
-            if self.conn_client:
-                self.conn_client.close()
-            self.conn_client = None
+            conn_client = self.get_conn_client(run_number)
+            if conn_client:
+                conn_client.close()
+            if run_number in self.run_processes.keys():
+                self.run_processes.pop(run_number)
 
         # Not to run cross_validation in a new process anymore
         client.cross_site_validate = False
-        client.status = ClientStatus.STOPPED
+
+    def get_status(self, run_number):
+        with self.lock:
+            process_status = self.run_processes.get(run_number, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
+            return process_status
 
     def close(self):
-        if self.conn_client:
-            data = {"command": AdminCommandNames.SHUTDOWN, "data": {}}
-            self.conn_client.send(data)
-            self.conn_client = None
         self.cleanup()

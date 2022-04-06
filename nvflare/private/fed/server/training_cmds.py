@@ -18,14 +18,13 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, MachineStatus
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic
+from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic, WorkspaceConstants
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.security import Action, FLAuthzContext
-
 from .app_authz import AppAuthzService
 from .cmd_utils import CommandUtil
 
@@ -44,17 +43,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             name="training",
             cmd_specs=[
                 CommandSpec(
-                    name=AdminCommandNames.SET_RUN_NUMBER,
-                    description="set the run number",
-                    usage="set_run_number number",
-                    handler_func=self.set_run_number,
-                    authz_func=self.authorize_set_run_number,
-                    visible=True,
-                ),
-                CommandSpec(
-                    name=AdminCommandNames.DELETE_RUN_NUMBER,
+                    name=AdminCommandNames.DELETE_RUN,
                     description="delete a run",
-                    usage="delete_run_number number",
+                    usage="delete_run number",
                     handler_func=self.delete_run_number,
                     authz_func=self.authorize_set_run_number,
                     visible=True,
@@ -63,7 +54,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.DEPLOY_APP,
                     description="deploy FL app to client/server",
-                    usage="deploy_app server|client <client-name>|all",
+                    usage="deploy_app run_destination app server|client <client-name>|all",
                     handler_func=self.deploy_app,
                     authz_func=self.authorize_deploy_app,
                     visible=True,
@@ -71,7 +62,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.START_APP,
                     description="start the FL app",
-                    usage="start_app server|client|all",
+                    usage="start_app run_destination server|client|all",
                     handler_func=self.start_app,
                     authz_func=self.authorize_train,
                     visible=True,
@@ -87,7 +78,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.ABORT,
                     description="abort the FL app",
-                    usage="abort server|client|all",
+                    usage="abort run_destination server|client|all",
                     handler_func=self.abort_app,
                     authz_func=self.authorize_train,
                     visible=True,
@@ -138,31 +129,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             ],
         )
 
-    # Set Run Number
     def authorize_set_run_number(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing run number")
             return False, None
 
-        try:
-            num = int(args[1])
-        except ValueError:
-            conn.append_error("run number must be an integer.")
-            return False, None
-
-        if num < 1:
-            conn.append_error("run number must be > 0.")
-            return False, None
-
         return True, FLAuthzContext.new_authz_context(site_names=[self.SITE_SERVER], actions=[Action.TRAIN])
-
-    def set_run_number(self, conn: Connection, args: List[str]):
-        num = int(args[1])
-        engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        conn.append_string(engine.set_run_number(num))
-        self._set_run_number_clients(conn, num)
 
     def _set_run_number_clients(self, conn: Connection, run_number) -> bool:
         engine = conn.app_ctx
@@ -180,27 +152,23 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return True
 
     def delete_run_number(self, conn: Connection, args: List[str]):
-        num = int(args[1])
+        run_destination = args[1]
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        engine_info = engine.get_engine_info()
+        if run_destination in engine.run_processes.keys():
+            conn.append_error(f"Current running run_{run_destination} can not be deleted.")
+            return
 
-        if engine_info.status == MachineStatus.STARTED or engine_info.status == MachineStatus.STARTING:
-            run_number = engine.get_run_number()
-            if run_number == num:
-                conn.append_error("Current running run_number can not be deleted.")
-                return
-
-        err = engine.delete_run_number(num)
+        err = engine.delete_run_number(run_destination)
         if err:
             conn.append_error(err)
             return
 
         # ask clients to delete this RUN
         message = new_message(conn, topic=TrainingTopic.DELETE_RUN, body="")
-        message.set_header(RequestHeader.RUN_NUM, str(num))
+        message.set_header(RequestHeader.RUN_NUM, str(run_destination))
         clients = engine.get_clients()
         if clients:
             conn.set_prop(self.TARGET_CLIENT_TOKENS, [x.token for x in clients])
@@ -211,30 +179,34 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     # Deploy
     def authorize_deploy_app(self, conn: Connection, args: List[str]):
-        if len(args) < 3:
-            conn.append_error("syntax error: missing target")
+        if len(args) < 4:
+            conn.append_error("syntax error: missing run_destination and target")
             return False, None
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        if engine.get_run_number() < 0:
-            conn.append_error("Please set a run number.")
-            return False, None
 
-        err = self.validate_command_targets(conn, args[2:])
+        err = self.validate_command_targets(conn, args[3:])
         if err:
             conn.append_error(err)
             return False, None
 
-        app_name = args[1]
+        run_destination = args[1].lower()
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_destination must be run_XXX")
+            return False, None
+        destination = run_destination[4:]
+        conn.set_prop(self.RUN_NUMBER, destination)
+
+        app_name = args[2]
         app_staging_path = engine.get_staging_path_of_app(app_name)
         if not app_staging_path:
             conn.append_error("App {} does not exist. Please upload it first".format(app_name))
             return False, None
 
         conn.set_prop(self.APP_STAGING_PATH, app_staging_path)
-        target_type = args[2]
+        target_type = args[3]
 
         if target_type == self.TARGET_TYPE_SERVER:
             sites = [self.SITE_SERVER]
@@ -255,7 +227,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
             return True, authz_ctx
 
-    def _deploy_to_clients(self, conn: Connection, app_name, app_staging_path) -> bool:
+    def _deploy_to_clients(self, conn: Connection, app_name, run_destination) -> bool:
         # return True if successful
         engine = conn.app_ctx
         client_names = conn.get_prop(self.TARGET_CLIENT_NAMES)
@@ -271,16 +243,16 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return False
 
         message = new_message(conn, topic=TrainingTopic.DEPLOY, body=app_data)
-        message.set_header(RequestHeader.RUN_NUM, str(engine.get_run_number()))
+        message.set_header(RequestHeader.RUN_NUM, str(run_destination))
         message.set_header(RequestHeader.APP_NAME, app_name)
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
         return True
 
-    def _deploy_to_server(self, conn, app_name, app_staging_path) -> bool:
+    def _deploy_to_server(self, conn, run_destination, app_name, app_staging_path) -> bool:
         # return True if successful
         engine = conn.app_ctx
-        err = engine.deploy_app_to_server(app_name, app_staging_path)
+        err = engine.deploy_app_to_server(run_destination, app_name, app_staging_path)
         if not err:
             conn.append_string('deployed app "{}" to Server'.format(app_name))
             return True
@@ -289,32 +261,33 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return False
 
     def deploy_app(self, conn: Connection, args: List[str]):
-        app_name = args[1]
+        app_name = args[2]
 
+        run_destination = conn.get_prop(self.RUN_NUMBER)
         target_type = conn.get_prop(self.TARGET_TYPE)
         app_staging_path = conn.get_prop(self.APP_STAGING_PATH)
         if target_type == self.TARGET_TYPE_SERVER:
-            if not self._deploy_to_server(conn, app_name, app_staging_path):
+            if not self._deploy_to_server(conn, run_destination, app_name, app_staging_path):
                 return
         elif target_type == self.TARGET_TYPE_CLIENT:
-            if not self._deploy_to_clients(conn, app_name, app_staging_path):
+            if not self._deploy_to_clients(conn, app_name, run_destination):
                 return
         else:
             # all
-            success = self._deploy_to_server(conn, app_name, app_staging_path)
+            success = self._deploy_to_server(conn, run_destination, app_name, app_staging_path)
             if success:
                 client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
                 if client_names:
-                    if not self._deploy_to_clients(conn, app_name, app_staging_path):
+                    if not self._deploy_to_clients(conn, app_name, run_destination):
                         return
             else:
                 return
         conn.append_success("")
 
     # Start App
-    def _start_app_on_server(self, conn: Connection) -> bool:
+    def _start_app_on_server(self, conn: Connection, run_number: str) -> bool:
         engine = conn.app_ctx
-        err = engine.start_app_on_server()
+        err = engine.start_app_on_server(run_number)
         if err:
             conn.append_error(err)
             return False
@@ -322,9 +295,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_string("Server app is starting....")
             return True
 
-    def _start_app_on_clients(self, conn: Connection) -> bool:
+    def _start_app_on_clients(self, conn: Connection, run_destination: str) -> bool:
         engine = conn.app_ctx
-        err = engine.check_app_start_readiness()
+        err = engine.check_app_start_readiness(run_destination)
         if err:
             conn.append_error(err)
             return False
@@ -332,7 +305,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         # run_info = engine.get_run_info()
         message = new_message(conn, topic=TrainingTopic.START, body="")
         # message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
-        message.set_header(RequestHeader.RUN_NUM, "7")
+        message.set_header(RequestHeader.RUN_NUM, run_destination)
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
         return True
@@ -342,36 +315,27 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        target_type = args[1]
+        run_number = conn.get_prop(self.RUN_NUMBER)
+        target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            if not self._start_app_on_server(conn):
+            if not self._start_app_on_server(conn, run_number):
                 return
         elif target_type == self.TARGET_TYPE_CLIENT:
-            if not self._start_app_on_clients(conn):
+            if not self._start_app_on_clients(conn, run_number):
                 return
         else:
             # all
-            success = self._start_app_on_server(conn)
+            success = self._start_app_on_server(conn, run_number)
 
             if success:
-                # engine_info = None
-                # start = time.time()
-                # # Wait for the server App to start properly
-                # while engine_info is None or engine_info.status != MachineStatus.STARTED:
-                #     time.sleep(0.3)
-                #     engine_info = engine.get_engine_info()
-                #     if time.time() - start > 60.0:
-                #         conn.append_error("Could not start the server app")
-                #         return
-                #
                 client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
                 if client_names:
-                    if not self._start_app_on_clients(conn):
+                    if not self._start_app_on_clients(conn, run_number):
                         return
         conn.append_success("")
 
     # Abort App
-    def _abort_clients(self, conn, clients: List[str]) -> bool:
+    def _abort_clients(self, conn, clients: List[str], run_number) -> bool:
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
@@ -381,10 +345,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return False
 
-        run_info = engine.get_app_run_info()
+        # run_info = engine.get_app_run_info(run_number)
         message = new_message(conn, topic=TrainingTopic.ABORT, body="")
-        if run_info:
-            message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
+        # if run_info:
+        message.set_header(RequestHeader.RUN_NUM, str(run_number))
 
         # conn.set_prop(self.TARGET_CLIENT_NAMES, client_names)
         replies = self.send_request_to_clients(conn, message)
@@ -396,7 +360,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        target_type = args[1]
+        run_destination = conn.get_prop(self.RUN_NUMBER)
+        target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
             conn.append_string("Trying to abort all clients before abort server ...")
             clients = engine.get_clients()
@@ -405,9 +370,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 conn.set_prop(
                     self.TARGET_CLIENT_TOKENS, tokens
                 )  # need this because not set in validate_command_targets when target_type == self.TARGET_TYPE_SERVER
-                if not self._abort_clients(conn, clients=[c.token for c in clients]):
+                if not self._abort_clients(conn, clients=[c.token for c in clients], run_number=run_destination):
                     return
-            err = engine.abort_app_on_server()
+            err = engine.abort_app_on_server(run_destination)
             if err:
                 conn.append_error(err)
                 return
@@ -417,7 +382,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if not clients:
                 conn.append_string("No clients to abort")
                 return
-            if not self._abort_clients(conn, clients):
+            if not self._abort_clients(conn, clients, run_destination):
                 return
         conn.append_success("")
 
@@ -431,10 +396,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return ""
 
-        run_info = engine.get_app_run_info()
+        run_destination = conn.get_prop(self.RUN_NUMBER)
+        # run_info = engine.get_app_run_info()
         message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="")
-        if run_info:
-            message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
+        # if run_info:
+        message.set_header(RequestHeader.RUN_NUM, str(run_destination))
 
         # conn.set_prop(self.TARGET_CLIENT_NAMES, client_names)
         replies = self.send_request_to_clients(conn, message)
@@ -508,8 +474,19 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         return self.authorize_operate(conn, auth_args)
 
     def authorize_abort_client(self, conn: Connection, args: List[str]):
+        if len(args) < 3:
+            conn.append_error("syntax error: missing run_destination and target")
+            return False, None
+
+        run_destination = args[1].lower()
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_destination must be run_XXX")
+            return False, None
+        destination = run_destination[4:]
+        conn.set_prop(self.RUN_NUMBER, destination)
+
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
-        auth_args.extend(args[1:])
+        auth_args.extend(args[2:])
         return self.authorize_operate(conn, auth_args)
 
     def remove_client(self, conn: Connection, args: List[str]):
@@ -602,13 +579,16 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         dest = args[1]
         if dest == self.TARGET_TYPE_SERVER:
             engine_info = engine.get_engine_info()
-            conn.append_string(f"FL_app name: {engine_info.app_name}")
+            # conn.append_string(f"FL_app name: {engine_info.app_name}")
             conn.append_string(f"Engine status: {engine_info.status.value}")
             # run_info = engine.get_run_info()
-            if engine.get_run_number() < 0:
-                conn.append_string("Run number has not been set.")
-            else:
-                conn.append_string(f"Current run number: {engine.get_run_number()}")
+            # if engine.get_run_number() < 0:
+            #     conn.append_string("Run number has not been set.")
+            # else:
+            #     conn.append_string(f"Current run number: {engine.get_run_number()}")
+            table = conn.append_table(["Run_number", "App Name"])
+            for run_number, app_name in engine_info.app_names.items():
+                table.add_row([run_number, app_name])
 
             clients = engine.get_clients()
             conn.append_string("Registered clients: {} ".format(len(clients)))
@@ -643,12 +623,18 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 try:
                     body = json.loads(r.reply.body)
                     if r.reply and isinstance(body, dict):
-                        app_name = body.get(ClientStatusKey.APP_NAME, "?")
-                        run_num = body.get(ClientStatusKey.RUN_NUM, "?")
-                        status = body.get(ClientStatusKey.STATUS, "?")
+                        running_jobs = body.get(ClientStatusKey.RUNNING_JOBS)
+                        if running_jobs:
+                            for job in running_jobs:
+                                app_name = job.get(ClientStatusKey.APP_NAME, "?")
+                                run_num = job.get(ClientStatusKey.RUN_NUM, "?")
+                                status = job.get(ClientStatusKey.STATUS, "?")
+                                table.add_row([client_name, app_name, run_num, status])
+                        else:
+                            table.add_row([client_name, app_name, run_num, "No Jobs"])
                 except BaseException:
                     self.logger.error("Bad reply from client")
 
-                table.add_row([client_name, app_name, run_num, status])
+                # table.add_row([client_name, app_name, run_num, status])
             else:
                 table.add_row([client_name, app_name, run_num, "No Reply"])

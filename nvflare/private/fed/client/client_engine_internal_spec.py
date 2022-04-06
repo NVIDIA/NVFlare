@@ -43,7 +43,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
-    def start_app(self, run_number: int) -> str:
+    def start_app(self, run_number: str) -> str:
         """Start the app for the specified run.
 
         Args:
@@ -97,10 +97,10 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
-    def set_run_number(self, run_num: int) -> str:
-        """Set the client run_number.
+    def get_all_run_numbers(self) -> []:
+        """Get all the client run_number.
 
-        Returns: error if any
+        Returns: list of all the run_number
 
         """
         pass

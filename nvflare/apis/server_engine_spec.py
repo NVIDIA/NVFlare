@@ -20,7 +20,7 @@ from nvflare.widgets.widget import Widget
 
 from .client import Client
 from .fl_context import FLContext
-from .fl_snapshot import FLSnapshot
+from .fl_snapshot import RunSnapshot
 from .workspace import Workspace
 
 
@@ -113,5 +113,5 @@ class ServerEngineSpec(ABC):
     def persist_components(self, fl_ctx: FLContext, completed: bool):
         pass
 
-    def restore_components(self, snapshot: FLSnapshot, fl_ctx: FLContext):
+    def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         pass
