@@ -16,6 +16,9 @@ import copy
 from enum import Enum
 from typing import Dict, List
 
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+
 
 class RunStatus(str, Enum):
     SUBMITTED = "SUBMITTED"
@@ -46,6 +49,16 @@ class JobMetaKey(str, Enum):
 
 
 class Job:
+    """Job object containing the job metadata.
+
+    Args:
+        job_id: Job ID
+        study_name: Study name
+        resource_spec: Resource specification with information on the resources of each client
+        deploy_map: Deploy map specifying each app and the sites that it should be deployed to
+        meta: full contents of the persisted metadata for the job for persistent storage
+    """
+
     def __init__(self, job_id, study_name, resource_spec, deploy_map, meta):
         self.job_id = job_id
         self.study = study_name
@@ -62,8 +75,44 @@ class Job:
         self.run_record = None  # run number, dispatched time/UUID, finished time, completion code (normal, aborted)
 
     def get_deployment(self) -> Dict[str, List[str]]:
-        """Return deployment configuration."""
+        """Returns the deployment configuration.
+
+        ::
+
+            "deploy_map": {
+                "hello-numpy-sag-server": [
+                  "server"
+                ],
+                "hello-numpy-sag-client": [
+                  "client1",
+                  "client2"
+                ],
+                "hello-numpy-sag-client3": [
+                  "client3"
+                ]
+              },
+
+        Returns: contents of deploy_map as a dictionary of strings of app names with their corresponding sites
+
+        """
         return self.deploy_map
+
+    def get_application(self, participant, fl_ctx: FLContext) -> bytes:
+        """Get the application content in bytes for the specified participant."""
+        application_name = self.get_application_name(participant)
+        engine = fl_ctx.get_engine()
+        job_def_manager = engine.get_component("job_manager")
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            raise TypeError(f"job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}")
+        return job_def_manager.get_app(self, application_name)
+
+    def get_application_name(self, participant):
+        """Get the application name for the specified participant."""
+        for app in self.deploy_map:
+            for site in self.deploy_map[app]:
+                if site == participant:
+                    return app
+        return None
 
     def get_resource_requirements(self):
         """Return app resource requirements."""
