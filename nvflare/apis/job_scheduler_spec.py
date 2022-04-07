@@ -13,15 +13,25 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .fl_context import FLContext
 from .job_def import Job
 
 
+class DispatchInfo:
+    """Information needed for dispatch"""
+
+    def __init__(self, resource_requirements: dict, token: str):
+        self.resource_requirements = resource_requirements
+        self.token = token
+
+
 class JobSchedulerSpec(ABC):
     @abstractmethod
-    def schedule_job(self, job_candidates: List[Job], fl_ctx: FLContext) -> Optional[(Job, Dict[str, Dict])]:
+    def schedule_job(
+        self, job_candidates: List[Job], fl_ctx: FLContext
+    ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
         """Try to schedule a Job.
 
         Note: the sites to be deployed to can be a subset of sites that the job's study
@@ -33,12 +43,8 @@ class JobSchedulerSpec(ABC):
             fl_ctx: FLContext.
 
         Returns:
-            A tuple of (job, sites_to_deploy), if there is a Job that satisfy the criteria of the scheduler.
-            sites_to_deploy is a list of site names where the job will be deployed to.
+            A tuple of (job, sites_dispatch_info), if there is a Job that satisfy the criteria of the scheduler.
+            sites_dispatch_info is a dict of {site name: DispatchInfo}.
             Otherwise, return (None, None).
-
-            # TODO:: should return (job, Dict[str, Information for dispatch]])
-                the second dictionary's keys should be site name
-                information for dispatch should include "resource_requirements", "token"
         """
         pass

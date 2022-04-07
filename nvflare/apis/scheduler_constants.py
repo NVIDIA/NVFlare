@@ -13,32 +13,19 @@
 # limitations under the License.
 
 
+# TODO: where to put this file / these constants?
+
+
 class AuxChannelTopic:
     CHECK_RESOURCE = "_check_resource"
     CANCEL_RESOURCE = "_cancel_resource"
-    ALLOCATE_RESOURCE = "_allocate_resource"
-    FREE_RESOURCE = "_free_resource"
-
-    DISPATCH_APP = "_dispatch_app"
-    STOP_APP = "_stop_app"
 
 
 class ShareableHeader:
     CHECK_RESOURCE_RESULT = "_check_resource_result"
     RESOURCE_RESERVE_TOKEN = "_resource_reserve_token"
     RESOURCE_SPEC = "_resource_spec"
-    ALLOCATED_RESOURCES = "_allocated_resources"
-
-    APP_NAME = "_app_name"
-    APP_BYTES = "_app_bytes"
-    DISPATCH_STATUS = "_dispatch_status"
 
 
 class FLContextKey:
     RESOURCE_MANAGER = "_resource_manager"
-    JOB_MANAGER = "_job_manager"
-
-
-class GPUConstants:
-    GPU_COUNT = "_gpu_count"
-    GPU_DEVICE_PREFIX = "_gpu_device_"
