@@ -20,6 +20,7 @@ from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -256,10 +257,21 @@ class FileTransferModule(CommandModule):
         data_bytes = b64str_to_bytes(zip_b64str)
         meta = json.loads(b64str_to_bytes(meta_b64str))
         engine = conn.app_ctx
-        meta = engine.job_def_manager.create(meta, data_bytes)
-        conn.set_prop("meta", meta)
-        conn.set_prop("upload_job_id", meta.get(JobMetaKey.JOB_ID))
-        conn.append_string("Uploaded job {}".format(meta.get(JobMetaKey.JOB_ID)))
+        try:
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                meta = job_def_manager.create(meta, data_bytes, fl_ctx)
+                conn.set_prop("meta", meta)
+                conn.set_prop("upload_job_id", meta.get(JobMetaKey.JOB_ID))
+                conn.append_string("Uploaded job {}".format(meta.get(JobMetaKey.JOB_ID)))
+        except Exception as e:
+            conn.append_error("Exception occurred trying to upload job: " + str(e))
+            return
+        conn.append_success("")
 
     def download_job(self, conn: Connection, args: List[str]):
         if len(args) != 2:
@@ -269,13 +281,22 @@ class FileTransferModule(CommandModule):
         job_id = args[1]
 
         engine = conn.app_ctx
-        data_bytes = engine.job_def_manager.get_content(job_id)
-        job_id_dir = os.path.join(self.download_dir, job_id)
-        if os.path.exists(job_id_dir):
-            shutil.rmtree(job_id_dir)
-        os.mkdir(job_id_dir)
-        unzip_all_from_bytes(data_bytes, job_id_dir)
-
+        try:
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                data_bytes = job_def_manager.get_content(job_id, fl_ctx)
+                job_id_dir = os.path.join(self.download_dir, job_id)
+                if os.path.exists(job_id_dir):
+                    shutil.rmtree(job_id_dir)
+                os.mkdir(job_id_dir)
+                unzip_all_from_bytes(data_bytes, job_id_dir)
+        except Exception as e:
+            conn.append_error("Exception occurred trying to get job from store: " + str(e))
+            return
         try:
             data = zip_directory_to_bytes(self.download_dir, job_id)
             b64str = bytes_to_b64str(data)
