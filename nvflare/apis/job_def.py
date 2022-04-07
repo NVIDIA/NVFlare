@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
@@ -49,24 +48,36 @@ class JobMetaKey(str, Enum):
 
 
 class Job:
-    """Job object containing the job metadata.
+    def __init__(
+        self,
+        job_id: str,
+        study_name: str,
+        resource_spec: Dict[str, Dict],
+        deploy_map: Dict[str, List[str]],
+        meta,
+        min_sites: int = 1,
+        required_sites: Optional[List[str]] = None,
+    ):
+        """Job object containing the job metadata.
 
-    Args:
-        job_id: Job ID
-        study_name: Study name
-        resource_spec: Resource specification with information on the resources of each client
-        deploy_map: Deploy map specifying each app and the sites that it should be deployed to
-        meta: full contents of the persisted metadata for the job for persistent storage
-    """
-
-    def __init__(self, job_id, study_name, resource_spec, deploy_map, meta):
+        Args:
+            job_id: Job ID
+            study_name: Study name
+            resource_spec: Resource specification with information on the resources of each client
+            deploy_map: Deploy map specifying each app and the sites that it should be deployed to
+            meta: full contents of the persisted metadata for the job for persistent storage
+            min_sites (int): minimum number of sites
+            required_sites: A list of required site names
+        """
         self.job_id = job_id
         self.study = study_name
-        # self.num_clients = num_clients  # some way to specify minimum clients needed sites
-        self.resource_spec = resource_spec  # resource_requirements should be {client name: resource}
+        self.resource_spec = resource_spec  # resource_requirements should be {site name: resource}
         self.deploy_map = deploy_map  # should be {app name: a list of sites}
 
         self.meta = meta
+        self.min_sites = min_sites
+        self.required_sites = required_sites
+
         self.dispatcher_id = None
         self.dispatch_time = None
 
@@ -92,8 +103,8 @@ class Job:
                 ]
               },
 
-        Returns: contents of deploy_map as a dictionary of strings of app names with their corresponding sites
-
+        Returns:
+            Contents of deploy_map as a dictionary of strings of app names with their corresponding sites
         """
         return self.deploy_map
 
@@ -104,7 +115,7 @@ class Job:
         job_def_manager = engine.get_component("job_manager")
         if not isinstance(job_def_manager, JobDefManagerSpec):
             raise TypeError(f"job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}")
-        return job_def_manager.get_app(self, application_name)
+        return job_def_manager.get_app(self, application_name, fl_ctx)
 
     def get_application_name(self, participant):
         """Get the application name for the specified participant."""
@@ -115,7 +126,11 @@ class Job:
         return None
 
     def get_resource_requirements(self):
-        """Return app resource requirements."""
+        """Returns app resource requirements.
+
+        Returns:
+            A dict of {site_name: resource}
+        """
         return self.resource_spec
 
     def __eq__(self, other):
@@ -123,14 +138,13 @@ class Job:
 
 
 def job_from_meta(meta: dict) -> Job:
-    """Convert information in meta into a Job object.
+    """Converts information in meta into a Job object.
 
     Args:
         meta: dict of meta information
 
     Returns:
-        Job object.
-
+        A Job object.
     """
     job = Job(
         meta.get(JobMetaKey.JOB_ID),
@@ -140,18 +154,3 @@ def job_from_meta(meta: dict) -> Job:
         meta,
     )
     return job
-
-
-def get_site_require_resource_from_job(job: Job):
-    """Get the total resource needed by each site to run this Job."""
-    required_resources = job.get_resource_requirements()
-    deployment = job.get_deployment()
-
-    total_required_resources = {}  # {site name: total resources}
-    for app in required_resources:
-        for site_name in deployment[app]:
-            if site_name not in total_required_resources:
-                total_required_resources[site_name] = copy.deepcopy(required_resources[app])
-            else:
-                total_required_resources[site_name] = total_required_resources[site_name] + required_resources[app]
-    return total_required_resources

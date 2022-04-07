@@ -36,26 +36,25 @@ from nvflare.apis.fl_constant import (
     MachineStatus,
     ReservedTopic,
     ReturnCode,
+    RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
 )
-from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_snapshot import RunSnapshot, FLSnapshot
+from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
-from nvflare.apis.impl.study_manager import StudyManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, WorkspaceConstants
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -95,10 +94,8 @@ class ServerEngine(ServerEngineInternalSpec):
         self.lock = Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # self.job_def_manager = job_def_manager  # todo: need to figure out how to initialize job manager with inputs
-        self.job_def_manager = SimpleJobDefManager(
-            StudyManager(FilesystemStorage()), FilesystemStorage(root_dir="/workspace/nvflare_provis")
-        )
+        # TODO:: need to figure out how to initialize job manager with inputs
+        self.job_def_manager = SimpleJobDefManager()
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
@@ -188,8 +185,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 app_custom_folder = os.path.join(app_root, "custom")
 
             open_ports = get_open_ports(2)
-            self._start_runner_process(self.args, app_root, run_number, app_custom_folder,
-                                       open_ports, snapshot)
+            self._start_runner_process(self.args, app_root, run_number, app_custom_folder, open_ports, snapshot)
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
@@ -218,8 +214,9 @@ class ServerEngine(ServerEngineInternalSpec):
                         request = data.get("request")
                         timeout = data.get("timeout")
                         fl_ctx = data.get("fl_ctx")
-                        replies = self.aux_send(targets=targets, topic=topic, request=request,
-                                                timeout=timeout, fl_ctx=fl_ctx)
+                        replies = self.aux_send(
+                            targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
+                        )
                         conn.send(replies)
             except:
                 self.logger.warning("Failed to process the child process command.")
@@ -253,13 +250,21 @@ class ServerEngine(ServerEngineInternalSpec):
         for t in args.set:
             command_options += " " + t
         command = (
-                sys.executable + " -m nvflare.private.fed.app.server.runner_process -m "
-                + args.workspace
-                + " -s fed_server.json -r " + app_root
-                + " -n " + str(run_number)
-                + " -p " + str(listen_port)
-                + " -c " + str(open_ports[0])
-                + " --set" + command_options + " print_conf=True restore_snapshot=" + str(restore_snapshot)
+            sys.executable
+            + " -m nvflare.private.fed.app.server.runner_process -m "
+            + args.workspace
+            + " -s fed_server.json -r "
+            + app_root
+            + " -n "
+            + str(run_number)
+            + " -p "
+            + str(listen_port)
+            + " -c "
+            + str(open_ports[0])
+            + " --set"
+            + command_options
+            + " print_conf=True restore_snapshot="
+            + str(restore_snapshot)
         )
         # use os.setsid to create new process group ID
 
@@ -269,12 +274,13 @@ class ServerEngine(ServerEngineInternalSpec):
         threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
 
         with self.lock:
-            self.run_processes[run_number] = {RunProcessKey.LISTEN_PORT: listen_port,
-                                              RunProcessKey.CONNECTION: None,
-                                              RunProcessKey.CHILD_PROCESS: process,
-                                              # TODO: each run will have its own participants. Use all clients for now.
-                                              RunProcessKey.PARTICIPANTS: self.client_manager.clients
-                                              }
+            self.run_processes[run_number] = {
+                RunProcessKey.LISTEN_PORT: listen_port,
+                RunProcessKey.CONNECTION: None,
+                RunProcessKey.CHILD_PROCESS: process,
+                # TODO: each run will have its own participants. Use all clients for now.
+                RunProcessKey.PARTICIPANTS: self.client_manager.clients,
+            }
         return process
 
     def remove_custom_path(self):
@@ -507,13 +513,16 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         with self.parent_conn_lock:
-            data = {ServerCommandKey.COMMAND: ServerCommandNames.AUX_SEND,
-                    ServerCommandKey.DATA: {"targets": targets,
-                                            "topic": topic,
-                                            "request": request,
-                                            "timeout": timeout,
-                                            "fl_ctx": get_serializable_data(fl_ctx)}
-                    }
+            data = {
+                ServerCommandKey.COMMAND: ServerCommandNames.AUX_SEND,
+                ServerCommandKey.DATA: {
+                    "targets": targets,
+                    "topic": topic,
+                    "request": request,
+                    "timeout": timeout,
+                    "fl_ctx": get_serializable_data(fl_ctx),
+                },
+            }
             self.parent_conn.send(data)
             return_data = self.parent_conn.recv()
             return return_data
@@ -611,8 +620,7 @@ class ServerEngine(ServerEngineInternalSpec):
             with self.lock:
                 command_conn = self.get_command_conn(run_number)
                 if command_conn:
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.SHOW_STATS,
-                            ServerCommandKey.DATA: {}}
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.SHOW_STATS, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     stats = command_conn.recv()
         except:
@@ -626,8 +634,7 @@ class ServerEngine(ServerEngineInternalSpec):
             with self.lock:
                 command_conn = self.get_command_conn(run_number)
                 if command_conn:
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_ERRORS,
-                            ServerCommandKey.DATA: {}}
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_ERRORS, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     stats = command_conn.recv()
         except:
