@@ -16,6 +16,7 @@ import json
 import logging
 from typing import List
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -137,4 +138,26 @@ class JobCommandModule(CommandModule):
         pass
 
     def clone_job(self, conn: Connection, args: List[str]):
-        pass
+        if len(args) != 2:
+            conn.append_error("syntax error: usage: clone_job job_id")
+        job_id = args[1]
+        engine = conn.app_ctx
+        try:
+            if not isinstance(engine, ServerEngine):
+                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                job = job_def_manager.get_job(job_id, fl_ctx)
+                data_bytes = job_def_manager.get_content(job_id, fl_ctx)
+                meta = job_def_manager.create(job.meta, data_bytes, fl_ctx)
+                conn.set_prop("meta", meta)
+                conn.set_prop("upload_job_id", meta.get(JobMetaKey.JOB_ID))
+                conn.append_string("Cloned job {} as {}".format(job_id, meta.get(JobMetaKey.JOB_ID)))
+        except Exception as e:
+            conn.append_error("Exception occurred trying to clone job: " + str(e))
+            return
+        conn.append_success("")
