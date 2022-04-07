@@ -110,14 +110,3 @@ class SSLConstants:
     ROOT_CERT = "ssl_root_cert"
 
 
-class WorkspaceConstants:
-    """hard coded file names inside the workspace folder."""
-
-    LOGGING_CONFIG = "log.config"
-    AUDIT_LOG = "audit.log"
-
-    # these two files is used by shell scripts to determine restart / shutdown
-    RESTART_FILE = "restart.fl"
-    SHUTDOWN_FILE = "shutdown.fl"
-
-    WORKSPACE_PREFIX = "run_"

@@ -32,13 +32,14 @@ import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ServerCommandKey, ServerCommandNames, SnapshotKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ServerCommandKey, ServerCommandNames, SnapshotKey, \
+    WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import SpecialTaskName, WorkspaceConstants
+from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message

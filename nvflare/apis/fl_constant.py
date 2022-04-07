@@ -222,3 +222,25 @@ class RunProcessKey(object):
     CHILD_PROCESS = "_child_process"
     STATUS = "_status"
     PARTICIPANTS = "_participants"
+
+
+class SystemComponents(object):
+
+    JOB_MANAGER = "job_manager"
+    JOB_RUNNER = "job_runner"
+    SERVER_RUNNER = "server_runner"
+    CLIENT_RUNNER = "client_runner"
+
+
+class WorkspaceConstants:
+    """hard coded file names inside the workspace folder."""
+
+    LOGGING_CONFIG = "log.config"
+    AUDIT_LOG = "audit.log"
+
+    # these two files is used by shell scripts to determine restart / shutdown
+    RESTART_FILE = "restart.fl"
+    SHUTDOWN_FILE = "shutdown.fl"
+
+    WORKSPACE_PREFIX = "run_"
+    APP_PREFIX = "app_"

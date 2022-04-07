@@ -38,7 +38,7 @@ from nvflare.apis.fl_constant import (
     ReturnCode,
     ServerCommandKey,
     ServerCommandNames,
-    SnapshotKey,
+    SnapshotKey, WorkspaceConstants,
 )
 from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.fl_context import FLContext
@@ -52,7 +52,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader, WorkspaceConstants
+from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -106,10 +106,10 @@ class ServerEngine(ServerEngineInternalSpec):
         self.parent_conn_lock = Lock()
 
     def _get_server_app_folder(self):
-        return "app_server"
+        return WorkspaceConstants.APP_PREFIX + "server"
 
     def _get_client_app_folder(self, client_name):
-        return "app_" + client_name
+        return WorkspaceConstants.APP_PREFIX + client_name
 
     def _get_run_folder(self, run_destination):
         return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_destination))
@@ -445,10 +445,10 @@ class ServerEngine(ServerEngineInternalSpec):
         return os.path.join(self.server.admin_server.file_upload_dir, app_name)
 
     def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
-        return self.deploy_app(run_destination, app_name, "app_server")
+        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + "server")
 
     def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
-        return self.deploy_app(app_name, "app_" + client_name)
+        return self.deploy_app(app_name, WorkspaceConstants.APP_PREFIX + client_name)
 
     def get_workspace(self) -> Workspace:
         return self.run_manager.get_workspace()

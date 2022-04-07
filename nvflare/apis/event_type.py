@@ -25,6 +25,8 @@ class EventType(object):
     ABORT_TASK = "_abort_task"
     FATAL_SYSTEM_ERROR = "_fatal_system_error"
     FATAL_TASK_ERROR = "_fatal_task_error"
+    JOB_DEPLOYED = "_job_deployed"
+    JOB_STARTED = "_job_started"
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"

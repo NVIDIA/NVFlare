@@ -18,10 +18,10 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic, WorkspaceConstants
+from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.security import Action, FLAuthzContext
@@ -295,9 +295,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_string("Server app is starting....")
             return True
 
-    def _start_app_on_clients(self, conn: Connection, run_destination: str) -> bool:
+    def _start_app_on_clients(self, conn: Connection, run_number: str) -> bool:
         engine = conn.app_ctx
-        err = engine.check_app_start_readiness(run_destination)
+        err = engine.check_app_start_readiness(run_number)
         if err:
             conn.append_error(err)
             return False
@@ -305,7 +305,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         # run_info = engine.get_run_info()
         message = new_message(conn, topic=TrainingTopic.START, body="")
         # message.set_header(RequestHeader.RUN_NUM, str(run_info.run_number))
-        message.set_header(RequestHeader.RUN_NUM, run_destination)
+        message.set_header(RequestHeader.RUN_NUM, run_number)
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
         return True
@@ -360,7 +360,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        run_destination = conn.get_prop(self.RUN_NUMBER)
+        run_number = conn.get_prop(self.RUN_NUMBER)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
             conn.append_string("Trying to abort all clients before abort server ...")
@@ -370,9 +370,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 conn.set_prop(
                     self.TARGET_CLIENT_TOKENS, tokens
                 )  # need this because not set in validate_command_targets when target_type == self.TARGET_TYPE_SERVER
-                if not self._abort_clients(conn, clients=[c.token for c in clients], run_number=run_destination):
+                if not self._abort_clients(conn, clients=[c.token for c in clients], run_number=run_number):
                     return
-            err = engine.abort_app_on_server(run_destination)
+            err = engine.abort_app_on_server(run_number)
             if err:
                 conn.append_error(err)
                 return
@@ -382,7 +382,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if not clients:
                 conn.append_string("No clients to abort")
                 return
-            if not self._abort_clients(conn, clients, run_destination):
+            if not self._abort_clients(conn, clients, run_number):
                 return
         conn.append_success("")
 

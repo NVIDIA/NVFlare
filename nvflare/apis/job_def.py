@@ -16,8 +16,8 @@ import copy
 from enum import Enum
 from typing import Dict, List
 
+from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 
 
 class RunStatus(str, Enum):
@@ -97,14 +97,14 @@ class Job:
         """
         return self.deploy_map
 
-    def get_application(self, participant, fl_ctx: FLContext) -> bytes:
+    def get_application(self, app_name, fl_ctx: FLContext) -> bytes:
         """Get the application content in bytes for the specified participant."""
-        application_name = self.get_application_name(participant)
+        # application_name = self.get_application_name(participant)
         engine = fl_ctx.get_engine()
-        job_def_manager = engine.get_component("job_manager")
-        if not isinstance(job_def_manager, JobDefManagerSpec):
-            raise TypeError(f"job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}")
-        return job_def_manager.get_app(self, application_name)
+        job_def_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        # # if not isinstance(job_def_manager, JobDefManagerSpec):
+        # #     raise TypeError(f"job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}")
+        return job_def_manager.get_app(self, app_name)
 
     def get_application_name(self, participant):
         """Get the application name for the specified participant."""
