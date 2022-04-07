@@ -32,7 +32,6 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.private.fed.server.server_engine import ServerEngine
 
 
 class FileTransferModule(CommandModule):
@@ -259,8 +258,6 @@ class FileTransferModule(CommandModule):
         meta = json.loads(b64str_to_bytes(meta_b64str))
         engine = conn.app_ctx
         try:
-            if not isinstance(engine, ServerEngine):
-                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
             job_def_manager = engine.job_def_manager
             if not isinstance(job_def_manager, JobDefManagerSpec):
                 raise TypeError(
@@ -285,8 +282,6 @@ class FileTransferModule(CommandModule):
 
         engine = conn.app_ctx
         try:
-            if not isinstance(engine, ServerEngine):
-                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
             job_def_manager = engine.job_def_manager
             if not isinstance(job_def_manager, JobDefManagerSpec):
                 raise TypeError(
