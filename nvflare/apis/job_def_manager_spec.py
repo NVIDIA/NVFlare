@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -24,7 +24,7 @@ class JobDefManagerSpec(FLComponent, ABC):
     """Job Definition Management API."""
 
     @abstractmethod
-    def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Job:
+    def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Dict[str, Any]:
         """Create a new job permanently.
 
         The caller must have validated the content already and created initial meta. Receives bytes of uploaded folder,
@@ -35,22 +35,22 @@ class JobDefManagerSpec(FLComponent, ABC):
             uploaded_content: data of the job definition
             fl_ctx (FLContext): FLContext information
 
-        Returns: a dict containing meta info. Additional meta info are added, especially
-        a unique Job ID (jid) which has been created.
-
+        Returns:
+            A dict containing meta info. Additional meta info are added, especially
+            a unique Job ID (jid) which has been created.
         """
         pass
 
     @abstractmethod
     def get_job(self, jid: str, fl_ctx: FLContext) -> Job:
-        """Get the Job object through the job ID.
+        """Gets the Job object through the job ID.
 
         Args:
             jid (str): Job ID
             fl_ctx (FLContext): FLContext information
 
-        Returns: Job object
-
+        Returns:
+            A Job object
         """
         pass
 
@@ -63,8 +63,8 @@ class JobDefManagerSpec(FLComponent, ABC):
             app_name: name of the app to get
             fl_ctx (FLContext): FLContext information
 
-        Returns: content of the specified app in bytes
-
+        Returns:
+            Content of the specified app in bytes
         """
         pass
 
@@ -76,8 +76,8 @@ class JobDefManagerSpec(FLComponent, ABC):
             job: Job object
             fl_ctx (FLContext): FLContext information
 
-        Returns: dictionary of app names with the content of the corresponding app encoded in bytes
-
+        Returns:
+            A dictionary of app names with the content of the corresponding app encoded in bytes
         """
         pass
 
@@ -89,8 +89,8 @@ class JobDefManagerSpec(FLComponent, ABC):
             jid (str): Job ID
             fl_ctx (FLContext): FLContext information
 
-        Returns: uploaded content of the job in bytes
-
+        Returns:
+            Uploaded content of the job in bytes
         """
         pass
 
@@ -119,38 +119,59 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def list_all(self, fl_ctx: FLContext) -> List[Job]:
-        """Return a list of all Jobs in the system.
+    def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
+        """Gets all Jobs in the system.
 
         Args:
             fl_ctx (FLContext): FLContext information
 
-        Returns: list of all jobs as Job objects
-
+        Returns:
+            A list of all jobs
         """
         pass
 
     @abstractmethod
     def get_jobs_by_status(self, run_status: RunStatus, fl_ctx: FLContext) -> List[Job]:
-        """Return a list of Jobs of a specified status.
+        """Gets Jobs of a specified status.
 
         Args:
             run_status (RunStatus): status to filter for
             fl_ctx (FLContext): FLContext information
 
-        Returns: List of Jobs of the specified status.
-
+        Returns:
+            A list of Jobs of the specified status
         """
         pass
 
     @abstractmethod
     def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> List[Job]:
-        """Return a list of Jobs waiting for review for the specified user."""
+        """Gets Jobs waiting for review for the specified user.
+
+        Args:
+            reviewer_name (str): reviewer name
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            A list of Jobs waiting for review for the specified user.
+        """
         pass
 
     @abstractmethod
-    def set_approval(self, jid: str, reviewer_name: str, approved: bool, note: str, fl_ctx: FLContext) -> Job:
-        """Sets the approval for the specified user for a certain Job."""
+    def set_approval(
+        self, jid: str, reviewer_name: str, approved: bool, note: str, fl_ctx: FLContext
+    ) -> Dict[str, Any]:
+        """Sets the approval for the specified user for a certain Job.
+
+        Args:
+            jid (str): job id
+            reviewer_name (str): reviewer name
+            approved (bool): whether job is approved
+            note (str): any note message
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            A dictionary of Job metadata.
+        """
         pass
 
     @abstractmethod
