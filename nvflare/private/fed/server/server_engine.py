@@ -41,7 +41,7 @@ from nvflare.apis.fl_constant import (
     SnapshotKey, WorkspaceConstants,
 )
 from nvflare.apis.fl_constant import RunProcessKey
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot, FLSnapshot
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.impl.study_manager import StudyManager
@@ -57,6 +57,7 @@ from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 from .client_manager import ClientManager
+from .job_runner import JobRunner
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
@@ -104,6 +105,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.snapshot_persistor = snapshot_persistor
         self.parent_conn = None
         self.parent_conn_lock = Lock()
+        self.job_runner = None
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -300,7 +302,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.logger.info("Abort the server app run.")
         # self.server.stop_training()
-        self.server.shutdown = True
+        # self.server.shutdown = True
         # self.server.abort_run()
 
         try:
@@ -421,6 +423,9 @@ class ServerEngine(ServerEngineInternalSpec):
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
 
+    def set_job_runner(self, job_runner: JobRunner):
+        self.job_runner = job_runner
+
     def set_configurator(self, conf: ServerJsonConfigurator):
         if not isinstance(conf, ServerJsonConfigurator):
             raise TypeError("conf must be ServerJsonConfigurator but got {}".format(type(conf)))
@@ -433,7 +438,9 @@ class ServerEngine(ServerEngineInternalSpec):
         if self.run_manager:
             return self.run_manager.new_context()
         else:
-            return FLContext()
+            # return FLContext()
+            return FLContextManager(engine=self, identity_name=self.server.project_name, run_num="",
+                                    public_stickers={}, private_stickers={}).new_context()
 
     def get_component(self, component_id: str) -> object:
         return self.run_manager.get_component(component_id)
@@ -634,6 +641,10 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to get_stats from run_{run_number}")
 
         return stats
+
+    def stop_all_jobs(self):
+        fl_ctx = self.new_context()
+        self.job_runner.stop_run(fl_ctx)
 
     def close(self):
         self.executor.shutdown()

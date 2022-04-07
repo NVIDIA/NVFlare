@@ -20,8 +20,6 @@ class JobRunner(FLComponent):
         self.ask_to_stop = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        super().handle_event(event_type, fl_ctx)
-
         engine = fl_ctx.get_engine()
         self.scheduler = engine.get_component("scheduler")
 
@@ -29,8 +27,8 @@ class JobRunner(FLComponent):
         """deploy the application to the list of participants
 
         Args:
-            participants:
-            application:
+            job:
+            sites:
             fl_ctx:
 
         Returns:
@@ -110,7 +108,7 @@ class JobRunner(FLComponent):
         """Stop the application
 
         Args:
-            participants:
+            run_number:
             fl_ctx:
 
         Returns:
@@ -136,15 +134,16 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
-            approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED)
-            (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
+            if job_manager:
+                approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED)
+                (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
 
-            if ready_job:
-                try:
-                    run_number = self._deploy_job(ready_job, sites, fl_ctx)
-                    self._start_run(run_number, sites, fl_ctx)
-                except:
-                    self.log_error(fl_ctx, f"Failed to run the Job ID: {ready_job.job_id}")
+                if ready_job:
+                    try:
+                        run_number = self._deploy_job(ready_job, sites, fl_ctx)
+                        self._start_run(run_number, sites, fl_ctx)
+                    except:
+                        self.log_error(fl_ctx, f"Failed to run the Job ID: {ready_job.job_id}")
 
             time.sleep(1.0)
 

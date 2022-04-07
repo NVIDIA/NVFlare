@@ -13,8 +13,12 @@
 # limitations under the License.
 
 """FL Server deployer."""
+import threading
 
+from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.server.fed_server import FederatedServer
+from nvflare.private.fed.server.job_runner import JobRunner
+from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
 
 
@@ -41,6 +45,8 @@ class ServerDeployer:
         self.enable_byoc = build_ctx["enable_byoc"]
         self.snapshot_persistor = build_ctx["snapshot_persistor"]
         self.overseer_agent = build_ctx["overseer_agent"]
+
+        self.components = build_ctx.get("server_components", {})
 
     def train(self):
         """To start the ServerDeployer."""
@@ -98,9 +104,30 @@ class ServerDeployer:
         """
         first_server, services = self.create_fl_server(args, secure_train=self.secure_train)
         services.deploy(args, grpc_args=first_server, secure_train=self.secure_train)
+
+        # self._start_job_runner(args, services)
+        threading.Thread(target=self._start_job_runner, args=[services, args]).start()
+
         # self.create_builder(services)
         print("deployed FL server trainer.")
         return services
+
+    def _start_job_runner(self, services, args):
+        job_runner = JobRunner(workspace_root=args.workspace)
+        workspace = Workspace(args.workspace, "server", args.config_folder)
+        run_manager = RunManager(
+            server_name=services.project_name,
+            engine=services.engine,
+            run_num="",
+            workspace=workspace,
+            components=self.components,
+            # client_manager=self.client_manager,
+            handlers=[],
+        )
+        services.engine.set_run_manager(run_manager)
+        services.engine.set_job_runner(job_runner)
+        fl_ctx = services.engine.new_context()
+        job_runner.run(fl_ctx)
 
     def close(self):
         """To close the services."""

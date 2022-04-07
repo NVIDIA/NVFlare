@@ -19,6 +19,7 @@ from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
+from .job_runner import JobRunner
 from .run_manager import RunInfo, RunManager
 from .server_json_config import ServerJsonConfigurator
 
@@ -191,6 +192,15 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
 
         Args:
             run_manager: A RunManager object
+        """
+        pass
+
+    @abstractmethod
+    def set_job_runner(self, job_runner: JobRunner):
+        """Set the JobRunner for server.
+
+        Args:
+            job_runner: A JobRunner object
         """
         pass
 

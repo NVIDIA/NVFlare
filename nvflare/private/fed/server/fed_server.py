@@ -807,6 +807,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
 
+    def fl_shutdown(self):
+        self.engine.stop_all_jobs()
+
+        super().fl_shutdown()
+
     def close(self):
         """Shutdown the server."""
         self.logger.info("shutting down server")
