@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 from .job_runner import JobRunner
@@ -196,11 +197,12 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def set_job_runner(self, job_runner: JobRunner):
+    def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
         """Set the JobRunner for server.
 
         Args:
             job_runner: A JobRunner object
+            job_manager: A JobDefManagerSpec object
         """
         pass
 

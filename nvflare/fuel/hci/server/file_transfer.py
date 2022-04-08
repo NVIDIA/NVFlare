@@ -256,7 +256,7 @@ class FileTransferModule(CommandModule):
         data_bytes = b64str_to_bytes(zip_b64str)
         meta = json.loads(b64str_to_bytes(meta_b64str))
         engine = conn.app_ctx
-        meta = engine.job_def_manager.create(meta, data_bytes)
+        meta = engine.job_def_manager.create(meta, data_bytes, engine.new_context())
         conn.set_prop("meta", meta)
         conn.set_prop("upload_job_id", meta.get(JobMetaKey.JOB_ID))
         conn.append_string("Uploaded job {}".format(meta.get(JobMetaKey.JOB_ID)))

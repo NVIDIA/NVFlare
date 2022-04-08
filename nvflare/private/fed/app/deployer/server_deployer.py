@@ -15,6 +15,7 @@
 """FL Server deployer."""
 import threading
 
+from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
@@ -45,8 +46,7 @@ class ServerDeployer:
         self.enable_byoc = build_ctx["enable_byoc"]
         self.snapshot_persistor = build_ctx["snapshot_persistor"]
         self.overseer_agent = build_ctx["overseer_agent"]
-
-        self.components = build_ctx.get("server_components", {})
+        self.components = build_ctx["server_components"]
 
     def train(self):
         """To start the ServerDeployer."""
@@ -124,8 +124,9 @@ class ServerDeployer:
             # client_manager=self.client_manager,
             handlers=[],
         )
+        job_manager = self.components.get(SystemComponents.JOB_MANAGER)
         services.engine.set_run_manager(run_manager)
-        services.engine.set_job_runner(job_runner)
+        services.engine.set_job_runner(job_runner, job_manager)
         fl_ctx = services.engine.new_context()
         job_runner.run(fl_ctx)
 

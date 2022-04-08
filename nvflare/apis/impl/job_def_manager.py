@@ -89,6 +89,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store", temp_dir: str = "/tmp"):
         super().__init__()
         self.uri_root = uri_root
+        if not os.path.exists(uri_root):
+            os.mkdir(uri_root)
         self.job_store_id = job_store_id
         if not os.path.isdir(temp_dir):
             raise ValueError("temp_dir {} is not a valid dir".format(temp_dir))

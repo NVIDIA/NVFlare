@@ -44,7 +44,7 @@ from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
-from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
+from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
@@ -95,14 +95,12 @@ class ServerEngine(ServerEngineInternalSpec):
         self.lock = Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # TODO:: need to figure out how to initialize job manager with inputs
-        self.job_def_manager = SimpleJobDefManager()
-
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
         self.parent_conn = None
         self.parent_conn_lock = Lock()
         self.job_runner = None
+        self.job_def_manager = None
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -429,8 +427,9 @@ class ServerEngine(ServerEngineInternalSpec):
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
 
-    def set_job_runner(self, job_runner: JobRunner):
+    def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
         self.job_runner = job_runner
+        self.job_def_manager = job_manager
 
     def set_configurator(self, conf: ServerJsonConfigurator):
         if not isinstance(conf, ServerJsonConfigurator):
