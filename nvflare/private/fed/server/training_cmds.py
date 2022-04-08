@@ -45,7 +45,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.DELETE_RUN,
                     description="delete a run",
-                    usage="delete_run number",
+                    usage="delete_run run_destination",
                     handler_func=self.delete_run_number,
                     authz_func=self.authorize_set_run_number,
                     visible=True,
@@ -131,7 +131,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def authorize_set_run_number(self, conn: Connection, args: List[str]):
         if len(args) < 2:
-            conn.append_error("syntax error: missing run number")
+            conn.append_error("syntax error: missing run destination")
             return False, None
 
         return True, FLAuthzContext.new_authz_context(site_names=[self.SITE_SERVER], actions=[Action.TRAIN])
