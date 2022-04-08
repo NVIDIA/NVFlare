@@ -46,7 +46,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
         # result is {client_name: Shareable} of each site's result
-        result = engine.send_aux_request(
+        result = engine.parent_send_aux_request(
             targets=sites, topic=topic, request=request, timeout=self.client_req_timeout, fl_ctx=fl_ctx
         )
         return result
@@ -63,7 +63,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         """
         result = {}
 
-        for site_name, resource_requirements in resource_reqs:
+        for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
             if site_name == "server":
                 continue

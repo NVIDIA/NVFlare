@@ -27,7 +27,8 @@ class ServerAuxRunner(AuxRunner):
         """
         AuxRunner.__init__(self)
 
-    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float,
+                         fl_ctx: FLContext, from_parent=False) -> dict:
         """Send request through auxiliary channel.
 
         Args:
@@ -36,6 +37,7 @@ class ServerAuxRunner(AuxRunner):
             request (Shareable): request
             timeout (float): how long to wait for result. 0 means fire-and-forget
             fl_ctx (FLContext): the FL context
+            from_parent: send from parent flag
 
         Returns:
             A dict of results
@@ -93,7 +95,11 @@ class ServerAuxRunner(AuxRunner):
             if c.token not in valid_tokens:
                 valid_tokens.append(c.token)
 
-        replies = engine.parent_aux_send(targets=valid_tokens, topic=topic, request=request,
-                                         timeout=timeout, fl_ctx=fl_ctx)
+        if from_parent:
+            replies = engine.aux_send(targets=valid_tokens, topic=topic, request=request,
+                                      timeout=timeout, fl_ctx=fl_ctx)
+        else:
+            replies = engine.aux_send_through_parent(targets=valid_tokens, topic=topic, request=request,
+                                                     timeout=timeout, fl_ctx=fl_ctx)
 
         return replies

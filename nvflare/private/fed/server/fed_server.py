@@ -31,6 +31,7 @@ import nvflare.private.fed.protos.admin_pb2 as admin_msg
 import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ServerCommandKey, ServerCommandNames, SnapshotKey, \
     WorkspaceConstants
@@ -809,6 +810,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def fl_shutdown(self):
         self.engine.stop_all_jobs()
+        self.engine.fire_event(EventType.SYSTEM_END, self.engine.new_context())
 
         super().fl_shutdown()
 

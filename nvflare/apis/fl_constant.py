@@ -226,10 +226,12 @@ class RunProcessKey(object):
 
 class SystemComponents(object):
 
+    JOB_SCHEDULER = "job_scheduler"
     JOB_MANAGER = "job_manager"
     JOB_RUNNER = "job_runner"
     SERVER_RUNNER = "server_runner"
     CLIENT_RUNNER = "client_runner"
+    RESOURCE_MANAGER = "resource_manager"
 
 
 class WorkspaceConstants:

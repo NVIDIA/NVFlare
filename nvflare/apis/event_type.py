@@ -16,6 +16,8 @@
 class EventType(object):
     """Built-in system events."""
 
+    SYSTEM_START = "_system_start"
+    SYSTEM_END = "_system_end"
     ABOUT_TO_START_RUN = "_about_to_start_run"
     START_RUN = "_start_run"
     ABOUT_TO_END_RUN = "_about_to_end_run"

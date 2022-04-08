@@ -17,17 +17,17 @@ from abc import ABC
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.apis.scheduler_constants import AuxChannelTopic, ShareableHeader
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 
-from .scheduler_constants import AuxChannelTopic, FLContextKey, ShareableHeader
-
 
 def _check_resource_handler(topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-    resource_manager = fl_ctx.get_prop(FLContextKey.RESOURCE_MANAGER)
+    engine = fl_ctx.get_engine()
+    resource_manager = engine.get_compomnent(SystemComponents.RESOURCE_MANAGER)
     if not isinstance(resource_manager, ResourceManagerSpec):
         raise RuntimeError(
             f"resource_manager should be of type ResourceManagerSpec, but got {type(ResourceManagerSpec)}."
@@ -44,7 +44,8 @@ def _check_resource_handler(topic: str, request: Shareable, fl_ctx: FLContext) -
 
 
 def _cancel_resource_handler(topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-    resource_manager = fl_ctx.get_prop(FLContextKey.RESOURCE_MANAGER)
+    engine = fl_ctx.get_engine()
+    resource_manager = engine.get_compomnent(SystemComponents.RESOURCE_MANAGER)
     if not isinstance(resource_manager, ResourceManagerSpec):
         raise RuntimeError(
             f"resource_manager should be of type ResourceManagerSpec, but got {type(ResourceManagerSpec)}."
@@ -59,25 +60,24 @@ def _cancel_resource_handler(topic: str, request: Shareable, fl_ctx: FLContext) 
     return result
 
 
-class ResourceManager(FLComponent, ResourceManagerSpec, ABC):
+class JobSchedulerHandler(FLComponent, ABC):
     def __init__(self):
         super().__init__()
-        # TODO:: do we need to lock this
-        self.initialized = False
+        # # TODO:: do we need to lock this
+        # self.initialized = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.ABOUT_TO_START_RUN:
-            # TODO:: where to do this init??
-            if not self.initialized:
-                engine = fl_ctx.get_engine()
-                if not isinstance(engine, ClientEngineSpec) or not isinstance(engine, ServerEngineSpec):
-                    raise RuntimeError(
-                        f"engine inside fl_ctx should be of type ClientEngineSpec or ServerEngineSpec, but got {type(engine)}."
-                    )
-                fl_ctx.set_prop(FLContextKey.RESOURCE_MANAGER, self)
-                engine.register_aux_message_handler(
-                    topic=AuxChannelTopic.CHECK_RESOURCE, message_handle_func=_check_resource_handler
+        if event_type == EventType.START_RUN:
+            # if not self.initialized:
+            engine = fl_ctx.get_engine()
+            if not isinstance(engine, ClientEngineSpec) or not isinstance(engine, ServerEngineSpec):
+                raise RuntimeError(
+                    f"engine inside fl_ctx should be of type ClientEngineSpec or ServerEngineSpec, but got {type(engine)}."
                 )
-                engine.register_aux_message_handler(
-                    topic=AuxChannelTopic.CANCEL_RESOURCE, message_handle_func=_cancel_resource_handler
-                )
+            # fl_ctx.set_prop(FLContextKey.RESOURCE_MANAGER, self)
+            engine.register_aux_message_handler(
+                topic=AuxChannelTopic.CHECK_RESOURCE, message_handle_func=_check_resource_handler
+            )
+            engine.register_aux_message_handler(
+                topic=AuxChannelTopic.CANCEL_RESOURCE, message_handle_func=_cancel_resource_handler
+            )

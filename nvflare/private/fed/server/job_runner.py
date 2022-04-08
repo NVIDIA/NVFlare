@@ -21,8 +21,9 @@ class JobRunner(FLComponent):
         self.scheduler = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        self.scheduler = engine.get_component("scheduler")
+        if event_type == EventType.SYSTEM_START:
+            engine = fl_ctx.get_engine()
+            self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
 
     def _deploy_job(self, job: Job, sites: list, fl_ctx: FLContext) -> str:
         """deploy the application to the list of participants
@@ -136,7 +137,8 @@ class JobRunner(FLComponent):
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
             if job_manager:
-                approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
+                # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
+                approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
                 if self.scheduler:
                     (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
 

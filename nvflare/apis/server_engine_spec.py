@@ -95,6 +95,25 @@ class ServerEngineSpec(ABC):
         """
         pass
 
+    @abstractmethod
+    def parent_send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float,
+                                fl_ctx: FLContext) -> dict:
+        """Parent process to send a request to specified clients via the aux channel.
+
+        Implementation: simply calls the ServerAuxRunner's send_aux_request method.
+
+        Args:
+            targets: target clients. None or empty list means all clients
+            topic: topic of the request
+            request: request to be sent
+            timeout: number of secs to wait for replies. 0 means fire-and-forget.
+            fl_ctx: FL context
+
+        Returns: a dict of replies (client name => reply Shareable)
+
+        """
+        pass
+
     def fire_and_forget_aux_request(self, targets: [], topic: str, request: Shareable, fl_ctx: FLContext) -> dict:
         return self.send_aux_request(targets, topic, request, 0.0, fl_ctx)
 

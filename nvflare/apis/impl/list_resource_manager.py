@@ -15,11 +15,11 @@
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.resource_manager import ResourceManager
 from nvflare.apis.job_def import Job
+from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 
 
-class ListResourceManager(ResourceManager):
+class ListResourceManager(ResourceManagerSpec):
     """Manage a list of resource units.
 
     For example:

@@ -20,6 +20,7 @@ from nvflare.apis.fl_context import FLContext
 
 
 class RunStatus(str, Enum):
+
     SUBMITTED = "SUBMITTED"
     APPROVED = "APPROVED"
     DISPATCHED = "DISPATCHED"
