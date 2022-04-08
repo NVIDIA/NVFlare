@@ -111,12 +111,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # - valid study ...
 
         jid = str(uuid.uuid4())
-        meta[JobMetaKey.JOB_ID] = jid
-        meta[JobMetaKey.SUBMIT_TIME] = time.time()
-        meta[JobMetaKey.SUBMIT_TIME_ISO] = (
+        meta[JobMetaKey.JOB_ID.value] = jid
+        meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
+        meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
             datetime.datetime.fromtimestamp(meta[JobMetaKey.SUBMIT_TIME]).astimezone().isoformat()
         )
-        meta[JobMetaKey.STATUS] = RunStatus.SUBMITTED
+        meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
 
         # write it to the store
         store = self._get_job_store(fl_ctx)
@@ -157,7 +157,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def set_results_uri(self, jid: str, result_uri: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
-        updated_meta = {JobMetaKey.RESULT_LOCATION: result_uri}
+        updated_meta = {JobMetaKey.RESULT_LOCATION.value: result_uri}
         store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return self.get_job(jid, fl_ctx)
 
@@ -187,7 +187,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return store.get_data(self.job_uri(jid))
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
-        meta = {JobMetaKey.STATUS: status}
+        meta = {JobMetaKey.STATUS.value: status}
         store = self._get_job_store(fl_ctx)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
@@ -232,9 +232,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
             approvals = meta.get(JobMetaKey.APPROVALS)
             if not approvals:
                 approvals = {}
-                meta[JobMetaKey.APPROVALS] = approvals
+                meta[JobMetaKey.APPROVALS.value] = approvals
             approvals[reviewer_name] = (approved, note)
-            updated_meta = {JobMetaKey.APPROVALS: approvals}
+            updated_meta = {JobMetaKey.APPROVALS.value: approvals}
             store = self._get_job_store(fl_ctx)
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
