@@ -27,14 +27,20 @@ class SignatureBuilder(Builder):
     """
 
     def build(self, project: Project, ctx: dict):
+        root_pri_key = ctx.get("root_pri_key")
+
+        overseer = project.get_participants_by_type("overseer", first_only=True)
+        dest_dir = self.get_kit_dir(overseer, ctx)
+        signatures = sign_all(dest_dir, root_pri_key)
+        json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
+
         servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:
             dest_dir = self.get_kit_dir(server, ctx)
-            root_pri_key = ctx.get("root_pri_key")
             signatures = sign_all(dest_dir, root_pri_key)
             json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
+
         for p in project.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(p, ctx)
-            root_pri_key = ctx.get("root_pri_key")
             signatures = sign_all(dest_dir, root_pri_key)
             json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
