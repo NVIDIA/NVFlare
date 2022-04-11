@@ -228,6 +228,8 @@ class FLClientStarterConfiger(JsonConfigurator):
             exclude_libs=True,
         )
 
+        self.components = {}  # id => component
+
         self.app_root = app_root
         self.client_config_file_name = client_config_file_name
         self.enable_byoc = False
@@ -250,6 +252,21 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         if path == "overseer_agent":
             self.overseer_agent = self.build_component(element)
+            return
+
+        if re.search(r"^components\.#[0-9]+$", path):
+            c = self.build_component(element)
+            cid = element.get("id", None)
+            if not cid:
+                raise ConfigError("missing component id")
+
+            if not isinstance(cid, str):
+                raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+
+            if cid in self.components:
+                raise ConfigError('duplicate component id "{}"'.format(cid))
+
+            self.components[cid] = c
             return
 
     def start_config(self, config_ctx: ConfigContext):
@@ -291,6 +308,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
             "overseer_agent": self.overseer_agent,
+            "client_components": self.components
         }
 
         self.base_deployer = BaseClientDeployer()

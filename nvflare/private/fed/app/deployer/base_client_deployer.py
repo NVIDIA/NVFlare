@@ -42,6 +42,7 @@ class BaseClientDeployer:
         self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
         self.overseer_agent = build_ctx["overseer_agent"]
+        self.components = build_ctx["client_components"]
 
     def set_model_manager(self, model_manager):
         self.model_manager = model_manager

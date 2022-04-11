@@ -517,20 +517,7 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return {}
 
-    def parent_send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float,
-                                fl_ctx: FLContext) -> dict:
-        if not targets:
-            targets = []
-            for t in self.get_clients():
-                targets.append(t.name)
-        if targets:
-            return self.run_manager.aux_runner.send_aux_request(
-                targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx, from_parent=True
-            )
-        else:
-            return {}
-
-    def aux_send_through_parent(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         with self.parent_conn_lock:
             data = {
                 ServerCommandKey.COMMAND: ServerCommandNames.AUX_SEND,
