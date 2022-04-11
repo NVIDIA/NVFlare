@@ -19,6 +19,7 @@ from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
@@ -88,18 +89,21 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         self,
         host,
         port,
-        ca_cert="",
-        client_cert="",
-        client_key="",
-        upload_dir="",
-        download_dir="",
+        ca_cert: str = "",
+        client_cert: str = "",
+        client_key: str = "",
+        upload_dir: str = "",
+        download_dir: str = "",
+        server_cn=None,
+        cmd_modules: Optional[List] = None,
+        overseer_agent: OverseerAgent = None,
+        user_name: str = None,
+        password: str = None,
         poc=False,
         debug=False,
     ):
-        """
-        Initializes FLAdminAPI with required parameters to serve as foundation for communications to FL server.
-        Inherited AdminAPI's login(username) function can be called with the username of the admin corresponding to the
-        cert and key files to enable the usage of FLAdminAPI's functions.
+        """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
+
         Args:
             host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
             port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
@@ -108,6 +112,11 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             client_key: path to admin client Key file, by default provisioned as client.key
             upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
             download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
+            server_cn: server cn (only used for validating server cn)
+            cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
+            overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
+            user_name: Username to authenticate with FL server
+            password: Password to authenticate with FL server (not used in secure mode with SSL)
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages. False by default.
         """
@@ -119,6 +128,12 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             client_key=client_key,
             upload_dir=upload_dir,
             download_dir=download_dir,
+            server_cn=server_cn,
+            cmd_modules=cmd_modules,
+            overseer_agent=overseer_agent,
+            auto_login=True,
+            user_name=user_name,
+            password=password,
             poc=poc,
             debug=debug,
         )
@@ -309,11 +324,11 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def delete_run(self, run_destination: str) -> FLAdminAPIResponse:
-        if not isinstance(run_destination, str):
-            raise APISyntaxError("run_destination must be str but got {}.".format(type(run_destination)))
+    def delete_run(self, run_number: str) -> FLAdminAPIResponse:
+        if not isinstance(run_number, str):
+            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.DELETE_RUN + str(run_destination)
+            AdminCommandNames.DELETE_RUN + str(run_number)
         )
         if reply_data_full_response:
             if "can not be deleted" in reply_data_full_response:
@@ -354,34 +369,28 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def deploy_app(
-        self, run_destination: str, app: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, app: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
-        if not run_destination:
-            raise APISyntaxError("run_destination is required but not specified.")
-        if not isinstance(run_destination, str):
-            raise APISyntaxError("run_destination must be str but got {}.".format(type(run_destination)))
+        if not run_number:
+            raise APISyntaxError("run_number is required but not specified.")
+        if not isinstance(run_number, str):
+            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         if not app:
             raise APISyntaxError("app is required but not specified.")
         if not isinstance(app, str):
             raise APISyntaxError("app must be str but got {}.".format(type(app)))
         if target_type == TargetType.ALL:
-            command = AdminCommandNames.DEPLOY_APP + " " + run_destination + " " + app + " all"
+            command = AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " all"
         elif target_type == TargetType.SERVER:
-            command = AdminCommandNames.DEPLOY_APP + " " + run_destination + " " + app + " server"
+            command = AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
                 command = (
-                    AdminCommandNames.DEPLOY_APP
-                    + " "
-                    + run_destination
-                    + " "
-                    + app
-                    + " client "
-                    + processed_targets_str
+                    AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " client " + processed_targets_str
                 )
             else:
-                command = AdminCommandNames.DEPLOY_APP + " " + run_destination + " " + app + " client"
+                command = AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " client"
         else:
             raise APISyntaxError("target_type must be server, client, or all.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -396,22 +405,22 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def start_app(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
-        if not run_destination:
-            raise APISyntaxError("run_destination is required but not specified.")
-        if not isinstance(run_destination, str):
-            raise APISyntaxError("run_destination must be str but got {}.".format(type(run_destination)))
+        if not run_number:
+            raise APISyntaxError("run_number is required but not specified.")
+        if not isinstance(run_number, str):
+            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         if target_type == TargetType.ALL:
-            command = AdminCommandNames.START_APP + " " + run_destination + " all"
+            command = AdminCommandNames.START_APP + " " + run_number + " all"
         elif target_type == TargetType.SERVER:
-            command = AdminCommandNames.START_APP + " " + run_destination + " server"
+            command = AdminCommandNames.START_APP + " " + run_number + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.START_APP + " " + run_destination + " client " + processed_targets_str
+                command = AdminCommandNames.START_APP + " " + run_number + " client " + processed_targets_str
             else:
-                command = AdminCommandNames.START_APP + " " + run_destination + " client"
+                command = AdminCommandNames.START_APP + " " + run_number + " client"
         else:
             raise APISyntaxError("target_type must be server, client, or all.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -428,22 +437,22 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def abort(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
-        if not run_destination:
-            raise APISyntaxError("run_destination is required but not specified.")
-        if not isinstance(run_destination, str):
-            raise APISyntaxError("run_destination must be str but got {}.".format(type(run_destination)))
+        if not run_number:
+            raise APISyntaxError("run_number is required but not specified.")
+        if not isinstance(run_number, str):
+            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         if target_type == TargetType.ALL:
-            command = AdminCommandNames.ABORT + " " + run_destination + " all"
+            command = AdminCommandNames.ABORT + " " + run_number + " all"
         elif target_type == TargetType.SERVER:
-            command = AdminCommandNames.ABORT + " " + run_destination + " server"
+            command = AdminCommandNames.ABORT + " " + run_number + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.ABORT + " " + run_destination + " client " + processed_targets_str
+                command = AdminCommandNames.ABORT + " " + run_number + " client " + processed_targets_str
             else:
-                command = AdminCommandNames.ABORT + " " + run_destination + " client"
+                command = AdminCommandNames.ABORT + " " + run_number + " client"
         else:
             raise APISyntaxError("target_type must be server, client, or all.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -657,20 +666,20 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def show_stats(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
-        if not run_destination:
-            raise APISyntaxError("run_destination is required but not specified.")
-        if not isinstance(run_destination, str):
-            raise APISyntaxError("run_destination must be str but got {}.".format(type(run_destination)))
+        if not run_number:
+            raise APISyntaxError("run_number is required but not specified.")
+        if not isinstance(run_number, str):
+            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         if target_type == TargetType.SERVER:
-            command = AdminCommandNames.SHOW_STATS + " " + run_destination + " server"
+            command = AdminCommandNames.SHOW_STATS + " " + run_number + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.SHOW_STATS + " " + run_destination + " client " + processed_targets_str
+                command = AdminCommandNames.SHOW_STATS + " " + run_number + " client " + processed_targets_str
             else:
-                command = AdminCommandNames.SHOW_STATS + " " + run_destination + " client"
+                command = AdminCommandNames.SHOW_STATS + " " + run_number + " client"
         else:
             raise APISyntaxError("target_type must be server or client.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -688,20 +697,20 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def show_errors(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
-        if not run_destination:
-            raise APISyntaxError("run_destination is required but not specified.")
-        if not isinstance(run_destination, str):
-            raise APISyntaxError("run_destination must be str but got {}.".format(type(run_destination)))
+        if not run_number:
+            raise APISyntaxError("run_number is required but not specified.")
+        if not isinstance(run_number, str):
+            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         if target_type == TargetType.SERVER:
-            command = AdminCommandNames.SHOW_ERRORS + " " + run_destination + " server"
+            command = AdminCommandNames.SHOW_ERRORS + " " + run_number + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.SHOW_ERRORS + " " + run_destination + " client " + processed_targets_str
+                command = AdminCommandNames.SHOW_ERRORS + " " + run_number + " client " + processed_targets_str
             else:
-                command = AdminCommandNames.SHOW_ERRORS + " " + run_destination + " client"
+                command = AdminCommandNames.SHOW_ERRORS + " " + run_number + " client"
         else:
             raise APISyntaxError("target_type must be server or client.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -716,13 +725,13 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": "No errors."}, reply)
 
     @wrap_with_return_exception_responses
-    def reset_errors(self, run_destination: str) -> FLAdminAPIResponse:
-        if not run_destination:
-            raise APISyntaxError("run_destination is required but not specified.")
-        if not isinstance(run_destination, str):
-            raise APISyntaxError("run_destination must be str but got {}.".format(type(run_destination)))
+    def reset_errors(self, run_number: str) -> FLAdminAPIResponse:
+        if not run_number:
+            raise APISyntaxError("run_number is required but not specified.")
+        if not isinstance(run_number, str):
+            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.RESET_ERRORS + " " + run_destination
+            AdminCommandNames.RESET_ERRORS + " " + run_number
         )
         if reply_data_full_response:
             if "App is not running" in reply_data_full_response:

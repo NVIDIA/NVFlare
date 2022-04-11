@@ -19,6 +19,7 @@ from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
+
 from .run_manager import RunInfo, RunManager
 from .server_json_config import ServerJsonConfigurator
 
@@ -53,13 +54,13 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
+    def deploy_app_to_server(self, run_number: str, app_name: str, app_staging_path: str) -> str:
         """Deploy the specified app to the server.
 
         Copy the app folder tree from staging area to the server's RUN area
 
         Args:
-            run_destination: destination of the app to be deployed
+            run_number: run number of the app to be deployed
             app_name: name of the app to be deployed
             app_staging_path: the full path to the app folder in staging area
 
@@ -119,7 +120,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_app_on_server(self, run_destination: str) -> str:
+    def start_app_on_server(self, run_number: str) -> str:
         """Start the FL app on Server.
 
         Returns:
@@ -128,7 +129,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def check_app_start_readiness(self, run_destination: str) -> str:
+    def check_app_start_readiness(self, run_number: str) -> str:
         """Check whether the app is ready to start.
 
         Returns:
@@ -142,7 +143,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def abort_app_on_server(self, run_destination: str):
+    def abort_app_on_server(self, run_number: str):
         """Abort the application on the server."""
         pass
 

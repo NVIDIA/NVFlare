@@ -77,14 +77,14 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def delete_run(self, run_destination: str) -> FLAdminAPIResponse:
+    def delete_run(self, run_number: str) -> FLAdminAPIResponse:
         """Deletes a specified run.
 
         This deletes the run folder corresponding to the run number on the server and
         all connected clients. This is not reversible.
 
         Args:
-            run_destination (str): run destination to delete
+            run_number (str): run number to delete
 
         Returns: FLAdminAPIResponse
 
@@ -121,14 +121,14 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def deploy_app(
-        self, run_destination: str, app: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, app: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
         """Issues a command to deploy the specified app to the specified target for the current run number.
 
         The app must be already uploaded and available on the server.
 
         Args:
-            run_destination (str): run destination
+            run_number (str): run number
             app (str): name of app to deploy
             target_type: server | client | all
             targets: if target_type is client, targets can optionally be a list of client names
@@ -140,12 +140,12 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def start_app(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
         """Issue a command to start the deployed app for the current run number at the specified target.
 
         Args:
-            run_destination (str): run destination
+            run_number (str): run number
             target_type: server | client | all
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -156,12 +156,12 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def abort(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
         """Issue a command to abort training.
 
         Args:
-            run_destination (str): run destination
+            run_number (str): run number
             target_type: server | client
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -324,12 +324,12 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def show_stats(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
         """Gets and shows stats from the Info Collector.
 
         Args:
-            run_destination (str): run destination
+            run_number (str): run number
             target_type: server | client
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -339,12 +339,12 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def show_errors(
-        self, run_destination: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
         """Gets and shows errors from the Info Collector.
 
         Args:
-            run_destination (str): run destination
+            run_number (str): run number
             target_type: server | client
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -353,11 +353,11 @@ class FLAdminAPISpec(ABC):
         """
 
     @abstractmethod
-    def reset_errors(self, run_destination: str) -> FLAdminAPIResponse:
+    def reset_errors(self, run_number: str) -> FLAdminAPIResponse:
         """Resets the collector errors.
 
         Args:
-            run_destination (str): run destination
+            run_number (str): run number
 
         Returns: FLAdminAPIResponse
 
