@@ -64,12 +64,9 @@ readme_fs: |
   Please always safeguard the server.key.
 
 gunicorn_conf_py: |
-  bind="0.0.0.0:{~~port~~}"
-  ca_certs="rootCA.pem"
+  bind="{~~hostname~~}:{~~port~~}"
   cert_reqs=2
-  certfile="overseer.crt"
   do_handshake_on_connect=True
-  keyfile="overseer.key"
   timeout=30
   worker_class="nvflare.ha.overseer.worker.ClientAuthWorker"
   workers=1
