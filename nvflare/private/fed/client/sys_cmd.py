@@ -24,7 +24,7 @@ except ImportError:
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
 
-from .admin import RequestProcessor
+from nvflare.apis.request_processor import RequestProcessor
 
 
 class SysInfoProcessor(RequestProcessor):

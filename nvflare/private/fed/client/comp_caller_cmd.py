@@ -14,7 +14,7 @@
 
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ComponentCallerTopic, RequestHeader
-from nvflare.private.fed.client.admin import RequestProcessor
+from nvflare.apis.request_processor import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.widgets.comp_caller import ComponentCaller
 from nvflare.widgets.widget import WidgetID

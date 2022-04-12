@@ -78,6 +78,8 @@ class Job:
         self.meta = meta
         self.min_sites = min_sites
         self.required_sites = required_sites
+        if not self.required_sites:
+            self.required_sites = []
 
         self.dispatcher_id = None
         self.dispatch_time = None
@@ -116,7 +118,7 @@ class Job:
         job_def_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         # # if not isinstance(job_def_manager, JobDefManagerSpec):
         # #     raise TypeError(f"job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}")
-        return job_def_manager.get_app(self, app_name)
+        return job_def_manager.get_app(self, app_name, fl_ctx)
 
     def get_application_name(self, participant):
         """Get the application name for the specified participant."""

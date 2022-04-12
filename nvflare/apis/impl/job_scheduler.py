@@ -12,16 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pickle
 from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.scheduler_constants import AuxChannelTopic, ShareableHeader
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
+from nvflare.private.admin_defs import Message
+from nvflare.private.defs import TrainingTopic
+from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 
 
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
@@ -39,18 +42,33 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.check_resource_topic = check_resource_topic
         self.cancel_resource_topic = cancel_resource_topic
 
-    def _send_req_to_sites(
-        self, request: Shareable, topic: str, sites: List[str], fl_ctx: FLContext
-    ) -> Dict[str, Shareable]:
-        engine = fl_ctx.get_engine()
-        if not isinstance(engine, ServerEngineSpec):
-            raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
-        # result is {client_name: Shareable} of each site's result
-        result = engine.parent_send_aux_request(
-            targets=sites, topic=topic, request=request, timeout=self.client_req_timeout, fl_ctx=fl_ctx
-        )
-        return result
-
+    # def _send_req_to_sites(
+    #     self, request: Message, sites: List[str], fl_ctx: FLContext
+    # ) -> Dict[str, Shareable]:
+    #     engine = fl_ctx.get_engine()
+    #     if not isinstance(engine, ServerEngineSpec):
+    #         raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
+    #     # result is {client_name: Shareable} of each site's result
+    #     # result = engine.parent_send_aux_request(
+    #     #     targets=sites, topic=topic, request=request, timeout=self.client_req_timeout, fl_ctx=fl_ctx
+    #     # )
+    #     clients, invalid_inputs = engine.validate_clients(sites)
+    #     client_tokens = []
+    #     for c in clients:
+    #         client_tokens.append(c.token)
+    #
+    #     if not client_tokens:
+    #         return None
+    #
+    #     requests = {}
+    #     for token in client_tokens:
+    #         requests.update({token: request})
+    #
+    #     admin_server = engine.server
+    #     replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
+    #
+    #     return replies
+    #
     def _check_client_resources(self, resource_reqs: Dict[str, dict], fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
         """Checks resources on each site.
 
@@ -61,24 +79,39 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             A dict of {client_name: client_check_result}
             where client_check_result is a tuple of {client check OK, resource reserve token if any}
         """
-        result = {}
+        engine = fl_ctx.get_engine()
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
+        requests = {}
+        result = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Shareable()
-            request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
-            site_name, shareable = self._send_req_to_sites(
-                request=request, sites=[site_name], topic=self.check_resource_topic, fl_ctx=fl_ctx
-            )
-            if shareable.get_return_code() != ReturnCode.OK:
-                result[site_name] = (False, None)
-            else:
+            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=pickle.dumps(resource_requirements))
+            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+            client = engine.get_client_from_name(site_name)
+            if client:
+                requests.update({client.token: request})
+
+        replies = []
+        if requests:
+            # admin_server = engine.server.admin_server
+            # replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
+            replies = engine.send_admin_requests(requests)
+
+        for r in replies:
+            site_name = engine.get_client_name_from_token(r.client_token)
+            if r.reply:
+                resp = pickle.loads(r.reply.body)
                 result[site_name] = (
-                    shareable.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
-                    shareable.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, None),
+                    resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                    resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, None),
                 )
+            else:
+                result[site_name] = (False, None)
+
         return result
 
     def _cancel_resources(
@@ -92,16 +125,30 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 where client_check_result is a tuple of {client check OK, resource reserve token if any}
             fl_ctx: FL context
         """
+        engine = fl_ctx.get_engine()
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
+
+        requests = {}
         for site_name, result in resource_check_results.items():
             check_result, token = result
             if check_result:
-                request = Shareable()
                 resource_requirements = resource_reqs[site_name]
+                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
-                request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
-                _ = self._send_req_to_sites(
-                    request=request, sites=[site_name], topic=self.cancel_resource_topic, fl_ctx=fl_ctx
-                )
+                # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+                client = engine.get_client_from_name(site_name)
+                if client:
+                    requests.update({client.token: request})
+
+        if requests:
+            # admin_server = engine.server.admin_server
+            # replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
+            replies = engine.send_admin_requests(requests)
+
+                # _ = self._send_req_to_sites(
+                #     request=request, sites=[site_name], fl_ctx=fl_ctx
+                # )
         return False, None
 
     def _try_job(self, job: Job, fl_ctx) -> (bool, Optional[Dict[str, DispatchInfo]]):

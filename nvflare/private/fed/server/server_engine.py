@@ -371,7 +371,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_all_clients(self):
         return list(self.server.client_manager.clients.keys())
 
-    def _get_client_from_name(self, client_name):
+    def get_client_from_name(self, client_name):
         for c in self.get_clients():
             if client_name == c.name:
                 return c
@@ -387,7 +387,7 @@ class ServerEngine(ServerEngineInternalSpec):
             if client:
                 clients.append(client)
             else:
-                client = self._get_client_from_name(item)
+                client = self.get_client_from_name(item)
                 if client:
                     clients.append(client)
                 else:
@@ -647,6 +647,9 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to get_stats from run_{run_number}")
 
         return stats
+
+    def send_admin_requests(self, requests):
+        return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
 
     def stop_all_jobs(self):
         fl_ctx = self.new_context()

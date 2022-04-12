@@ -18,6 +18,7 @@ import threading
 import time
 import traceback
 
+from nvflare.apis.request_processor import RequestProcessor
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
@@ -51,30 +52,6 @@ class Sender(object):
 
         Args:
             message: message
-
-        """
-        pass
-
-
-class RequestProcessor(object):
-    """The RequestProcessor is responsible for processing a request."""
-
-    def get_topics(self) -> [str]:
-        """Get topics that this processor will handle.
-
-        Returns: list of topics
-
-        """
-        pass
-
-    def process(self, req: Message, app_ctx) -> Message:
-        """Called to process the specified request.
-
-        Args:
-            req: request message
-            app_ctx: application context
-
-        Returns: repely message
 
         """
         pass

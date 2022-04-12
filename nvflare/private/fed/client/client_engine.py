@@ -22,6 +22,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.request_processor import RequestProcessor
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
@@ -73,6 +74,9 @@ class ClientEngine(ClientEngineInternalSpec):
         # thread.start()
 
         return "validate process started."
+
+    def get_component(self, component_id: str) -> object:
+        return self.client.components.get(component_id)
 
     def get_engine_status(self):
         running_jobs = []
@@ -214,6 +218,9 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def get_all_run_numbers(self):
         return self.client_executor.run_processes.keys()
+
+    def register_request_processor(self, request_processor: RequestProcessor):
+        super().register_request_processor(request_processor)
 
 
 def _do_validate(sender, message):

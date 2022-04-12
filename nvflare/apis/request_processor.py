@@ -12,29 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
-
-from nvflare.apis.fl_constant import ReservedTopic, ReturnCode
-from nvflare.apis.shareable import make_reply
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader
-from nvflare.apis.request_processor import RequestProcessor
 
 
-class AuxRequestProcessor(RequestProcessor):
+class RequestProcessor(object):
+    """The RequestProcessor is responsible for processing a request."""
+
     def get_topics(self) -> [str]:
-        return [ReservedTopic.AUX_COMMAND]
+        """Get topics that this processor will handle.
+
+        Returns: list of topics
+
+        """
+        pass
 
     def process(self, req: Message, app_ctx) -> Message:
-        engine = app_ctx
+        """Called to process the specified request.
 
-        shareable = pickle.loads(req.body)
+        Args:
+            req: request message
+            app_ctx: application context
 
-        run_number = req.get_header(RequestHeader.RUN_NUM)
-        result = engine.send_aux_command(shareable, run_number)
-        if not result:
-            result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        Returns: reply message
 
-        result = pickle.dumps(result)
-        message = Message(topic="reply_" + req.topic, body=result)
-        return message
+        """
+        pass

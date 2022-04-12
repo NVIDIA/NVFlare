@@ -115,3 +115,6 @@ class ServerEngineSpec(ABC):
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         pass
+
+    def send_admin_requests(self, requests):
+        pass

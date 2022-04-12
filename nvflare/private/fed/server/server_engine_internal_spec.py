@@ -15,6 +15,7 @@
 import time
 from abc import ABC, abstractmethod
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
@@ -233,6 +234,18 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
 
         Returns:
             Client name
+        """
+        pass
+
+    @abstractmethod
+    def get_client_from_name(self, client_name: str) -> Client:
+        """Get the registered client token from client_name.
+
+        Args:
+            client_name: client name
+
+        Returns: registered client
+
         """
         pass
 

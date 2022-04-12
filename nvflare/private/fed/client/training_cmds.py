@@ -18,7 +18,7 @@ from typing import List
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from .admin import RequestProcessor
+from nvflare.apis.request_processor import RequestProcessor
 
 
 class StartAppProcessor(RequestProcessor):
