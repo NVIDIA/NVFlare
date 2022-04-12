@@ -1,4 +1,19 @@
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os.path
+import threading
 import time
 
 from nvflare.apis.event_type import EventType
@@ -19,6 +34,8 @@ class JobRunner(FLComponent):
         self.workspace_root = workspace_root
         self.ask_to_stop = False
         self.scheduler = None
+        self.running_jobs = {}
+        self.lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
@@ -132,8 +149,23 @@ class JobRunner(FLComponent):
             if err:
                 self.log_error(fl_ctx, f"Failed to abort the server for run_.{run_number}")
 
+    def _job_complete_process(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        while not self.ask_to_stop:
+            for run_number in self.running_jobs.keys():
+                if run_number not in engine.run_processes.keys():
+                    with self.lock:
+                        job = self.running_jobs.get(run_number)
+                        job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
+                        del self.running_jobs[run_number]
+            time.sleep(1.0)
+
     def run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
+
+        threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
+
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
             if job_manager:
@@ -145,7 +177,11 @@ class JobRunner(FLComponent):
                     if ready_job:
                         try:
                             run_number = self._deploy_job(ready_job, sites, fl_ctx)
+                            job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
                             self._start_run(run_number, sites, fl_ctx)
+                            with self.lock:
+                                self.running_jobs[run_number] = ready_job
+                            job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                         except:
                             self.log_error(fl_ctx, f"Failed to run the Job ID: {ready_job.job_id}")
 
@@ -153,7 +189,11 @@ class JobRunner(FLComponent):
 
     def stop_run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
+        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         for run_number in engine.run_processes.keys():
             self._stop_run(run_number, fl_ctx)
+            job = self.running_jobs.get(run_number)
+            if job:
+                job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
 
         self.ask_to_stop = True

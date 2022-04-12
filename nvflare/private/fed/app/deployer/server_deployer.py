@@ -134,21 +134,6 @@ class ServerDeployer:
         return services
 
     def _start_job_runner(self, job_runner, fl_ctx):
-        # job_runner = JobRunner(workspace_root=args.workspace)
-        # workspace = Workspace(args.workspace, "server", args.config_folder)
-        # run_manager = RunManager(
-        #     server_name=services.project_name,
-        #     engine=services.engine,
-        #     run_num="",
-        #     workspace=workspace,
-        #     components=self.components,
-        #     # client_manager=self.client_manager,
-        #     handlers=[],
-        # )
-        # job_manager = self.components.get(SystemComponents.JOB_MANAGER)
-        # services.engine.set_run_manager(run_manager)
-        # services.engine.set_job_runner(job_runner, job_manager)
-        # fl_ctx = services.engine.new_context()
         job_runner.run(fl_ctx)
 
     def close(self):
