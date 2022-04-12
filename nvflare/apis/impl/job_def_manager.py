@@ -165,13 +165,15 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
         job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
-        return zip_directory_to_bytes(job_id_dir, app_name)
+        job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
+        return zip_directory_to_bytes(job_folder, app_name)
 
     def get_apps(self, job: Job, fl_ctx: FLContext) -> Dict[str, bytes]:
         job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
+        job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
         result_dict = {}
         for app in job.get_deployment():
-            result_dict[app] = zip_directory_to_bytes(job_id_dir, app)
+            result_dict[app] = zip_directory_to_bytes(job_folder, app)
         return result_dict
 
     def _load_job_data_from_store(self, jid: str, fl_ctx: FLContext):
