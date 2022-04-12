@@ -1,4 +1,8 @@
-
+poc: ../../nvflare/poc
+n_clients: 2
+app_path: test_apps
+snapshot_path: /tmp/snapshot-storage
+cleanup: True
 
 
 tests:

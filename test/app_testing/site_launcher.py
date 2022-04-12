@@ -37,7 +37,7 @@ def process_logs(log_path, pid):
         print(f"Exception in process_logs for file {log_path}: {e.__str__()}")
 
 
-class SiteLauncher(object):
+class SiteLauncher:
     def __init__(self, poc_directory, server_dir_name="server", client_dir_name="client", admin_dir_name="admin"):
         """
         This class sets up the test environment for a test. It will launch and keep track of servers and clients.
@@ -54,7 +54,8 @@ class SiteLauncher(object):
 
         self.admin_api = None
 
-        self.logger = logging.getLogger("SiteLauncher")
+        self.logger = logging.getLogger(self.__class__.__name__)
+        os.environ["PYTHONPATH"] = ""
 
         # Create temporary poc directory
         if not os.path.exists(self.original_poc_directory):

@@ -21,7 +21,7 @@ from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 
 
-class AdminController(object):
+class AdminController:
     def __init__(self, app_path, poll_period=10):
         """
         This class runs an app on a given server and clients.
@@ -39,10 +39,12 @@ class AdminController(object):
             download_dir=self.app_path,
             poc=True,
             debug=False,
+            user_name="admin",
+            password="admin"
         )
-        self.run_number = 0
 
-        self.logger = logging.getLogger("AdminController")
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.exp_number = 0
 
     def initialize(self):
         success = False
@@ -57,6 +59,7 @@ class AdminController(object):
                     success = True
                     break
                 time.sleep(1.0)
+
             if not success:
                 details = response.get("details") if response else "No details"
                 raise ValueError(f"Login to admin api failed: {details}")
@@ -64,11 +67,14 @@ class AdminController(object):
                 print("Admin successfully logged into server.")
         except Exception as e:
             print(f"Exception in logging in to admin: {e.__str__()}")
-
         return success
 
+    def _get_run_number(self):
+        # run_number means experiment name
+        return f"run_{self.exp_number}"
+
     def get_run_data(self):
-        run_data = {"run_number": self.run_number, "app_path": self.app_path, "app_name": self.last_app_name}
+        run_data = {"run_number": self._get_run_number(), "app_path": self.app_path, "app_name": self.last_app_name}
 
         return run_data
 
@@ -126,18 +132,14 @@ class AdminController(object):
         if not self.admin_api:
             return False
 
-        self.run_number += 1
-
-        response = self.admin_api.set_run_number(self.run_number)
-        if response["status"] != APIStatus.SUCCESS:
-            raise RuntimeError(f"set run number failed: {response}")
+        self.exp_number += 1
         response = self.admin_api.upload_app(app_name)
         if response["status"] != APIStatus.SUCCESS:
             raise RuntimeError(f"upload_app failed: {response}")
-        response = self.admin_api.deploy_app(app=app_name, target_type=TargetType.ALL)
+        response = self.admin_api.deploy_app(app=app_name, run_number=self._get_run_number(), target_type=TargetType.ALL)
         if response["status"] != APIStatus.SUCCESS:
             raise RuntimeError(f"deploy_app failed: {response}")
-        response = self.admin_api.start_app(target_type=TargetType.ALL)
+        response = self.admin_api.start_app(run_number=self._get_run_number(), target_type=TargetType.ALL)
         if response["status"] != APIStatus.SUCCESS:
             raise RuntimeError(f"start_app failed: {response}")
 

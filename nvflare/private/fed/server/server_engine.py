@@ -169,7 +169,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def get_clients(self) -> [Client]:
-        return list(self.client_manager.clients.values())
+        return list(self.client_manager.get_clients().values())
 
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
