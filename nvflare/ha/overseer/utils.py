@@ -14,7 +14,6 @@
 
 import os
 import pathlib
-import sys
 import uuid
 from datetime import datetime, timedelta
 
