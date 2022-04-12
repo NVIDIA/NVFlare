@@ -108,8 +108,8 @@ class ServerEngine(ServerEngineInternalSpec):
     def _get_client_app_folder(self, client_name):
         return "app_" + client_name
 
-    def _get_run_folder(self, run_destination):
-        return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_destination))
+    def _get_run_folder(self, run_number):
+        return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
 
     def get_engine_info(self) -> EngineInfo:
         self.engine_info.app_names = {}
@@ -297,7 +297,7 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before abort."
         return ""
 
-    def abort_app_on_server(self, run_destination: str) -> str:
+    def abort_app_on_server(self, run_number: str) -> str:
         status = self.engine_info.status
         if status == MachineStatus.STOPPED:
             return "Server app has not started."
@@ -311,7 +311,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         try:
             with self.lock:
-                command_conn = self.get_command_conn(run_destination)
+                command_conn = self.get_command_conn(run_number)
                 if command_conn:
                     data = {ServerCommandKey.COMMAND: AdminCommandNames.ABORT, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
@@ -319,19 +319,19 @@ class ServerEngine(ServerEngineInternalSpec):
                     self.logger.info(f"Abort server: {status_message}")
         except:
             with self.lock:
-                child_process = self.run_processes.get(run_destination, {}).get(RunProcessKey.CHILD_PROCESS, None)
+                child_process = self.run_processes.get(run_number, {}).get(RunProcessKey.CHILD_PROCESS, None)
                 if child_process:
                     child_process.terminate()
         finally:
             with self.lock:
-                self.run_processes.pop(run_destination)
+                self.run_processes.pop(run_number)
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
 
-    def check_app_start_readiness(self, run_destination: str) -> str:
-        if run_destination not in self.run_processes.keys():
-            return f"Server app run_{run_destination} has not started."
+    def check_app_start_readiness(self, run_number: str) -> str:
+        if run_number not in self.run_processes.keys():
+            return f"Server app run_{run_number} has not started."
         return ""
 
     def shutdown_server(self) -> str:
@@ -450,8 +450,8 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_staging_path_of_app(self, app_name: str) -> str:
         return os.path.join(self.server.admin_server.file_upload_dir, app_name)
 
-    def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
-        return self.deploy_app(run_destination, app_name, "app_server")
+    def deploy_app_to_server(self, run_number: str, app_name: str, app_staging_path: str) -> str:
+        return self.deploy_app(run_number, app_name, "app_server")
 
     def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
         return self.deploy_app(app_name, "app_" + client_name)
@@ -462,16 +462,16 @@ class ServerEngine(ServerEngineInternalSpec):
     def ask_to_stop(self):
         self.asked_to_stop = True
 
-    def deploy_app(self, run_destination, src, dest):
+    def deploy_app(self, run_number, src, dest):
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, src)
-        fullpath_dest = os.path.join(self._get_run_folder(run_destination), dest)
+        fullpath_dest = os.path.join(self._get_run_folder(run_number), dest)
         if not os.path.exists(fullpath_src):
             return f"App folder '{src}' does not exist in staging area."
         if os.path.exists(fullpath_dest):
             shutil.rmtree(fullpath_dest)
         shutil.copytree(fullpath_src, fullpath_dest)
 
-        app_file = os.path.join(self._get_run_folder(run_destination), "fl_app.txt")
+        app_file = os.path.join(self._get_run_folder(run_number), "fl_app.txt")
         if os.path.exists(app_file):
             os.remove(app_file)
         with open(app_file, "wt") as f:

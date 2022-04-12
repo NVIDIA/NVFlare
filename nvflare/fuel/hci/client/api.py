@@ -20,6 +20,7 @@ import threading
 import time
 import traceback
 from datetime import datetime
+from typing import List, Optional
 
 from nvflare.apis.overseer_spec import SP, OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
@@ -88,44 +89,43 @@ class _CmdListReplyProcessor(ReplyProcessor):
 
 
 class AdminAPI(AdminAPISpec):
-    """Underlying API to keep certs, keys and connection information and to execute admin commands through do_command.
-
-    Args:
-        host: cn provisioned for the server, with this fully qualified domain name resolving to the IP of the FL server. This may be set by the OverseerAgent.
-        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int if provided. This may be set by the OverseerAgent.
-        ca_cert: path to CA Cert file, by default provisioned rootCA.pem
-        client_cert: path to admin client Cert file, by default provisioned as client.crt
-        client_key: path to admin client Key file, by default provisioned as client.key
-        upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
-        download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
-        server_cn: server cn (only used for validating server cn)
-        cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
-        overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
-        auto_login: Whether to use stored credentials to automatically log in (required to be True with OverseerAgent to provide high availability)
-        user_name: Username to authenticate with FL server
-        password: Password to authenticate with FL server (not used in secure mode with SSL)
-        poc: Whether to enable poc mode for using the proof of concept example without secure communication.
-        debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
-    """
-
     def __init__(
         self,
         host=None,
         port=None,
-        ca_cert="",
-        client_cert="",
-        client_key="",
-        upload_dir="",
-        download_dir="",
+        ca_cert: str = "",
+        client_cert: str = "",
+        client_key: str = "",
+        upload_dir: str = "",
+        download_dir: str = "",
         server_cn=None,
-        cmd_modules=None,
-        overseer_agent=None,
+        cmd_modules: Optional[List] = None,
+        overseer_agent: OverseerAgent = None,
         auto_login: bool = False,
         user_name: str = None,
         password: str = None,
         poc: bool = False,
         debug: bool = False,
     ):
+        """Underlying API to keep certs, keys and connection information and to execute admin commands through do_command.
+
+        Args:
+            host: cn provisioned for the server, with this fully qualified domain name resolving to the IP of the FL server. This may be set by the OverseerAgent.
+            port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int if provided. This may be set by the OverseerAgent.
+            ca_cert: path to CA Cert file, by default provisioned rootCA.pem
+            client_cert: path to admin client Cert file, by default provisioned as client.crt
+            client_key: path to admin client Key file, by default provisioned as client.key
+            upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
+            download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
+            server_cn: server cn (only used for validating server cn)
+            cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
+            overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
+            auto_login: Whether to use stored credentials to automatically log in (required to be True with OverseerAgent to provide high availability)
+            user_name: Username to authenticate with FL server
+            password: Password to authenticate with FL server (not used in secure mode with SSL)
+            poc: Whether to enable poc mode for using the proof of concept example without secure communication.
+            debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
+        """
         super().__init__()
         if cmd_modules is None:
             from .file_transfer import FileTransferModule
