@@ -2,6 +2,12 @@ api_version: 3
 name: example_project
 description: NVIDIA FLARE sample project yaml file
 
+components: &component_list
+  path: hello.world
+  args:
+    abc: 123
+    xyz: 456
+
 participants:
   # change overseer.nvflare.nvidia.com to the FQDN of the overseer
   - name: tinylaptop
@@ -70,6 +76,8 @@ builders:
         overseer_exists: true
         args:
           sp_end_point: example1.com.8002:8003
+      components:
+        <<: *component_list
   # - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
   #   args:
   #     orgs:
@@ -95,3 +103,4 @@ builders:
   - path: nvflare.lighter.impl.workspace.DistributionBuilder
     args:
       zip_password: false
+
