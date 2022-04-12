@@ -166,7 +166,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
         job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
         job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
-        return zip_directory_to_bytes(job_folder, app_name)
+        fullpath_src = os.path.join(job_folder, app_name)
+        return zip_directory_to_bytes(fullpath_src, "")
 
     def get_apps(self, job: Job, fl_ctx: FLContext) -> Dict[str, bytes]:
         job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
@@ -191,7 +192,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return store.get_data(self.job_uri(jid))
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
-        meta = {JobMetaKey.STATUS.value: status}
+        meta = {JobMetaKey.STATUS.value: status.value}
         store = self._get_job_store(fl_ctx)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 

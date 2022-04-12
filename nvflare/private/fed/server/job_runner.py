@@ -164,7 +164,7 @@ class JobRunner(FLComponent):
     def run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
 
-        threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
+        # threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
 
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
