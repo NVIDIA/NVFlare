@@ -8,7 +8,7 @@
   "workflows": [
     {
       "id": "server_workflow",
-      "path": "analysis_controller.AnalysisController",
+      "path": "histogram_controller.HistogramController",
       "args": {
         "min_clients": 4,
         "task_name_histogram": "histogram"

@@ -4,7 +4,7 @@
     {
       "tasks": ["histogram"],
       "executor": {
-        "path": "analysis_executor.AnalysisExecutor",
+        "path": "histogram_executor.HistogramExecutor",
         "args": {
           "data_root": "PWD/data",
           "supported_task": "histogram"

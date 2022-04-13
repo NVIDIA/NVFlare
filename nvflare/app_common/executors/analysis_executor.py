@@ -16,9 +16,6 @@ import glob
 import os
 
 import numpy as np
-from analysis_constants import SupportedTasks
-from monai.data import ITKReader, load_decathlon_datalist
-from monai.transforms import LoadImage
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.executor import Executor
@@ -26,6 +23,7 @@ from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.app_common.workflows.analysis_controller import SupportedTasks
 
 
 class AnalysisExecutor(Executor):
@@ -63,36 +61,29 @@ class AnalysisExecutor(Executor):
 
         self.supported_task = supported_task
 
-        self.data_list = None
-
         self._min_images = min_images
 
-        self.loader = LoadImage()
-        self.loader.register(ITKReader())
+        # needs to be provided by derived class
+        self.data_list = None
+        self.loader = None
 
-    def _load_data_list(self, client_name, fl_ctx: FLContext):
-        dataset_json = glob.glob(os.path.join(self.data_root, client_name + "*.json"))
-        if len(dataset_json) != 1:
-            self.log_error(
-                fl_ctx, f"No unique matching dataset list found in {self.data_root} for client {client_name}"
-            )
-            return False
-        dataset_json = dataset_json[0]
-        self.log_info(fl_ctx, f"Reading data from {dataset_json}")
-        self.data_list = load_decathlon_datalist(
-            data_list_file_path=dataset_json, data_list_key=self.data_list_key, base_dir=self.data_root
-        )
-        self.log_info(fl_ctx, f"Client {client_name} has {len(self.data_list)} images")
-        return True
+    def load_data_list(self, fl_ctx: FLContext):
+        self.log_warning("Data list loading not implemented.")
+        pass
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        if self.loader is None:
+            self.log_error(fl_ctx, f"No loader function specified for client {client_name}!")
+            return make_reply(ReturnCode.ERROR)
+
+        self.load_data_list(fl_ctx=fl_ctx)
+        if self.data_list is None:
+            self.log_error(fl_ctx, f"No data list for client {client_name} loaded!")
+            return make_reply(ReturnCode.ERROR)
+
         self.log_info(fl_ctx, f"Executing {task_name}")
         try:
-            client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
-            if not self._load_data_list(client_name, fl_ctx):
-                self.log_error(fl_ctx, f"Reading data list for client {client_name} failed!")
-                return make_reply(ReturnCode.ERROR)
-
             if task_name == self.supported_task:
                 result_dict = self._compute_histo(fl_ctx, abort_signal)
                 if abort_signal.triggered:
