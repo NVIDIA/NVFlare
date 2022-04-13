@@ -55,7 +55,7 @@ class ClientRequestProcessors:
 
     @staticmethod
     def register_cmd_module(request_processor):
-        from nvflare.apis.request_processor import RequestProcessor
+        from .admin import RequestProcessor
 
         if not isinstance(request_processor, RequestProcessor):
             raise TypeError("request_processor must be RequestProcessor, but got {}".format(type(request_processor)))

@@ -17,7 +17,7 @@ from typing import List
 
 from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.request_processor import RequestProcessor
+from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec, ResourceConsumerSpec
 from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.shareable import Shareable

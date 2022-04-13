@@ -15,7 +15,7 @@
 import grpc
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.request_processor import RequestProcessor
+from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 

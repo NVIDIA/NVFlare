@@ -22,17 +22,15 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
-from nvflare.apis.request_processor import RequestProcessor
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ClientStatusKey
+from nvflare.private.fed.utils.fed_utils import deploy_app
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
-from nvflare.private.fed.utils.fed_utils import deploy_app
 
 
 class ClientEngine(ClientEngineInternalSpec):
@@ -221,9 +219,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def get_all_run_numbers(self):
         return self.client_executor.run_processes.keys()
-
-    def register_request_processor(self, request_processor: RequestProcessor):
-        super().register_request_processor(request_processor)
 
 
 def _do_validate(sender, message):

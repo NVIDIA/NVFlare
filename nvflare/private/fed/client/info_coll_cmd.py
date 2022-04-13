@@ -16,7 +16,7 @@ import json
 
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import InfoCollectorTopic, RequestHeader
-from nvflare.apis.request_processor import RequestProcessor
+from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 
 

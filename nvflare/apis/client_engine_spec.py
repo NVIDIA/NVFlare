@@ -15,11 +15,9 @@
 import time
 
 from nvflare.widgets.widget import Widget
-
 from .fl_context import FLContext
 from .shareable import Shareable
 from .workspace import Workspace
-from .request_processor import RequestProcessor
 
 
 class TaskAssignment(object):
@@ -64,8 +62,5 @@ class ClientEngineSpec(object):
         pass
 
     def get_widget(self, widget_id: str) -> Widget:
-        pass
-
-    def register_request_processor(self, request_processor: RequestProcessor):
         pass
 
