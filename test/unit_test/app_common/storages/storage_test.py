@@ -65,7 +65,7 @@ class TestStorage:
         commands = [
             ["wget", "https://dl.min.io/server/minio/release/linux-amd64/minio"],
             ["chmod", "+x", "minio"],
-            ["./minio", "server", os.path.join(tmp_dir_name, "s3-storage"), "--console-address", ":9001"]
+            ["./minio", "server", os.path.join(tmp_dir_name, "s3-storage"), "--console-address", ":9001"],
         ]
 
         env = os.environ.update({"MINIO_ROOT_USER": "admin", "MINIO_ROOT_PASSWORD": "password"})
@@ -77,7 +77,13 @@ class TestStorage:
         time.sleep(15)
 
         cls.storages["FilesystemStorage"] = FilesystemStorage(root_dir=os.path.join(tmp_dir_name, "filesystem-storage"))
-        cls.storages["S3Storage"] = S3Storage(endpoint="localhost:9000", access_key="admin", secret_key="password", secure=False, bucket_name="nvflare-storage")
+        cls.storages["S3Storage"] = S3Storage(
+            endpoint="localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            secure=False,
+            bucket_name="nvflare-storage",
+        )
 
         print("Finished setup.")
 
