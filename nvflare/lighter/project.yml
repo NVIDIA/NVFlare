@@ -72,7 +72,7 @@ builders:
         path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
         args:
           storage:
-            path: nvflare.app_common.state_persistors.storage_state_persistor.storage_spec
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
           location: /tmp/snapshot.data
 
       components:
@@ -88,7 +88,7 @@ builders:
               job_store_id: job_store
               temp_dir: /tmp/jobs_temp
           - id: job_store
-            name: FilesystemStorage
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
         client:
           - id: resource_manager    # This id is used by system.  Do not change it.
             path: nvflare.apis.impl.list_resource_manager.ListResourceManager
