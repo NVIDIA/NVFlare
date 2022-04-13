@@ -43,9 +43,9 @@ class PTFileModelPersistor(ModelPersistor):
 
         This Model Persistor tries to load PT model data in following three ways:
 
-        1. Load from a specified source checkpoint file
-        2. Load from a location from the app folder
-        3. Load from a torch model object
+            1. Load from a specified source checkpoint file
+            2. Load from a location from the app folder
+            3. Load from a torch model object
 
         The Persistor tries method 1 first if the source_ckpt_file_full_name is specified;
         If source_ckpt_file_full_name is not specified, it tries the method 2;
@@ -55,10 +55,10 @@ class PTFileModelPersistor(ModelPersistor):
         It is assumed that the app folder must contain the environments.json file. Among other things, this
         JSON file must specify where to find the checkpoint file. It does so with two JSON elements:
 
-            APP_CKPT_DIR - this element specifies the folder (within the app) where the checkpoint file resides.
-            APP_CKPT - this element specified the base file name of the checkpoint
+            - APP_CKPT_DIR: specifies the folder (within the app) where the checkpoint file resides.
+            - APP_CKPT: specifies the base file name of the checkpoint
 
-        Here is an example of the environments.json content:
+        Here is an example of the environments.json content::
 
             {
                 "APP_CKPT_DIR": "model",
@@ -76,6 +76,7 @@ class PTFileModelPersistor(ModelPersistor):
 
         If checkpoint folder name is specified, then global model and best global model will be saved to it;
         Otherwise they will be saved directly in the app folder.
+
         Args:
             exclude_vars (str, optional): regex expression specifying weight vars to be excluded from training. Defaults to None.
             model (str, optional): torch model object or component id of the model object. Defaults to None.
