@@ -14,10 +14,6 @@
 
 import os
 
-import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
 from nvflare.apis.client import Client
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
