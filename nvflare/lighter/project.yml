@@ -2,15 +2,9 @@ api_version: 3
 name: example_project
 description: NVIDIA FLARE sample project yaml file
 
-components: &component_list
-  path: hello.world
-  args:
-    abc: 123
-    xyz: 456
-
 participants:
   # change overseer.nvflare.nvidia.com to the FQDN of the overseer
-  - name: tinylaptop
+  - name: overseer.example.com
     type: overseer
     org: nvidia
     protocol: https
@@ -58,17 +52,14 @@ builders:
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
       config_folder: config
+
       # app_validator is used to verify if uploaded app has proper structures
       # if not set, no app_validator is included in fed_server.json
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
+
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
-      snapshot_persistor:
-        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
-        args:
-          storage:
-            path: nvflare.app_common.state_persistors.storage_state_persistor.storage_spec
-          location: /tmp/snapshot.data
+
       overseer_agent:
         path: nvflare.ha.overseer_agent.HttpOverseerAgent
         # if overseer_exists is true, agent arguments are role, name and other local parameters
@@ -76,8 +67,26 @@ builders:
         overseer_exists: true
         args:
           sp_end_point: example1.com.8002:8003
+
+      snapshot_persistor:
+        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
+        args:
+          storage:
+            path: nvflare.app_common.state_persistors.storage_state_persistor.storage_spec
+          location: /tmp/snapshot.data
+
       components:
-        <<: *component_list
+        - path: hello.world
+          id: component1
+          args:
+            abc: 123
+            xyz: 456
+        - path: foo.bar
+          id: component2
+          args:
+            arg1: 987
+            arg2: 654
+
   # - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
   #   args:
   #     orgs:
