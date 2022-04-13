@@ -76,16 +76,29 @@ builders:
           location: /tmp/snapshot.data
 
       components:
-        - path: hello.world
-          id: component1
-          args:
-            abc: 123
-            xyz: 456
-        - path: foo.bar
-          id: component2
-          args:
-            arg1: 987
-            arg2: 654
+        server:
+          - id: job_scheduler  # This id is used by system.  Do not change it.
+            path: nvflare.apis.impl.job_scheduler.DefaultJobScheduler
+            args:
+              max_jobs: 4
+          - id: job_manager    # This id is used by system.  Do not change it.
+            path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
+            args:
+              uri_root: /tmp/jobs-storage
+              job_store_id: job_store
+              temp_dir: /tmp/jobs_temp
+          - id: job_store
+            name: FilesystemStorage
+        client:
+          - id: resource_manager    # This id is used by system.  Do not change it.
+            path: nvflare.apis.impl.list_resource_manager.ListResourceManager
+            args:
+              resources:
+                gpu: [0,1,2,3]
+          - id: resource_consumer    # This id is used by system.  Do not change it.
+            path: nvflare.apis.impl.gpu_resource_consumer.GPUResourceConsumer
+            args:
+              gpu_resource_key: gpu
 
   # - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
   #   args:

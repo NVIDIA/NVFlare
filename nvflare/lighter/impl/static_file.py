@@ -148,7 +148,7 @@ class StaticFileBuilder(Builder):
         if self.snapshot_persistor:
             config["snapshot_persistor"] = self.snapshot_persistor
         if self.components:
-            config["components"] = self.components
+            config["components"] = self.components.get("server", [])
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
@@ -216,6 +216,8 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
+        if self.components:
+            config["components"] = self.components.get("client", [])
 
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
