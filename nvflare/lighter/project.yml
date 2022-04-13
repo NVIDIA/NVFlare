@@ -3,7 +3,7 @@ name: example_project
 description: NVIDIA FLARE sample project yaml file
 
 participants:
-  # change overseer.nvflare.nvidia.com to the FQDN of the overseer
+  # change overseer.example.com to the FQDN of the overseer
   - name: overseer.example.com
     type: overseer
     org: nvidia
