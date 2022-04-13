@@ -48,3 +48,15 @@ class JobSchedulerSpec(ABC):
             Otherwise, return (None, None).
         """
         pass
+
+    @abstractmethod
+    def remove_job(self, job: Job):
+        """To remove a scheduled job.
+
+        Args:
+            job: scheduled Job
+
+        Returns:
+
+        """
+        pass

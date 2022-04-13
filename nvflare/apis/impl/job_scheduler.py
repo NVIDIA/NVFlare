@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pickle
+import threading
 from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.fl_component import FLComponent
@@ -20,8 +21,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.scheduler_constants import AuxChannelTopic, ShareableHeader
-from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.shareable import Shareable
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import TrainingTopic
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
@@ -41,34 +40,8 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.scheduled_jobs = []
         self.check_resource_topic = check_resource_topic
         self.cancel_resource_topic = cancel_resource_topic
+        self.lock = threading.Lock()
 
-    # def _send_req_to_sites(
-    #     self, request: Message, sites: List[str], fl_ctx: FLContext
-    # ) -> Dict[str, Shareable]:
-    #     engine = fl_ctx.get_engine()
-    #     if not isinstance(engine, ServerEngineSpec):
-    #         raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
-    #     # result is {client_name: Shareable} of each site's result
-    #     # result = engine.parent_send_aux_request(
-    #     #     targets=sites, topic=topic, request=request, timeout=self.client_req_timeout, fl_ctx=fl_ctx
-    #     # )
-    #     clients, invalid_inputs = engine.validate_clients(sites)
-    #     client_tokens = []
-    #     for c in clients:
-    #         client_tokens.append(c.token)
-    #
-    #     if not client_tokens:
-    #         return None
-    #
-    #     requests = {}
-    #     for token in client_tokens:
-    #         requests.update({token: request})
-    #
-    #     admin_server = engine.server
-    #     replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
-    #
-    #     return replies
-    #
     def _check_client_resources(self, resource_reqs: Dict[str, dict], fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
         """Checks resources on each site.
 
@@ -97,8 +70,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         replies = []
         if requests:
-            # admin_server = engine.server.admin_server
-            # replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
             replies = engine.send_admin_requests(requests)
 
         for r in replies:
@@ -142,13 +113,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     requests.update({client.token: request})
 
         if requests:
-            # admin_server = engine.server.admin_server
-            # replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
             replies = engine.send_admin_requests(requests)
-
-                # _ = self._send_req_to_sites(
-                #     request=request, sites=[site_name], fl_ctx=fl_ctx
-                # )
         return False, None
 
     def _try_job(self, job: Job, fl_ctx) -> (bool, Optional[Dict[str, DispatchInfo]]):
@@ -187,11 +152,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         return True, sites_dispatch_info
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type in ["JOB_ABORTED", "JOB_COMPLETED", "JOB_CANCELED"]:
-            job = fl_ctx.get_prop("job")
-            self.scheduled_jobs.pop(job)
-
     def schedule_job(
         self, job_candidates: List[Job], fl_ctx: FLContext
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
@@ -201,6 +161,12 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         for job in job_candidates:
             ok, sites = self._try_job(job, fl_ctx)
             if ok:
-                self.scheduled_jobs.append(job)
+                with self.lock:
+                    self.scheduled_jobs.append(job)
                 return job, sites
         return None, None
+
+    def remove_job(self, job: Job):
+        with self.lock:
+            self.scheduled_jobs.remove(job)
+

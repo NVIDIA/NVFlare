@@ -153,18 +153,20 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
-            for run_number in self.running_jobs.keys():
+            for run_number in list(self.running_jobs.keys()):
                 if run_number not in engine.run_processes.keys():
                     with self.lock:
                         job = self.running_jobs.get(run_number)
                         job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
                         del self.running_jobs[run_number]
+                        self.scheduler.remove_job(job)
+                        self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
             time.sleep(1.0)
 
     def run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
 
-        # threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
+        threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
 
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
@@ -195,5 +197,7 @@ class JobRunner(FLComponent):
             job = self.running_jobs.get(run_number)
             if job:
                 job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                self.scheduler.remove_job(job)
+                self.fire_event(EventType.JOB_ABORTED, fl_ctx)
 
         self.ask_to_stop = True
