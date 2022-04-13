@@ -13,9 +13,11 @@
 # limitations under the License.
 
 import os
+import pathlib
 import uuid
 from datetime import datetime, timedelta
 
+from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.lighter.utils import load_yaml
 
 OVERSEER_STORE = os.environ.get("OVERSEER_STORE")
@@ -31,10 +33,24 @@ else:
     from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
 
+def check_integrity(privilege_file):
+    data, sig = SecurityContentService.load_content(privilege_file)
+    if sig != LoadResult.OK:
+        print("Priviledge file is tampered.  Priviledged API disaled.")
+        data = None
+    return data
+
+
 def load_privilege():
     privilege_file = os.environ.get("AUTHZ_FILE", "privilege.yml")
+    file_path = pathlib.Path(privilege_file)
+    folder = file_path.parent.absolute()
+    file = file_path.name
+    SecurityContentService.initialize(folder)
+    privilege_content = check_integrity(file)
     try:
-        privilege = load_yaml(privilege_file)
+        privilege = load_yaml(privilege_content)
+        print(f"privileged users: {privilege.get('super')}")
     except:
         privilege = dict()
     return privilege
