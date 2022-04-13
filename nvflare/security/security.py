@@ -65,7 +65,7 @@ class FLAuthzContext(AuthzContext):
         Information about the authorization, such as roles, users, sites and actions
 
         Args:
-            user_name (str): admin's user name
+            user_name (str): user name
             site_names (List[str]): all the sites to be checked
             actions (List[str]): associated actions
         """
@@ -115,19 +115,19 @@ class FLAuthorizer(Authorizer):
     def evaluate_user_right_on_site(self, right_name: str, user_name: str, site_name: str):
         """Check whether a user has a right in an org.
 
-        Super user has all rights in all orgs.
+        Superuser has all rights in all orgs.
+
         Args:
             right_name: right to be evaluated
             user_name: user to be evaluated against
             site_name: the org
 
         Returns:
-            Result:
-                True/False for bool type right;
-                Int number for int rule;
-                None if error occurred during evaluation
-            Error: error string error occurred during evaluation
+            A tuple of (result, error).
 
+            result: True/False for bool type right; Int number for int rule; None if error occurred during evaluation
+
+            error: Error occurred during evaluation
         """
         right_type = self.policy.get_right_type(right_name)
         if right_type == "bool":
@@ -136,7 +136,7 @@ class FLAuthorizer(Authorizer):
                 return None, 'unknown user "{}"'.format(user_name)
             roles = user["roles"]
             if "super" in roles:
-                # super user has all rights!
+                # superuser has all rights!
                 return True, ""
 
         return super(FLAuthorizer, self).evaluate_user_right_on_site(right_name, user_name, site_name)
@@ -151,7 +151,7 @@ class FLAuthorizer(Authorizer):
 
         roles = user["roles"]
         if "super" in roles:
-            # super user has all rights!
+            # superuser has all rights!
             return True, ""
 
         for right_name in right_names:
