@@ -18,10 +18,11 @@ from typing import List
 from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.request_processor import RequestProcessor
-from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.apis.resource_manager_spec import ResourceManagerSpec, ResourceConsumerSpec
 from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.shareable import Shareable
 from nvflare.private.admin_defs import Message
+from nvflare.private.defs import RequestHeader
 from nvflare.private.defs import TrainingTopic
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 
@@ -53,6 +54,44 @@ class CheckResourceProcessor(RequestProcessor):
         if not result:
             result = "OK"
         return Message(topic="reply_" + req.topic, body=pickle.dumps(result))
+
+
+class StartJobProcessor(RequestProcessor):
+    def get_topics(self) -> List[str]:
+        return [TrainingTopic.START_JOB]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        engine = app_ctx
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+
+        resource_manager = engine.get_component(SystemComponents.RESOURCE_MANAGER)
+        if not isinstance(resource_manager, ResourceManagerSpec):
+            raise RuntimeError(
+                f"resource_manager should be of type ResourceManagerSpec, but got {type(resource_manager)}."
+            )
+        resource_consumer = engine.get_component(SystemComponents.RESOURCE_CONSUMER)
+        if not isinstance(resource_consumer, ResourceConsumerSpec):
+            raise RuntimeError(
+                f"resource_consumer should be of type ResourceConsumerSpec, but got {type(resource_consumer)}."
+            )
+
+        resource_spec = pickle.loads(req.body)
+        run_number = req.get_header(RequestHeader.RUN_NUM)
+        token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+        allocated_resources = resource_manager.allocate_resources(resource_requirement=resource_spec,
+                                                                  token=token, fl_ctx=FLContext())
+        result = engine.start_app(run_number,
+                                  allocated_resource=allocated_resources,
+                                  token=token,
+                                  resource_consumer=resource_consumer,
+                                  resource_manager=resource_manager)
+
+        resource_consumer.consume(allocated_resources)
+
+        if not result:
+            result = "OK"
+        return Message(topic="reply_" + req.topic, body=result)
 
 
 class CancelResourceProcessor(RequestProcessor):

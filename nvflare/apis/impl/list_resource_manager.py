@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import uuid
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
@@ -55,7 +56,7 @@ class ListResourceManager(ResourceManagerSpec):
                 if len(self.resources[k]) < resource_requirement[k]:
                     check_result = False
                     break
-        return check_result, None
+        return check_result,  str(uuid.uuid4())
 
     def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
         return None

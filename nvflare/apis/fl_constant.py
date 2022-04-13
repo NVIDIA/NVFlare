@@ -234,6 +234,7 @@ class SystemComponents(object):
     CHECK_RESOURCE_PROCESSOR = "check_resource_processor"
     CANCEL_RESOURCE_PROCESSOR = "cancel_resource_processor"
     RESOURCE_MANAGER = "resource_manager"
+    RESOURCE_CONSUMER = "resource_consumer"
 
 
 class WorkspaceConstants:

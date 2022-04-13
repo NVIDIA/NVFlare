@@ -99,7 +99,8 @@ class ClientEngine(ClientEngineInternalSpec):
         }
         return result
 
-    def start_app(self, run_number: str) -> str:
+    def start_app(self, run_number: str, allocated_resource: dict = None, token: str = None,
+                  resource_consumer=None, resource_manager=None) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STARTED:
             return "Client app already started."
@@ -124,7 +125,9 @@ class ClientEngine(ClientEngineInternalSpec):
         open_port = get_open_ports(1)[0]
         self._write_token_file(run_number, open_port)
 
-        self.client_executor.start_train(self.client, run_number, self.args, app_root, app_custom_folder, open_port)
+        self.client_executor.start_train(self.client, run_number, self.args, app_root,
+                                         app_custom_folder, open_port, allocated_resource, token,
+                                         resource_consumer, resource_manager)
 
         return "Start the client app..."
 

@@ -55,7 +55,9 @@ class TrainingTopic(object):
     CHECK_STATUS = "train.check_status"
     SET_RUN_NUMBER = "train.set_run_number"
     CHECK_RESOURCE = "scheduler.check_resource"
+    ALLOCATE_RESOURCE = "scheduler.allocate_resource"
     CANCEL_RESOURCE = "scheduler.cancel_resource"
+    START_JOB = "train.start_job"
 
 
 class RequestHeader(object):

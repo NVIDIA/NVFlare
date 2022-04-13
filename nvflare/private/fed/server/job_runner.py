@@ -114,14 +114,18 @@ class JobRunner(FLComponent):
         if err:
             raise RuntimeError("Could not start the server App.")
 
-        admin_server = engine.server.admin_server
-        message = Message(topic=TrainingTopic.START, body="")
-        message.set_header(RequestHeader.RUN_NUM, run_number)
-        replies = self._send_to_clients(admin_server, client_sites, engine, message)
+        replies = engine.start_client_job(client_sites, run_number)
         if not replies:
             raise RuntimeError("Failed to start the App to the clients")
 
         self.fire_event(EventType.JOB_STARTED, fl_ctx)
+
+    # def start_client_job(self, client_sites, engine, run_number):
+    #     admin_server = engine.server.admin_server
+    #     message = Message(topic=TrainingTopic.START_JOB, body="")
+    #     message.set_header(RequestHeader.RUN_NUM, run_number)
+    #     replies = self._send_to_clients(admin_server, client_sites, engine, message)
+    #     return replies
 
     def _stop_run(self, run_number, fl_ctx: FLContext):
         """Stop the application

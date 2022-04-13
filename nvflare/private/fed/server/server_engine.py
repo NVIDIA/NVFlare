@@ -41,6 +41,7 @@ from nvflare.apis.fl_constant import (
     SnapshotKey, WorkspaceConstants,
 )
 from nvflare.apis.fl_constant import RunProcessKey
+from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
@@ -51,7 +52,7 @@ from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader
+from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -650,6 +651,62 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def send_admin_requests(self, requests):
         return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
+
+    def check_client_resources(self, resource_reqs):
+        requests = {}
+        result = {}
+        for site_name, resource_requirements in resource_reqs.items():
+            # assume server resource is unlimited
+            if site_name == "server":
+                continue
+            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=pickle.dumps(resource_requirements))
+            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+            client = self.get_client_from_name(site_name)
+            if client:
+                requests.update({client.token: request})
+        replies = []
+        if requests:
+            replies = self.send_admin_requests(requests)
+        return replies, result
+
+    def cancel_client_resources(self, resource_check_results, resource_reqs):
+        requests = {}
+        for site_name, result in resource_check_results.items():
+            check_result, token = result
+            if check_result:
+                resource_requirements = resource_reqs[site_name]
+                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
+                request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
+                # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+                client = self.get_client_from_name(site_name)
+                if client:
+                    requests.update({client.token: request})
+        if requests:
+            replies = self.send_admin_requests(requests)
+
+    def start_client_job(self, client_sites, run_number):
+        requests = {}
+        for site, dispatch_info in client_sites.items():
+            resource_requirement = dispatch_info.resource_requirements
+            token = dispatch_info.token
+            request = Message(topic=TrainingTopic.START_JOB, body=pickle.dumps(resource_requirement))
+            request.set_header(RequestHeader.RUN_NUM, run_number)
+            request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
+            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+            client = self.get_client_from_name(site)
+            if client:
+                requests.update({client.token: request})
+        replies = []
+        if requests:
+            replies = self.send_admin_requests(requests)
+        return replies
+
+        # admin_server = engine.server.admin_server
+        # message = Message(topic=TrainingTopic.START_JOB, body="")
+        # message.set_header(RequestHeader.RUN_NUM, run_number)
+        # replies = self._send_to_clients(admin_server, client_sites, engine, message)
+        # return replies
+
 
     def stop_all_jobs(self):
         fl_ctx = self.new_context()
