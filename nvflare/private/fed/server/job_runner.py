@@ -164,7 +164,7 @@ class JobRunner(FLComponent):
                             del self.running_jobs[run_number]
                             self.scheduler.remove_job(job)
                             self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
-                            self.log_debug(fl_ctx, f"Finished running job:{job.jid}")
+                            self.log_debug(fl_ctx, f"Finished running job:{job.job_id}")
             time.sleep(1.0)
 
     def run(self, fl_ctx: FLContext):
@@ -182,7 +182,7 @@ class JobRunner(FLComponent):
 
                     if ready_job:
                         try:
-                            self.log_info(fl_ctx, f"Got the job:{ready_job.jid} from the scheduler to run")
+                            self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
                             run_number = self._deploy_job(ready_job, sites, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
                             self._start_run(run_number, sites, fl_ctx)
