@@ -20,12 +20,12 @@ from nvflare.ha.overseer.app import app
 from nvflare.ha.overseer.utils import (
     get_all_sp,
     get_primary_sp,
+    get_system_state,
     load_privilege,
     promote_sp,
+    set_system_state,
     simple_PSP_policy,
     update_sp_state,
-    set_system_state,
-    get_system_state,
 )
 
 privilege_dict = load_privilege()
