@@ -24,6 +24,8 @@ from nvflare.ha.overseer.utils import (
     promote_sp,
     simple_PSP_policy,
     update_sp_state,
+    set_system_state,
+    get_system_state,
 )
 
 privilege_dict = load_privilege()
@@ -49,7 +51,7 @@ def heartbeat():
             psp = get_primary_sp(project)
         else:
             psp = {}
-        return jsonify({"primary_sp": psp, "sp_list": get_all_sp(project)})
+        return jsonify({"primary_sp": psp, "sp_list": get_all_sp(project), "system": get_system_state()})
 
 
 @app.route("/api/v1/promote", methods=["GET", "POST"])
@@ -69,6 +71,18 @@ def promote():
                 return jsonify({"Error": result})
         else:
             return jsonify({"Error": "Wrong project or sp_end_point."})
+
+
+@app.route("/api/v1/state", methods=["POST"])
+def state():
+    if request.headers.get("X-USER") not in privilege_dict.get("super", {}):
+        return jsonify({"Error": "No rights"})
+    req = request.json
+    state = req.get("state")
+    if state not in ["ready", "shutdown"]:
+        return jsonify({"Error": "Wrong state"})
+    set_system_state(state)
+    return jsonify({"Status": get_system_state()})
 
 
 @app.route("/api/v1/refresh")
