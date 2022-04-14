@@ -74,7 +74,7 @@ class StaticFileBuilder(Builder):
         api_root = overseer.props.get("api_root", "/api/v1/")
         default_port = "443" if protocol == "https" else "80"
         port = overseer.props.get("port", default_port)
-        replacement_dict = {"port": port}
+        replacement_dict = {"port": port, "hostname": overseer.name}
         admins = self.project.get_participants_by_type("admin", first_only=False)
         privilege_dict = dict()
         for admin in admins:

@@ -18,7 +18,6 @@ from enum import Enum
 class FLDetailKey(str, Enum):
     """Constants for FL details that can be returned in the FLAdminAPI."""
 
-    RUN_NUMBER = "run_number"
     APP_NAME = "app_name"
     REGISTERED_CLIENTS = "registered_clients"
     CONNECTED_CLIENTS = "connected_clients"

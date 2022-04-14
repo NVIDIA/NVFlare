@@ -23,6 +23,7 @@ from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
+
 from .cmd_utils import CommandUtil
 
 
@@ -68,7 +69,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
     def authorize_info_collection(self, conn: Connection, args: List[str]):
         if len(args) != 3:
-            conn.append_error("syntax error: missing run_destination and target")
+            conn.append_error("syntax error: missing run_number and target")
             return False, None
 
         run_destination = args[1].lower()
@@ -110,14 +111,14 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        run_destination = conn.get_prop(self.RUN_NUMBER)
+        run_number = conn.get_prop(self.RUN_NUMBER)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            result = engine.show_stats(run_destination)
+            result = engine.show_stats(run_number)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_STATS, body="")
-            message.set_header(RequestHeader.RUN_NUM, run_destination)
+            message.set_header(RequestHeader.RUN_NUM, run_number)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
 
@@ -130,10 +131,10 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        run_destination = conn.get_prop(self.RUN_NUMBER)
+        run_number = conn.get_prop(self.RUN_NUMBER)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            result = engine.get_errors(run_destination)
+            result = engine.get_errors(run_number)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="")
@@ -141,7 +142,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             self._process_stats_replies(conn, replies)
 
     def reset_errors(self, conn: Connection, args: List[str]):
-        run_destination = conn.get_prop(self.RUN_NUMBER)
+        run_number = conn.get_prop(self.RUN_NUMBER)
         collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
         collector.reset_errors()
         conn.append_string("errors reset")

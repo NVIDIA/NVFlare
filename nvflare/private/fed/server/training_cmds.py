@@ -25,6 +25,7 @@ from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.security import Action, FLAuthzContext
+
 from .app_authz import AppAuthzService
 from .cmd_utils import CommandUtil
 
@@ -45,7 +46,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.DELETE_RUN,
                     description="delete a run",
-                    usage="delete_run number",
+                    usage="delete_run run_number",
                     handler_func=self.delete_run_number,
                     authz_func=self.authorize_set_run_number,
                     visible=True,
@@ -54,7 +55,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.DEPLOY_APP,
                     description="deploy FL app to client/server",
-                    usage="deploy_app run_destination app server|client <client-name>|all",
+                    usage="deploy_app run_number app server|client <client-name>|all",
                     handler_func=self.deploy_app,
                     authz_func=self.authorize_deploy_app,
                     visible=True,
@@ -62,7 +63,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.START_APP,
                     description="start the FL app",
-                    usage="start_app run_destination server|client|all",
+                    usage="start_app run_number server|client|all",
                     handler_func=self.start_app,
                     authz_func=self.authorize_train,
                     visible=True,
@@ -78,7 +79,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.ABORT,
                     description="abort the FL app",
-                    usage="abort run_destination server|client|all",
+                    usage="abort run_number server|client|all",
                     handler_func=self.abort_app,
                     authz_func=self.authorize_train,
                     visible=True,
@@ -152,23 +153,23 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return True
 
     def delete_run_number(self, conn: Connection, args: List[str]):
-        run_destination = args[1]
+        run_number = args[1]
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        if run_destination in engine.run_processes.keys():
-            conn.append_error(f"Current running run_{run_destination} can not be deleted.")
+        if run_number in engine.run_processes.keys():
+            conn.append_error(f"Current running run_{run_number} can not be deleted.")
             return
 
-        err = engine.delete_run_number(run_destination)
+        err = engine.delete_run_number(run_number)
         if err:
             conn.append_error(err)
             return
 
         # ask clients to delete this RUN
         message = new_message(conn, topic=TrainingTopic.DELETE_RUN, body="")
-        message.set_header(RequestHeader.RUN_NUM, str(run_destination))
+        message.set_header(RequestHeader.RUN_NUM, str(run_number))
         clients = engine.get_clients()
         if clients:
             conn.set_prop(self.TARGET_CLIENT_TOKENS, [x.token for x in clients])
@@ -180,7 +181,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     # Deploy
     def authorize_deploy_app(self, conn: Connection, args: List[str]):
         if len(args) < 4:
-            conn.append_error("syntax error: missing run_destination and target")
+            conn.append_error("syntax error: missing run_number and target")
             return False, None
 
         engine = conn.app_ctx
@@ -475,7 +476,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def authorize_abort_client(self, conn: Connection, args: List[str]):
         if len(args) < 3:
-            conn.append_error("syntax error: missing run_destination and target")
+            conn.append_error("syntax error: missing run_number and target")
             return False, None
 
         run_destination = args[1].lower()

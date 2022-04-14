@@ -33,7 +33,7 @@ class CommandUtil(object):
 
     SITE_SERVER = "server"
 
-    RUN_NUMBER = "run_destination"
+    RUN_NUMBER = "run_number"
 
     def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
         """Validate specified args and determine and set target type and target names in the Connection.
@@ -135,14 +135,14 @@ class CommandUtil(object):
 
     def authorize_train(self, conn: Connection, args: List[str]):
         if len(args) != 3:
-            conn.append_error("syntax error: missing run_destination and target")
+            conn.append_error("syntax error: missing run_number and target")
             return False, None
 
-        run_destination = args[1].lower()
-        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
-            conn.append_error("syntax error: run_destination must be run_XXX")
+        run_number = args[1].lower()
+        if not run_number.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_number must be run_XXX")
             return False, None
-        destination = run_destination[4:]
+        destination = run_number[4:]
         conn.set_prop(self.RUN_NUMBER, destination)
 
         return self._authorize_actions(conn, args[2:], [Action.TRAIN])
