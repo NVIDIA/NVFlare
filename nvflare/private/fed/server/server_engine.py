@@ -41,11 +41,11 @@ from nvflare.apis.fl_constant import (
     SnapshotKey, WorkspaceConstants,
 )
 from nvflare.apis.fl_constant import RunProcessKey
-from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
+from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
@@ -707,10 +707,9 @@ class ServerEngine(ServerEngineInternalSpec):
         # replies = self._send_to_clients(admin_server, client_sites, engine, message)
         # return replies
 
-
     def stop_all_jobs(self):
         fl_ctx = self.new_context()
-        self.job_runner.stop_run(fl_ctx)
+        self.job_runner.stop_all_runs(fl_ctx)
 
     def close(self):
         self.executor.shutdown()

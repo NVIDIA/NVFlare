@@ -171,5 +171,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
     def remove_job(self, job: Job):
         with self.lock:
-            self.scheduled_jobs.remove(job)
+            if job in self.scheduled_jobs:
+                self.scheduled_jobs.remove(job)
 

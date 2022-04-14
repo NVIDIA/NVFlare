@@ -161,10 +161,11 @@ class JobRunner(FLComponent):
                 if run_number not in engine.run_processes.keys():
                     with self.lock:
                         job = self.running_jobs.get(run_number)
-                        job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
-                        del self.running_jobs[run_number]
-                        self.scheduler.remove_job(job)
-                        self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
+                        if job:
+                            job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
+                            del self.running_jobs[run_number]
+                            self.scheduler.remove_job(job)
+                            self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
             time.sleep(1.0)
 
     def run(self, fl_ctx: FLContext):
@@ -193,15 +194,21 @@ class JobRunner(FLComponent):
 
             time.sleep(1.0)
 
-    def stop_run(self, fl_ctx: FLContext):
+    def stop_run(self, run_number: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        for run_number in engine.run_processes.keys():
+        with self.lock:
             self._stop_run(run_number, fl_ctx)
             job = self.running_jobs.get(run_number)
             if job:
                 job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                del self.running_jobs[run_number]
                 self.scheduler.remove_job(job)
                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)
+
+    def stop_all_runs(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        for run_number in engine.run_processes.keys():
+            self.stop_run(run_number, fl_ctx)
 
         self.ask_to_stop = True

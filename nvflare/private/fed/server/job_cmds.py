@@ -19,11 +19,14 @@ from typing import List
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
 from nvflare.private.fed.server.server_engine import ServerEngine
+from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
+from nvflare.security.security import Action
+from .training_cmds import TrainingCommandModule
 
 
-class JobCommandModule(CommandModule):
+class JobCommandModule(TrainingCommandModule):
     """Command module with commands for job management."""
 
     def __init__(self):
@@ -56,6 +59,7 @@ class JobCommandModule(CommandModule):
                     description="abort a job if it is running or dispatched",
                     usage="abort_job job_id",
                     handler_func=self.abort_job,  # see if running, if running, send abort command
+                    authz_func=self.authorize_job,
                 ),
                 CommandSpec(
                     name="clone_job",
@@ -65,6 +69,17 @@ class JobCommandModule(CommandModule):
                 ),
             ],
         )
+
+    def authorize_job(self, conn: Connection, args: List[str]):
+        if len(args) != 2:
+            conn.append_error("syntax error: missing run_number")
+            return False, None
+
+        run_number = args[1].lower()
+        conn.set_prop(self.RUN_NUMBER, run_number)
+        args.append("server")
+
+        return self._authorize_actions(conn, args[2:], [Action.TRAIN])
 
     def list_all_jobs(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
@@ -135,7 +150,28 @@ class JobCommandModule(CommandModule):
         conn.append_success("")
 
     def abort_job(self, conn: Connection, args: List[str]):
-        pass
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+
+        run_number = conn.get_prop(self.RUN_NUMBER)
+        # conn.append_string("Trying to abort all clients before abort server ...")
+        # clients = engine.get_clients()
+        # if clients:
+        #     tokens = [c.token for c in clients]
+        #     conn.set_prop(
+        #         self.TARGET_CLIENT_TOKENS, tokens
+        #     )  # need this because not set in validate_command_targets when target_type == self.TARGET_TYPE_SERVER
+        #     if not self._abort_clients(conn, clients=[c.token for c in clients], run_number=run_number):
+        #         return
+        # err = engine.abort_app_on_server(run_number)
+        # if err:
+        #     conn.append_error(err)
+        #     return
+        job_runner = engine.job_runner
+        job_runner.stop_run(run_number, engine.new_context())
+        conn.append_string("Abort signal has been sent to the server app.")
+        conn.append_success("")
 
     def clone_job(self, conn: Connection, args: List[str]):
         if len(args) != 2:
