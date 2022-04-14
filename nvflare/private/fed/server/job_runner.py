@@ -46,9 +46,9 @@ class JobRunner(FLComponent):
         """deploy the application to the list of participants
 
         Args:
-            job:
-            sites:
-            fl_ctx:
+            job: job to be deployed
+            sites: participating sites
+            fl_ctx: FLContext
 
         Returns:
 
@@ -69,6 +69,8 @@ class JobRunner(FLComponent):
             for p in participants:
                 if p == "server":
                     success = deploy_app(app_name=app_name, site_name="server", workspace=workspace, app_data=app_data)
+                    self.log_debug(fl_ctx, f"Application{app_name} deployed to the server for run:{run_number}",
+                                   fire_event=False)
                     if not success:
                         raise RuntimeError("Failed to deploy the App to the server")
                 else:
@@ -76,6 +78,8 @@ class JobRunner(FLComponent):
                         client_sites.append(p)
 
             self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
+            self.log_debug(fl_ctx, f"Application{app_name} deployed to the clients for run:{run_number}",
+                           fire_event=False)
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number
@@ -102,9 +106,9 @@ class JobRunner(FLComponent):
         """Start the application
 
         Args:
-            run_number:
-            client_sites:
-            fl_ctx:
+            run_number: run_number
+            client_sites: participating sites
+            fl_ctx: FLContext
 
         Returns:
 
@@ -120,19 +124,12 @@ class JobRunner(FLComponent):
 
         self.fire_event(EventType.JOB_STARTED, fl_ctx)
 
-    # def start_client_job(self, client_sites, engine, run_number):
-    #     admin_server = engine.server.admin_server
-    #     message = Message(topic=TrainingTopic.START_JOB, body="")
-    #     message.set_header(RequestHeader.RUN_NUM, run_number)
-    #     replies = self._send_to_clients(admin_server, client_sites, engine, message)
-    #     return replies
-
     def _stop_run(self, run_number, fl_ctx: FLContext):
         """Stop the application
 
         Args:
-            run_number:
-            fl_ctx:
+            run_number: run_number to be stopped
+            fl_ctx: FLContext
 
         Returns:
 
@@ -145,6 +142,7 @@ class JobRunner(FLComponent):
             client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
             message = Message(topic=TrainingTopic.ABORT, body="")
             message.set_header(RequestHeader.RUN_NUM, str(run_number))
+            self.log_debug(fl_ctx, f"Send stop command to the site for run:{run_number}")
             replies = self._send_to_clients(admin_server, client_sites, engine, message)
             if not replies:
                 self.log_error(fl_ctx,f"Failed to send abort command to clients for run_{run_number}")
@@ -166,6 +164,7 @@ class JobRunner(FLComponent):
                             del self.running_jobs[run_number]
                             self.scheduler.remove_job(job)
                             self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
+                            self.log_debug(fl_ctx, f"Finished running job:{job.jid}")
             time.sleep(1.0)
 
     def run(self, fl_ctx: FLContext):
@@ -183,6 +182,7 @@ class JobRunner(FLComponent):
 
                     if ready_job:
                         try:
+                            self.log_info(fl_ctx, f"Got the job:{ready_job.jid} from the scheduler to run")
                             run_number = self._deploy_job(ready_job, sites, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
                             self._start_run(run_number, sites, fl_ctx)
@@ -201,6 +201,7 @@ class JobRunner(FLComponent):
             self._stop_run(run_number, fl_ctx)
             job = self.running_jobs.get(run_number)
             if job:
+                self.log_info(fl_ctx, f"Stop the job run:{run_number}")
                 job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                 del self.running_jobs[run_number]
                 self.scheduler.remove_job(job)
@@ -211,4 +212,5 @@ class JobRunner(FLComponent):
         for run_number in engine.run_processes.keys():
             self.stop_run(run_number, fl_ctx)
 
+        self.log_info(fl_ctx, "Stop all the running jobs.")
         self.ask_to_stop = True

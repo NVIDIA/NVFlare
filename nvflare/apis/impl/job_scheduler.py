@@ -69,23 +69,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         return result
 
-    # def check_resources(self, engine, resource_reqs):
-    #     requests = {}
-    #     result = {}
-    #     for site_name, resource_requirements in resource_reqs.items():
-    #         # assume server resource is unlimited
-    #         if site_name == "server":
-    #             continue
-    #         request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=pickle.dumps(resource_requirements))
-    #         # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
-    #         client = engine.get_client_from_name(site_name)
-    #         if client:
-    #             requests.update({client.token: request})
-    #     replies = []
-    #     if requests:
-    #         replies = engine.send_admin_requests(requests)
-    #     return replies, result
-
     def _cancel_resources(
         self, resource_reqs: Dict[str, dict], resource_check_results: Dict[str, Tuple[bool, str]], fl_ctx: FLContext
     ):
@@ -103,21 +86,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         engine.cancel_client_resources(resource_check_results, resource_reqs)
         return False, None
-
-    # def cancel_resources(self, engine, resource_check_results, resource_reqs):
-    #     requests = {}
-    #     for site_name, result in resource_check_results.items():
-    #         check_result, token = result
-    #         if check_result:
-    #             resource_requirements = resource_reqs[site_name]
-    #             request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
-    #             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
-    #             # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
-    #             client = engine.get_client_from_name(site_name)
-    #             if client:
-    #                 requests.update({client.token: request})
-    #     if requests:
-    #         replies = engine.send_admin_requests(requests)
 
     def _try_job(self, job: Job, fl_ctx) -> (bool, Optional[Dict[str, DispatchInfo]]):
         # we are assuming server resource is sufficient
