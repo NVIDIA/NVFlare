@@ -186,7 +186,8 @@ class ProcessExecutor(ClientExecutor):
 
         print("training child process ID: {}".format(process.pid))
 
-        resource_consumer.consume(allocated_resource)
+        if allocated_resource:
+            resource_consumer.consume(allocated_resource)
 
         client.multi_gpu = False
 
@@ -197,7 +198,7 @@ class ProcessExecutor(ClientExecutor):
                                               RunProcessKey.STATUS: ClientStatus.STARTED}
 
         thread = threading.Thread(
-            target=self.wait_training_process_finish, args=(client, run_number, args, app_root, app_custom_folder,
+            target=self.wait_training_process_finish, args=(client, run_number,
                                                             allocated_resource, token, resource_manager)
         )
         thread.start()
@@ -322,7 +323,7 @@ class ProcessExecutor(ClientExecutor):
                 conn_client.send(data)
                 self.logger.debug("abort_task sent")
 
-    def wait_training_process_finish(self, client, run_number, args, app_root, app_custom_folder,
+    def wait_training_process_finish(self, client, run_number,
                                      allocated_resource, token, resource_manager):
         # wait for the listen_command thread to start, and send "start" message to wake up the connection.
         start = time.time()
@@ -343,7 +344,9 @@ class ProcessExecutor(ClientExecutor):
         returncode = child_process.returncode
         self.logger.info(f"process finished with execution code: {returncode}")
 
-        resource_manager.free_resources(resources=allocated_resource, token=token, fl_ctx=FLContext())
+        if allocated_resource:
+            resource_manager.free_resources(resources=allocated_resource, token=token, fl_ctx=FLContext())
+
         with self.lock:
             conn_client = self.get_conn_client(run_number)
             if conn_client:
