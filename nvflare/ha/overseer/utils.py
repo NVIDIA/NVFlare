@@ -33,6 +33,20 @@ else:
     from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
 
+system_state = "ready"
+
+
+def get_system_state():
+    global system_state
+    return system_state
+
+
+def set_system_state(state):
+    global system_state
+    system_state = state
+    return get_system_state()
+
+
 def check_integrity(privilege_file):
     data, sig = SecurityContentService.load_content(privilege_file)
     if sig != LoadResult.OK:
