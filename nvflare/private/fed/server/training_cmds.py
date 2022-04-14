@@ -52,14 +52,14 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     visible=True,
                     confirm="auth",
                 ),
-                CommandSpec(
-                    name=AdminCommandNames.DEPLOY_APP,
-                    description="deploy FL app to client/server",
-                    usage="deploy_app run_number app server|client <client-name>|all",
-                    handler_func=self.deploy_app,
-                    authz_func=self.authorize_deploy_app,
-                    visible=True,
-                ),
+                # CommandSpec(
+                #     name=AdminCommandNames.DEPLOY_APP,
+                #     description="deploy FL app to client/server",
+                #     usage="deploy_app run_number app server|client <client-name>|all",
+                #     handler_func=self.deploy_app,
+                #     authz_func=self.authorize_deploy_app,
+                #     visible=True,
+                # ),
                 CommandSpec(
                     name=AdminCommandNames.START_APP,
                     description="start the FL app",
