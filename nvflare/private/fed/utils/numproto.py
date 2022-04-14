@@ -73,6 +73,4 @@ def proto_to_bytes(nda_proto: NDArray) -> bytes:
     Returns:
         Returns bytes.
     """
-    nda_bytes = BytesIO(nda_proto.ndarray)
-
-    return nda_bytes.read()
+    return nda_proto.ndarray

@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import copy
-import pickle
 from typing import List
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.fuel.utils import fobs
 
 
 class DataKind(object):
@@ -114,7 +114,7 @@ class DXO(object):
             object serialized in bytes.
 
         """
-        return pickle.dumps(self)
+        return fobs.dumps(self)
 
     def validate(self) -> str:
         if self.data is None:
@@ -169,7 +169,7 @@ def from_bytes(data: bytes) -> DXO:
         an object loaded by pickle from data
 
     """
-    x = pickle.loads(data)
+    x = fobs.loads(data)
     if isinstance(x, DXO):
         return x
     else:

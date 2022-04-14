@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 from typing import Dict, List, Optional
 
 from nvflare.apis.client_engine_spec import TaskAssignment
@@ -78,6 +78,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.aux_runner = ClientAuxRunner()
         self.add_handler(self.aux_runner)
         self.conf = conf
+        self.logger = logging.getLogger(self.__class__.__name__)
 
         self.fl_ctx_mgr = FLContextManager(
             engine=self, identity_name=client_name, run_num=run_num, public_stickers={}, private_stickers={}
@@ -106,7 +107,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
         try:
             self.client.push_results(result, fl_ctx)  # push task execution results
             return True
-        except BaseException:
+        except BaseException as ex:
+            self.logger.error(f"Failed to push results: {str(ex)}")
             return False
 
     def get_workspace(self) -> Workspace:

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import pickle
 import json
 
 import tensorflow as tf
@@ -22,6 +21,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.fuel.utils import fobs
 from tf2_net import Net
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.abstract.model import make_model_learnable
@@ -85,7 +85,7 @@ class TF2ModelPersistor(ModelPersistor):
         if os.path.exists(self._pkl_save_path):
             self.logger.info(f"Loading server weights")
             with open(self._pkl_save_path, "rb") as f:
-                model_learnable = pickle.load(f)
+                model_learnable = fobs.load(f)
         else:
             self.logger.info(f"Initializing server model")
             network = Net()
@@ -105,10 +105,10 @@ class TF2ModelPersistor(ModelPersistor):
             persist the Model object
 
         Args:
-            model: Model object
+            model_learnable: Model object
             fl_ctx: FLContext
         """
         model_learnable_info = {k: str(type(v)) for k, v in model_learnable.items()}
         self.logger.info(f"Saving aggregated server weights: \n {model_learnable_info}")
         with open(self._pkl_save_path, "wb") as f:
-            pickle.dump(model_learnable, f)
+            fobs.dump(model_learnable, f)

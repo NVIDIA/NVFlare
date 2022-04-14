@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
-
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.utils import fobs
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 
@@ -37,6 +36,6 @@ def make_shareeable_data(shareable):
 def make_context_data(fl_ctx):
     shared_fl_ctx = FLContext()
     shared_fl_ctx.set_public_props(fl_ctx.get_all_public_props())
-    props = pickle.dumps(shared_fl_ctx)
+    props = fobs.dumps(shared_fl_ctx)
     context_data = bytes_to_proto(props)
     return context_data

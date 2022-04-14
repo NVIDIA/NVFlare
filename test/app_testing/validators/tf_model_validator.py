@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import os
-import pickle
+
+from nvflare.fuel.utils import fobs
 from test.app_testing.app_result_validator import AppResultValidator
 
 
@@ -38,7 +39,7 @@ def check_tf_results(server_data, client_data, run_data):
         return False
 
     try:
-        data = pickle.load(open(model_path, "rb"))
+        data = fobs.load(open(model_path, "rb"))
         print(f"check_tf_result: Data loaded: {data}.")
         assert "weights" in data
         assert "meta" in data

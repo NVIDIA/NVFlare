@@ -21,6 +21,7 @@ import sys
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.utils import decomposers
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.admin import FedAdminAgent
@@ -60,6 +61,8 @@ def main():
         sys.exit(-1)
 
     rank = args.local_rank
+
+    decomposers.register_all()
 
     try:
         os.chdir(args.workspace)

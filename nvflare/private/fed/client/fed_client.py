@@ -14,7 +14,6 @@
 
 """The client of the federated training process."""
 
-import pickle
 from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
@@ -23,6 +22,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.utils import fobs
 from nvflare.private.event import fire_event
 
 from ..utils.numproto import proto_to_bytes
@@ -87,7 +87,7 @@ class FederatedClient(FederatedClientBase):
         peer_context = FLContext()
         for item in responses:
             shareable = shareable.from_bytes(proto_to_bytes(item.data.params["data"]))
-            peer_context = pickle.loads(proto_to_bytes(item.data.params["fl_context"]))
+            peer_context = fobs.loads(proto_to_bytes(item.data.params["fl_context"]))
 
         fl_ctx.set_peer_context(peer_context)
         shareable.set_peer_props(peer_context.get_all_public_props())

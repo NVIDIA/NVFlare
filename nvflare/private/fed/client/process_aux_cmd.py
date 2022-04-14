@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
-
 from nvflare.apis.fl_constant import ReservedTopic, ReturnCode
 from nvflare.apis.shareable import make_reply
+from nvflare.fuel.utils import fobs
 from nvflare.private.admin_defs import Message
 
 from .admin import RequestProcessor
@@ -28,12 +27,12 @@ class AuxRequestProcessor(RequestProcessor):
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
 
-        shareable = pickle.loads(req.body)
+        shareable = fobs.loads(req.body)
 
         result = engine.send_aux_command(shareable)
         if not result:
             result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        result = pickle.dumps(result)
+        result = fobs.dumps(result)
         message = Message(topic="reply_" + req.topic, body=result)
         return message

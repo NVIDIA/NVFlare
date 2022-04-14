@@ -15,7 +15,6 @@
 import gc
 import logging
 import os
-import pickle
 import re
 import shutil
 import sys
@@ -31,6 +30,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
+from nvflare.fuel.utils import fobs
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
@@ -372,7 +372,7 @@ class ServerEngine(ServerEngineInternalSpec):
         # Send the aux messages through admin_server
         request.set_peer_props(fl_ctx.get_all_public_props())
 
-        message = Message(topic=ReservedTopic.AUX_COMMAND, body=pickle.dumps(request))
+        message = Message(topic=ReservedTopic.AUX_COMMAND, body=fobs.dumps(request))
         requests = {}
         for n in targets:
             requests.update({n: message})
@@ -383,7 +383,7 @@ class ServerEngine(ServerEngineInternalSpec):
             client_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
                 try:
-                    results[client_name] = pickle.loads(r.reply.body)
+                    results[client_name] = fobs.loads(r.reply.body)
                 except BaseException:
                     results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
                     self.logger.error(

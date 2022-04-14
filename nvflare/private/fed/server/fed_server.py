@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import pickle
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -34,6 +33,7 @@ from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
@@ -347,7 +347,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             engine = fl_ctx.get_engine()
             # shared_fl_ctx = FLContext()
             # shared_fl_ctx.set_run_number(request.meta.run_number)
-            shared_fl_ctx = pickle.loads(proto_to_bytes(request.context["fl_context"]))
+            shared_fl_ctx = fobs.loads(proto_to_bytes(request.context["fl_context"]))
             fl_ctx.set_peer_context(shared_fl_ctx)
 
             with self.lock:
@@ -414,7 +414,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 with self.lock:
                     shareable = Shareable()
                     shareable = shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
-                    shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
+                    shared_fl_context = fobs.loads(proto_to_bytes(request.data.params["fl_context"]))
 
                     # fl_ctx.set_prop(FLContextKey.PEER_CONTEXT, shared_fl_context)
                     fl_ctx.set_peer_context(shared_fl_context)
@@ -484,7 +484,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             shareable = Shareable()
             shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
-            shared_fl_context = pickle.loads(proto_to_bytes(request.data["fl_context"]))
+            shared_fl_context = fobs.loads(proto_to_bytes(request.data["fl_context"]))
 
             fl_ctx.set_peer_context(shared_fl_context)
             shareable.set_peer_props(shared_fl_context.get_all_public_props())

@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import logging
-import pickle
 
 from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.utils import fobs
 
 
 def get_serializable_data(fl_ctx: FLContext):
@@ -26,7 +26,7 @@ def get_serializable_data(fl_ctx: FLContext):
     for k, v in fl_ctx.props.items():
         if k not in NonSerializableKeys.KEYS:
             try:
-                pickle.dumps(v)
+                fobs.dumps(v)
                 new_fl_ctx.props[k] = v
             except:
                 logger.warning(generate_log_message(fl_ctx, f"Object is not serializable (discarded): {k} - {v}"))
