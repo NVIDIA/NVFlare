@@ -247,5 +247,5 @@ class WorkspaceConstants:
     RESTART_FILE = "restart.fl"
     SHUTDOWN_FILE = "shutdown.fl"
 
-    WORKSPACE_PREFIX = "run_"
+    WORKSPACE_PREFIX = ""
     APP_PREFIX = "app_"

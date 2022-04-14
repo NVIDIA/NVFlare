@@ -75,8 +75,8 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        destination = run_destination[4:]
-        conn.set_prop(self.RUN_NUMBER, destination)
+        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX):]
+        conn.set_prop(self.RUN_NUMBER, run_number)
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
@@ -93,7 +93,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
-        run_info = engine.get_app_run_info(destination)
+        run_info = engine.get_app_run_info(run_number)
         if not run_info:
             conn.append_string("App is not running")
             return False, None

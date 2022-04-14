@@ -196,7 +196,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        destination = run_destination[4:]
+        destination = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX):]
         conn.set_prop(self.RUN_NUMBER, destination)
 
         app_name = args[2]
@@ -227,7 +227,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
             return True, authz_ctx
 
-    def _deploy_to_clients(self, conn: Connection, app_name, run_destination) -> bool:
+    def _deploy_to_clients(self, conn: Connection, app_name, run_number) -> bool:
         # return True if successful
         engine = conn.app_ctx
         client_names = conn.get_prop(self.TARGET_CLIENT_NAMES)
@@ -243,16 +243,16 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return False
 
         message = new_message(conn, topic=TrainingTopic.DEPLOY, body=app_data)
-        message.set_header(RequestHeader.RUN_NUM, str(run_destination))
+        message.set_header(RequestHeader.RUN_NUM, str(run_number))
         message.set_header(RequestHeader.APP_NAME, app_name)
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
         return True
 
-    def _deploy_to_server(self, conn, run_destination, app_name, app_staging_path) -> bool:
+    def _deploy_to_server(self, conn, run_number, app_name, app_staging_path) -> bool:
         # return True if successful
         engine = conn.app_ctx
-        err = engine.deploy_app_to_server(run_destination, app_name, app_staging_path)
+        err = engine.deploy_app_to_server(run_number, app_name, app_staging_path)
         if not err:
             conn.append_string('deployed app "{}" to Server'.format(app_name))
             return True
@@ -263,22 +263,22 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def deploy_app(self, conn: Connection, args: List[str]):
         app_name = args[2]
 
-        run_destination = conn.get_prop(self.RUN_NUMBER)
+        run_number = conn.get_prop(self.RUN_NUMBER)
         target_type = conn.get_prop(self.TARGET_TYPE)
         app_staging_path = conn.get_prop(self.APP_STAGING_PATH)
         if target_type == self.TARGET_TYPE_SERVER:
-            if not self._deploy_to_server(conn, run_destination, app_name, app_staging_path):
+            if not self._deploy_to_server(conn, run_number, app_name, app_staging_path):
                 return
         elif target_type == self.TARGET_TYPE_CLIENT:
-            if not self._deploy_to_clients(conn, app_name, run_destination):
+            if not self._deploy_to_clients(conn, app_name, run_number):
                 return
         else:
             # all
-            success = self._deploy_to_server(conn, run_destination, app_name, app_staging_path)
+            success = self._deploy_to_server(conn, run_number, app_name, app_staging_path)
             if success:
                 client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
                 if client_names:
-                    if not self._deploy_to_clients(conn, app_name, run_destination):
+                    if not self._deploy_to_clients(conn, app_name, run_number):
                         return
             else:
                 return
@@ -396,11 +396,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return ""
 
-        run_destination = conn.get_prop(self.RUN_NUMBER)
+        run_number = conn.get_prop(self.RUN_NUMBER)
         # run_info = engine.get_app_run_info()
         message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="")
         # if run_info:
-        message.set_header(RequestHeader.RUN_NUM, str(run_destination))
+        message.set_header(RequestHeader.RUN_NUM, str(run_number))
 
         # conn.set_prop(self.TARGET_CLIENT_NAMES, client_names)
         replies = self.send_request_to_clients(conn, message)
@@ -482,8 +482,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        destination = run_destination[4:]
-        conn.set_prop(self.RUN_NUMBER, destination)
+        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX):]
+        conn.set_prop(self.RUN_NUMBER, run_number)
 
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[2:])

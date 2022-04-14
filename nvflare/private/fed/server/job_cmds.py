@@ -155,21 +155,7 @@ class JobCommandModule(TrainingCommandModule):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         run_number = conn.get_prop(self.RUN_NUMBER)
-        # conn.append_string("Trying to abort all clients before abort server ...")
-        # clients = engine.get_clients()
-        # if clients:
-        #     tokens = [c.token for c in clients]
-        #     conn.set_prop(
-        #         self.TARGET_CLIENT_TOKENS, tokens
-        #     )  # need this because not set in validate_command_targets when target_type == self.TARGET_TYPE_SERVER
-        #     if not self._abort_clients(conn, clients=[c.token for c in clients], run_number=run_number):
-        #         return
-        # err = engine.abort_app_on_server(run_number)
-        # if err:
-        #     conn.append_error(err)
-        #     return
-        job_runner = engine.job_runner
-        job_runner.stop_run(run_number, engine.new_context())
+        engine.job_runner.stop_run(run_number, engine.new_context())
         conn.append_string("Abort signal has been sent to the server app.")
         conn.append_success("")
 
