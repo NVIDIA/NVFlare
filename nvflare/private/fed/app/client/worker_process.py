@@ -93,8 +93,11 @@ def main():
             )
 
         startup = args.startup
-        app_root = os.path.join(args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number),
-                                WorkspaceConstants.APP_PREFIX + client_name)
+        app_root = os.path.join(
+            args.workspace,
+            WorkspaceConstants.WORKSPACE_PREFIX + str(run_number),
+            WorkspaceConstants.APP_PREFIX + client_name,
+        )
 
         app_log_config = os.path.join(app_root, config_folder, "log.config")
         if os.path.exists(app_log_config):

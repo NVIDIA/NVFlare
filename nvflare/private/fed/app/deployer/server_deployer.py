@@ -15,13 +15,13 @@
 """FL Server deployer."""
 import threading
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
-from nvflare.apis.event_type import EventType
 
 
 class ServerDeployer:

@@ -197,7 +197,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        destination = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX):]
+        destination = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
         conn.set_prop(self.RUN_NUMBER, destination)
 
         app_name = args[2]
@@ -483,7 +483,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX):]
+        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
         conn.set_prop(self.RUN_NUMBER, run_number)
 
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]

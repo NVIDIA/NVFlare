@@ -15,6 +15,7 @@
 import time
 
 from nvflare.widgets.widget import Widget
+
 from .fl_context import FLContext
 from .shareable import Shareable
 from .workspace import Workspace
@@ -63,4 +64,3 @@ class ClientEngineSpec(object):
 
     def get_widget(self, widget_id: str) -> Widget:
         pass
-

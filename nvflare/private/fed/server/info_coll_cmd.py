@@ -76,7 +76,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX):]
+        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
         conn.set_prop(self.RUN_NUMBER, run_number)
 
         engine = conn.app_ctx

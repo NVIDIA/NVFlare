@@ -36,13 +36,13 @@ from nvflare.apis.fl_constant import (
     MachineStatus,
     ReservedTopic,
     ReturnCode,
+    RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
-    SnapshotKey, WorkspaceConstants,
+    SnapshotKey,
+    WorkspaceConstants,
 )
-from nvflare.apis.fl_constant import RunProcessKey
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.scheduler_constants import ShareableHeader
@@ -56,6 +56,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .run_manager import RunManager
@@ -445,8 +446,9 @@ class ServerEngine(ServerEngineInternalSpec):
             return self.run_manager.new_context()
         else:
             # return FLContext()
-            return FLContextManager(engine=self, identity_name=self.server.project_name, run_num="",
-                                    public_stickers={}, private_stickers={}).new_context()
+            return FLContextManager(
+                engine=self, identity_name=self.server.project_name, run_num="", public_stickers={}, private_stickers={}
+            ).new_context()
 
     def get_component(self, component_id: str) -> object:
         return self.run_manager.get_component(component_id)

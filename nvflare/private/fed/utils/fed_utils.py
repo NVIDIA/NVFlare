@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
 import os
+import pickle
 import shutil
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
-from nvflare.apis.fl_constant import WorkspaceConstants
 
 
 def shareable_to_modeldata(shareable, fl_ctx):

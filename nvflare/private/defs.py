@@ -112,5 +112,3 @@ class SSLConstants:
     CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
     ROOT_CERT = "ssl_root_cert"
-
-

@@ -17,13 +17,12 @@ from typing import List
 
 from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.private.fed.client.admin import RequestProcessor
-from nvflare.apis.resource_manager_spec import ResourceManagerSpec, ResourceConsumerSpec
+from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.shareable import Shareable
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader
-from nvflare.private.defs import TrainingTopic
+from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 
 
@@ -79,13 +78,16 @@ class StartJobProcessor(RequestProcessor):
         resource_spec = pickle.loads(req.body)
         run_number = req.get_header(RequestHeader.RUN_NUM)
         token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
-        allocated_resources = resource_manager.allocate_resources(resource_requirement=resource_spec,
-                                                                  token=token, fl_ctx=FLContext())
-        result = engine.start_app(run_number,
-                                  allocated_resource=allocated_resources,
-                                  token=token,
-                                  resource_consumer=resource_consumer,
-                                  resource_manager=resource_manager)
+        allocated_resources = resource_manager.allocate_resources(
+            resource_requirement=resource_spec, token=token, fl_ctx=FLContext()
+        )
+        result = engine.start_app(
+            run_number,
+            allocated_resource=allocated_resources,
+            token=token,
+            resource_consumer=resource_consumer,
+            resource_manager=resource_manager,
+        )
 
         resource_consumer.consume(allocated_resources)
 

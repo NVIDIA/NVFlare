@@ -24,6 +24,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
 from nvflare.private.json_configer import JsonConfigurator
+
 from .deployer.base_client_deployer import BaseClientDeployer
 from .deployer.server_deployer import ServerDeployer
 from .fl_app_validator import FLAppValidator
@@ -176,7 +177,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             "enable_byoc": self.enable_byoc,
             "snapshot_persistor": self.snapshot_persistor,
             "overseer_agent": self.overseer_agent,
-            "server_components": self.components
+            "server_components": self.components,
         }
 
         deployer = ServerDeployer()
@@ -308,7 +309,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
             "overseer_agent": self.overseer_agent,
-            "client_components": self.components
+            "client_components": self.components,
         }
 
         self.base_deployer = BaseClientDeployer()

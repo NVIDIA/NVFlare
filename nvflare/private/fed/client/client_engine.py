@@ -27,6 +27,7 @@ from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ClientStatusKey
 from nvflare.private.fed.utils.fed_utils import deploy_app
+
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
@@ -97,14 +98,23 @@ class ClientEngine(ClientEngineInternalSpec):
         }
         return result
 
-    def start_app(self, run_number: str, allocated_resource: dict = None, token: str = None,
-                  resource_consumer=None, resource_manager=None) -> str:
+    def start_app(
+        self,
+        run_number: str,
+        allocated_resource: dict = None,
+        token: str = None,
+        resource_consumer=None,
+        resource_manager=None,
+    ) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STARTED:
             return "Client app already started."
 
-        app_root = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number),
-                                WorkspaceConstants.APP_PREFIX + self.client.client_name)
+        app_root = os.path.join(
+            self.args.workspace,
+            WorkspaceConstants.WORKSPACE_PREFIX + str(run_number),
+            WorkspaceConstants.APP_PREFIX + self.client.client_name,
+        )
         if not os.path.exists(app_root):
             return "Client app does not exist. Please deploy it before starting client."
 
@@ -123,9 +133,18 @@ class ClientEngine(ClientEngineInternalSpec):
         open_port = get_open_ports(1)[0]
         self._write_token_file(run_number, open_port)
 
-        self.client_executor.start_train(self.client, run_number, self.args, app_root,
-                                         app_custom_folder, open_port, allocated_resource, token,
-                                         resource_consumer, resource_manager)
+        self.client_executor.start_train(
+            self.client,
+            run_number,
+            self.args,
+            app_root,
+            app_custom_folder,
+            open_port,
+            allocated_resource,
+            token,
+            resource_consumer,
+            resource_manager,
+        )
 
         return "Start the client app..."
 

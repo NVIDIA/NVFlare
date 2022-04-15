@@ -33,8 +33,14 @@ import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ServerCommandKey, ServerCommandNames, SnapshotKey, \
-    WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    MachineStatus,
+    ServerCommandKey,
+    ServerCommandNames,
+    SnapshotKey,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
@@ -46,6 +52,7 @@ from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -70,12 +77,12 @@ GRPC_DEFAULT_OPTIONS = [
 
 class BaseServer(ABC):
     def __init__(
-            self,
-            project_name=None,
-            min_num_clients=2,
-            max_num_clients=10,
-            heart_beat_timeout=600,
-            handlers: Optional[List[FLComponent]] = None,
+        self,
+        project_name=None,
+        min_num_clients=2,
+        max_num_clients=10,
+        heart_beat_timeout=600,
+        handlers: Optional[List[FLComponent]] = None,
     ):
         """Base server that provides the clients management and server deployment."""
         self.project_name = project_name
@@ -210,19 +217,19 @@ class BaseServer(ABC):
 
 class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):
     def __init__(
-            self,
-            project_name=None,
-            min_num_clients=2,
-            max_num_clients=10,
-            wait_after_min_clients=10,
-            cmd_modules=None,
-            heart_beat_timeout=600,
-            handlers: Optional[List[FLComponent]] = None,
-            args=None,
-            secure_train=False,
-            enable_byoc=False,
-            snapshot_persistor=None,
-            overseer_agent=None,
+        self,
+        project_name=None,
+        min_num_clients=2,
+        max_num_clients=10,
+        wait_after_min_clients=10,
+        cmd_modules=None,
+        heart_beat_timeout=600,
+        handlers: Optional[List[FLComponent]] = None,
+        args=None,
+        secure_train=False,
+        enable_byoc=False,
+        snapshot_persistor=None,
+        overseer_agent=None,
     ):
         """Federated server services.
 
@@ -442,8 +449,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
                     command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
 
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
-                            ServerCommandKey.DATA: command_shareable}
+                    data = {
+                        ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
+                        ServerCommandKey.DATA: command_shareable,
+                    }
                     command_conn.send(data)
 
                     return_data = command_conn.recv()
@@ -537,8 +546,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_shareable.set_header(ServerCommandKey.TASK_ID, task_id)
                     command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
 
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
-                            ServerCommandKey.DATA: command_shareable}
+                    data = {
+                        ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
+                        ServerCommandKey.DATA: command_shareable,
+                    }
                     command_conn.send(data)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
@@ -599,8 +610,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_shareable.set_header(ServerCommandKey.TOPIC, topic)
                     command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
 
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
-                            ServerCommandKey.DATA: command_shareable}
+                    data = {
+                        ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
+                        ServerCommandKey.DATA: command_shareable,
+                    }
                     command_conn.send(data)
 
                     return_data = command_conn.recv()

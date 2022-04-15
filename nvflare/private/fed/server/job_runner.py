@@ -18,17 +18,15 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import RunProcessKey
-from nvflare.apis.fl_constant import SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import RunProcessKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import RunStatus, Job
+from nvflare.apis.job_def import Job, RunStatus
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.utils.fed_utils import deploy_app
 
 
 class JobRunner(FLComponent):
-
     def __init__(self, workspace_root: str) -> None:
         super().__init__()
         self.workspace_root = workspace_root
@@ -69,8 +67,9 @@ class JobRunner(FLComponent):
             for p in participants:
                 if p == "server":
                     success = deploy_app(app_name=app_name, site_name="server", workspace=workspace, app_data=app_data)
-                    self.log_debug(fl_ctx, f"Application{app_name} deployed to the server for run:{run_number}",
-                                   fire_event=False)
+                    self.log_debug(
+                        fl_ctx, f"Application{app_name} deployed to the server for run:{run_number}", fire_event=False
+                    )
                     if not success:
                         raise RuntimeError("Failed to deploy the App to the server")
                 else:
@@ -78,8 +77,9 @@ class JobRunner(FLComponent):
                         client_sites.append(p)
 
             self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
-            self.log_debug(fl_ctx, f"Application{app_name} deployed to the clients for run:{run_number}",
-                           fire_event=False)
+            self.log_debug(
+                fl_ctx, f"Application{app_name} deployed to the clients for run:{run_number}", fire_event=False
+            )
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number
@@ -145,7 +145,7 @@ class JobRunner(FLComponent):
             self.log_debug(fl_ctx, f"Send stop command to the site for run:{run_number}")
             replies = self._send_to_clients(admin_server, client_sites, engine, message)
             if not replies:
-                self.log_error(fl_ctx,f"Failed to send abort command to clients for run_{run_number}")
+                self.log_error(fl_ctx, f"Failed to send abort command to clients for run_{run_number}")
 
             err = engine.abort_app_on_server(run_number)
             if err:

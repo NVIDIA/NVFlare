@@ -298,7 +298,7 @@ class ServerCommands(object):
         SubmitUpdateCommand(),
         AuxCommunicateCommand(),
         ShowStatsCommand(),
-        GetErrorsCommand()
+        GetErrorsCommand(),
     ]
 
     @staticmethod

@@ -47,7 +47,7 @@ class FederatedClient(FederatedClientBase):
         enable_byoc=False,
         overseer_agent=None,
         args=None,
-        components=None
+        components=None,
     ):
         """To init FederatedClient.
 
@@ -75,7 +75,7 @@ class FederatedClient(FederatedClientBase):
             compression=compression,
             overseer_agent=overseer_agent,
             args=args,
-            components=components
+            components=components,
         )
 
         self.executors = executors
