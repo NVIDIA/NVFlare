@@ -22,8 +22,10 @@ import time
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+
 from .client_status import ClientStatus, get_status_message
 
 
@@ -42,7 +44,19 @@ class ClientExecutor(object):
         self.pipe = FilePipe(root_path=pipe_path, name="training")
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def start_train(self, client, run_number, args, app_root, app_custom_folder, listen_port):
+    def start_train(
+        self,
+        client,
+        run_number,
+        args,
+        app_root,
+        app_custom_folder,
+        listen_port,
+        allocated_resource,
+        token,
+        resource_consumer,
+        resource_manager,
+    ):
         """start_train method to start the FL client training.
 
         Args:
@@ -52,6 +66,10 @@ class ClientExecutor(object):
             app_root: the root folder of the running APP
             app_custom_folder: FL application custom folder
             listen_port: port to listen the command.
+            allocated_resource: allocated resources
+            token: token from resource manager
+            resource_consumer: resource consumer
+            resource_manager: resource manager
 
         """
         pass
@@ -157,7 +175,19 @@ class ProcessExecutor(ClientExecutor):
 
         return pipe
 
-    def start_train(self, client, run_number, args, app_root, app_custom_folder, listen_port):
+    def start_train(
+        self,
+        client,
+        run_number,
+        args,
+        app_root,
+        app_custom_folder,
+        listen_port,
+        allocated_resource,
+        token,
+        resource_consumer,
+        resource_manager,
+    ):
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -179,16 +209,22 @@ class ProcessExecutor(ClientExecutor):
 
         print("training child process ID: {}".format(process.pid))
 
+        if allocated_resource:
+            resource_consumer.consume(allocated_resource)
+
         client.multi_gpu = False
 
         with self.lock:
-            self.run_processes[run_number] = {RunProcessKey.LISTEN_PORT: listen_port,
-                                              RunProcessKey.CONNECTION: None,
-                                              RunProcessKey.CHILD_PROCESS: process,
-                                              RunProcessKey.STATUS: ClientStatus.STARTED}
+            self.run_processes[run_number] = {
+                RunProcessKey.LISTEN_PORT: listen_port,
+                RunProcessKey.CONNECTION: None,
+                RunProcessKey.CHILD_PROCESS: process,
+                RunProcessKey.STATUS: ClientStatus.STARTED,
+            }
 
         thread = threading.Thread(
-            target=self.wait_training_process_finish, args=(client, run_number, args, app_root, app_custom_folder)
+            target=self.wait_training_process_finish,
+            args=(client, run_number, allocated_resource, token, resource_manager),
         )
         thread.start()
 
@@ -312,7 +348,7 @@ class ProcessExecutor(ClientExecutor):
                 conn_client.send(data)
                 self.logger.debug("abort_task sent")
 
-    def wait_training_process_finish(self, client, run_number, args, app_root, app_custom_folder):
+    def wait_training_process_finish(self, client, run_number, allocated_resource, token, resource_manager):
         # wait for the listen_command thread to start, and send "start" message to wake up the connection.
         start = time.time()
         while True:
@@ -331,6 +367,9 @@ class ProcessExecutor(ClientExecutor):
         child_process.wait()
         returncode = child_process.returncode
         self.logger.info(f"process finished with execution code: {returncode}")
+
+        if allocated_resource:
+            resource_manager.free_resources(resources=allocated_resource, token=token, fl_ctx=FLContext())
 
         with self.lock:
             conn_client = self.get_conn_client(run_number)

@@ -74,7 +74,7 @@ class RequestProcessor(object):
             req: request message
             app_ctx: application context
 
-        Returns: repely message
+        Returns: reply message
 
         """
         pass

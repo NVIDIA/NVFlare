@@ -21,12 +21,13 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
-from nvflare.apis.fl_constant import MachineStatus
+from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ClientStatusKey, WorkspaceConstants
+from nvflare.private.defs import ClientStatusKey
+from nvflare.private.fed.utils.fed_utils import deploy_app
+
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
@@ -73,6 +74,9 @@ class ClientEngine(ClientEngineInternalSpec):
 
         return "validate process started."
 
+    def get_component(self, component_id: str) -> object:
+        return self.client.components.get(component_id)
+
     def get_engine_status(self):
         running_jobs = []
         for run_number in self.get_all_run_numbers():
@@ -94,12 +98,23 @@ class ClientEngine(ClientEngineInternalSpec):
         }
         return result
 
-    def start_app(self, run_number: str) -> str:
+    def start_app(
+        self,
+        run_number: str,
+        allocated_resource: dict = None,
+        token: str = None,
+        resource_consumer=None,
+        resource_manager=None,
+    ) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STARTED:
             return "Client app already started."
 
-        app_root = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number), "app_" + self.client.client_name)
+        app_root = os.path.join(
+            self.args.workspace,
+            WorkspaceConstants.WORKSPACE_PREFIX + str(run_number),
+            WorkspaceConstants.APP_PREFIX + self.client.client_name,
+        )
         if not os.path.exists(app_root):
             return "Client app does not exist. Please deploy it before starting client."
 
@@ -118,7 +133,18 @@ class ClientEngine(ClientEngineInternalSpec):
         open_port = get_open_ports(1)[0]
         self._write_token_file(run_number, open_port)
 
-        self.client_executor.start_train(self.client, run_number, self.args, app_root, app_custom_folder, open_port)
+        self.client_executor.start_train(
+            self.client,
+            run_number,
+            self.args,
+            app_root,
+            app_custom_folder,
+            open_port,
+            allocated_resource,
+            token,
+            resource_consumer,
+            resource_manager,
+        )
 
         return "Start the client app..."
 
@@ -185,22 +211,12 @@ class ClientEngine(ClientEngineInternalSpec):
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
-        dest = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num), "app_" + client_name)
-        # Remove the previous deployed app.
-        if os.path.exists(dest):
-            shutil.rmtree(dest)
+        workspace = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
 
-        if not os.path.exists(dest):
-            os.makedirs(dest)
-        unzip_all_from_bytes(app_data, dest)
-
-        app_file = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num), "fl_app.txt")
-        if os.path.exists(app_file):
-            os.remove(app_file)
-        with open(app_file, "wt") as f:
-            f.write(f"{app_name}")
-
-        return ""
+        if deploy_app(app_name, client_name, workspace, app_data):
+            return ""
+        else:
+            return "Failed to deploy_app"
 
     def delete_run(self, run_num: int) -> str:
         run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))

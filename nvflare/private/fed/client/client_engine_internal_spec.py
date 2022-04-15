@@ -43,11 +43,22 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
-    def start_app(self, run_number: str) -> str:
+    def start_app(
+        self,
+        run_number: str,
+        allocated_resource: dict = None,
+        token: str = None,
+        resource_consumer=None,
+        resource_manager=None,
+    ) -> str:
         """Start the app for the specified run.
 
         Args:
             run_number: run_number
+            allocated_resource: allocated resource
+            token: token
+            resource_consumer: resource consumer
+            resource_manager: resource manager
 
         Returns: error if any
 

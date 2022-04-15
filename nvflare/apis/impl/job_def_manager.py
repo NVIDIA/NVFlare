@@ -89,6 +89,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store", temp_dir: str = "/tmp"):
         super().__init__()
         self.uri_root = uri_root
+        if not os.path.exists(uri_root):
+            os.mkdir(uri_root)
         self.job_store_id = job_store_id
         if not os.path.isdir(temp_dir):
             raise ValueError("temp_dir {} is not a valid dir".format(temp_dir))
@@ -163,13 +165,16 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
         job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
-        return zip_directory_to_bytes(job_id_dir, app_name)
+        job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
+        fullpath_src = os.path.join(job_folder, app_name)
+        return zip_directory_to_bytes(fullpath_src, "")
 
     def get_apps(self, job: Job, fl_ctx: FLContext) -> Dict[str, bytes]:
         job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
+        job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
         result_dict = {}
         for app in job.get_deployment():
-            result_dict[app] = zip_directory_to_bytes(job_id_dir, app)
+            result_dict[app] = zip_directory_to_bytes(job_folder, app)
         return result_dict
 
     def _load_job_data_from_store(self, jid: str, fl_ctx: FLContext):
@@ -187,7 +192,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return store.get_data(self.job_uri(jid))
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
-        meta = {JobMetaKey.STATUS.value: status}
+        meta = {JobMetaKey.STATUS.value: status.value}
         store = self._get_job_store(fl_ctx)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 

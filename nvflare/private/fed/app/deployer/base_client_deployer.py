@@ -15,6 +15,7 @@
 import grpc
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 
@@ -42,6 +43,7 @@ class BaseClientDeployer:
         self.host = build_ctx["server_host"]
         self.enable_byoc = build_ctx["enable_byoc"]
         self.overseer_agent = build_ctx["overseer_agent"]
+        self.components = build_ctx["client_components"]
 
     def set_model_manager(self, model_manager):
         self.model_manager = model_manager
@@ -63,6 +65,10 @@ class BaseClientDeployer:
         elif "Gzip" == self.client_config.get("compression"):
             compression = grpc.Compression.Gzip
 
+        for _, processor in self.components.items():
+            if isinstance(processor, RequestProcessor):
+                self.req_processors.append(processor)
+
         self.federated_client = FederatedClient(
             client_name=str(self.client_name),
             # We only deploy the first server right now .....
@@ -75,6 +81,7 @@ class BaseClientDeployer:
             enable_byoc=self.enable_byoc,
             overseer_agent=self.overseer_agent,
             args=args,
+            components=self.components,
         )
         return self.federated_client
 

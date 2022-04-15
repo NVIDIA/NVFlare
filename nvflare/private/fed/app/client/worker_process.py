@@ -19,11 +19,11 @@ import os
 import sys
 import traceback
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import EngineConstant, WorkspaceConstants
+from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -93,7 +93,11 @@ def main():
             )
 
         startup = args.startup
-        app_root = os.path.join(args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number), "app_" + client_name)
+        app_root = os.path.join(
+            args.workspace,
+            WorkspaceConstants.WORKSPACE_PREFIX + str(run_number),
+            WorkspaceConstants.APP_PREFIX + client_name,
+        )
 
         app_log_config = os.path.join(app_root, config_folder, "log.config")
         if os.path.exists(app_log_config):

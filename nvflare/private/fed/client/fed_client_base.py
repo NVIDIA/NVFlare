@@ -28,6 +28,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
+
 from .client_status import ClientStatus
 from .communicator import Communicator
 
@@ -50,6 +51,7 @@ class FederatedClientBase:
         compression=None,
         overseer_agent=None,
         args=None,
+        components=None,
     ):
         """To init FederatedClientBase.
 
@@ -81,6 +83,7 @@ class FederatedClientBase:
 
         self.secure_train = secure_train
         self.handlers = handlers
+        self.components = components
 
         self.heartbeat_done = False
         self.fl_ctx = FLContext()

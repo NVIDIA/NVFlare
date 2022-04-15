@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import pickle
+import shutil
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 
@@ -40,3 +44,22 @@ def make_context_data(fl_ctx):
     props = pickle.dumps(shared_fl_ctx)
     context_data = bytes_to_proto(props)
     return context_data
+
+
+def deploy_app(app_name, site_name, workspace, app_data):
+    try:
+        dest = os.path.join(workspace, WorkspaceConstants.APP_PREFIX + site_name)
+        # Remove the previous deployed app.
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        if not os.path.exists(dest):
+            os.makedirs(dest)
+        unzip_all_from_bytes(app_data, dest)
+        app_file = os.path.join(workspace, "fl_app.txt")
+        if os.path.exists(app_file):
+            os.remove(app_file)
+        with open(app_file, "wt") as f:
+            f.write(f"{app_name}")
+        return True
+    except:
+        return False

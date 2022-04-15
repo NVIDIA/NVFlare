@@ -115,3 +115,15 @@ class ServerEngineSpec(ABC):
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         pass
+
+    def send_admin_requests(self, requests):
+        pass
+
+    def check_client_resources(self, resource_reqs):
+        pass
+
+    def cancel_client_resources(self, resource_check_results, resource_reqs):
+        pass
+
+    def start_client_job(self, client_sites, run_number):
+        pass

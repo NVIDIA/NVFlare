@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import uuid
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.resource_manager import ResourceManager
 from nvflare.apis.job_def import Job
+from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 
 
-class ListResourceManager(ResourceManager):
+class ListResourceManager(ResourceManagerSpec):
     """Manage a list of resource units.
 
     For example:
@@ -55,7 +56,7 @@ class ListResourceManager(ResourceManager):
                 if len(self.resources[k]) < resource_requirement[k]:
                     check_result = False
                     break
-        return check_result, None
+        return check_result, str(uuid.uuid4())
 
     def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
         return None

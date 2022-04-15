@@ -157,6 +157,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
+    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        return self.send_aux_request(topic, request, 0.0, fl_ctx)
+
     def abort_app(self, run_number: int, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)
         if isinstance(runner, ClientRunner):

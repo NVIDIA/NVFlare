@@ -18,7 +18,7 @@ from nvflare.apis.fl_constant import ReservedTopic, ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader
-from .admin import RequestProcessor
+from nvflare.private.fed.client.admin import RequestProcessor
 
 
 class AuxRequestProcessor(RequestProcessor):

@@ -14,9 +14,9 @@
 
 from typing import List
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
-from nvflare.private.defs import WorkspaceConstants
 from nvflare.security.security import Action, FLAuthzContext
 
 

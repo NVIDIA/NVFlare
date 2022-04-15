@@ -17,10 +17,11 @@
 import logging
 import logging.config
 import os
+import re
 
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.json_scanner import Node
-from nvflare.fuel.utils.wfconf import ConfigContext
+from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
 from nvflare.private.json_configer import JsonConfigurator
 
@@ -75,6 +76,8 @@ class FLServerStarterConfiger(JsonConfigurator):
             module_names=module_names,
             exclude_libs=True,
         )
+
+        self.components = {}  # id => component
 
         self.app_root = app_root
         self.server_config_file_name = server_config_file_name
@@ -135,6 +138,21 @@ class FLServerStarterConfiger(JsonConfigurator):
             self.overseer_agent = self.build_component(element)
             return
 
+        if re.search(r"^components\.#[0-9]+$", path):
+            c = self.build_component(element)
+            cid = element.get("id", None)
+            if not cid:
+                raise ConfigError("missing component id")
+
+            if not isinstance(cid, str):
+                raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+
+            if cid in self.components:
+                raise ConfigError('duplicate component id "{}"'.format(cid))
+
+            self.components[cid] = c
+            return
+
     def finalize_config(self, config_ctx: ConfigContext):
         """Finalize the config process.
 
@@ -159,6 +177,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             "enable_byoc": self.enable_byoc,
             "snapshot_persistor": self.snapshot_persistor,
             "overseer_agent": self.overseer_agent,
+            "server_components": self.components,
         }
 
         deployer = ServerDeployer()
@@ -210,6 +229,8 @@ class FLClientStarterConfiger(JsonConfigurator):
             exclude_libs=True,
         )
 
+        self.components = {}  # id => component
+
         self.app_root = app_root
         self.client_config_file_name = client_config_file_name
         self.enable_byoc = False
@@ -232,6 +253,21 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         if path == "overseer_agent":
             self.overseer_agent = self.build_component(element)
+            return
+
+        if re.search(r"^components\.#[0-9]+$", path):
+            c = self.build_component(element)
+            cid = element.get("id", None)
+            if not cid:
+                raise ConfigError("missing component id")
+
+            if not isinstance(cid, str):
+                raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+
+            if cid in self.components:
+                raise ConfigError('duplicate component id "{}"'.format(cid))
+
+            self.components[cid] = c
             return
 
     def start_config(self, config_ctx: ConfigContext):
@@ -273,6 +309,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             "server_host": self.cmd_vars.get("host", None),
             "enable_byoc": self.enable_byoc,
             "overseer_agent": self.overseer_agent,
+            "client_components": self.components,
         }
 
         self.base_deployer = BaseClientDeployer()

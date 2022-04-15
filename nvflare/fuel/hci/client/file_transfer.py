@@ -334,6 +334,10 @@ class FileTransferModule(CommandModule):
         # zip the data
         data = zip_directory_to_bytes(self.upload_dir, folder_name)
 
+        rel_path = os.path.relpath(full_path, self.upload_dir)
+        folder_name = _remove_loading_dotdot(rel_path)
+        meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
+
         b64str = bytes_to_b64str(data)
         serialized_meta = json.dumps(meta).encode("utf-8")
         meta_b64str = bytes_to_b64str(serialized_meta)

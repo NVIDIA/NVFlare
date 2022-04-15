@@ -19,11 +19,12 @@ import os
 import sys
 import time
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import AppFolderConstants, SSLConstants, WorkspaceConstants
+from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender

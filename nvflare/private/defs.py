@@ -54,6 +54,10 @@ class TrainingTopic(object):
     RESTART = "train.restart"
     CHECK_STATUS = "train.check_status"
     SET_RUN_NUMBER = "train.set_run_number"
+    CHECK_RESOURCE = "scheduler.check_resource"
+    ALLOCATE_RESOURCE = "scheduler.allocate_resource"
+    CANCEL_RESOURCE = "scheduler.cancel_resource"
+    START_JOB = "train.start_job"
 
 
 class RequestHeader(object):
@@ -108,16 +112,3 @@ class SSLConstants:
     CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
     ROOT_CERT = "ssl_root_cert"
-
-
-class WorkspaceConstants:
-    """hard coded file names inside the workspace folder."""
-
-    LOGGING_CONFIG = "log.config"
-    AUDIT_LOG = "audit.log"
-
-    # these two files is used by shell scripts to determine restart / shutdown
-    RESTART_FILE = "restart.fl"
-    SHUTDOWN_FILE = "shutdown.fl"
-
-    WORKSPACE_PREFIX = "run_"

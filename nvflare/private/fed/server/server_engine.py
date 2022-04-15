@@ -40,22 +40,25 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
+    WorkspaceConstants,
 )
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
-from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
+from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
+from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader, WorkspaceConstants
+from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
 from .client_manager import ClientManager
+from .job_runner import JobRunner
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
@@ -94,19 +97,18 @@ class ServerEngine(ServerEngineInternalSpec):
         self.lock = Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # TODO:: need to figure out how to initialize job manager with inputs
-        self.job_def_manager = SimpleJobDefManager()
-
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
         self.parent_conn = None
         self.parent_conn_lock = Lock()
+        self.job_runner = None
+        self.job_def_manager = None
 
     def _get_server_app_folder(self):
-        return "app_server"
+        return WorkspaceConstants.APP_PREFIX + "server"
 
     def _get_client_app_folder(self, client_name):
-        return "app_" + client_name
+        return WorkspaceConstants.APP_PREFIX + client_name
 
     def _get_run_folder(self, run_number):
         return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
@@ -306,7 +308,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.logger.info("Abort the server app run.")
         # self.server.stop_training()
-        self.server.shutdown = True
+        # self.server.shutdown = True
         # self.server.abort_run()
 
         try:
@@ -371,7 +373,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_all_clients(self):
         return list(self.server.client_manager.clients.keys())
 
-    def _get_client_from_name(self, client_name):
+    def get_client_from_name(self, client_name):
         for c in self.get_clients():
             if client_name == c.name:
                 return c
@@ -387,7 +389,7 @@ class ServerEngine(ServerEngineInternalSpec):
             if client:
                 clients.append(client)
             else:
-                client = self._get_client_from_name(item)
+                client = self.get_client_from_name(item)
                 if client:
                     clients.append(client)
                 else:
@@ -427,6 +429,10 @@ class ServerEngine(ServerEngineInternalSpec):
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
 
+    def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
+        self.job_runner = job_runner
+        self.job_def_manager = job_manager
+
     def set_configurator(self, conf: ServerJsonConfigurator):
         if not isinstance(conf, ServerJsonConfigurator):
             raise TypeError("conf must be ServerJsonConfigurator but got {}".format(type(conf)))
@@ -439,7 +445,10 @@ class ServerEngine(ServerEngineInternalSpec):
         if self.run_manager:
             return self.run_manager.new_context()
         else:
-            return FLContext()
+            # return FLContext()
+            return FLContextManager(
+                engine=self, identity_name=self.server.project_name, run_num="", public_stickers={}, private_stickers={}
+            ).new_context()
 
     def get_component(self, component_id: str) -> object:
         return self.run_manager.get_component(component_id)
@@ -450,11 +459,11 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_staging_path_of_app(self, app_name: str) -> str:
         return os.path.join(self.server.admin_server.file_upload_dir, app_name)
 
-    def deploy_app_to_server(self, run_number: str, app_name: str, app_staging_path: str) -> str:
-        return self.deploy_app(run_number, app_name, "app_server")
+    def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
+        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + "server")
 
     def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
-        return self.deploy_app(app_name, "app_" + client_name)
+        return self.deploy_app(app_name, WorkspaceConstants.APP_PREFIX + client_name)
 
     def get_workspace(self) -> Workspace:
         return self.run_manager.get_workspace()
@@ -641,6 +650,68 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to get_stats from run_{run_number}")
 
         return stats
+
+    def send_admin_requests(self, requests):
+        return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
+
+    def check_client_resources(self, resource_reqs):
+        requests = {}
+        result = {}
+        for site_name, resource_requirements in resource_reqs.items():
+            # assume server resource is unlimited
+            if site_name == "server":
+                continue
+            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=pickle.dumps(resource_requirements))
+            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+            client = self.get_client_from_name(site_name)
+            if client:
+                requests.update({client.token: request})
+        replies = []
+        if requests:
+            replies = self.send_admin_requests(requests)
+        return replies, result
+
+    def cancel_client_resources(self, resource_check_results, resource_reqs):
+        requests = {}
+        for site_name, result in resource_check_results.items():
+            check_result, token = result
+            if check_result:
+                resource_requirements = resource_reqs[site_name]
+                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
+                request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
+                # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+                client = self.get_client_from_name(site_name)
+                if client:
+                    requests.update({client.token: request})
+        if requests:
+            replies = self.send_admin_requests(requests)
+
+    def start_client_job(self, client_sites, run_number):
+        requests = {}
+        for site, dispatch_info in client_sites.items():
+            resource_requirement = dispatch_info.resource_requirements
+            token = dispatch_info.token
+            request = Message(topic=TrainingTopic.START_JOB, body=pickle.dumps(resource_requirement))
+            request.set_header(RequestHeader.RUN_NUM, run_number)
+            request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
+            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
+            client = self.get_client_from_name(site)
+            if client:
+                requests.update({client.token: request})
+        replies = []
+        if requests:
+            replies = self.send_admin_requests(requests)
+        return replies
+
+        # admin_server = engine.server.admin_server
+        # message = Message(topic=TrainingTopic.START_JOB, body="")
+        # message.set_header(RequestHeader.RUN_NUM, run_number)
+        # replies = self._send_to_clients(admin_server, client_sites, engine, message)
+        # return replies
+
+    def stop_all_jobs(self):
+        fl_ctx = self.new_context()
+        self.job_runner.stop_all_runs(fl_ctx)
 
     def close(self):
         self.executor.shutdown()

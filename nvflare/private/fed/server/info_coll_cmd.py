@@ -15,10 +15,10 @@
 import json
 from typing import List
 
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import InfoCollectorTopic, RequestHeader, WorkspaceConstants
+from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.widgets.info_collector import InfoCollector
@@ -72,12 +72,12 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             conn.append_error("syntax error: missing run_number and target")
             return False, None
 
-        run_number = args[1].lower()
-        if not run_number.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
-            conn.append_error("syntax error: run_number must be run_XXX")
+        run_destination = args[1].lower()
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        destination = run_number[4:]
-        conn.set_prop(self.RUN_NUMBER, destination)
+        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
+        conn.set_prop(self.RUN_NUMBER, run_number)
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
@@ -94,7 +94,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
-        run_info = engine.get_app_run_info(destination)
+        run_info = engine.get_app_run_info(run_number)
         if not run_info:
             conn.append_string("App is not running")
             return False, None

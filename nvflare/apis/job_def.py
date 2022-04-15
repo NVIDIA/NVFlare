@@ -15,11 +15,12 @@
 from enum import Enum
 from typing import Dict, List, Optional
 
+from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 
 
 class RunStatus(str, Enum):
+
     SUBMITTED = "SUBMITTED"
     APPROVED = "APPROVED"
     DISPATCHED = "DISPATCHED"
@@ -31,7 +32,7 @@ class RunStatus(str, Enum):
 class JobMetaKey(str, Enum):
     STUDY_NAME = "study_name"
     JOB_ID = "job_id"
-    JOB_NAME = "job_name"
+    JOB_FOLDER_NAME = "job_folder_name"
     STATUS = "status"
     DEPLOY_MAP = "deploy_map"
     RESOURCE_SPEC = "resource_spec"
@@ -77,6 +78,8 @@ class Job:
         self.meta = meta
         self.min_sites = min_sites
         self.required_sites = required_sites
+        if not self.required_sites:
+            self.required_sites = []
 
         self.dispatcher_id = None
         self.dispatch_time = None
@@ -108,14 +111,14 @@ class Job:
         """
         return self.deploy_map
 
-    def get_application(self, participant, fl_ctx: FLContext) -> bytes:
+    def get_application(self, app_name, fl_ctx: FLContext) -> bytes:
         """Get the application content in bytes for the specified participant."""
-        application_name = self.get_application_name(participant)
+        # application_name = self.get_application_name(participant)
         engine = fl_ctx.get_engine()
-        job_def_manager = engine.get_component("job_manager")
-        if not isinstance(job_def_manager, JobDefManagerSpec):
-            raise TypeError(f"job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}")
-        return job_def_manager.get_app(self, application_name, fl_ctx)
+        job_def_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        # # if not isinstance(job_def_manager, JobDefManagerSpec):
+        # #     raise TypeError(f"job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}")
+        return job_def_manager.get_app(self, app_name, fl_ctx)
 
     def get_application_name(self, participant):
         """Get the application name for the specified participant."""

@@ -18,10 +18,10 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic, WorkspaceConstants
+from nvflare.private.defs import ClientStatusKey, RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.security import Action, FLAuthzContext
@@ -58,7 +58,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     usage="deploy_app run_number app server|client <client-name>|all",
                     handler_func=self.deploy_app,
                     authz_func=self.authorize_deploy_app,
-                    visible=True,
+                    visible=False,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.START_APP,
@@ -193,11 +193,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return False, None
 
-        run_number = args[1].lower()
-        if not run_number.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
-            conn.append_error("syntax error: run_number must be run_XXX")
+        run_destination = args[1].lower()
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        destination = run_number[4:]
+        destination = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
         conn.set_prop(self.RUN_NUMBER, destination)
 
         app_name = args[2]
@@ -479,12 +479,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error("syntax error: missing run_number and target")
             return False, None
 
-        run_number = args[1].lower()
-        if not run_number.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
-            conn.append_error("syntax error: run_number must be run_XXX")
+        run_destination = args[1].lower()
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_destination must be run_XXX")
             return False, None
-        destination = run_number[4:]
-        conn.set_prop(self.RUN_NUMBER, destination)
+        run_number = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
+        conn.set_prop(self.RUN_NUMBER, run_number)
 
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[2:])
