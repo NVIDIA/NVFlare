@@ -229,6 +229,7 @@ class SystemComponents(object):
     JOB_SCHEDULER = "job_scheduler"
     JOB_MANAGER = "job_manager"
     JOB_RUNNER = "job_runner"
+    STUDY_MANAGER = "study_manager"
     SERVER_RUNNER = "server_runner"
     CLIENT_RUNNER = "client_runner"
     CHECK_RESOURCE_PROCESSOR = "check_resource_processor"
