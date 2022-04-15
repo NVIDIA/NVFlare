@@ -21,6 +21,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
@@ -62,7 +63,7 @@ class _ReviewerFilter(_JobFilter):
         self.result = []
         self.reviewer_name = reviewer_name
         engine = fl_ctx.get_engine()
-        self.study_manager = engine.get_component("study_manager")
+        self.study_manager = engine.get_component(SystemComponents.STUDY_MANAGER)
         if not isinstance(self.study_manager, StudyManagerSpec):
             raise TypeError(
                 f"engine should have a study manager component of type StudyManagerSpec, but got {type(self.study_manager)}"

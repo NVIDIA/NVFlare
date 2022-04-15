@@ -651,7 +651,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return stats
 
-    def send_admin_requests(self, requests):
+    def _send_admin_requests(self, requests):
         return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
 
     def check_client_resources(self, resource_reqs):
@@ -668,7 +668,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self.send_admin_requests(requests)
+            replies = self._send_admin_requests(requests)
         return replies, result
 
     def cancel_client_resources(self, resource_check_results, resource_reqs):
@@ -684,7 +684,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 if client:
                     requests.update({client.token: request})
         if requests:
-            replies = self.send_admin_requests(requests)
+            replies = self._send_admin_requests(requests)
 
     def start_client_job(self, client_sites, run_number):
         requests = {}
@@ -700,7 +700,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self.send_admin_requests(requests)
+            replies = self._send_admin_requests(requests)
         return replies
 
         # admin_server = engine.server.admin_server

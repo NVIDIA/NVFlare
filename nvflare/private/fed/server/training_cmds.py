@@ -82,7 +82,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     usage="abort run_number server|client|all",
                     handler_func=self.abort_app,
                     authz_func=self.authorize_train,
-                    visible=True,
+                    visible=False,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.ABORT_TASK,
