@@ -30,5 +30,21 @@
       "sp_end_point": "localhost:8002:8003",
       "heartbeat_interval": 6
     }
-  }
+  },
+  "components": [
+    {
+      "id": "resource_manager",
+      "path": "nvflare.apis.impl.list_resource_manager.ListResourceManager",
+      "args":  {
+        "resources": {"gpu": [0,1,2,3]}
+        }
+    },
+    {
+      "id": "resource_consumer",
+      "path": "nvflare.apis.impl.gpu_resource_consumer.GPUResourceConsumer",
+      "args":  {
+        "gpu_resource_key": "gpu"
+        }
+    }
+  ]
 }
