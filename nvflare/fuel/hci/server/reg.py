@@ -107,9 +107,9 @@ class ServerCommandRegister(CommandRegister):
     def process_command(self, conn: Connection, command: str):
         try:
             self._do_command(conn, command)
-        except BaseException:
+        except BaseException as e:
             traceback.print_exc()
-            conn.append_error("Exception Occurred")
+            conn.append_error(f"Exception Occurred: {e}")
 
     def close(self):
         if self.closed:
