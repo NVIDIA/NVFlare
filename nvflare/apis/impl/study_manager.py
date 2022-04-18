@@ -18,9 +18,9 @@ from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.study_manager_spec import Study, StudyManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import StorageSpec
+from nvflare.apis.study_manager_spec import Study, StudyManagerSpec
 
 
 def custom_json_encoder(obj):
@@ -41,10 +41,7 @@ class StudyManager(StudyManagerSpec):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
         self._study_store_id = study_store_id
-        try:
-            self._existing_studies = json.loads(self._storage.get_data(StudyManager.STORAGE_KEY).decode("utf-8"))
-        except BaseException:
-            self._existing_studies = list()
+        self._existing_studies = list()
 
     def _get_store(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -95,6 +92,13 @@ class StudyManager(StudyManagerSpec):
         serialized_study = self._study_to_bytes(study)
         try:
             store = self._get_store(fl_ctx)
+        except BaseException as e:
+            return None, e.message
+        try:
+            self._existing_studies = json.loads(store.get_data(StudyManager.STORAGE_KEY).decode("utf-8"))
+        except BaseException:
+            self._existing_studies = list()
+        try:
             store.create_object(
                 uri=study.name,
                 data=serialized_study,
@@ -141,7 +145,14 @@ class StudyManager(StudyManagerSpec):
         Returns:
             A list of study names
         """
-        # either self._storage.list_object() or
+        try:
+            store = self._get_store(fl_ctx)
+        except BaseException as e:
+            return list()
+        try:
+            self._existing_studies = json.loads(store.get_data(StudyManager.STORAGE_KEY).decode("utf-8"))
+        except BaseException:
+            self._existing_studies = list()
         return self._existing_studies
 
     def list_active_studies(self, fl_ctx: FLContext) -> List[str]:
@@ -155,9 +166,13 @@ class StudyManager(StudyManagerSpec):
         """
         today = date.today()
         active_studies = list()
-        for st in self._existing_studies:
+        try:
+            store = self._get_store(fl_ctx)
+        except BaseException as e:
+            return active_studies
+        for st in self.list_studies(fl_ctx):
             try:
-                meta = self._storage.get_meta(st)
+                meta = store.get_meta(st)
                 if meta["start_date"] > today:
                     continue
                 if meta["end_date"] <= today:
