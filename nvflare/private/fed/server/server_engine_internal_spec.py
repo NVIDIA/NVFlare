@@ -123,7 +123,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_app_on_server(self, run_number: str) -> str:
+    def start_app_on_server(self, run_number: str, client_sites=None, snapshot=None) -> str:
         """Start the FL app on Server.
 
         Returns:

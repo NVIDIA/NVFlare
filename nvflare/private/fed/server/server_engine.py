@@ -172,7 +172,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, client_sites=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
             return f"Server run_{run_number} already started."
         else:
@@ -187,7 +187,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 app_custom_folder = os.path.join(app_root, "custom")
 
             open_ports = get_open_ports(2)
-            self._start_runner_process(self.args, app_root, run_number, app_custom_folder, open_ports, snapshot)
+            self._start_runner_process(self.args, app_root, run_number, app_custom_folder,
+                                       open_ports, client_sites, snapshot)
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
@@ -238,7 +239,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
-    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, open_ports, snapshot):
+    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, open_ports, client_sites, snapshot):
         new_env = os.environ.copy()
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
@@ -275,13 +276,21 @@ class ServerEngine(ServerEngineInternalSpec):
 
         threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
 
+        job_clients = {}
+        if client_sites:
+            for site, dispatch_info in client_sites.items():
+                client = self.get_client_from_name(site)
+                if client:
+                    job_clients[client.token] = client
+        if not job_clients:
+            job_clients = self.client_manager.clients
+
         with self.lock:
             self.run_processes[run_number] = {
                 RunProcessKey.LISTEN_PORT: listen_port,
                 RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
-                # TODO: each run will have its own participants. Use all clients for now.
-                RunProcessKey.PARTICIPANTS: self.client_manager.clients,
+                RunProcessKey.PARTICIPANTS: job_clients,
             }
         return process
 
@@ -686,7 +695,7 @@ class ServerEngine(ServerEngineInternalSpec):
         if requests:
             replies = self._send_admin_requests(requests)
 
-    def start_client_job(self, client_sites, run_number):
+    def start_client_job(self, run_number, client_sites):
         requests = {}
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements

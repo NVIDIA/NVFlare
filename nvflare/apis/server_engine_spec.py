@@ -162,7 +162,7 @@ class ServerEngineSpec(ABC):
         pass
 
     @abstractmethod
-    def start_client_job(self, client_sites, run_number):
+    def start_client_job(self, run_number, client_sites):
         """To send the start client run commands to the clients
 
         Args:
