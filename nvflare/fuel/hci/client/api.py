@@ -178,7 +178,7 @@ class AdminAPI(AdminAPISpec):
             self.user_name = user_name
             if self.poc:
                 if not password:
-                    raise Exception("for auto_login, password is required for credential_type password.")
+                    raise Exception("for auto_login, password is required for poc mode.")
                 self.password = password
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
