@@ -4,7 +4,7 @@ description: NVIDIA FLARE sample project yaml file
 
 participants:
   # change overseer.nvflare.nvidia.com to the FQDN of the overseer
-  - name: tinylaptop
+  - name: overseer.example.com
     type: overseer
     org: nvidia
     protocol: https
@@ -52,38 +52,61 @@ builders:
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
       config_folder: config
+
       # app_validator is used to verify if uploaded app has proper structures
       # if not set, no app_validator is included in fed_server.json
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
+
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
+
+      overseer_agent:
+        path: nvflare.ha.overseer_agent.HttpOverseerAgent
+        # if overseer_exists is true, args here are ignored.  Provisioning
+        #   tool will fill role, name and other local parameters automatically.
+        # if overseer_exists is false, args in this section will be used.
+        overseer_exists: true
+        # args:
+        #   sp_end_point: example1.com.8002:8003
+
       snapshot_persistor:
         path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
         args:
           storage:
-            path: nvflare.app_common.state_persistors.storage_state_persistor.storage_spec
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
           location: /tmp/snapshot.data
-      overseer_agent:
-        path: nvflare.ha.overseer_agent.HttpOverseerAgent
-        # if overseer_exists is true, agent arguments are role, name and other local parameters
-        # if overseer_exists is false, arguments are copied from args in this section
-        overseer_exists: true
-        args:
-          sp_end_point: example1.com.8002:8003
-  # - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
-  #   args:
-  #     orgs:
-  #       nvidia:
-  #         - relaxed
-  #     roles:
-  #       super: super user of system
-  #     groups: 
-  #       relaxed: 
-  #         desc: org group with relaxed policies
-  #         rules: 
-  #           allow_byoc: true
-  #           allow_custom_datalist: true
-  #     disabled: false
+
+      components:
+        server:
+          - id: job_scheduler  # This id is reserved by system.  Do not change it.
+            path: nvflare.apis.impl.job_scheduler.DefaultJobScheduler
+            args:
+              max_jobs: 4
+          - id: job_manager    # This id is reserved by system.  Do not change it.
+            path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
+            args:
+              uri_root: /tmp/jobs-storage
+              job_store_id: job_store
+              temp_dir: /tmp/jobs_temp
+          - id: study_manager    # This id is reserved by system.  Do not change it.
+            path: nvflare.apis.impl.study_manager.StudyManager
+            args:
+              study_store_id: study_store
+          - id: job_store
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+          - id: study_store
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+        client:
+          - id: resource_manager    # This id is reserved by system.  Do not change it.
+            path: nvflare.apis.impl.list_resource_manager.ListResourceManager
+            args:
+              resources:
+                gpu: [0,1,2,3]
+          - id: resource_consumer    # This id is reserved by system.  Do not change it.
+            path: nvflare.apis.impl.gpu_resource_consumer.GPUResourceConsumer
+            args:
+              gpu_resource_key: gpu
+
   - path: nvflare.lighter.impl.cert.CertBuilder
   # - path: nvflare.lighter.impl.he.HEBuilder
   #   args:
@@ -95,3 +118,4 @@ builders:
   - path: nvflare.lighter.impl.workspace.DistributionBuilder
     args:
       zip_password: false
+

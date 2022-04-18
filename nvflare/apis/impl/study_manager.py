@@ -18,8 +18,9 @@ from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.storage import StorageSpec
 from nvflare.apis.study_manager_spec import Study, StudyManagerSpec
+from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.apis.storage import StorageSpec
 
 
 def custom_json_encoder(obj):
@@ -36,14 +37,23 @@ def custom_json_encoder(obj):
 class StudyManager(StudyManagerSpec):
     STORAGE_KEY = "std_mgr"
 
-    def __init__(self, storage: StorageSpec):
+    def __init__(self, study_store_id: str):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
-        self._storage = storage
+        self._study_store_id = study_store_id
         try:
             self._existing_studies = json.loads(self._storage.get_data(StudyManager.STORAGE_KEY).decode("utf-8"))
         except BaseException:
             self._existing_studies = list()
+
+    def _get_store(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        if not isinstance(engine, ServerEngineSpec):
+            raise TypeError(f"engine should be of type ServerEngineSpec, but got {type(engine)}")
+        store = engine.get_component(self._study_store_id)
+        if not isinstance(store, StorageSpec):
+            raise TypeError(f"engine should have a job store component of type StorageSpec, but got {type(store)}")
+        return store
 
     def add_study(self, study: Study, fl_ctx: FLContext) -> Tuple[Optional[Study], str]:
         """Add the study object permanently
@@ -84,13 +94,14 @@ class StudyManager(StudyManagerSpec):
         study.created_at = datetime.utcnow()
         serialized_study = self._study_to_bytes(study)
         try:
-            self._storage.create_object(
+            store = self._get_store(fl_ctx)
+            store.create_object(
                 uri=study.name,
                 data=serialized_study,
                 meta={"start_date": study.start_date, "end_date": study.end_date},
                 overwrite_existing=True,
             )
-            self._storage.create_object(
+            store.create_object(
                 uri=StudyManager.STORAGE_KEY,
                 data=json.dumps(self._existing_studies + [study.name]).encode("utf-8"),
                 meta={},
@@ -169,7 +180,8 @@ class StudyManager(StudyManagerSpec):
             the Study object
         """
         try:
-            serialized_study = self._storage.get_data(name)
+            store = self._get_store(fl_ctx)
+            serialized_study = store.get_data(name)
         except RuntimeError as e:
             self.logger.warning(f"Unable to load study {name} from storage.")
             return None
