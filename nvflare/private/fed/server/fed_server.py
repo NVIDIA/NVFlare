@@ -811,8 +811,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                         self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
                         with self.engine.new_context() as fl_ctx:
                             job_runner = self.engine.job_runner
-                            job_runner.restore_running_job(run_number=run_number, job_id=job_id,
-                                                           job_clients=job_clients, snapshot=snapshot, fl_ctx=fl_ctx)
+                            job_runner.restore_running_job(
+                                run_number=run_number,
+                                job_id=job_id,
+                                job_clients=job_clients,
+                                snapshot=snapshot,
+                                fl_ctx=fl_ctx,
+                            )
 
             self.server_state = HotState(
                 host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid

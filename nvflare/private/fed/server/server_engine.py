@@ -169,7 +169,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def get_clients(self) -> [Client]:
-        return list(self.client_manager.clients.values())
+        return list(self.client_manager.get_clients().values())
 
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
@@ -189,8 +189,9 @@ class ServerEngine(ServerEngineInternalSpec):
                 app_custom_folder = os.path.join(app_root, "custom")
 
             open_ports = get_open_ports(2)
-            self._start_runner_process(self.args, app_root, run_number, app_custom_folder,
-                                       open_ports, job_id, job_clients, snapshot)
+            self._start_runner_process(
+                self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
+            )
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
@@ -212,8 +213,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     data = received_data.get(ServerCommandKey.DATA)
 
                     if command == ServerCommandNames.GET_CLIENTS:
-                        return_data = {ServerCommandKey.CLIENTS: clients,
-                                       ServerCommandKey.JOB_ID: job_id}
+                        return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
                         conn.send(return_data)
                     elif command == ServerCommandNames.AUX_SEND:
                         targets = data.get("targets")
@@ -243,8 +243,9 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
-    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, open_ports,
-                              job_id, job_clients, snapshot):
+    def _start_runner_process(
+        self, args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
+    ):
         new_env = os.environ.copy()
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
@@ -640,9 +641,10 @@ class ServerEngine(ServerEngineInternalSpec):
                     fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
             else:
                 (job_id, job_clients) = job_info
-            snapshot.set_component_snapshot(component_id=SnapshotKey.JOB_INFO,
-                                            component_state={SnapshotKey.JOB_CLIENTS: job_clients,
-                                                             SnapshotKey.JOB_ID: job_id})
+            snapshot.set_component_snapshot(
+                component_id=SnapshotKey.JOB_INFO,
+                component_state={SnapshotKey.JOB_CLIENTS: job_clients, SnapshotKey.JOB_ID: job_id},
+            )
 
             snapshot.completed = completed
 

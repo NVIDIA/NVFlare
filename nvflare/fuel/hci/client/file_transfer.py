@@ -314,7 +314,6 @@ class FileTransferModule(CommandModule):
         if not os.path.isdir(full_path):
             return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
 
-        meta = {}
         try:
             meta_path = os.path.join(full_path, "meta.json")
             with open(meta_path) as file:
@@ -324,23 +323,32 @@ class FileTransferModule(CommandModule):
                 "status": APIStatus.ERROR_RUNTIME,
                 "details": "Exception while loading required meta.json in job directory: " + str(e),
             }
-        if not isinstance(meta.get(JobMetaKey.STUDY_NAME), str):
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "STUDY_NAME is expected in meta.json to be a str"}
-        if not isinstance(meta.get(JobMetaKey.RESOURCE_SPEC), dict):
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "RESOURCE_SPEC is expected in meta.json to be a dict"}
-        if not isinstance(meta.get(JobMetaKey.DEPLOY_MAP), dict):
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "DEPLOY_MAP is expected in meta.json to be a dict"}
+        try:
+            if not isinstance(meta.get(JobMetaKey.STUDY_NAME), str):
+                return {"status": APIStatus.ERROR_RUNTIME, "details": "STUDY_NAME is expected in meta.json to be a str"}
+            if not isinstance(meta.get(JobMetaKey.RESOURCE_SPEC), dict):
+                return {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": "RESOURCE_SPEC is expected in meta.json to be a dict",
+                }
+            if not isinstance(meta.get(JobMetaKey.DEPLOY_MAP), dict):
+                return {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": "DEPLOY_MAP is expected in meta.json to be a dict",
+                }
 
-        # zip the data
-        data = zip_directory_to_bytes(self.upload_dir, folder_name)
+            # zip the data
+            data = zip_directory_to_bytes(self.upload_dir, folder_name)
+            rel_path = os.path.relpath(full_path, self.upload_dir)
+            folder_name = _remove_loading_dotdot(rel_path)
+            meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
 
-        rel_path = os.path.relpath(full_path, self.upload_dir)
-        folder_name = _remove_loading_dotdot(rel_path)
-        meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
+            b64str = bytes_to_b64str(data)
+            serialized_meta = json.dumps(meta).encode("utf-8")
+            meta_b64str = bytes_to_b64str(serialized_meta)
+        except Exception as e:
+            return {"status": APIStatus.ERROR_RUNTIME, "details": f"Exception: {e}"}
 
-        b64str = bytes_to_b64str(data)
-        serialized_meta = json.dumps(meta).encode("utf-8")
-        meta_b64str = bytes_to_b64str(serialized_meta)
         parts = [_server_cmd_name(ftd.SERVER_CMD_UPLOAD_JOB), meta_b64str, b64str]
         command = join_args(parts)
         return api.server_execute(command)
