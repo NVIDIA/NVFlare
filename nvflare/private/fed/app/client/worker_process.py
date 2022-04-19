@@ -17,7 +17,11 @@
 import argparse
 import os
 import sys
+import threading
+import time
 import traceback
+
+import psutil
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
@@ -32,22 +36,32 @@ from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 
 
+def check_parent_alive(parent_pid, stop_event: threading.Event):
+    while True:
+        if stop_event.is_set():
+            break
+        if not psutil.pid_exists(parent_pid):
+            # if parent is not alive, kill its worker process
+            os.killpg(os.getpgid(os.getpid()), 9)
+            break
+        time.sleep(1)
+
+
 def main():
-    """Worker_process start program."""
+    """Worker process start program."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
-
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
     )
-
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-
     parser.add_argument("--local_rank", type=int, default=0)
-
     args = parser.parse_args()
     kv_list = parse_vars(args.set)
+
+    # get parent process id
+    parent_pid = os.getppid()
 
     args.train_config = os.path.join("config", "config_train.json")
     config_folder = kv_list.get("config_folder", "")
@@ -68,7 +82,6 @@ def main():
     restart_file = os.path.join(args.workspace, "restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
-
     print("starting the client .....")
 
     deployer = None
@@ -77,7 +90,13 @@ def main():
     startup = os.path.join(args.workspace, "startup")
     SecurityContentService.initialize(content_folder=startup)
 
+    federated_client = None
+    thread = None
+    stop_event = threading.Event()
     try:
+        # start parent process checking thread
+        thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+        thread.start()
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         with open(token_file, "r") as f:
             token = f.readline().strip()
@@ -158,7 +177,6 @@ def main():
 
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
-
     except BaseException as e:
         traceback.print_exc()
         print("FL client execution exception: " + str(e))
@@ -166,10 +184,16 @@ def main():
         # if federated_client:
         #     federated_client.stop_listen = True
         #     thread.join()
+        stop_event.set()
         if command_agent:
             command_agent.shutdown()
         if deployer:
             deployer.close()
+        if federated_client:
+            federated_client.close()
+        if thread and thread.is_alive():
+            thread.join()
+
         # address = ('localhost', 6000)
         # conn_client = Client(address, authkey='client process secret password'.encode())
         # conn_client.send('bye')
@@ -177,10 +201,8 @@ def main():
 
 def remove_restart_file(args):
     """To remove the restart.fl file.
-
     Args:
         args: command args
-
     """
     restart_file = os.path.join(args.workspace, "restart.fl")
     if os.path.exists(restart_file):
