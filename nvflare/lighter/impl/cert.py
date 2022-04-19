@@ -60,6 +60,7 @@ class CertBuilder(Builder):
             )
             self.pub_key = self.pri_key.public_key()
             self.subject = self.root_cert.subject
+            self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
 
     def _build_root(self, subject):
         if not self.persistent_state:
