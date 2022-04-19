@@ -14,6 +14,7 @@
 
 import copy
 import logging
+import multiprocessing
 import os
 import pickle
 import re
@@ -103,6 +104,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
+        self.snapshot_lock = multiprocessing.Lock()
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -594,33 +596,34 @@ class ServerEngine(ServerEngineInternalSpec):
         #    Make sure to include the current round number
         # 2. call persistence API to save the component states
 
-        fl_snapshot = self.snapshot_persistor.retrieve()
-        if fl_snapshot:
-            for run_number in list(fl_snapshot.run_snapshots.keys()):
-                snapshot = fl_snapshot.get_snapshot(run_number)
-                if snapshot.completed:
-                    fl_snapshot.remove_snapshot(run_number)
-        else:
-            fl_snapshot = FLSnapshot()
+        with self.snapshot_lock:
+            fl_snapshot = self.snapshot_persistor.retrieve()
+            if fl_snapshot:
+                for run_number in list(fl_snapshot.run_snapshots.keys()):
+                    snapshot = fl_snapshot.get_snapshot(run_number)
+                    if snapshot.completed:
+                        fl_snapshot.remove_snapshot(run_number)
+            else:
+                fl_snapshot = FLSnapshot()
 
-        snapshot = RunSnapshot()
-        for component_id, component in self.run_manager.components.items():
+            snapshot = RunSnapshot()
+            for component_id, component in self.run_manager.components.items():
+                snapshot.set_component_snapshot(
+                    component_id=component_id, component_state=component.get_persist_state(fl_ctx)
+                )
+
             snapshot.set_component_snapshot(
-                component_id=component_id, component_state=component.get_persist_state(fl_ctx)
+                component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
             )
 
-        snapshot.set_component_snapshot(
-            component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
-        )
+            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+            data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
+            snapshot.set_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
 
-        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
-        snapshot.set_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
+            snapshot.completed = completed
 
-        snapshot.completed = completed
-
-        fl_snapshot.add_snapshot(fl_ctx.get_prop(FLContextKey.CURRENT_RUN), snapshot)
-        self.server.snapshot_location = self.snapshot_persistor.save(snapshot=fl_snapshot)
+            fl_snapshot.add_snapshot(fl_ctx.get_prop(FLContextKey.CURRENT_RUN), snapshot)
+            self.server.snapshot_location = self.snapshot_persistor.save(snapshot=fl_snapshot)
         self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
