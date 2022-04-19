@@ -149,6 +149,10 @@ class StaticFileBuilder(Builder):
             config["snapshot_persistor"] = self.snapshot_persistor
         if self.components:
             config["components"] = self.components.get("server", [])
+        provisioned_client_list = list()
+        for client in self.project.get_participants_by_type("client", first_only=False):
+            provisioned_client_list.append(client.name)
+        config["provisioned_client_list"] = provisioned_client_list
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
