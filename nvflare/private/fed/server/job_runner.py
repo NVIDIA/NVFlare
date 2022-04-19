@@ -102,7 +102,7 @@ class JobRunner(FLComponent):
         replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
         return replies
 
-    def _start_run(self, run_number, client_sites: list, fl_ctx: FLContext):
+    def _start_run(self, run_number, job: Job, client_sites: list, fl_ctx: FLContext):
         """Start the application
 
         Args:
@@ -114,7 +114,8 @@ class JobRunner(FLComponent):
 
         """
         engine = fl_ctx.get_engine()
-        err = engine.start_app_on_server(run_number, client_sites=client_sites)
+        job_clients = engine.get_job_clients(client_sites)
+        err = engine.start_app_on_server(run_number, job_id=job.job_id, job_clients=job_clients)
         if err:
             raise RuntimeError("Could not start the server App.")
 
@@ -185,7 +186,7 @@ class JobRunner(FLComponent):
                             self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
                             run_number = self._deploy_job(ready_job, sites, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
-                            self._start_run(run_number, sites, fl_ctx)
+                            self._start_run(run_number, ready_job, sites, fl_ctx)
                             with self.lock:
                                 self.running_jobs[run_number] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
@@ -193,6 +194,19 @@ class JobRunner(FLComponent):
                             self.log_error(fl_ctx, f"Failed to run the Job ID: {ready_job.job_id}")
 
             time.sleep(1.0)
+
+    def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        engine.start_app_on_server(run_number, job_id=job_id,
+                                   job_clients=job_clients, snapshot=snapshot)
+
+        try:
+            job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+            job = job_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
+            with self.lock:
+                self.running_jobs[run_number] = job
+        except:
+            self.log_error(fl_ctx, f"Failed to restore the job:{job_id} to the running job table.")
 
     def stop_run(self, run_number: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

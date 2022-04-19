@@ -123,7 +123,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_app_on_server(self, run_number: str, client_sites=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
         """Start the FL app on Server.
 
         Returns:
@@ -246,6 +246,18 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
             client_name: client name
 
         Returns: registered client
+
+        """
+        pass
+
+    @abstractmethod
+    def get_job_clients(self, client_sites) -> {}:
+        """To get the participating clients for the job
+
+        Args:
+            client_sites: clients with the dispatching info
+
+        Returns:
 
         """
         pass
