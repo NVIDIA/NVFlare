@@ -1,0 +1,23 @@
+poc: ../../nvflare/poc
+n_clients: 2
+app_path: ../../examples
+snapshot_path: /tmp/snapshot-storage
+cleanup: True
+
+tests:
+  - app_name: hello-pt
+    validators:
+      - tests.integration_test.validators.pt_model_validator.PTModelValidator
+  - app_name: hello-numpy-cross-val
+    validators:
+      - tests.integration_test.validators.cross_val_result_validator.CrossResultValidator
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: hello-numpy-sag
+    validators:
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: hello-tf2
+    validators:
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator
+  - app_name: hello-cyclic
+    validators:
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator

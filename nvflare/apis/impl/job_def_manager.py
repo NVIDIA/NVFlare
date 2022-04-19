@@ -16,6 +16,7 @@ import datetime
 import os
 import pathlib
 import shutil
+import tempfile
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -87,15 +88,12 @@ class _ReviewerFilter(_JobFilter):
 
 
 class SimpleJobDefManager(JobDefManagerSpec):
-    def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store", temp_dir: str = "/tmp"):
+    def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store"):
         super().__init__()
         self.uri_root = uri_root
         if not os.path.exists(uri_root):
             os.mkdir(uri_root)
         self.job_store_id = job_store_id
-        if not os.path.isdir(temp_dir):
-            raise ValueError("temp_dir {} is not a valid dir".format(temp_dir))
-        self.temp_dir = temp_dir
 
     def _get_job_store(self, fl_ctx):
         engine = fl_ctx.get_engine()
@@ -165,23 +163,29 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return self.get_job(jid, fl_ctx)
 
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
-        job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
+        temp_dir = tempfile.mkdtemp()
+        job_id_dir = self._load_job_data_from_store(job.job_id, temp_dir, fl_ctx)
         job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
         fullpath_src = os.path.join(job_folder, app_name)
-        return zip_directory_to_bytes(fullpath_src, "")
+        result = zip_directory_to_bytes(fullpath_src, "")
+        shutil.rmtree(temp_dir)
+        return result
 
     def get_apps(self, job: Job, fl_ctx: FLContext) -> Dict[str, bytes]:
-        job_id_dir = self._load_job_data_from_store(job.job_id, fl_ctx)
+        temp_dir = tempfile.mkdtemp()
+        job_id_dir = self._load_job_data_from_store(job.job_id, temp_dir, fl_ctx)
         job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
         result_dict = {}
         for app in job.get_deployment():
-            result_dict[app] = zip_directory_to_bytes(job_folder, app)
+            fullpath_src = os.path.join(job_folder, app)
+            result_dict[app] = zip_directory_to_bytes(fullpath_src, "")
+        shutil.rmtree(temp_dir)
         return result_dict
 
-    def _load_job_data_from_store(self, jid: str, fl_ctx: FLContext):
+    def _load_job_data_from_store(self, jid: str, temp_dir: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         data_bytes = store.get_data(self.job_uri(jid))
-        job_id_dir = os.path.join(self.temp_dir, jid)
+        job_id_dir = os.path.join(temp_dir, jid)
         if os.path.exists(job_id_dir):
             shutil.rmtree(job_id_dir)
         os.mkdir(job_id_dir)

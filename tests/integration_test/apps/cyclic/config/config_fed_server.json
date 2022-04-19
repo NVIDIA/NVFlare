@@ -1,0 +1,35 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "tests.integration_test.tf2.model_persistor.TF2ModelPersistor",
+      "args": {
+        "save_name": "tf2weights.pickle"
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "cyclic_ctl",
+      "path": "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
+      "args": {
+        "num_rounds": 2,
+        "task_assignment_timeout": 8,
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator",
+        "task_name": "train"
+      }
+    }
+  ]
+}

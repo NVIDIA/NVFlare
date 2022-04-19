@@ -21,7 +21,6 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
 from nvflare.private.fed.server.server_engine import ServerEngine
-from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.security import Action
 
 from .training_cmds import TrainingCommandModule
@@ -31,6 +30,7 @@ class JobCommandModule(TrainingCommandModule):
     """Command module with commands for job management."""
 
     def __init__(self):
+        super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_spec(self):
@@ -152,8 +152,8 @@ class JobCommandModule(TrainingCommandModule):
 
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
         run_number = conn.get_prop(self.RUN_NUMBER)
         engine.job_runner.stop_run(run_number, engine.new_context())

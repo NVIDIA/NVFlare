@@ -267,7 +267,7 @@ class FileTransferModule(CommandModule):
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
                 conn.set_prop("meta", meta)
                 conn.set_prop("upload_job_id", meta.get(JobMetaKey.JOB_ID))
-                conn.append_string("Uploaded job {}".format(meta.get(JobMetaKey.JOB_ID)))
+                conn.append_string("Uploaded job: {}".format(meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
             conn.append_error("Exception occurred trying to upload job: " + str(e))
             return
