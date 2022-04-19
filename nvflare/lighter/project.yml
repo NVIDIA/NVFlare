@@ -87,7 +87,6 @@ builders:
             args:
               uri_root: /tmp/jobs-storage
               job_store_id: job_store
-              temp_dir: /tmp/jobs_temp
           - id: study_manager    # This id is reserved by system.  Do not change it.
             path: nvflare.apis.impl.study_manager.StudyManager
             args:
