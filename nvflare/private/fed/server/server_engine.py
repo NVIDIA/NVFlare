@@ -174,7 +174,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, client_sites=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
             return f"Server run_{run_number} already started."
         else:
@@ -190,7 +190,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             open_ports = get_open_ports(2)
             self._start_runner_process(self.args, app_root, run_number, app_custom_folder,
-                                       open_ports, client_sites, snapshot)
+                                       open_ports, job_clients, snapshot)
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
@@ -241,7 +241,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
-    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, open_ports, client_sites, snapshot):
+    def _start_runner_process(self, args, app_root, run_number, app_custom_folder, open_ports, job_clients, snapshot):
         new_env = os.environ.copy()
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
@@ -278,12 +278,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
 
-        job_clients = {}
-        if client_sites:
-            for site, dispatch_info in client_sites.items():
-                client = self.get_client_from_name(site)
-                if client:
-                    job_clients[client.token] = client
         if not job_clients:
             job_clients = self.client_manager.clients
 
@@ -295,6 +289,15 @@ class ServerEngine(ServerEngineInternalSpec):
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
         return process
+
+    def get_job_clients(self, client_sites):
+        job_clients = {}
+        if client_sites:
+            for site, dispatch_info in client_sites.items():
+                client = self.get_client_from_name(site)
+                if client:
+                    job_clients[client.token] = client
+        return job_clients
 
     def remove_custom_path(self):
         regex = re.compile(".*/run_.*/custom")
@@ -619,6 +622,16 @@ class ServerEngine(ServerEngineInternalSpec):
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
             snapshot.set_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
+
+            job_clients = fl_ctx.get_prop(FLContextKey.JOB_CLIENTS)
+            if not job_clients:
+                with self.parent_conn_lock:
+                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
+                    self.parent_conn.send(data)
+                    return_data = self.parent_conn.recv()
+                    job_clients = return_data.get(ServerCommandKey.CLIENTS)
+                    fl_ctx.set_prop(FLContextKey.JOB_CLIENTS, job_clients)
+            snapshot.set_component_snapshot(component_id=SnapshotKey.JOB_CLIENTS, component_state=job_clients)
 
             snapshot.completed = completed
 

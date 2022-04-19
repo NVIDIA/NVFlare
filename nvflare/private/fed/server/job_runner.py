@@ -114,7 +114,8 @@ class JobRunner(FLComponent):
 
         """
         engine = fl_ctx.get_engine()
-        err = engine.start_app_on_server(run_number, client_sites=client_sites)
+        job_clients = engine.get_job_clients(client_sites)
+        err = engine.start_app_on_server(run_number, job_clients=job_clients)
         if err:
             raise RuntimeError("Could not start the server App.")
 

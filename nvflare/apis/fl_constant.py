@@ -90,6 +90,7 @@ class ReservedKey(object):
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
     SP_END_POINT = "__sp_end_point__"
+    JOB_CLIENTS = "__job_clients__"
 
 
 class FLContextKey(object):
@@ -121,6 +122,7 @@ class FLContextKey(object):
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
     SP_END_POINT = ReservedKey.SP_END_POINT
+    JOB_CLIENTS = ReservedKey.SP_END_POINT
 
 
 class ReservedTopic(object):
@@ -213,6 +215,7 @@ class SnapshotKey(object):
     FL_CONTEXT = "fl_context"
     SERVER_RUNNER = "_Server_Runner"
     WORKSPACE = "_workspace"
+    JOB_CLIENTS = "_job_clients"
 
 
 class RunProcessKey(object):
