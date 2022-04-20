@@ -22,7 +22,7 @@ function print_style_fail_msg() {
 } 
 
 set +e
-folders_to_check_license="nvflare test"
+folders_to_check_license="nvflare tests"
 
 grep -r --include "*.py" --exclude-dir "*protos*" -L "\(# Copyright (c) \(2021\|2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" ${folders_to_check_license} > no_license.lst
 if [ -s no_license.lst ]; then
@@ -77,5 +77,5 @@ echo "Done with pydocstyle docstring style checks"
 
 set -e
 echo "Running unit tests"
-pytest --numprocesses=auto --dist loadgroup --junitxml=unit_test.xml tests/unit_test
+python -m pytest --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --numprocesses=auto --dist loadgroup  tests/unit_test/
 echo "Done with unit tests"
