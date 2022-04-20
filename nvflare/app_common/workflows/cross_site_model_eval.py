@@ -187,7 +187,7 @@ class CrossSiteModelEval(Controller):
             engine = fl_ctx.get_engine()
             start_time = time.time()
             while not self._participating_clients:
-                self._participating_clients = engine.get_clients()
+                self._participating_clients = [c.name for c in engine.get_clients()]
                 if time.time() - start_time > self._wait_for_clients_timeout:
                     self.log_info(fl_ctx, "No clients available - quit model validation.")
                     return

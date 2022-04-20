@@ -197,8 +197,7 @@ class JobRunner(FLComponent):
 
     def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        engine.start_app_on_server(run_number, job_id=job_id,
-                                   job_clients=job_clients, snapshot=snapshot)
+        engine.start_app_on_server(run_number, job_id=job_id, job_clients=job_clients, snapshot=snapshot)
 
         try:
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)

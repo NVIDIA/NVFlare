@@ -213,6 +213,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             Tuple of bool to indicate if success is in reply data, str with full response of the reply data, and the raw
             reply.
         """
+        # TODO:: this only get success / string / error from reply message
         success_in_data = False
         reply = self.do_command(command)
         # handle errors from write_error (these can be from FileTransferModule)
@@ -348,7 +349,12 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("upload_job " + job_folder)
         if reply_data_full_response:
             if "Uploaded job" in reply_data_full_response:
-                return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response})
+                # TODO:: this is a hack to get job id
+                return FLAdminAPIResponse(
+                    APIStatus.SUCCESS,
+                    {"message": reply_data_full_response, "job_id": reply_data_full_response.split(":")[-1].strip()},
+                    reply,
+                )
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
