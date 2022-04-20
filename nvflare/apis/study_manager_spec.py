@@ -20,6 +20,9 @@ from .fl_context import FLContext
 
 
 class Study:
+
+    DEFAULT_STUDY_NAME = "__default_study__"
+
     def __init__(
         self,
         name: str,

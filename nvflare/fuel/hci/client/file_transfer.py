@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import traceback
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -150,7 +148,7 @@ def _remove_loading_dotdot(path):
 class FileTransferModule(CommandModule):
     """Command module with commands relevant to file transfer."""
 
-    def __init__(self, upload_dir: str, download_dir: str, upload_folder_cmd_name="upload_app"):
+    def __init__(self, upload_dir: str, download_dir: str, upload_folder_cmd_name="submit_job"):
         if not os.path.isdir(upload_dir):
             raise ValueError("upload_dir {} is not a valid dir".format(upload_dir))
 
@@ -192,22 +190,16 @@ class FileTransferModule(CommandModule):
                     handler_func=self.download_binary_file,
                 ),
                 CommandSpec(
-                    name=self.upload_folder_cmd_name,
-                    description="upload application to the server",
-                    usage=self.upload_folder_cmd_name + " application_folder",
-                    handler_func=self.upload_folder,
-                ),
-                CommandSpec(
                     name="download_folder",
                     description="download a folder from the server",
                     usage="download_folder folder_name",
                     handler_func=self.download_folder,
                 ),
                 CommandSpec(
-                    name="upload_job",
-                    description="upload application to the server",
-                    usage="upload_job job_folder",
-                    handler_func=self.upload_job,
+                    name="submit_job",
+                    description="Submit application to the server",
+                    usage="submit_job job_folder",
+                    handler_func=self.submit_job,
                 ),
                 CommandSpec(
                     name="download_job",
@@ -302,9 +294,9 @@ class FileTransferModule(CommandModule):
         reply_processor = _DownloadFolderProcessor(self.download_dir)
         return api.server_execute(command, reply_processor)
 
-    def upload_job(self, args, api: AdminAPISpec):
+    def submit_job(self, args, api: AdminAPISpec):
         if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: upload_job job_folder_name"}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: submit_job job_folder"}
 
         folder_name = args[1]
         if folder_name.endswith("/"):
@@ -314,42 +306,13 @@ class FileTransferModule(CommandModule):
         if not os.path.isdir(full_path):
             return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
 
-        try:
-            meta_path = os.path.join(full_path, "meta.json")
-            with open(meta_path) as file:
-                meta = json.load(file)
-        except Exception as e:
-            return {
-                "status": APIStatus.ERROR_RUNTIME,
-                "details": "Exception while loading required meta.json in job directory: " + str(e),
-            }
-        try:
-            if not isinstance(meta.get(JobMetaKey.STUDY_NAME), str):
-                return {"status": APIStatus.ERROR_RUNTIME, "details": "STUDY_NAME is expected in meta.json to be a str"}
-            if not isinstance(meta.get(JobMetaKey.RESOURCE_SPEC), dict):
-                return {
-                    "status": APIStatus.ERROR_RUNTIME,
-                    "details": "RESOURCE_SPEC is expected in meta.json to be a dict",
-                }
-            if not isinstance(meta.get(JobMetaKey.DEPLOY_MAP), dict):
-                return {
-                    "status": APIStatus.ERROR_RUNTIME,
-                    "details": "DEPLOY_MAP is expected in meta.json to be a dict",
-                }
+        # zip the data
+        data = zip_directory_to_bytes(self.upload_dir, folder_name)
 
-            # zip the data
-            data = zip_directory_to_bytes(self.upload_dir, folder_name)
-            rel_path = os.path.relpath(full_path, self.upload_dir)
-            folder_name = _remove_loading_dotdot(rel_path)
-            meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
-
-            b64str = bytes_to_b64str(data)
-            serialized_meta = json.dumps(meta).encode("utf-8")
-            meta_b64str = bytes_to_b64str(serialized_meta)
-        except Exception as e:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": f"Exception: {e}"}
-
-        parts = [_server_cmd_name(ftd.SERVER_CMD_UPLOAD_JOB), meta_b64str, b64str]
+        rel_path = os.path.relpath(full_path, self.upload_dir)
+        folder_name = _remove_loading_dotdot(rel_path)
+        b64str = bytes_to_b64str(data)
+        parts = [_server_cmd_name(ftd.SERVER_CMD_SUBMIT_JOB), folder_name, b64str]
         command = join_args(parts)
         return api.server_execute(command)
 

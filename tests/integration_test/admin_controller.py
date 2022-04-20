@@ -127,9 +127,9 @@ class AdminController:
         if not self.admin_api:
             return False
 
-        response = self.admin_api.upload_job(job_name)
+        response = self.admin_api.submit_job(job_name)
         if response["status"] != APIStatus.SUCCESS:
-            raise RuntimeError(f"upload_job failed: {response}")
+            raise RuntimeError(f"submit_job failed: {response}")
         self.job_id = response["details"]["job_id"]
 
         return True

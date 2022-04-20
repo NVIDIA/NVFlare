@@ -158,7 +158,7 @@ class FLAdminAPIRunner:
             print(f"api.set_run_number({run_number})")
             api_command_wrapper(self.api.set_run_number(run_number))
             print(f'api.upload_app("{app}")')
-            api_command_wrapper(self.api.upload_app(app))
+            api_command_wrapper(self.api.submit_job(app))
             print(f'api.deploy_app("{app}", TargetType.ALL)')
             api_command_wrapper(self.api.deploy_app(app, TargetType.ALL))
             print("api.check_status(TargetType.CLIENT)")

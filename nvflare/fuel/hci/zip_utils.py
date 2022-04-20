@@ -16,6 +16,28 @@ import io
 import os
 from zipfile import ZipFile
 
+from nvflare.apis.study_manager_spec import Study
+
+META_NAME = "meta.json"
+# A format string for the dummy meta.json
+META_DATA = """{{
+  "study_name": "{}",
+  "name": "{}",
+  "resource_spec": {{
+  }},
+  "deploy_map": {{
+  }},
+  "min_clients": 1
+}}
+"""
+
+
+def _path_join(base: str, *parts: str) -> str:
+    path = os.path.normpath(os.path.join(base, *parts))
+    path = os.path.splitdrive(path)[1]
+    # ZIP spec requires forward slashes
+    return path.replace("\\", "/")
+
 
 def get_all_file_paths(directory):
     """Get all file paths in the directory.
@@ -30,9 +52,9 @@ def get_all_file_paths(directory):
     # crawling through directory and subdirectories
     for root, directories, files in os.walk(directory):
         for filename in files:
-            file_paths.append(os.path.join(root, filename))
+            file_paths.append(_path_join(root, filename))
         for dir_name in directories:
-            file_paths.append(os.path.join(root, dir_name))
+            file_paths.append(_path_join(root, dir_name))
 
     return file_paths
 
@@ -45,7 +67,7 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
         folder_name: path to the folder to be zipped, relative to root_dir
         writer: file to write to
     """
-    dir_name = os.path.join(root_dir, folder_name)
+    dir_name = _path_join(root_dir, folder_name)
     assert os.path.exists(dir_name), 'directory "{}" does not exist'.format(dir_name)
     assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
 
@@ -106,3 +128,37 @@ def unzip_all_from_file(zip_file_name: str, output_dir_name: str):
 
 def unzip_all_from_bytes(data, output_dir_name: str):
     _unzip_all(io.BytesIO(data), output_dir_name)
+
+
+def convert_legacy_zip(zip_data: bytes) -> bytes:
+    """Convert a legacy app in zip into job layout in memory.
+
+    Args:
+        zip_data: The input zip data
+
+    Returns:
+        The converted zip data
+    """
+
+    reader = io.BytesIO(zip_data)
+    with ZipFile(reader, "r") as in_zip:
+        info_list = in_zip.infolist()
+        folder_name = info_list[0].filename.split("/")[0]
+        meta_path = _path_join(folder_name, META_NAME)
+        if next((info for info in info_list if info.filename == meta_path), None):
+            # Already in job layout
+            return zip_data
+
+        writer = io.BytesIO()
+        with ZipFile(writer, "w") as out_zip:
+            out_zip.writestr(meta_path, META_DATA.format(Study.DEFAULT_STUDY_NAME, folder_name))
+            # Push everything else to a sub folder with the same name:
+            # hello-pt/README.md -> hello-pt/hello-pt/README.md
+            for info in info_list:
+                name = info.filename
+                content = in_zip.read(name)
+                path = _path_join(folder_name, name)
+                info.filename = path
+                out_zip.writestr(info, content)
+
+        return writer.getvalue()

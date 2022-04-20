@@ -92,27 +92,13 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def upload_job(self, job_folder: str) -> FLAdminAPIResponse:
-        """Uploads specified job folder.
+    def submit_job(self, job_folder: str) -> FLAdminAPIResponse:
+        """Submit a job.
 
         Assumes job folder is in the upload_dir set in API init.
 
         Args:
-            job_folder (str): name of the job folder in upload_dir to upload
-
-        Returns: FLAdminAPIResponse
-
-        """
-        pass
-
-    @abstractmethod
-    def upload_app(self, app: str) -> FLAdminAPIResponse:
-        """Uploads specified app to the upload directory of FL server.
-
-        Currently assumes app is in the upload_dir set in API init.
-
-        Args:
-            app (str): name of the folder in upload_dir to upload
+            job_folder (str): name of the job folder in upload_dir to submit
 
         Returns: FLAdminAPIResponse
 

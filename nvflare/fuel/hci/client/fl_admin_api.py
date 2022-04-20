@@ -341,34 +341,20 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def upload_job(self, job_folder: str) -> FLAdminAPIResponse:
+    def submit_job(self, job_folder: str) -> FLAdminAPIResponse:
         if not job_folder:
             raise APISyntaxError("job_folder is required but not specified.")
         if not isinstance(job_folder, str):
             raise APISyntaxError("job_folder must be str but got {}.".format(type(job_folder)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("upload_job " + job_folder)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("submit_job " + job_folder)
         if reply_data_full_response:
-            if "Uploaded job" in reply_data_full_response:
+            if "Submitted job" in reply_data_full_response:
                 # TODO:: this is a hack to get job id
                 return FLAdminAPIResponse(
                     APIStatus.SUCCESS,
                     {"message": reply_data_full_response, "job_id": reply_data_full_response.split(":")[-1].strip()},
                     reply,
                 )
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
-    def upload_app(self, app: str) -> FLAdminAPIResponse:
-        if not app:
-            raise APISyntaxError("app is required but not specified.")
-        if not isinstance(app, str):
-            raise APISyntaxError("app must be str but got {}.".format(type(app)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("upload_app " + app)
-        if reply_data_full_response:
-            if "Created folder" in reply_data_full_response:
-                return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response})
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
