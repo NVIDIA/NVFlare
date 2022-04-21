@@ -248,7 +248,7 @@ class ServerEngine(ServerEngineInternalSpec):
     ):
         new_env = os.environ.copy()
         if app_custom_folder != "":
-            new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
+            new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
 
         listen_port = open_ports[1]
         if snapshot:

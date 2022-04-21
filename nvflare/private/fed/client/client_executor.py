@@ -191,7 +191,7 @@ class ProcessExecutor(ClientExecutor):
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
-            new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
+            new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
 
         command_options = ""
         for t in args.set:
