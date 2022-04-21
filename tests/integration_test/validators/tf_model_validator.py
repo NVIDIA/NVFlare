@@ -19,10 +19,8 @@ from .app_result_validator import AppResultValidator
 
 
 def check_tf_results(server_data, client_data, run_data):
-    run_number = run_data["run_number"]
     server_dir = server_data["server_path"]
-
-    server_run_dir = os.path.join(server_dir, "run_" + str(run_number))
+    server_run_dir = os.path.join(server_dir, run_data["job_id"])
 
     if not os.path.exists(server_run_dir):
         print(f"check_tf_results: server run dir {server_run_dir} doesn't exist.")
