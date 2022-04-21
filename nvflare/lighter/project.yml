@@ -38,9 +38,6 @@ participants:
     org: nvidia
     roles:
       - super
-  - name: admin@example.com
-    type: admin
-    org: nvidia
 
 # The same methods in all builders are called in their order defined in builders section
 builders:
@@ -106,6 +103,20 @@ builders:
             args:
               gpu_resource_key: gpu
 
+  - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
+    args:
+      orgs:
+        nvidia:
+          - relaxed
+      roles:
+        super: super user of system
+      groups:
+        relaxed:
+          desc: org group with relaxed policies
+          rules:
+            allow_byoc: true
+            allow_custom_datalist: true
+      disabled: false
   - path: nvflare.lighter.impl.cert.CertBuilder
   # - path: nvflare.lighter.impl.he.HEBuilder
   #   args:
