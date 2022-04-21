@@ -525,12 +525,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         if not targets:
-            with self.parent_conn_lock:
-                data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
-                self.parent_conn.send(data)
-                return_data = self.parent_conn.recv()
-                clients = return_data.get(ServerCommandKey.CLIENTS)
-                self.client_manager.clients = clients
+            self.sync_clients_from_main_process()
             targets = []
             for t in self.get_clients():
                 targets.append(t.name)
@@ -540,6 +535,14 @@ class ServerEngine(ServerEngineInternalSpec):
             )
         else:
             return {}
+
+    def sync_clients_from_main_process(self):
+        with self.parent_conn_lock:
+            data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
+            self.parent_conn.send(data)
+            return_data = self.parent_conn.recv()
+            clients = return_data.get(ServerCommandKey.CLIENTS)
+            self.client_manager.clients = clients
 
     def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         with self.parent_conn_lock:

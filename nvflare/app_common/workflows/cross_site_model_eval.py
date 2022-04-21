@@ -128,7 +128,9 @@ class CrossSiteModelEval(Controller):
 
         # If the list of participating clients is not provided, include all clients currently available.
         if not self._participating_clients:
-            self._participating_clients = [c.name for c in engine.get_clients()]
+            engine.sync_clients_from_main_process()
+            clients = engine.get_clients()
+            self._participating_clients = [c.name for c in clients]
 
         # Create shareable dirs for models and results
         workspace: Workspace = engine.get_workspace()

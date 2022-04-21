@@ -34,6 +34,15 @@ class ServerEngineSpec(ABC):
         pass
 
     @abstractmethod
+    def sync_clients_from_main_process(self):
+        """To fetch the participating clients from the main parent process
+
+        Returns: clients
+
+        """
+        pass
+
+    @abstractmethod
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         """Validate specified client names.
 
