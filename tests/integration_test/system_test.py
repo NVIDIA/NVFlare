@@ -116,6 +116,7 @@ class TestSystem:
             admin_controller = AdminController(jobs_root_dir=jobs_root_dir)
             admin_controller.initialize()
 
+            time.sleep(15)
             admin_controller.ensure_clients_started(num_clients=n_clients)
 
             print(f"Server status: {admin_controller.server_status()}.")
@@ -134,7 +135,7 @@ class TestSystem:
                 print(f"Client status after job submission: {admin_controller.client_status()}")
 
                 if ha:
-                    admin_controller.run_app_ha(site_launcher, ha_tests["cyclic"])
+                    admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
                 else:
                     admin_controller.wait_for_job_done()
 

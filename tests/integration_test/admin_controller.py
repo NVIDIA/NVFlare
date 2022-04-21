@@ -81,7 +81,7 @@ class AdminController:
         return run_data
 
     def get_stats(self, target):
-        return self.admin_api.show_stats(target)
+        return self.admin_api.show_stats(self.job_id, target)
 
     def ensure_clients_started(self, num_clients):
         if not self.admin_api:
@@ -141,7 +141,7 @@ class AdminController:
         if response["status"] != APIStatus.SUCCESS:
             raise RuntimeError(f"upload_job failed: {response}")
         self.job_id = response["details"]["job_id"]
-
+        self.last_job_name = job_name
         return True
 
     def wait_for_job_done(self):
@@ -292,7 +292,7 @@ class AdminController:
 
     def print_state(self, ha_test, state):
         print("\n")
-        print(f"App name: {self.last_app_name}")
+        print(f"Job name: {self.last_job_name}")
         print(f"HA test case: {ha_test['name']}")
         print("-" * 30)
         for k, v in state.items():
