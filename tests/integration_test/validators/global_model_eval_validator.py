@@ -14,32 +14,31 @@
 
 import os
 
+from nvflare.app_common.app_constant import AppConstants
+
 from .app_result_validator import AppResultValidator
 
 
 def check_global_model_eval_result(server_data, client_data, run_data):
-
-    run_number = run_data["run_number"]
-    server_dir = server_data["server_path"]
     client_names = list(client_data["client_names"])
 
-    server_run_dir = os.path.join(server_dir, "run_" + str(run_number))
+    server_run_dir = os.path.join(server_data["server_path"], run_data["job_id"])
 
     if not os.path.exists(server_run_dir):
         print(f"check_global_model_eval_result: server run dir {server_run_dir} doesn't exist.")
         return False
 
-    cross_val_dir = os.path.join(server_run_dir, "cross_site_val")
+    cross_val_dir = os.path.join(server_run_dir, AppConstants.CROSS_VAL_DIR)
     if not os.path.exists(cross_val_dir):
         print(f"check_global_model_eval_result: models dir {cross_val_dir} doesn't exist.")
         return False
 
-    model_shareable_dir = os.path.join(cross_val_dir, "model_shareables")
+    model_shareable_dir = os.path.join(cross_val_dir, AppConstants.CROSS_VAL_MODEL_DIR_NAME)
     if not os.path.exists(model_shareable_dir):
         print(f"check_global_model_eval_result: model shareable directory {model_shareable_dir} doesn't exist.")
         return False
 
-    result_shareable_dir = os.path.join(cross_val_dir, "result_shareables")
+    result_shareable_dir = os.path.join(cross_val_dir, AppConstants.CROSS_VAL_RESULTS_DIR_NAME)
     if not os.path.exists(result_shareable_dir):
         print(f"check_global_model_eval_result: result shareable directory {result_shareable_dir} doesn't exist.")
         return False
@@ -71,11 +70,7 @@ def check_global_model_eval_result(server_data, client_data, run_data):
 
 
 class GlobalModelEvalValidator(AppResultValidator):
-    def __init__(self):
-        super(GlobalModelEvalValidator, self).__init__()
-
     def validate_results(self, server_data, client_data, run_data) -> bool:
-
         cross_val_result = check_global_model_eval_result(server_data, client_data, run_data)
 
         print(f"CrossVal Result: {cross_val_result}")

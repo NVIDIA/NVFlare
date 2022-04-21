@@ -14,32 +14,34 @@
 
 import os
 
+from nvflare.app_common.app_constant import AppConstants
+
 from .app_result_validator import AppResultValidator
 
 
-def check_cross_validation_result(server_data, client_data, run_data):
+def check_cross_validation_result(server_data, client_data, run_data, n_clients=-1):
+    if n_clients != -1:
+        client_names = [client_data["client_names"][i] for i in range(n_clients)]
+    else:
+        client_names = list(client_data["client_names"])
 
-    run_number = run_data["run_number"]
-    server_dir = server_data["server_path"]
-    client_names = list(client_data["client_names"])
-
-    server_run_dir = os.path.join(server_dir, "run_" + str(run_number))
+    server_run_dir = os.path.join(server_data["server_path"], run_data["job_id"])
 
     if not os.path.exists(server_run_dir):
         print(f"check_cross_validation_result: server run dir {server_run_dir} doesn't exist.")
         return False
 
-    cross_val_dir = os.path.join(server_run_dir, "cross_site_val")
+    cross_val_dir = os.path.join(server_run_dir, AppConstants.CROSS_VAL_DIR)
     if not os.path.exists(cross_val_dir):
         print(f"check_cross_validation_result: models dir {cross_val_dir} doesn't exist.")
         return False
 
-    model_shareable_dir = os.path.join(cross_val_dir, "model_shareables")
+    model_shareable_dir = os.path.join(cross_val_dir, AppConstants.CROSS_VAL_MODEL_DIR_NAME)
     if not os.path.exists(model_shareable_dir):
         print(f"check_cross_validation_result: model shareable directory {model_shareable_dir} doesn't exist.")
         return False
 
-    result_shareable_dir = os.path.join(cross_val_dir, "result_shareables")
+    result_shareable_dir = os.path.join(cross_val_dir, AppConstants.CROSS_VAL_RESULTS_DIR_NAME)
     if not os.path.exists(result_shareable_dir):
         print(f"check_cross_validation_result: result shareable directory {result_shareable_dir} doesn't exist.")
         return False
@@ -73,13 +75,21 @@ def check_cross_validation_result(server_data, client_data, run_data):
     return True
 
 
-class CrossResultValidator(AppResultValidator):
-    def __init__(self):
-        super(CrossResultValidator, self).__init__()
-
+class CrossValResultValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-
         cross_val_result = check_cross_validation_result(server_data, client_data, run_data)
+
+        print(f"CrossVal Result: {cross_val_result}")
+
+        if not cross_val_result:
+            raise ValueError("Cross val failed.")
+
+        return cross_val_result
+
+
+class CrossValSingleClientResultValidator(AppResultValidator):
+    def validate_results(self, server_data, client_data, run_data) -> bool:
+        cross_val_result = check_cross_validation_result(server_data, client_data, run_data, n_clients=1)
 
         print(f"CrossVal Result: {cross_val_result}")
 

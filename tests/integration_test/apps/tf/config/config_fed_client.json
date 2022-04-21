@@ -6,7 +6,7 @@
         "train"
       ],
       "executor": {
-        "path": "trainer.SimpleTrainer",
+        "path": "tests.integration_test.tf2.trainer.SimpleTrainer",
         "args": {
           "epochs_per_round": 2
         }
@@ -20,7 +20,7 @@
       ],
       "filters": [
         {
-          "path": "filter.ExcludeVars",
+          "name": "ExcludeVars",
           "args": {
             "exclude_vars": [
               "flatten"
