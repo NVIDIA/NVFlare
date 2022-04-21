@@ -197,6 +197,8 @@ class AdminController:
                 if isinstance(ha_events[event]["trigger"], dict):
                     for k, v in ha_events[event]["trigger"].items():
                         if k == "workflow":
+                            print(run_state)
+                            print(wfs)
                             event_trigger.append(run_state[k] == wfs[v][0])
                         else:
                             event_trigger.append(run_state[k] == v)

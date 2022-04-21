@@ -116,7 +116,6 @@ class TestSystem:
             admin_controller = AdminController(jobs_root_dir=jobs_root_dir)
             admin_controller.initialize()
 
-            time.sleep(15)
             admin_controller.ensure_clients_started(num_clients=n_clients)
 
             print(f"Server status: {admin_controller.server_status()}.")
@@ -131,6 +130,7 @@ class TestSystem:
 
                 admin_controller.submit_job(job_name=test_job)
 
+                time.sleep(15)
                 print(f"Server status after job submission: {admin_controller.server_status()}.")
                 print(f"Client status after job submission: {admin_controller.client_status()}")
 
