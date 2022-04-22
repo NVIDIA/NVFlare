@@ -281,6 +281,7 @@ class AdminController:
                     if len(args) == 2:
                         server_id = int(args[1])
                     else:
+                        print(site_launcher.server_properties)
                         server_id = list(site_launcher.server_properties.keys())[0]
                     site_launcher.start_server(server_id)
                 elif args[0] == "overseer":
@@ -323,6 +324,8 @@ class AdminController:
         # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [{'type': 'dict', 'data': {'ScatterAndGather': {'tasks': {'train': []}, 'phase': 'train', 'current_round': 0, 'num_rounds': 2}, 'CrossSiteModelEval': {'tasks': {}}, 'ServerRunner': {'run_number': 1, 'status': 'started', 'workflow': 'scatter_and_gather'}}}], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
         wfs = {}
         prev_run_state = run_state.copy()
+        print(f"run_state {prev_run_state}", flush=True)
+        print(f"stats {stats}", flush=True)
         if stats and "status" in stats and "details" in stats and stats["status"] == APIStatus.SUCCESS:
             if "message" in stats["details"]:
                 wfs = stats["details"]["message"]
