@@ -48,6 +48,6 @@ def check_tf_results(server_data, client_data, run_data):
     return True
 
 
-class TFResultValidator(AppResultValidator):
+class TFModelValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
         return check_tf_results(server_data, client_data, run_data)

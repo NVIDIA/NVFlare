@@ -36,7 +36,7 @@ tests:
       - tests.integration_test.validators.tb_result_validator.TBResultValidator
   - app_name: tf
     validators:
-      - tests.integration_test.validators.tf_model_validator.TFResultValidator
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator
   - app_name: cyclic
     validators:
-      - tests.integration_test.validators.tf_model_validator.TFResultValidator
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator
