@@ -39,6 +39,12 @@ def _path_join(base: str, *parts: str) -> str:
     return path.replace("\\", "/")
 
 
+def remove_leading_dotdot(path):
+    while path.startswith("../"):
+        path = path[3:]
+    return path
+
+
 def get_all_file_paths(directory):
     """Get all file paths in the directory.
 
@@ -77,7 +83,7 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
     with ZipFile(writer, "w") as z:
         # writing each file one by one
         for full_path in file_paths:
-            rel_path = os.path.relpath(full_path, root_dir)
+            rel_path = remove_leading_dotdot(os.path.relpath(full_path, root_dir))
             z.write(full_path, arcname=rel_path)
 
 
