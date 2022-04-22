@@ -25,11 +25,11 @@ participants:
     admin_port: 8003
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
-  - name: site1
+  - name: site-1
     type: client
     org: nvidia
     enable_byoc: true
-  - name: site2
+  - name: site-2
     type: client
     org: nvidia
     enable_byoc: false

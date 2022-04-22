@@ -130,31 +130,11 @@ each command.
 
 .. code-block:: shell
 
-    > upload_app hello-numpy-sag
+    > upload_job hello-numpy-sag
 
-Uploads the application from the admin client to the server's staging area.
+Uploads the job configuration from the admin client to the server.
+A job id will be returned, and we can use that id to access job information.
 
-.. code-block:: shell
-
-    > set_run_number 1
-
-Creates a run directory in the workspace for the run_number on the server and all clients. The run directory allows for
-the isolation of different runs so the information in one particular run does not interfere with other runs.
-
-.. code-block:: shell
-
-    > deploy_app hello-numpy-sag all
-
-This will make the hello-numpy-sag application the active one in the run_number workspace.  After the above two commands, the
-server and all the clients know the hello-numpy-sag application will reside in the ``run_1`` workspace.
-
-
-.. code-block:: shell
-
-    > start_app all
-
-This ``start_app`` command instructs the NVIDIA FLARE server and clients to start training with the hello-numpy-sag
-application in the ``run_1`` workspace.
 
 From time to time, you can issue ``check_status server`` in the admin client to check the entire training progress.
 
