@@ -53,8 +53,6 @@ def wait_until_clients_greater_than_cb(reply, min_clients=2):
 class FLAdminAPIRunner:
     def __init__(
         self,
-        host,
-        port,
         username,
         admin_dir,
         poc=False,
@@ -65,15 +63,11 @@ class FLAdminAPIRunner:
         The default locations for certs, keys, and directories are used.
 
         Args:
-            host: string for
-            port: int for the port number to communicate with server admin
-            username: string of username to login with
+            username: string of username to log in with
             admin_dir: string of root admin dir containing the startup dir
             poc: whether to run in poc mode without SSL certs
             debug: whether to turn on debug mode
         """
-        assert isinstance(host, str), "host must be str"
-        assert isinstance(port, int), "port must be int"
         assert isinstance(username, str), "username must be str"
         self.username = username
         assert isinstance(admin_dir, str), "admin_dir must be str"
@@ -100,8 +94,6 @@ class FLAdminAPIRunner:
 
         # Connect with admin client
         self.api = FLAdminAPI(
-            host=host,
-            port=port,
             ca_cert=ca_cert,
             client_cert=client_cert,
             client_key=client_key,
@@ -111,7 +103,7 @@ class FLAdminAPIRunner:
             debug=debug,
         )
         if self.poc:
-            reply = self.api.login_with_password("admin", "admin")
+            reply = self.api.login_with_poc("admin", "admin")
         else:
             reply = self.api.login(username=self.username)
         for k in reply.keys():
@@ -155,16 +147,8 @@ class FLAdminAPIRunner:
                 )
             print("api.check_status(TargetType.SERVER)")
             api_command_wrapper(self.api.check_status(TargetType.SERVER))
-            print(f"api.set_run_number({run_number})")
-            api_command_wrapper(self.api.set_run_number(run_number))
-            print(f'api.upload_app("{app}")')
+            print(f'api.submit_job("{app}")')
             api_command_wrapper(self.api.submit_job(app))
-            print(f'api.deploy_app("{app}", TargetType.ALL)')
-            api_command_wrapper(self.api.deploy_app(app, TargetType.ALL))
-            print("api.check_status(TargetType.CLIENT)")
-            api_command_wrapper(self.api.check_status(TargetType.CLIENT))
-            print("api.start_app(TargetType.ALL)")
-            api_command_wrapper(self.api.start_app(TargetType.ALL))
             time.sleep(1)
             print("api.check_status(TargetType.SERVER)")
             reply = api_command_wrapper(self.api.check_status(TargetType.SERVER))
@@ -209,7 +193,7 @@ class FLAdminAPIRunner:
             reply = None
             try:
                 if self.poc:
-                    reply = self.api.login_with_password("admin", "admin")
+                    reply = self.api.login_with_poc("admin", "admin")
                 else:
                     print("api.login()")
                     reply = api_command_wrapper(self.api.login(self.username))

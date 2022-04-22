@@ -46,6 +46,12 @@ class HACommandModule(CommandModule):
                     usage="promote_sp sp_end_point",
                     handler_func=self.promote_sp,
                 ),
+                CommandSpec(
+                    name="shutdown_system",
+                    description="shut down entire system by setting the system state to shutdown through the overseer",
+                    usage="shutdown_system",
+                    handler_func=self.shutdown_system,
+                ),
             ],
         )
 
@@ -62,5 +68,10 @@ class HACommandModule(CommandModule):
         sp_end_point = args[1]
 
         print("PROMOTING SP: {}".format(sp_end_point))
-        api.overseer_agent.promote_sp(sp_end_point, headers={"username": api.user_name})
+        api.overseer_agent.promote_sp(sp_end_point)
         return {"status": APIStatus.SUCCESS, "details": "Promoted endpoint. Synchronizing with overseer..."}
+
+    def shutdown_system(self, args, api):
+        print("Shutting down the system...")
+        api.overseer_agent.set_state("shutdown")
+        return {"status": APIStatus.SUCCESS, "details": "Set state to shutdown in overseer."}

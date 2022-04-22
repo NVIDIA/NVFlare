@@ -106,18 +106,11 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def deploy_app(
-        self, run_number: str, app: str, target_type: TargetType, targets: Optional[List[str]] = None
-    ) -> FLAdminAPIResponse:
-        """Issues a command to deploy the specified app to the specified target for the current run number.
-
-        The app must be already uploaded and available on the server.
+    def clone_job(self, job_folder: str) -> FLAdminAPIResponse:
+        """Clone a job that exists by copying the job contents and providing a new job_id.
 
         Args:
-            run_number (str): run number
-            app (str): name of app to deploy
-            target_type: server | client | all
-            targets: if target_type is client, targets can optionally be a list of client names
+            job_folder (str): name of the job folder in upload_dir to submit
 
         Returns: FLAdminAPIResponse
 
@@ -125,15 +118,8 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def start_app(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
-    ) -> FLAdminAPIResponse:
-        """Issue a command to start the deployed app for the current run number at the specified target.
-
-        Args:
-            run_number (str): run number
-            target_type: server | client | all
-            targets: if target_type is client, targets can optionally be a list of client names
+    def list_jobs(self) -> FLAdminAPIResponse:
+        """List the jobs in the system.
 
         Returns: FLAdminAPIResponse
 

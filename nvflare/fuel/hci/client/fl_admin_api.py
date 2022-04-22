@@ -87,8 +87,6 @@ def default_stats_handling_cb(reply: FLAdminAPIResponse) -> bool:
 class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def __init__(
         self,
-        host,
-        port,
         ca_cert: str = "",
         client_cert: str = "",
         client_key: str = "",
@@ -98,15 +96,13 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         cmd_modules: Optional[List] = None,
         overseer_agent: OverseerAgent = None,
         user_name: str = None,
-        password: str = None,
+        poc_key: str = None,
         poc=False,
         debug=False,
     ):
         """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
 
         Args:
-            host: cn provisioned for the project, with this fully qualified domain name resolving to the IP of the FL server
-            port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int
             ca_cert: path to CA Cert file, by default provisioned rootCA.pem
             client_cert: path to admin client Cert file, by default provisioned as client.crt
             client_key: path to admin client Key file, by default provisioned as client.key
@@ -116,13 +112,11 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            password: Password to authenticate with FL server (not used in secure mode with SSL)
+            poc_key: Key used in POC mode to authenticate with FL server (not used in secure mode with SSL)
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages. False by default.
         """
         super().__init__(
-            host=host,
-            port=port,
             ca_cert=ca_cert,
             client_cert=client_cert,
             client_key=client_key,
@@ -133,7 +127,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             overseer_agent=overseer_agent,
             auto_login=True,
             user_name=user_name,
-            password=password,
+            poc_key=poc_key,
             poc=poc,
             debug=debug,
         )
@@ -360,68 +354,27 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def deploy_app(
-        self, run_number: str, app: str, target_type: TargetType, targets: Optional[List[str]] = None
-    ) -> FLAdminAPIResponse:
-        if not run_number:
-            raise APISyntaxError("run_number is required but not specified.")
-        if not isinstance(run_number, str):
-            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
-        if not app:
-            raise APISyntaxError("app is required but not specified.")
-        if not isinstance(app, str):
-            raise APISyntaxError("app must be str but got {}.".format(type(app)))
-        if target_type == TargetType.ALL:
-            command = AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " all"
-        elif target_type == TargetType.SERVER:
-            command = AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " server"
-        elif target_type == TargetType.CLIENT:
-            if targets:
-                processed_targets_str = self._process_targets_into_str(targets)
-                command = (
-                    AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " client " + processed_targets_str
-                )
-            else:
-                command = AdminCommandNames.DEPLOY_APP + " " + run_number + " " + app + " client"
-        else:
-            raise APISyntaxError("target_type must be server, client, or all.")
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
+    def clone_job(self, job_folder: str) -> FLAdminAPIResponse:
+        if not job_folder:
+            raise APISyntaxError("job_folder is required but not specified.")
+        if not isinstance(job_folder, str):
+            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_folder)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("clone_job " + job_folder)
         if reply_data_full_response:
-            if "does not exist" in reply_data_full_response:
-                return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response}, reply)
-        if success:
-            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
+            if "Cloned job" in reply_data_full_response:
+                return FLAdminAPIResponse(
+                    APIStatus.SUCCESS,
+                    {"message": reply_data_full_response, "job_id": reply_data_full_response.split(":")[-1].strip()},
+                    reply,
+                )
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
 
     @wrap_with_return_exception_responses
-    def start_app(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
-    ) -> FLAdminAPIResponse:
-        if not run_number:
-            raise APISyntaxError("run_number is required but not specified.")
-        if not isinstance(run_number, str):
-            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
-        if target_type == TargetType.ALL:
-            command = AdminCommandNames.START_APP + " " + run_number + " all"
-        elif target_type == TargetType.SERVER:
-            command = AdminCommandNames.START_APP + " " + run_number + " server"
-        elif target_type == TargetType.CLIENT:
-            if targets:
-                processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.START_APP + " " + run_number + " client " + processed_targets_str
-            else:
-                command = AdminCommandNames.START_APP + " " + run_number + " client"
-        else:
-            raise APISyntaxError("target_type must be server, client, or all.")
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
+    def list_jobs(self) -> FLAdminAPIResponse:
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("list_jobs")
         if reply_data_full_response:
-            if "Server already starting or started" in reply_data_full_response:
-                return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
-            if "Please set a run number" in reply_data_full_response:
-                return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response}, reply)
-        if success:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
@@ -906,6 +859,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         result = super().login(username=username)
         return FLAdminAPIResponse(status=result["status"], details=result["details"])
 
-    def login_with_password(self, username: str, password: str):
-        result = super().login_with_password(username=username, password=password)
+    def login_with_poc(self, username: str, poc_key: str):
+        result = super().login_with_poc(username=username, poc_key=poc_key)
         return FLAdminAPIResponse(status=result["status"], details=result["details"])

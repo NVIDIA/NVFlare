@@ -32,14 +32,12 @@ class AdminController:
         self.poll_period = poll_period
 
         self.admin_api: FLAdminAPI = FLAdminAPI(
-            host="localhost",
-            port=8003,
             upload_dir=self.jobs_root_dir,
             download_dir=self.jobs_root_dir,
             poc=True,
             debug=False,
             user_name="admin",
-            password="admin",
+            poc_key="admin",
         )
 
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -53,7 +51,7 @@ class AdminController:
             timeout = 100
             start_time = time.time()
             while time.time() - start_time <= timeout:
-                response = self.admin_api.login_with_password(username="admin", password="admin")
+                response = self.admin_api.login_with_poc(username="admin", poc_key="admin")
                 if response["status"] == APIStatus.SUCCESS:
                     success = True
                     break

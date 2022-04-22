@@ -287,8 +287,6 @@ class FileTransferModule(CommandModule):
                     )
 
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
-                conn.set_prop("meta", meta)
-                conn.set_prop("submit_job_id", meta.get(JobMetaKey.JOB_ID))
                 conn.append_string("Submitted job: {}".format(meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
             conn.append_error("Exception occurred trying to submit job: " + str(e))
@@ -335,7 +333,7 @@ class FileTransferModule(CommandModule):
     def _validate_job(self, meta: dict, study_manager: StudyManagerSpec, fl_ctx: FLContext) -> Tuple[bool, str]:
 
         study_name = meta.get(JobMetaKey.STUDY_NAME)
-        if not isinstance(study_name, str) or not str:
+        if not isinstance(study_name, str):
             return False, "study_name is expected in meta.json to be a str"
 
         if study_name == Study.DEFAULT_STUDY_NAME:

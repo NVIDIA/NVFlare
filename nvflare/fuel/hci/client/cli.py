@@ -94,7 +94,6 @@ class AdminClient(cmd.Cmd):
         self.require_login = require_login
         self.credential_type = credential_type
         self.user_name = None
-        self.password = None
         self.pwd = None
 
         self.overseer_agent = overseer_agent
@@ -133,7 +132,6 @@ class AdminClient(cmd.Cmd):
             overseer_agent=self.overseer_agent,
             auto_login=True,
             user_name=self.user_name,
-            password=self.password,
             debug=self.debug,
             poc=poc,
         )
@@ -445,7 +443,7 @@ class AdminClient(cmd.Cmd):
                     else:
                         pwd = getpass.getpass("Password: ")
                     # print(f"host: {self.api.host} port: {self.api.port}")
-                    self.api.login_with_password(username=user_name, password=pwd)
+                    self.api.login_with_poc(username=user_name, poc_key=pwd)
                     self.stdout.write(f"login_result: {self.api.login_result} token: {self.api.token}\n{self.prompt}")
                     if self.api.login_result == "OK":
                         self.user_name = user_name
