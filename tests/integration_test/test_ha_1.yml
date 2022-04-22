@@ -15,5 +15,5 @@ tests:
   #     - tests.integration_test.validators.tf_model_validator.TFModelValidator
   - app_name: sag
     validators:
-      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+      - tests.integration_test.validators.sag_result_validator.HASAGResultValidator
 
