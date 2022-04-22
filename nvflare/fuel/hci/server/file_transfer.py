@@ -16,11 +16,16 @@ import os
 import shutil
 import tempfile
 import traceback
-from typing import List
+from io import BytesIO
+from typing import List, Tuple
+from zipfile import ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.apis.fl_constant import SystemComponents
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+from nvflare.apis.study_manager_spec import Study, StudyManagerSpec
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -31,7 +36,7 @@ from nvflare.fuel.hci.base64_utils import (
 )
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
 
 
 class FileTransferModule(CommandModule):
@@ -101,10 +106,10 @@ class FileTransferModule(CommandModule):
                     visible=False,
                 ),
                 CommandSpec(
-                    name=ftd.SERVER_CMD_UPLOAD_JOB,
-                    description="upload a job def",
-                    usage="upload_job job_folder_name",
-                    handler_func=self.upload_job,
+                    name=ftd.SERVER_CMD_SUBMIT_JOB,
+                    description="Submit a job",
+                    usage="submit_job job_folder",
+                    handler_func=self.submit_job,
                     visible=False,
                 ),
                 CommandSpec(
@@ -251,26 +256,44 @@ class FileTransferModule(CommandModule):
             traceback.print_exc()
             conn.append_error("exception occurred")
 
-    def upload_job(self, conn: Connection, args: List[str]):
-        meta_b64str = args[1]
+    def submit_job(self, conn: Connection, args: List[str]):
+
+        folder_name = args[1]
         zip_b64str = args[2]
-        data_bytes = b64str_to_bytes(zip_b64str)
-        meta = json.loads(b64str_to_bytes(meta_b64str))
+        data_bytes = convert_legacy_zip(b64str_to_bytes(zip_b64str))
         engine = conn.app_ctx
+        study_manager = engine.get_component(SystemComponents.STUDY_MANAGER)
+        if not study_manager:
+            conn.append_error("Server configuration error: no study manager is configured")
+            return
+
         try:
-            job_def_manager = engine.job_def_manager
-            if not isinstance(job_def_manager, JobDefManagerSpec):
-                raise TypeError(
-                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
-                )
             with engine.new_context() as fl_ctx:
+                with ZipFile(BytesIO(data_bytes), "r") as zf:
+                    meta_file = folder_name + "/meta.json"
+                    meta_data = zf.read(meta_file)
+                    meta = json.loads(meta_data)
+                    if JobMetaKey.JOB_FOLDER_NAME not in meta:
+                        meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
+                    valid, error = self._validate_job(meta, study_manager, fl_ctx)
+                    if not valid:
+                        conn.append_error(error)
+                        return
+
+                job_def_manager = engine.job_def_manager
+                if not isinstance(job_def_manager, JobDefManagerSpec):
+                    raise TypeError(
+                        f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                    )
+
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
                 conn.set_prop("meta", meta)
-                conn.set_prop("upload_job_id", meta.get(JobMetaKey.JOB_ID))
-                conn.append_string("Uploaded job: {}".format(meta.get(JobMetaKey.JOB_ID)))
+                conn.set_prop("submit_job_id", meta.get(JobMetaKey.JOB_ID))
+                conn.append_string("Submitted job: {}".format(meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
-            conn.append_error("Exception occurred trying to upload job: " + str(e))
+            conn.append_error("Exception occurred trying to submit job: " + str(e))
             return
+
         conn.append_success("")
 
     def download_job(self, conn: Connection, args: List[str]):
@@ -308,3 +331,45 @@ class FileTransferModule(CommandModule):
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))
         conn.append_string("Server Download Source: {}".format(self.download_dir))
+
+    def _validate_job(self, meta: dict, study_manager: StudyManagerSpec, fl_ctx: FLContext) -> Tuple[bool, str]:
+
+        study_name = meta.get(JobMetaKey.STUDY_NAME)
+        if not isinstance(study_name, str) or not str:
+            return False, "study_name is expected in meta.json to be a str"
+
+        if study_name == Study.DEFAULT_STUDY_NAME:
+            return True, ""
+
+        if not isinstance(meta.get(JobMetaKey.RESOURCE_SPEC), dict):
+            return False, "RESOURCE_SPEC is expected in meta.json to be a dict"
+        if not isinstance(meta.get(JobMetaKey.DEPLOY_MAP), dict):
+            return False, "DEPLOY_MAP is expected in meta.json to be a dict"
+
+        study = study_manager.get_study(study_name, fl_ctx)
+        if not study:
+            return False, "Study {} does not exist".format(study_name)
+
+        if study.participating_clients:
+
+            # Gather all the clients used in deploy_map or which are mandatory
+            required_clients = set()
+            deploy_map = meta.get(JobMetaKey.DEPLOY_MAP)
+            if deploy_map:
+                for k, v in deploy_map:
+                    required_clients.update(v)
+
+            mandatory_clients = meta.get(JobMetaKey.MANDATORY_CLIENTS)
+            if mandatory_clients:
+                required_clients.update(mandatory_clients)
+
+            required_clients.remove("server")
+
+            participants = set(study.participating_clients)
+            if not required_clients.issubset(participants):
+                diff = required_clients - participants
+                return False, "Following clients are not participants of the study {}: {}".format(study_name, diff)
+
+        # TODO: Validate resources against resource manager
+
+        return True, ""

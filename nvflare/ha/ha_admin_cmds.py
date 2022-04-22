@@ -46,12 +46,6 @@ class HACommandModule(CommandModule):
                     usage="promote_sp sp_end_point",
                     handler_func=self.promote_sp,
                 ),
-                CommandSpec(
-                    name="_end_overseer_agent",
-                    description="end the overseer agent thread",
-                    usage="_end_overseer_agent",
-                    handler_func=self._end_overseer_agent,
-                ),
             ],
         )
 
@@ -70,6 +64,3 @@ class HACommandModule(CommandModule):
         print("PROMOTING SP: {}".format(sp_end_point))
         api.overseer_agent.promote_sp(sp_end_point, headers={"username": api.user_name})
         return {"status": APIStatus.SUCCESS, "details": "Promoted endpoint. Synchronizing with overseer..."}
-
-    def _end_overseer_agent(self, args, api):
-        api.overseer_agent.end()
