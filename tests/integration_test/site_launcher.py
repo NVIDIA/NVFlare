@@ -285,18 +285,18 @@ class SiteLauncher:
             # self.stop_all_clients()
 
             # Kill the process
-            if "process" in self.server_properties and self.server_properties["process"]:
-                os.killpg(self.server_properties["process"].pid, signal.SIGTERM)
+            if "process" in server_prop and server_prop["process"]:
+                os.killpg(server_prop["process"].pid, signal.SIGTERM)
 
-                subprocess.call(["kill", str(self.server_properties["process"].pid)])
-                self.server_properties["process"].wait()
+                subprocess.call(["kill", str(server_prop["process"].pid)])
+                server_prop["process"].wait()
                 print("Sent SIGTERM to server.")
             else:
                 print("No server process.")
         except Exception as e:
             print(f"Exception in stopping server: {e.__str__()}")
         finally:
-            self.server_properties.clear()
+            server_prop.clear()
 
     def stop_client(self, client_id) -> bool:
         if client_id not in self.client_properties:
