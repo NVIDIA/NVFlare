@@ -53,10 +53,7 @@ def main():
 
     if admin_config.get("with_file_transfer"):
         modules.append(
-            FileTransferModule(
-                upload_dir=admin_config.get("upload_dir"),
-                download_dir=admin_config.get("download_dir")
-            )
+            FileTransferModule(upload_dir=admin_config.get("upload_dir"), download_dir=admin_config.get("download_dir"))
         )
 
     ca_cert = admin_config.get("ca_cert", "")
