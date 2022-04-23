@@ -27,7 +27,7 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.hci.zip_utils import remove_leading_dotdot, unzip_all_from_bytes, zip_directory_to_bytes
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
@@ -137,12 +137,6 @@ class _DownloadFolderProcessor(ReplyProcessor):
                     "details": "exception processing reply: {}".format(ex),
                 }
             )
-
-
-def _remove_loading_dotdot(path):
-    while path.startswith("../"):
-        path = path[3:]
-    return path
 
 
 class FileTransferModule(CommandModule):
@@ -278,7 +272,7 @@ class FileTransferModule(CommandModule):
 
         # prepare for upload
         rel_path = os.path.relpath(full_path, self.upload_dir)
-        folder_name = _remove_loading_dotdot(rel_path)
+        folder_name = remove_leading_dotdot(rel_path)
 
         b64str = bytes_to_b64str(data)
         parts = [_server_cmd_name(ftd.SERVER_CMD_UPLOAD_FOLDER), folder_name, b64str]
@@ -310,7 +304,7 @@ class FileTransferModule(CommandModule):
         data = zip_directory_to_bytes(self.upload_dir, folder_name)
 
         rel_path = os.path.relpath(full_path, self.upload_dir)
-        folder_name = _remove_loading_dotdot(rel_path)
+        folder_name = remove_leading_dotdot(rel_path)
         b64str = bytes_to_b64str(data)
         parts = [_server_cmd_name(ftd.SERVER_CMD_SUBMIT_JOB), folder_name, b64str]
         command = join_args(parts)
