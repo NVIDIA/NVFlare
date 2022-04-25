@@ -12,33 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import glob
+import os
 
-import tensorflow as tf
 import matplotlib.pyplot as plt
 import seaborn as sns
+import tensorflow as tf
 
 client_results_root = "./workspace_prostate"
 
 # Central vs. FedAvg vs. FedProx vs. Ditto
-experiments = {"central": {"run": "run_1", "tag": "val_metric_global_model"},
-               "fedavg": {"run": "run_2", "tag": "val_metric_global_model"},
-               "fedprox": {"run": "run_3", "tag": "val_metric_global_model"},
-               "ditto": {"run": "run_4", "tag": "val_metric_per_model"},
-               }
+experiments = {
+    "central": {"run": "run_1", "tag": "val_metric_global_model"},
+    "fedavg": {"run": "run_2", "tag": "val_metric_global_model"},
+    "fedprox": {"run": "run_3", "tag": "val_metric_global_model"},
+    "ditto": {"run": "run_4", "tag": "val_metric_per_model"},
+}
 # 6 sites
 sites = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx", "Promise12", "PROSTATEx"]
 
 weight = 0.8
+
+
 def smooth(scalars, weight):  # Weight between 0 and 1
     last = scalars[0]  # First value in the plot (first timestep)
     smoothed = list()
     for point in scalars:
         smoothed_val = last * weight + (1 - weight) * point  # Calculate smoothed value
-        smoothed.append(smoothed_val)                        # Save it
-        last = smoothed_val                                  # Anchor the last smoothed value
+        smoothed.append(smoothed_val)  # Save it
+        last = smoothed_val  # Anchor the last smoothed value
     return smoothed
+
 
 def read_eventfile(filepath, tags=["val_metric_global_model"]):
     data = {}
@@ -51,6 +55,7 @@ def read_eventfile(filepath, tags=["val_metric_global_model"]):
                 else:
                     data[v.tag] = [[summary.step, v.simple_value]]
     return data
+
 
 def add_eventdata(data, config, filepath, tag="val_metric_global_model"):
     event_data = read_eventfile(filepath, tags=[tag])
@@ -73,31 +78,30 @@ def add_eventdata(data, config, filepath, tag="val_metric_global_model"):
 def main():
     plt.figure()
     num_site = len(sites)
-    i=1
+    i = 1
     # add event files
     for site in sites:
-        data = {
-            "Config": [],
-            "Round": [],
-            "Dice": []
-        }
+        data = {"Config": [], "Round": [], "Dice": []}
         for config, exp in experiments.items():
             if exp["run"] == "run_1":
                 file_path = os.path.join(client_results_root, "client_All", exp["run"], "app_client_All", "events.*")
             else:
-                file_path = os.path.join(client_results_root, "client_"+site, exp["run"], "app_client_"+site, "events.*")
+                file_path = os.path.join(
+                    client_results_root, "client_" + site, exp["run"], "app_client_" + site, "events.*"
+                )
             eventfile = glob.glob(file_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]
             print("adding", eventfile)
             add_eventdata(data, config, eventfile, tag=exp["tag"])
-        ax = plt.subplot(2,int(num_site/2),i)
+        ax = plt.subplot(2, int(num_site / 2), i)
         ax.set_title(site)
         sns.lineplot(x="Round", y="Dice", hue="Config", data=data)
         ax.set_xlim([0, 150])
         i = i + 1
     plt.subplots_adjust(hspace=0.3)
     plt.show()
+
 
 if __name__ == "__main__":
     main()

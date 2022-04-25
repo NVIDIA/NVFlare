@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import copy
+import os
 
 import numpy as np
 import torch
-
 import torch.optim as optim
-from monai.networks.nets.unet import UNet
 from monai.losses import DiceLoss
+from monai.networks.nets.unet import UNet
+from pt.learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
+from pt.pt_ditto import PTDittoHelper
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReturnCode
@@ -30,17 +31,14 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
-from pt.learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
-from pt.pt_ditto import PTDittoHelper
-
 
 class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
     def __init__(
-            self,
-            train_config_filename,
-            aggregation_epochs: int = 1,
-            ditto_model_epochs: int = 1,
-            train_task_name: str = AppConstants.TASK_TRAIN,
+        self,
+        train_config_filename,
+        aggregation_epochs: int = 1,
+        ditto_model_epochs: int = 1,
+        train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         """Trainer for prostate segmentation task. It inherits from MONAI trainer.
 
@@ -84,7 +82,9 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             strides=(2, 2, 2, 2),
             num_res_units=2,
         ).to(self.device)
-        self.ditto_helper.ditto_optimizer = optim.Adam(self.ditto_helper.ditto_model.parameters(), lr=self.ditto_helper.ditto_lr)
+        self.ditto_helper.ditto_optimizer = optim.Adam(
+            self.ditto_helper.ditto_model.parameters(), lr=self.ditto_helper.ditto_lr
+        )
         self.ditto_helper.ditto_best_metric = 0
         self.ditto_helper.device = self.device
 
@@ -94,7 +94,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Shareable:
-        """ Training task pipeline for Ditto
+        """Training task pipeline for Ditto
         Get global model weights (potentially with HE)
         Prepare for fedprox loss
         Load Ditto personalized model info
@@ -156,16 +156,18 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         # local train ditto model
         self.ditto_helper.local_train_ditto(
-            train_loader=self.train_loader,
-            model_global=model_global,
-            abort_signal=abort_signal,
-            writer=self.writer
+            train_loader=self.train_loader, model_global=model_global, abort_signal=abort_signal, writer=self.writer
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # local valid ditto model each round
-        metric = self.local_valid(self.valid_loader, abort_signal, tb_id="val_metric_per_model", record_epoch=self.ditto_helper.ditto_epoch_global)
+        metric = self.local_valid(
+            self.valid_loader,
+            abort_signal,
+            tb_id="val_metric_per_model",
+            record_epoch=self.ditto_helper.ditto_epoch_global,
+        )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         self.log_info(fl_ctx, f"val_metric_per_model: {metric:.4f}")

@@ -34,13 +34,12 @@ from monai.transforms import (
     Resized,
     ScaleIntensityRanged,
 )
+from pt.learners.supervised_learner import SupervisedLearner
 from pt.utils.custom_client_datalist_json_path import custom_client_datalist_json_path
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
-
-from pt.learners.supervised_learner import SupervisedLearner
 
 
 class SupervisedMonaiProstateLearner(SupervisedLearner):
@@ -50,7 +49,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         aggregation_epochs: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
-        """ MONAI Learner for prostate segmentation task.
+        """MONAI Learner for prostate segmentation task.
         It inherits from SupervisedLearner.
 
         Args:
@@ -69,7 +68,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         self.config_info = None
 
     def train_config(self, fl_ctx: FLContext):
-        """ MONAI traning configuration
+        """MONAI traning configuration
         Here, we use a json to specify the needed parameters
         """
 
@@ -135,31 +134,13 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
             [
                 LoadImaged(keys=["image", "label"]),
                 EnsureChannelFirstd(keys=["image", "label"]),
-                ScaleIntensityRanged(
-                    keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0
-                ),
-                Resized(
-                    keys=["image", "label"],
-                    spatial_size=(256, 256),
-                    mode=("bilinear"),
-                    align_corners=True
-                ),
-                AsDiscreted(
-                    keys=["label"],
-                    threshold=0.5
-                ),
+                ScaleIntensityRanged(keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0),
+                Resized(keys=["image", "label"], spatial_size=(256, 256), mode=("bilinear"), align_corners=True),
+                AsDiscreted(keys=["label"], threshold=0.5),
                 EnsureTyped(keys=["image", "label"]),
             ]
         )
-        self.transform_post = Compose(
-            [
-                EnsureType(),
-                Activations(sigmoid=True),
-                AsDiscrete(
-                    threshold=0.5
-                )
-            ]
-        )
+        self.transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
         # Set dataset
         if cache_rate > 0.0:

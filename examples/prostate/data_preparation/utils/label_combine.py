@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import nibabel as nib
-import numpy as np
 import argparse
 
+import nibabel as nib
+import numpy as np
+
 parser = argparse.ArgumentParser("Combine label images to a binary one")
-parser.add_argument("--ref_image", help="Reference image file path, to make sure algnment between image and mask", type=str)
+parser.add_argument(
+    "--ref_image", help="Reference image file path, to make sure algnment between image and mask", type=str
+)
 parser.add_argument("--input_folder_path", help="Input label image folder path", type=str)
 parser.add_argument("--output_path", help="Output binary image path", type=str)
 args = parser.parse_args()
@@ -26,15 +29,15 @@ ref = nib.load(args.ref_image)
 ref_affine = ref.affine
 ref_np = ref.get_fdata()
 
-img = nib.load(args.input_folder_path+"/1.nii.gz")
+img = nib.load(args.input_folder_path + "/1.nii.gz")
 img_np = img.get_fdata()
-img = nib.load(args.input_folder_path+"/2.nii.gz")
+img = nib.load(args.input_folder_path + "/2.nii.gz")
 img_np = img_np + img.get_fdata()
-img = nib.load(args.input_folder_path+"/4.nii.gz")
+img = nib.load(args.input_folder_path + "/4.nii.gz")
 img_np = img_np + img.get_fdata()
 # Special treatment for urethra: if urethra only, then discard
 # since it is usually not included in other prostate segmentation protocols
-ure = nib.load(args.input_folder_path+"/3.nii.gz")
+ure = nib.load(args.input_folder_path + "/3.nii.gz")
 ure_np = ure.get_fdata()
 for slice_idx in range(img_np.shape[2]):
     image_slice = img_np[:, :, slice_idx]
@@ -43,7 +46,7 @@ for slice_idx in range(img_np.shape[2]):
         image_slice = image_slice + ure_slice
     img_np[:, :, slice_idx] = image_slice
 
-img_np[img_np>0] = 1
+img_np[img_np > 0] = 1
 img_affine = img.affine
 
 # reorient mask image

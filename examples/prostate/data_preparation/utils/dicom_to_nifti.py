@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import dicom2nifti
 import argparse
+
+import dicom2nifti
 
 parser = argparse.ArgumentParser("Dicom to Nifti converter")
 parser.add_argument("--dicom_folder", help="Input Dicom folder path", type=str)

@@ -10,22 +10,34 @@
 # limitations under the License.
 
 import argparse
-import torch
 
+import torch
 from monai.data import CacheDataset, DataLoader, load_decathlon_datalist
 from monai.inferers import SimpleInferer
 from monai.metrics import DiceMetric
 from monai.networks.nets import UNet
-from monai.transforms import (Activations, AsDiscrete, AsDiscreted, Compose,
-                              EnsureChannelFirstd, EnsureType, EnsureTyped,
-                              LoadImaged, Resized, ScaleIntensityRanged)
+from monai.transforms import (
+    Activations,
+    AsDiscrete,
+    AsDiscreted,
+    Compose,
+    EnsureChannelFirstd,
+    EnsureType,
+    EnsureTyped,
+    LoadImaged,
+    Resized,
+    ScaleIntensityRanged,
+)
+
 
 def main():
-    parser = argparse.ArgumentParser(description='Model Testing')
-    parser.add_argument('--model_path', default='../workspace_prostate/server/run_1/app_server/best_FL_global_model.pt', type=str)
-    parser.add_argument('--cache_rate', default=1.0, type=float)
-    parser.add_argument('--dataset_base_dir', default='./data_preparation/dataset_2D', type=str)
-    parser.add_argument('--datalist_json_path', default='./data_preparation/datalist/client_All.json', type=str)
+    parser = argparse.ArgumentParser(description="Model Testing")
+    parser.add_argument(
+        "--model_path", default="../workspace_prostate/server/run_1/app_server/best_FL_global_model.pt", type=str
+    )
+    parser.add_argument("--cache_rate", default=1.0, type=float)
+    parser.add_argument("--dataset_base_dir", default="./data_preparation/dataset_2D", type=str)
+    parser.add_argument("--datalist_json_path", default="./data_preparation/datalist/client_All.json", type=str)
     args = parser.parse_args()
 
     # Set basic settings and paths
@@ -55,7 +67,7 @@ def main():
         num_res_units=2,
     ).to(device)
     model_weights = torch.load(model_path)
-    model_weights = model_weights['model']
+    model_weights = model_weights["model"]
     model.load_state_dict(model_weights)
 
     # Inferer, evaluation metric
@@ -66,31 +78,13 @@ def main():
         [
             LoadImaged(keys=["image", "label"]),
             EnsureChannelFirstd(keys=["image", "label"]),
-            ScaleIntensityRanged(
-                keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0
-            ),
-            Resized(
-                keys=["image", "label"],
-                spatial_size=(256, 256),
-                mode=("bilinear"),
-                align_corners=True
-            ),
-            AsDiscreted(
-                keys=["label"],
-                threshold=0.5
-            ),
+            ScaleIntensityRanged(keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0),
+            Resized(keys=["image", "label"], spatial_size=(256, 256), mode=("bilinear"), align_corners=True),
+            AsDiscreted(keys=["label"], threshold=0.5),
             EnsureTyped(keys=["image", "label"]),
         ]
     )
-    transform_post = Compose(
-        [
-            EnsureType(),
-            Activations(sigmoid=True),
-            AsDiscrete(
-                threshold=0.5
-            )
-        ]
-    )
+    transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
     # Set dataset
     test_dataset = CacheDataset(
@@ -98,7 +92,7 @@ def main():
         transform=transform,
         cache_rate=cache_rate,
         num_workers=4,
-        )
+    )
     test_loader = DataLoader(
         test_dataset,
         batch_size=1,

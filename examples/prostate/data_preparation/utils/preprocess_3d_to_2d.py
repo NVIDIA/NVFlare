@@ -15,10 +15,12 @@
 import argparse
 import glob
 import os
-import nibabel as nib
 import pathlib
+
+import nibabel as nib
 import numpy as np
 from PIL import Image
+
 
 def main():
     parser = argparse.ArgumentParser(description="Convert 3D prostate dataset for 2D experiment")
@@ -64,10 +66,10 @@ def main():
                 pathlib.Path(os.path.join(image_out_path, case_id)).mkdir(parents=True, exist_ok=True)
                 pathlib.Path(os.path.join(mask_out_path, case_id)).mkdir(parents=True, exist_ok=True)
                 # flip so as to follow clinical viewing orientation
-                im = Image.fromarray(image_slice).convert('L').transpose(Image.FLIP_TOP_BOTTOM)
-                im.save(os.path.join(image_out_path, case_id, '{}.png'.format(slice_idx)))
-                im = Image.fromarray(mask_slice).convert('L').transpose(Image.FLIP_TOP_BOTTOM)
-                im.save(os.path.join(mask_out_path, case_id, '{}.png'.format(slice_idx)))
+                im = Image.fromarray(image_slice).convert("L").transpose(Image.FLIP_TOP_BOTTOM)
+                im.save(os.path.join(image_out_path, case_id, "{}.png".format(slice_idx)))
+                im = Image.fromarray(mask_slice).convert("L").transpose(Image.FLIP_TOP_BOTTOM)
+                im.save(os.path.join(mask_out_path, case_id, "{}.png".format(slice_idx)))
     return
 
 

@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import nibabel as nib
-import nrrd 
-import numpy as np
 import argparse
+
+import nibabel as nib
+import nrrd
+import numpy as np
 
 parser = argparse.ArgumentParser("Convert nrrd label to nifti with reference image file for affine")
 parser.add_argument("--input_path", help="Input nrrd path", type=str)
@@ -23,7 +24,7 @@ parser.add_argument("--reference_path", help="Reference image path", type=str)
 parser.add_argument("--output_path", help="Output nifti path", type=str)
 args = parser.parse_args()
 
-img = nib.load(args.reference_path)		
+img = nib.load(args.reference_path)
 img_affine = img.affine
 
 nrrd = nrrd.read(args.input_path)

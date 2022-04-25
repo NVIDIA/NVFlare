@@ -16,6 +16,7 @@ import argparse
 import glob
 import json
 import os
+
 import numpy as np
 
 np.random.seed(0)
@@ -25,13 +26,16 @@ np.random.seed(0)
 # output json file is named client_${site_name}.json
 
 parser = argparse.ArgumentParser(description="generate train/valid/test splits for datasets")
-parser.add_argument("--mode", type=str, help="Split mode, mode can either be 'folder' or 'file', controlling the split level")
+parser.add_argument(
+    "--mode", type=str, help="Split mode, mode can either be 'folder' or 'file', controlling the split level"
+)
 parser.add_argument("--data_dir", type=str, help="Path to data folder")
 parser.add_argument("--site_name", type=str, help="Path to particular set")
 parser.add_argument("--train", type=float, default=0.5, help="Portion of training set, default 50%")
 parser.add_argument("--valid", type=float, default=0.25, help="Portion of validation set, default 25%")
 parser.add_argument("--test", type=float, default=0.25, help="Portion of testing set, default 25%")
 parser.add_argument("--out_path", type=str, help="Path to datalist json file")
+
 
 def partition_data(mode, data_path, site_name, train, valid, test, out_path):
     assert mode in ["folder", "file"], "mode should either be 'folder' or 'file'"
@@ -63,7 +67,7 @@ def partition_data(mode, data_path, site_name, train, valid, test, out_path):
     np.random.shuffle(rand_idx)
 
     # check the ratio sum
-    assert (train+valid+test) == 1, "Sum of all three splits should be 1."
+    assert (train + valid + test) == 1, "Sum of all three splits should be 1."
 
     tra_cut = round(length * train)
     val_cut = round(length * train) + round(length * valid)
@@ -96,14 +100,16 @@ def partition_data(mode, data_path, site_name, train, valid, test, out_path):
         for idx in range(len(image_file_name)):
             new_item = {}
             # collect the paths, excluding the common data_root
-            new_item["image"] = image_file_name[idx].replace(data_path + '/', "")
-            new_item["label"] = mask_file_name[idx].replace(data_path + '/', "")
+            new_item["image"] = image_file_name[idx].replace(data_path + "/", "")
+            new_item["label"] = mask_file_name[idx].replace(data_path + "/", "")
             temp = json_data[to_append]
             temp.append(new_item)
 
     print(f"In total {length} cases, {tra} for training, {val} for validation, and {tst} for testing")
     if mode == "folder":
-        print(f"In total {total_file} samples, split at case level, {tra_i} for training, {val_i} for validation, and {tst_i} for testing")
+        print(
+            f"In total {total_file} samples, split at case level, {tra_i} for training, {val_i} for validation, and {tst_i} for testing"
+        )
     with open(out_path, "w") as f:
         json.dump(json_data, f, indent=4)
 
@@ -111,5 +117,11 @@ def partition_data(mode, data_path, site_name, train, valid, test, out_path):
 if __name__ == "__main__":
     args = parser.parse_args()
     partition_data(
-        mode=args.mode, data_path=args.data_dir, site_name=args.site_name, train=args.train, valid=args.valid, test=args.test, out_path=args.out_path
+        mode=args.mode,
+        data_path=args.data_dir,
+        site_name=args.site_name,
+        train=args.train,
+        valid=args.valid,
+        test=args.test,
+        out_path=args.out_path,
     )

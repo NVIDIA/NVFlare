@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import SimpleITK as sitk
-import numpy as np
 import argparse
+
+import numpy as np
+import SimpleITK as sitk
 
 parser = argparse.ArgumentParser("Convert mhd file to nifti")
 parser.add_argument("--input_path", help="Input mhd path", type=str)
@@ -24,7 +25,7 @@ args = parser.parse_args()
 reader = sitk.ImageFileReader()
 reader.SetImageIO("MetaImageIO")
 reader.SetFileName(args.input_path)
-image = reader.Execute();
+image = reader.Execute()
 
 writer = sitk.ImageFileWriter()
 writer.SetFileName(args.output_path)

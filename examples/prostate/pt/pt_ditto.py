@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+
 import torch
 
 from nvflare.apis.fl_constant import ReturnCode
@@ -67,7 +68,7 @@ class PTDittoHelper(object):
             self.ditto_best_metric = model_data["best_metric"]
 
     def save_ditto_model(self, is_best=False):
-        # save personalized model locally 
+        # save personalized model locally
         model_weights = self.ditto_model.state_dict()
         save_dict = {"model": model_weights, "epoch": self.ditto_epoch_global}
         if is_best:
@@ -76,13 +77,7 @@ class PTDittoHelper(object):
         else:
             torch.save(save_dict, self.ditto_model_file_path)
 
-    def local_train_ditto(
-        self,
-        train_loader,
-        model_global,
-        abort_signal: Signal,
-        writer
-    ):
+    def local_train_ditto(self, train_loader, model_global, abort_signal: Signal, writer):
         # Train personal model for self.ditto_model_epochs, and keep track of curves
         for epoch in range(self.ditto_model_epochs):
             if abort_signal.triggered:

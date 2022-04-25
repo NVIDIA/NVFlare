@@ -82,7 +82,7 @@ class SupervisedLearner(Learner):
         self.train_config(fl_ctx)
 
     def train_config(self, fl_ctx: FLContext):
-        """ Traning configurations customized to individual tasks
+        """Traning configurations customized to individual tasks
         This can be specified / loaded in any ways
         as long as they are made available for further training and validation
         some potential items include but not limited to:
@@ -113,7 +113,7 @@ class SupervisedLearner(Learner):
         model_global,
         abort_signal: Signal,
     ):
-        """ Typical training logic
+        """Typical training logic
         Total local epochs: self.aggregation_epochs
         Load data pairs from train_loader: image / label
         Compute outputs with self.model
@@ -153,13 +153,13 @@ class SupervisedLearner(Learner):
                 self.writer.add_scalar("train_loss", loss.item(), current_step)
 
     def local_valid(
-            self,
-            valid_loader,
-            abort_signal: Signal,
-            tb_id=None,
-            record_epoch=None,
+        self,
+        valid_loader,
+        abort_signal: Signal,
+        tb_id=None,
+        record_epoch=None,
     ):
-        """ Typical validation logic
+        """Typical validation logic
         Load data pairs from train_loader: image / label
         Compute outputs with self.model
         Perform post transform (binarization, etc.)
@@ -193,7 +193,7 @@ class SupervisedLearner(Learner):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Shareable:
-        """ Typical training task pipeline with potential HE and fedprox functionalities
+        """Typical training task pipeline with potential HE and fedprox functionalities
         Get global model weights (potentially with HE)
         Prepare for fedprox loss
         Local training
@@ -268,13 +268,8 @@ class SupervisedLearner(Learner):
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo.to_shareable()
 
-    def validate(
-            self,
-            shareable: Shareable,
-            fl_ctx: FLContext,
-            abort_signal: Signal
-    ) -> Shareable:
-        """ Typical validation task pipeline with potential HE functionality
+    def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        """Typical validation task pipeline with potential HE functionality
         Get global model weights (potentially with HE)
         Validation on local data
         Return validation score
@@ -310,7 +305,9 @@ class SupervisedLearner(Learner):
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
             # perform valid before local train
-            global_metric = self.local_valid(self.valid_loader, abort_signal, tb_id="val_metric_global_model", record_epoch=self.epoch_global)
+            global_metric = self.local_valid(
+                self.valid_loader, abort_signal, tb_id="val_metric_global_model", record_epoch=self.epoch_global
+            )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             self.log_info(fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}")
