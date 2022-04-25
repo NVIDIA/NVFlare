@@ -19,6 +19,7 @@ from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
+from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 
 
 class AdminController:
@@ -32,14 +33,13 @@ class AdminController:
         self.poll_period = poll_period
 
         self.admin_api: FLAdminAPI = FLAdminAPI(
-            host="localhost",
-            port=8003,
             upload_dir=self.jobs_root_dir,
             download_dir=self.jobs_root_dir,
+            overseer_agent=DummyOverseerAgent(sp_end_point="localhost:8002:8003"),
             poc=True,
             debug=False,
             user_name="admin",
-            password="admin",
+            poc_key="admin",
         )
 
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -53,7 +53,7 @@ class AdminController:
             timeout = 100
             start_time = time.time()
             while time.time() - start_time <= timeout:
-                response = self.admin_api.login_with_password(username="admin", password="admin")
+                response = self.admin_api.login_with_poc(username="admin", poc_key="admin")
                 if response["status"] == APIStatus.SUCCESS:
                     success = True
                     break
@@ -84,6 +84,7 @@ class AdminController:
             if time.time() - start_time > timeout:
                 raise ValueError(f"Clients could not be started in {timeout} seconds.")
 
+            time.sleep(0.5)
             response = self.admin_api.check_status(target_type=TargetType.CLIENT)
             if response["status"] == APIStatus.SUCCESS:
                 # print(f"check client status response {response}")
@@ -152,4 +153,5 @@ class AdminController:
                 training_done = True
 
     def finalize(self):
+        self.admin_api.overseer_agent.end()
         self.admin_api.shutdown(target_type=TargetType.ALL)

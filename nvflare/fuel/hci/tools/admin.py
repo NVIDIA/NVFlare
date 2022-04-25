@@ -31,7 +31,6 @@ def main():
     parser.add_argument(
         "--fed_admin", "-s", type=str, help="json file with configurations for launching admin client", required=True
     )
-    parser.add_argument("--upload_folder_cmd_name", type=str, default="upload_app")
     parser.add_argument("--cli_history_size", type=int, default=1000)
     parser.add_argument("--with_debug", action="store_true")
 
@@ -40,12 +39,8 @@ def main():
     try:
         os.chdir(args.workspace)
         workspace = os.path.join(args.workspace, "startup")
-
         conf = FLAdminClientStarterConfigurator(app_root=workspace, admin_config_file_name=args.fed_admin)
         conf.configure()
-
-        # stuff for admin launching maybe?
-
     except ConfigError as ex:
         print("ConfigError:", str(ex))
 
@@ -58,11 +53,7 @@ def main():
 
     if admin_config.get("with_file_transfer"):
         modules.append(
-            FileTransferModule(
-                upload_dir=admin_config.get("upload_dir"),
-                download_dir=admin_config.get("download_dir"),
-                upload_folder_cmd_name=args.upload_folder_cmd_name,
-            )
+            FileTransferModule(upload_dir=admin_config.get("upload_dir"), download_dir=admin_config.get("download_dir"))
         )
 
     ca_cert = admin_config.get("ca_cert", "")

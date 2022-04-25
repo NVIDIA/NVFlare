@@ -169,9 +169,7 @@ class JobCommandModule(TrainingCommandModule):
                 job = job_def_manager.get_job(job_id, fl_ctx)
                 data_bytes = job_def_manager.get_content(job_id, fl_ctx)
                 meta = job_def_manager.create(job.meta, data_bytes, fl_ctx)
-                conn.set_prop("meta", meta)
-                conn.set_prop("submit_job_id", meta.get(JobMetaKey.JOB_ID))
-                conn.append_string("Cloned job {} as {}".format(job_id, meta.get(JobMetaKey.JOB_ID)))
+                conn.append_string("Cloned job {} as: {}".format(job_id, meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
             conn.append_error("Exception occurred trying to clone job: " + str(e))
             return
@@ -185,7 +183,6 @@ class JobCommandModule(TrainingCommandModule):
         )
 
     def _send_detail_list(self, conn: Connection, jobs: List[Job]):
-        conn.append_string("Details for each job:")
         for job in jobs:
             conn.append_string(json.dumps(job.meta, indent=4))
 

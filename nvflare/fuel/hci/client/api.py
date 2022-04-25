@@ -103,7 +103,7 @@ class AdminAPI(AdminAPISpec):
         overseer_agent: OverseerAgent = None,
         auto_login: bool = False,
         user_name: str = None,
-        password: str = None,
+        poc_key: str = None,
         poc: bool = False,
         debug: bool = False,
     ):
@@ -122,7 +122,7 @@ class AdminAPI(AdminAPISpec):
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             auto_login: Whether to use stored credentials to automatically log in (required to be True with OverseerAgent to provide high availability)
             user_name: Username to authenticate with FL server
-            password: Password to authenticate with FL server (not used in secure mode with SSL)
+            poc_key: Key used in POC mode to authenticate with FL server (not used in secure mode with SSL)
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
         """
@@ -177,9 +177,9 @@ class AdminAPI(AdminAPISpec):
                 raise Exception("for auto_login, user_name is required.")
             self.user_name = user_name
             if self.poc:
-                if not password:
-                    raise Exception("for auto_login, password is required for poc mode.")
-                self.password = password
+                if not poc_key:
+                    raise Exception("for auto_login, poc_key is required for poc mode.")
+                self.poc_key = poc_key
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
         self.client_cmd_reg = CommandRegister(app_ctx=self)
@@ -224,12 +224,12 @@ class AdminAPI(AdminAPISpec):
         try_count = 0
         while try_count < 5:
             if self.poc:
-                self.login_with_password(username=self.user_name, password=self.password)
+                self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
                 print(f"login_result: {self.login_result} token: {self.token}")
                 if self.login_result == "OK":
                     return True
                 elif self.login_result == "REJECT":
-                    print("Incorrect password.")
+                    print("Incorrect key for POC mode.")
                     return False
                 else:
                     print("Communication Error - please try later")
@@ -244,6 +244,7 @@ class AdminAPI(AdminAPISpec):
                 else:
                     print("Communication Error - please try later")
                     try_count += 1
+            time.sleep(1.0)
         return False
 
     def _load_client_cmds(self, cmd_modules):
@@ -333,18 +334,18 @@ class AdminAPI(AdminAPISpec):
         self.server_sess_active = True
         return {"status": APIStatus.SUCCESS, "details": "Login success"}
 
-    def login_with_password(self, username: str, password: str):
-        """Login using password for poc example.
+    def login_with_poc(self, username: str, poc_key: str):
+        """Login using key for proof of concept example.
 
         Args:
             username: Username
-            password: password
+            poc_key: key used for proof of concept admin login
 
         Returns:
             A dict of login status and details
         """
         self.login_result = None
-        self._try_command(f"_login {username} {password}", _LoginReplyProcessor())
+        self._try_command(f"_login {username} {poc_key}", _LoginReplyProcessor())
         if self.login_result is None:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
         elif self.login_result == "REJECT":

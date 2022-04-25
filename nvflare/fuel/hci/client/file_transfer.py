@@ -142,7 +142,7 @@ class _DownloadFolderProcessor(ReplyProcessor):
 class FileTransferModule(CommandModule):
     """Command module with commands relevant to file transfer."""
 
-    def __init__(self, upload_dir: str, download_dir: str, upload_folder_cmd_name="submit_job"):
+    def __init__(self, upload_dir: str, download_dir: str):
         if not os.path.isdir(upload_dir):
             raise ValueError("upload_dir {} is not a valid dir".format(upload_dir))
 
@@ -151,7 +151,6 @@ class FileTransferModule(CommandModule):
 
         self.upload_dir = upload_dir
         self.download_dir = download_dir
-        self.upload_folder_cmd_name = upload_folder_cmd_name
 
     def get_spec(self):
         return CommandModuleSpec(
