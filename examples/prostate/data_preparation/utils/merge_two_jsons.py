@@ -13,15 +13,21 @@
 # limitations under the License.
 
 import argparse
-import copy
 import json
-
+import copy
 
 def main():
     parser = argparse.ArgumentParser(description="merge two jsons together")
-    parser.add_argument("--json_1", action="store", required=True, help="full path of json1")
-    parser.add_argument("--json_2", action="store", help="full path of json2")
-    parser.add_argument("--json_out", action="store", help="full path of json merged")
+    parser.add_argument("--json_1",
+                        action="store",
+                        required=True,
+                        help="full path of json1")
+    parser.add_argument("--json_2",
+                        action="store",
+                        help="full path of json2")
+    parser.add_argument("--json_out",
+                        action="store",
+                        help="full path of json merged")
     args = parser.parse_args()
 
     json_1 = args.json_1
@@ -35,11 +41,11 @@ def main():
         json_2_data = json.load(b)
 
     json_data = copy.deepcopy(json_1_data)
-    json_data["training"].extend(json_2_data["training"])
-    json_data["validation"].extend(json_2_data["validation"])
-    json_data["testing"].extend(json_2_data["testing"])
+    json_data['training'].extend(json_2_data['training'])
+    json_data['validation'].extend(json_2_data['validation'])
+    json_data['testing'].extend(json_2_data['testing'])
 
-    with open(json_out, "w") as f:
+    with open(json_out, 'w') as f:
         json.dump(json_data, f, indent=4)
 
     return

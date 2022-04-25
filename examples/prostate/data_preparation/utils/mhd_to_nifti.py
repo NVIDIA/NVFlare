@@ -12,19 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import nibabel as nib
+import SimpleITK as sitk
+import numpy as np
 import argparse
 
-parser = argparse.ArgumentParser("Select single channel from image and save as new image")
-parser.add_argument("--input_path", help="Input multi-channel image path", type=str)
-parser.add_argument("--output_path", help="Output single-channel image path", type=str)
-parser.add_argument("--channel", help="channel number", type=int, default=0)
+parser = argparse.ArgumentParser("Convert mhd file to nifti")
+parser.add_argument("--input_path", help="Input mhd path", type=str)
+parser.add_argument("--output_path", help="Output nifti path", type=str)
 args = parser.parse_args()
 
-img = nib.load(args.input_path)		
-img_np = img.get_fdata()
-img_affine = img.affine
-img_np = img_np[:,:,:,args.channel]
+reader = sitk.ImageFileReader()
+reader.SetImageIO("MetaImageIO")
+reader.SetFileName(args.input_path)
+image = reader.Execute();
 
-nft_img = nib.Nifti1Image(img_np, img_affine)
-nib.save(nft_img, args.output_path)
+writer = sitk.ImageFileWriter()
+writer.SetFileName(args.output_path)
+writer.Execute(image)

@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
-
 import nibabel as nib
+import argparse
 
 parser = argparse.ArgumentParser("Threshold label image to a binary one")
 parser.add_argument("--input_path", help="Input label image path", type=str)
@@ -22,10 +21,10 @@ parser.add_argument("--output_path", help="Output binary image path", type=str)
 parser.add_argument("--threshold", help="threshold", type=int, default=0)
 args = parser.parse_args()
 
-img = nib.load(args.input_path)
+img = nib.load(args.input_path)		
 img_np = img.get_fdata()
 img_affine = img.affine
-img_np[img_np > args.threshold] = 1
+img_np[img_np>args.threshold] = 1
 
 nft_img = nib.Nifti1Image(img_np, img_affine)
 nib.save(nft_img, args.output_path)
