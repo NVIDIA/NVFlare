@@ -309,7 +309,7 @@ The testing score is computed based on the best global model for Central/FedAvg/
 We provide a script for performing validation on testing data split, running
 
 ```
-bash ./result_stat/run_test.sh
+bash ./result_stat/testing_models.sh
 ```
 
 The Dice results are:
