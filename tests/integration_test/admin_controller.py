@@ -153,4 +153,5 @@ class AdminController:
                 training_done = True
 
     def finalize(self):
+        self.admin_api.overseer_agent.end()
         self.admin_api.shutdown(target_type=TargetType.ALL)
