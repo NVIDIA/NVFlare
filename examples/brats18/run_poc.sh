@@ -11,7 +11,7 @@ site_pre="site-"
 
 
 n_clients=$1 # int number
-config=$2 # choose from the folders in ${PWD}/configs
+config=$2 # choose from the folders in ${PWD}/configs_0
 run=$3 # int number
 dataset_base_dir=$4 #e.g. "/workspace/dataset/brats18/"
 datalist_json_path=$5 #e.g. "${PWD}/datalists/brats/brats_13clients"

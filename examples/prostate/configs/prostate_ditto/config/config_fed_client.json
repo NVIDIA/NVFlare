@@ -4,7 +4,7 @@
   "executors": [
     {
       "tasks": [
-        "train", "submit_model", "validate"
+        "train", "validate"
       ],
       "executor": {
         "id": "Executor",
@@ -24,11 +24,11 @@
   "components": [
     {
       "id": "prostate-learner",
-      "path": "pt.learners.prostate_ditto_learner.ProstateDittoLearner",
+      "path": "pt.learners.supervised_monai_prostate_ditto_learner.SupervisedMonaiProstateDittoLearner",
       "args": {
-        "aggregation_epochs": 10,
-        "local_model_epochs": 10,
-        "train_config_filename": "config_train.json"
+        "train_config_filename": "config_train.json",
+        "aggregation_epochs": 1,
+        "ditto_model_epochs": 1
       }
     }
   ]

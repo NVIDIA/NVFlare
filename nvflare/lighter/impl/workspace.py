@@ -25,7 +25,7 @@ class WorkspaceBuilder(Builder):
     def __init__(self, template_file):
         """Manages the folder structure for provisioned projects.
 
-        Sets the template_file containing scripts and configs to put into startup folders, creates directories for the
+        Sets the template_file containing scripts and configs_0 to put into startup folders, creates directories for the
         participants, and moves the provisioned project to the final location at the end
         ($WORKSPACE/$PROJECT_NAME/prod_XX). WorkspaceBuilder manages and sets the number in prod_XX by incrementing from
         the last time provision was run for this project in this workspace, starting with 00 to a max of 99.
@@ -45,7 +45,7 @@ class WorkspaceBuilder(Builder):
               wip/  <--- this is only used during runtime, and will be removed when the provision command exits
 
         Args:
-            template_file: name of template file containing scripts and configs to put into startup folders
+            template_file: name of template file containing scripts and configs_0 to put into startup folders
         """
         self.template_file = template_file
 
