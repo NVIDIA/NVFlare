@@ -335,10 +335,7 @@ class FileTransferModule(CommandModule):
     def _validate_job(self, meta: dict, study_manager: StudyManagerSpec, fl_ctx: FLContext) -> Tuple[bool, str]:
 
         study_name = meta.get(JobMetaKey.STUDY_NAME)
-        if not isinstance(study_name, str) or not str:
-            return False, "study_name is expected in meta.json to be a str"
-
-        if study_name == Study.DEFAULT_STUDY_NAME:
+        if not study_name or study_name == Study.DEFAULT_STUDY_NAME:
             return True, ""
 
         if not isinstance(meta.get(JobMetaKey.RESOURCE_SPEC), dict):
@@ -356,7 +353,7 @@ class FileTransferModule(CommandModule):
             required_clients = set()
             deploy_map = meta.get(JobMetaKey.DEPLOY_MAP)
             if deploy_map:
-                for k, v in deploy_map:
+                for k, v in deploy_map.items():
                     required_clients.update(v)
 
             mandatory_clients = meta.get(JobMetaKey.MANDATORY_CLIENTS)
