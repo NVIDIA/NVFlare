@@ -57,7 +57,7 @@ test_case_15 = {
             "actions": [
                 "sleep 5",
                 "kill server",
-                "sleep 5",
+                "sleep 15",
                 "restart server",
             ],
             "result_state": {"workflow": 0, "round_number": 1, "task": "train"},
