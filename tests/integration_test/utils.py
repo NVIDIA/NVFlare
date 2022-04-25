@@ -21,11 +21,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.study_manager_spec import Study
 
 
-def generate_meta(
-    job_name: str,
-    clients: List[str],
-    study_name: str = Study.DEFAULT_STUDY_NAME
-):
+def generate_meta(job_name: str, clients: List[str], study_name: str = Study.DEFAULT_STUDY_NAME):
     resource_spec = {c: {"gpu": 1} for c in clients}
     deploy_map = {job_name: ["server"] + clients}
     meta = {

@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandClient
 from multiprocessing.connection import Listener
 from threading import Lock
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import (
@@ -46,7 +46,6 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
-from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
@@ -55,9 +54,11 @@ from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
+from .admin import ClientReply
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .run_manager import RunManager
@@ -692,27 +693,41 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return stats
 
-    def _send_admin_requests(self, requests):
+    def _send_admin_requests(self, requests) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
 
-    def check_client_resources(self, resource_reqs):
+    def check_client_resources(self, resource_reqs) -> List[ClientReply]:
+        """To send the check_client_resources requests to the clients
+
+        Args:
+            resource_reqs: resource_reqs for the job
+
+        Returns:
+            A list of ClientReply.
+        """
         requests = {}
-        result = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
             if site_name == "server":
                 continue
             request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=pickle.dumps(resource_requirements))
-            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
             client = self.get_client_from_name(site_name)
             if client:
                 requests.update({client.token: request})
         replies = []
         if requests:
             replies = self._send_admin_requests(requests)
-        return replies, result
+        return replies
 
-    def cancel_client_resources(self, resource_check_results, resource_reqs):
+    def cancel_client_resources(
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+    ):
+        """To cancel the request resources for the job
+
+        Args:
+            resource_check_results: reserved resources
+            resource_reqs: resource_reqs for the job
+        """
         requests = {}
         for site_name, result in resource_check_results.items():
             check_result, token = result
@@ -725,7 +740,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 if client:
                     requests.update({client.token: request})
         if requests:
-            replies = self._send_admin_requests(requests)
+            _ = self._send_admin_requests(requests)
 
     def start_client_job(self, run_number, client_sites):
         requests = {}

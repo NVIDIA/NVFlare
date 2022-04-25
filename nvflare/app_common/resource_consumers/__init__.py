@@ -11,21 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
-# TODO: where to put this file / these constants?
-
-
-class AuxChannelTopic:
-    CHECK_RESOURCE = "_check_resource"
-    CANCEL_RESOURCE = "_cancel_resource"
-
-
-class ShareableHeader:
-    CHECK_RESOURCE_RESULT = "_check_resource_result"
-    RESOURCE_RESERVE_TOKEN = "_resource_reserve_token"
-    RESOURCE_SPEC = "_resource_spec"
-
-
-class FLContextKey:
-    RESOURCE_MANAGER = "_resource_manager"

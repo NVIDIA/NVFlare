@@ -49,7 +49,7 @@
   "components": [
     {
       "id": "job_scheduler",
-      "path": "nvflare.apis.impl.job_scheduler.DefaultJobScheduler",
+      "name": "DefaultJobScheduler",
       "args": {
         "max_jobs": 4
       }

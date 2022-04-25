@@ -18,12 +18,12 @@ from typing import List
 from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
-from nvflare.apis.scheduler_constants import ShareableHeader
 from nvflare.apis.shareable import Shareable
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.scheduler_constants import ShareableHeader
 
 
 class CheckResourceProcessor(RequestProcessor):
