@@ -102,8 +102,8 @@ class SiteLauncher:
         )
         print("Starting overseer ...")
 
-        t = threading.Thread(target=process_logs, args=(log_path, process))
-        t.start()
+        # t = threading.Thread(target=process_logs, args=(log_path, process))
+        # t.start()
 
         self.overseer_properties["path"] = overseer_dir
         self.overseer_properties["process"] = process
@@ -165,8 +165,8 @@ class SiteLauncher:
 
         print(f"Starting server {server_id}...")
 
-        t = threading.Thread(target=process_logs, args=(log_path, process))
-        t.start()
+        # t = threading.Thread(target=process_logs, args=(log_path, process))
+        # t.start()
 
         # self.server_properties["path"] = server_dir_name
         # self.server_properties["process"] = process
@@ -221,8 +221,8 @@ class SiteLauncher:
 
         print(f"Launched client {client_id} process.")
 
-        t = threading.Thread(target=process_logs, args=(log_path, process))
-        t.start()
+        # t = threading.Thread(target=process_logs, args=(log_path, process))
+        # t.start()
 
     def get_active_server_id(self, port):
         active_server_id = -1
