@@ -13,7 +13,7 @@ admin_username="admin"
 servername="localhost"
 
 # exp settings
-config=$1 # choose the app to deploy from the folders in ${PWD}/configs_0/, e.g. prostate_fedavg
+config=$1 # choose the app to deploy from the folders in ${PWD}/configs/, e.g. prostate_fedavg
 run=$2 # int number
 client_ids=$3 # string, e.g. "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx" 
 if test -z "${config}" || test -z "${run}" || test -z "${client_ids}" 
