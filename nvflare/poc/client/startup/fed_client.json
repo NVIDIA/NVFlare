@@ -34,14 +34,14 @@
   "components": [
     {
       "id": "resource_manager",
-      "name": "ListResourceManager",
+      "path": "nvflare.app_common.resource_managers.ListResourceManager",
       "args":  {
         "resources": {"gpu": [0, 1, 2, 3]}
       }
     },
     {
       "id": "resource_consumer",
-      "name": "GPUResourceConsumer",
+      "path": "nvflare.app_common.resource_consumers.GPUResourceConsumer",
       "args":  {
         "gpu_resource_key": "gpu"
       }
