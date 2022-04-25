@@ -48,8 +48,7 @@ def read_yaml(yaml_file_path):
 params = [
     # "./test_examples.yml",
     # "./test_internal.yml"
-    "./test_ha_1.yml"
-    # "./test_ha.yml"
+    "./test_ha.yml"
 ]
 
 
