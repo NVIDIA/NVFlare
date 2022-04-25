@@ -19,6 +19,7 @@ from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
+from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 
 
 class AdminController:
@@ -34,6 +35,7 @@ class AdminController:
         self.admin_api: FLAdminAPI = FLAdminAPI(
             upload_dir=self.jobs_root_dir,
             download_dir=self.jobs_root_dir,
+            overseer_agent=DummyOverseerAgent(sp_end_point="localhost:8002:8003"),
             poc=True,
             debug=False,
             user_name="admin",
@@ -82,6 +84,7 @@ class AdminController:
             if time.time() - start_time > timeout:
                 raise ValueError(f"Clients could not be started in {timeout} seconds.")
 
+            time.sleep(0.5)
             response = self.admin_api.check_status(target_type=TargetType.CLIENT)
             if response["status"] == APIStatus.SUCCESS:
                 # print(f"check client status response {response}")

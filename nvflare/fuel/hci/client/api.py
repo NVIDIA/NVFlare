@@ -244,6 +244,7 @@ class AdminAPI(AdminAPISpec):
                 else:
                     print("Communication Error - please try later")
                     try_count += 1
+            time.sleep(1.0)
         return False
 
     def _load_client_cmds(self, cmd_modules):
