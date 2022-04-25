@@ -7,21 +7,21 @@ cleanup: True
 
 
 tests:
-#  - app_name: global_model_eval
-#    validators:
-#      - tests.integration_test.validators.global_model_eval_validator.GlobalModelEvalValidator
-#      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
-#  - app_name: pt
-#    validators:
-#      - tests.integration_test.validators.pt_model_validator.PTModelValidator
-#  - app_name: cross_val_one_client
-#    validators:
-#      - tests.integration_test.validators.cross_val_single_client_validator.CrossValSingleClientValidator
-#      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
-#  - app_name: cross_val
-#    validators:
-#      - tests.integration_test.validators.cross_val_result_validator.CrossResultValidator
-#      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: global_model_eval
+    validators:
+      - tests.integration_test.validators.global_model_eval_validator.GlobalModelEvalValidator
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: pt
+    validators:
+      - tests.integration_test.validators.pt_model_validator.PTModelValidator
+  - app_name: cross_val_one_client
+    validators:
+      - tests.integration_test.validators.cross_val_result_validator.CrossValSingleClientResultValidator
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: cross_val
+    validators:
+      - tests.integration_test.validators.cross_val_result_validator.CrossValResultValidator
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
   - app_name: sag
     validators:
       - tests.integration_test.validators.sag_result_validator.SAGResultValidator
@@ -34,9 +34,9 @@ tests:
   - app_name: tb_streaming
     validators:
       - tests.integration_test.validators.tb_result_validator.TBResultValidator
-#  - app_name: tf
-#    validators:
-#      - tests.integration_test.validators.tf_model_validator.TFModelValidator
-#  - app_name: cyclic
-#    validators:
-#      - tests.integration_test.validators.tf_model_validator.TFModelValidator
+  - app_name: tf
+    validators:
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator
+  - app_name: cyclic
+    validators:
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator

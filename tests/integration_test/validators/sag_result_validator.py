@@ -20,9 +20,7 @@ from .app_result_validator import AppResultValidator
 
 
 def check_sag_results(server_data, run_data):
-    server_dir = server_data["server_path"]
-
-    server_run_dir = os.path.join(server_dir, run_data["job_id"])
+    server_run_dir = os.path.join(server_data["server_path"], run_data["job_id"])
     intended_model = np.array(
         [[4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
         dtype="float32",
