@@ -372,4 +372,5 @@ class AdminController:
         return run_state != prev_run_state, run_state
 
     def finalize(self):
+        self.admin_api.overseer_agent.end()
         self.admin_api.shutdown(target_type=TargetType.ALL)

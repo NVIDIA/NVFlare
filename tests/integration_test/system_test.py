@@ -182,9 +182,10 @@ class TestSystem:
             print(f"Exception in test run: {e.__str__()}")
             raise ValueError("Tests failed") from e
         finally:
+            if ha and admin_controller:
+                admin_controller.admin_api.overseer_agent.end()
             if admin_controller:
                 admin_controller.finalize()
-
             if site_launcher:
                 site_launcher.stop_all_sites()
 
