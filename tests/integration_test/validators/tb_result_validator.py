@@ -21,10 +21,9 @@ TB_PATH = "tb_events"
 
 class TBResultValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        server_path = server_data["server_path"]
-
-        server_run_dir = os.path.join(server_path, run_data["job_id"])
+        server_run_dir = os.path.join(server_data["server_path"], run_data["job_id"])
         server_tb_root_dir = os.path.join(server_run_dir, TB_PATH)
+
         if not os.path.exists(server_tb_root_dir):
             print(f"tb validate results: server_tb_root_dir {server_tb_root_dir} doesn't exist.")
             return False

@@ -190,8 +190,8 @@ class JobRunner(FLComponent):
                             with self.lock:
                                 self.running_jobs[run_number] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
-                        except:
-                            self.log_error(fl_ctx, f"Failed to run the Job ID: {ready_job.job_id}")
+                        except Exception as e:
+                            self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
             time.sleep(1.0)
 

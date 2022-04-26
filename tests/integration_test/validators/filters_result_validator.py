@@ -21,9 +21,7 @@ from .app_result_validator import AppResultValidator
 
 class FiltersResultValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        server_dir = server_data["server_path"]
-
-        server_run_dir = os.path.join(server_dir, run_data["job_id"])
+        server_run_dir = os.path.join(server_data["server_path"], run_data["job_id"])
 
         if not os.path.exists(server_run_dir):
             print(f"FiltersResultValidator: server run dir {server_run_dir} doesn't exist.")

@@ -118,6 +118,10 @@ class HttpOverseerAgent(OverseerAgent):
         api_point = self._overseer_end_point + "/promote"
         return self._send(api_point, headers=None, payload={"sp_end_point": sp_end_point, "project": self._project})
 
+    def set_state(self, state):
+        api_point = self._overseer_end_point + "/state"
+        return self._send(api_point, payload={"state": state})
+
     def _do_callback(self):
         if self._update_callback:
             self._update_callback(self)

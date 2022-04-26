@@ -42,15 +42,13 @@ class AdminController:
             overseer_agent = DummyOverseerAgent(sp_end_point="localhost:8002:8003")
 
         self.admin_api: FLAdminAPI = FLAdminAPI(
-            host="localhost",
-            port=8003,
             upload_dir=self.jobs_root_dir,
             download_dir=self.jobs_root_dir,
             overseer_agent=overseer_agent,
             poc=True,
             debug=False,
             user_name="admin",
-            password="admin",
+            poc_key="admin",
         )
 
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -64,7 +62,7 @@ class AdminController:
             timeout = 100
             start_time = time.time()
             while time.time() - start_time <= timeout:
-                response = self.admin_api.login_with_password(username="admin", password="admin")
+                response = self.admin_api.login_with_poc(username="admin", poc_key="admin")
                 if response["status"] == APIStatus.SUCCESS:
                     success = True
                     break
@@ -98,6 +96,7 @@ class AdminController:
             if time.time() - start_time > timeout:
                 raise ValueError(f"Clients could not be started in {timeout} seconds.")
 
+            time.sleep(0.5)
             response = self.admin_api.check_status(target_type=TargetType.CLIENT)
             if response["status"] == APIStatus.SUCCESS:
                 # print(f"check client status response {response}")
@@ -141,9 +140,9 @@ class AdminController:
         if not self.admin_api:
             return False
 
-        response = self.admin_api.upload_job(job_name)
+        response = self.admin_api.submit_job(job_name)
         if response["status"] != APIStatus.SUCCESS:
-            raise RuntimeError(f"upload_job failed: {response}")
+            raise RuntimeError(f"submit_job failed: {response}")
         self.job_id = response["details"]["job_id"]
         self.last_job_name = job_name
         return True

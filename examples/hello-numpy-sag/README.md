@@ -19,10 +19,7 @@ Log into the Admin client by entering `admin` for both the username and password
 Then, use these Admin commands to run the experiment:
 
 ```
-set_run_number 1
-upload_app hello-numpy-sag
-deploy_app hello-numpy-sag all
-start_app all
+upload_job hello-numpy-sag
 ```
 
 ### 4. Shut down the server/clients

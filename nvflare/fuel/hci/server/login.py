@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
@@ -26,9 +27,10 @@ LOGIN_CMD_NAME = "_login"
 CERT_LOGIN_CMD_NAME = "_cert_login"
 
 
-class Authenticator(object):
+class Authenticator(ABC):
     """Base class for authenticating credentials."""
 
+    @abstractmethod
     def authenticate(self, user_name: str, credential: str, credential_type: str) -> bool:
         """Authenticate a specified user with the provided credential.
 
@@ -83,13 +85,11 @@ class LoginModule(CommandModule, CommandFilter):
             sess_mgr: SessionManager
         """
         if authenticator:
-            assert isinstance(authenticator, Authenticator), "authenticator must be Authenticator but got {}.".format(
-                type(authenticator)
-            )
+            if not isinstance(authenticator, Authenticator):
+                raise TypeError("authenticator must be Authenticator but got {}.".format(type(authenticator)))
 
-        assert isinstance(sess_mgr, SessionManager), "sess_mgr must be SessionManager but got {}.".format(
-            type(sess_mgr)
-        )
+        if not isinstance(sess_mgr, SessionManager):
+            raise TypeError("sess_mgr must be SessionManager but got {}.".format(type(sess_mgr)))
 
         self.authenticator = authenticator
         self.session_mgr = sess_mgr
