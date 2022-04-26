@@ -115,37 +115,61 @@ class SiteLauncher:
         # Create upload directory
         os.makedirs(os.path.join(src_server_dir, "transfer"), exist_ok=True)
 
-        for i in range(n):
-            server_id = i
-            server_name = self.server_dir_name + f"_{server_id}"
+        if n == 1:
+            server_name = self.server_dir_name
 
             # Copy and create new directory
             server_dir_name = os.path.join(self.poc_directory, server_name)
-            shutil.copytree(src_server_dir, server_dir_name)
 
             # replace fed_server.json ports
             fed_server_path = os.path.join(server_dir_name, "startup", "fed_server.json")
             with open(fed_server_path, "r") as f:
                 fed_server_json = f.read()
 
-            admin_port = f"8{i}03"
-            fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", admin_port)
+            admin_port = "8003"
+            fed_server_json = fed_server_json.replace("8002", "8002").replace("8003", admin_port)
 
             with open(fed_server_path, "w") as f:
                 f.write(fed_server_json)
 
-            self.start_server(server_id)
-            time.sleep(5)
+            self.start_server()
 
-    def start_server(self, server_id):
-        server_name = self.server_dir_name + f"_{server_id}"
+        else:
+            for i in range(n):
+                server_id = i
+                server_name = self.server_dir_name + f"_{server_id}"
+
+                # Copy and create new directory
+                server_dir_name = os.path.join(self.poc_directory, server_name)
+                shutil.copytree(src_server_dir, server_dir_name)
+
+                # replace fed_server.json ports
+                fed_server_path = os.path.join(server_dir_name, "startup", "fed_server.json")
+                with open(fed_server_path, "r") as f:
+                    fed_server_json = f.read()
+
+                admin_port = f"8{i}03"
+                fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", admin_port)
+
+                with open(fed_server_path, "w") as f:
+                    f.write(fed_server_json)
+
+                self.start_server(server_id)
+                time.sleep(5)
+
+    def start_server(self, server_id=None):
+        if server_id is None:
+            server_name = self.server_dir_name
+            server_id = 0
+        else:
+            server_name = self.server_dir_name + f"_{server_id}"
         server_dir_name = os.path.join(self.poc_directory, server_name)
         log_path = os.path.join(server_dir_name, "log.txt")
 
         self.server_properties[server_id] = {}
         self.server_properties[server_id]["path"] = server_dir_name
         self.server_properties[server_id]["name"] = server_name
-        self.server_properties[server_id]["port"] = f"8{server_id}03"
+        self.server_properties[server_id]["port"] = f"8003"
         self.server_properties[server_id]["log_path"] = log_path
 
         command = (
@@ -161,6 +185,7 @@ class SiteLauncher:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
+        print(f"start server with {command}: {process.pid}")
         self.server_properties[server_id]["process"] = process
 
         print(f"Starting server {server_id}...")

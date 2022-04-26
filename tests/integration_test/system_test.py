@@ -151,6 +151,7 @@ class TestSystem:
                         app_validator_cls = getattr(importlib.import_module(module_name), class_name)
                         app_validator = app_validator_cls()
 
+                        print(server_data)
                         app_validate_res = app_validator.validate_results(
                             server_data=server_data,
                             client_data=client_data,

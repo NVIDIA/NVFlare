@@ -55,12 +55,11 @@ test_case_15 = {
         {
             "trigger": {"workflow": 0, "round_number": 0, "task": "train"},
             "actions": [
-                "sleep 5",
                 "kill server",
                 "sleep 15",
                 "restart server",
             ],
-            "result_state": {"workflow": 0, "round_number": 1, "task": "train"},
+            "result_state": {"workflow": 0, "round_number": 0, "task": "train"},
         },
         # {
         #     "trigger": "Round 1 started.",

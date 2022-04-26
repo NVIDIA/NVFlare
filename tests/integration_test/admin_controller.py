@@ -286,7 +286,7 @@ class AdminController:
                     else:
                         print(site_launcher.server_properties)
                         server_id = list(site_launcher.server_properties.keys())[0]
-                    site_launcher.start_server(server_id)
+                    site_launcher.start_server()
                 elif args[0] == "overseer":
                     site_launcher.start_overseer()
                 elif args[0] == "client":  # TODO fix client kill & restart during run
@@ -343,7 +343,10 @@ class AdminController:
                     # if wfs[item].get("workflow"):
                     #     workflow = wfs[item].get("workflow")
 
-        run_state["run_finished"] = "ServerRunner" not in wfs.keys()
+        if stats["status"] == APIStatus.SUCCESS:
+            run_state["run_finished"] = "ServerRunner" not in wfs.keys()
+        else:
+            run_state["run_finished"] = False
 
         wfs = [wf for wf in list(wfs.items()) if "tasks" in wf[1]]
 
