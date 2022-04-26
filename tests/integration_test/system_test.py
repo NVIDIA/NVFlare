@@ -112,7 +112,7 @@ class TestSystem:
                 test_jobs.append((x["app_name"], x["validators"]))
                 generated_jobs.append(job)
 
-            admin_controller = AdminController(jobs_root_dir=jobs_root_dir)
+            admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
             admin_controller.initialize()
 
             admin_controller.ensure_clients_started(num_clients=n_clients)

@@ -21,10 +21,11 @@ from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
+from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 
 
 class AdminController:
-    def __init__(self, jobs_root_dir, poll_period=10):
+    def __init__(self, jobs_root_dir, ha, poll_period=10):
         """
         This class runs an app on a given server and clients.
         """
@@ -33,9 +34,12 @@ class AdminController:
         self.jobs_root_dir = jobs_root_dir
         self.poll_period = poll_period
 
-        overseer_agent = HttpOverseerAgent(
-            role="admin", overseer_end_point="http://127.0.0.1:5000/api/v1", project="example_project", name="admin"
-        )
+        if ha:
+            overseer_agent = HttpOverseerAgent(
+                role="admin", overseer_end_point="http://127.0.0.1:5000/api/v1", project="example_project", name="admin"
+            )
+        else:
+            overseer_agent = DummyOverseerAgent(sp_end_point="localhost:8002:8003")
 
         self.admin_api: FLAdminAPI = FLAdminAPI(
             host="localhost",
