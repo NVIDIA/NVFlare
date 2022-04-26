@@ -15,9 +15,11 @@
 import os
 import time
 
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
+from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
 
 
 def api_command_wrapper(api_command_result):
@@ -78,19 +80,53 @@ class FLAdminAPIRunner:
         if debug:
             debug = True
 
-        ca_cert = os.path.join(admin_dir, "startup", "rootCA.pem")
-        client_cert = os.path.join(admin_dir, "startup", "client.crt")
-        client_key = os.path.join(admin_dir, "startup", "client.key")
-        upload_dir = os.path.join(admin_dir, "transfer")
-        download_dir = os.path.join(admin_dir, "download")
+        try:
+            os.chdir(admin_dir)
+            workspace = os.path.join(admin_dir, "startup")
+            conf = FLAdminClientStarterConfigurator(app_root=workspace, admin_config_file_name="fed_admin.json")
+            conf.configure()
+        except ConfigError as ex:
+            print("ConfigError:", str(ex))
+
+        try:
+            admin_config = conf.config_data["admin"]
+        except KeyError:
+            print("Missing admin section in fed_admin configuration.")
+
+        ca_cert = admin_config.get("ca_cert", "")
+        client_cert = admin_config.get("client_cert", "")
+        client_key = admin_config.get("client_key", "")
+
+        if admin_config.get("with_ssl"):
+            if len(ca_cert) <= 0:
+                print("missing CA Cert file name field ca_cert in fed_admin configuration")
+                return
+
+            if len(client_cert) <= 0:
+                print("missing Client Cert file name field client_cert in fed_admin configuration")
+                return
+
+            if len(client_key) <= 0:
+                print("missing Client Key file name field client_key in fed_admin configuration")
+                return
+        else:
+            ca_cert = None
+            client_key = None
+            client_cert = None
+
+        upload_dir = admin_config.get("upload_dir")
+        download_dir = admin_config.get("download_dir")
         if not os.path.isdir(download_dir):
             os.makedirs(download_dir)
 
         assert os.path.isdir(admin_dir), f"admin directory does not exist at {admin_dir}"
-        if not self.poc:
+        if self.poc:
+            poc_key = "admin"
+        else:
             assert os.path.isfile(ca_cert), f"rootCA.pem does not exist at {ca_cert}"
             assert os.path.isfile(client_cert), f"client.crt does not exist at {client_cert}"
             assert os.path.isfile(client_key), f"client.key does not exist at {client_key}"
+            poc_key = None
 
         # Connect with admin client
         self.api = FLAdminAPI(
@@ -99,23 +135,18 @@ class FLAdminAPIRunner:
             client_key=client_key,
             upload_dir=upload_dir,
             download_dir=download_dir,
+            overseer_agent=conf.overseer_agent,
+            user_name=username,
+            poc_key=poc_key,
             poc=self.poc,
             debug=debug,
         )
-        if self.poc:
-            reply = self.api.login_with_poc("admin", "admin")
-        else:
-            reply = self.api.login(username=self.username)
-        for k in reply.keys():
-            assert "error" not in reply[k].lower(), f"Login not successful with {reply}"
 
     def run(
         self,
-        run_number,
         app,
         restart_all_first=False,
         min_clients=2,
-        timeout=2000,
         shutdown_on_error=False,
         shutdown_at_end=False,
     ):
@@ -156,19 +187,11 @@ class FLAdminAPIRunner:
                 print("Server startup failed! Shutdown all...")
                 api_command_wrapper(self.api.shutdown(TargetType.ALL))
                 return
-            # The following wait_until can be put into a loop that has other behavior other than aborting after the
-            # timeout is reached for actual apps. This code is just a demonstration of running an app expected to stop
-            # before the timeout.
+            # The following wait_until can be put into a loop that has other behavior other than waiting.
+            # This code is just a demonstration of running an app expected to stop.
             print("api.wait_until_client_status()")
-            wait_result = api_command_wrapper(self.api.wait_until_client_status(timeout=timeout))
-            if wait_result.get("details"):
-                if wait_result.get("details").get("message"):
-                    if wait_result.get("details").get("message") == "Waited until timeout.":
-                        print(
-                            "aborting because waited until timeout and there are clients that have still not stopped."
-                        )
-                        print("api.abort(TargetType.ALL)")
-                        api_command_wrapper(self.api.abort(TargetType.ALL))
+            wait_result = api_command_wrapper(self.api.wait_until_client_status())
+            print(wait_result)
             print("api.check_status(TargetType.SERVER)")
             api_command_wrapper(self.api.check_status(TargetType.SERVER))
             # now server engine status should be stopped
@@ -183,6 +206,8 @@ class FLAdminAPIRunner:
             if shutdown_on_error:
                 print("Attempting shutdown all...")
                 try:
+                    # Note that this will only shut down the active server and clients. Cold servers and the overseer
+                    # will need to be shutdown separately or with the "shutdown_system" command
                     api_command_wrapper(self.api.shutdown(TargetType.ALL))
                 except RuntimeError as e:
                     print(f"There was an exception while attempting shutdown all: {e}")

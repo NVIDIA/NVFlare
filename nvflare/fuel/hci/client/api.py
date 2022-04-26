@@ -488,8 +488,10 @@ class AdminAPI(AdminAPISpec):
         elif len(entries) == 1:
             self.set_command_result(None)
             ent = entries[0]
-            ent.handler(args, self)
+            return_result = ent.handler(args, self)
             result = self.get_command_result()
+            if return_result:
+                return return_result
             if result is None:
                 return {"status": APIStatus.ERROR_RUNTIME, "details": "Client did not respond"}
             return result
