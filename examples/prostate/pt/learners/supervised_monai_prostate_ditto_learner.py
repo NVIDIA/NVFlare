@@ -31,6 +31,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 from nvflare.app_common.pt.pt_ditto import PTDittoHelper
 
+
 class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
     def __init__(
         self,
@@ -162,6 +163,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         # local valid ditto model each round
         metric = self.local_valid(
+            self.ditto_helper.ditto_model,
             self.valid_loader,
             abort_signal,
             tb_id="val_metric_per_model",

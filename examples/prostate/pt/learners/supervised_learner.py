@@ -154,6 +154,7 @@ class SupervisedLearner(Learner):
 
     def local_valid(
         self,
+        model,
         valid_loader,
         abort_signal: Signal,
         tb_id=None,
@@ -166,7 +167,7 @@ class SupervisedLearner(Learner):
         Compute evaluation metric with self.valid_metric
         Add score to tensorboard record with specified id
         """
-        self.model.eval()
+        model.eval()
         with torch.no_grad():
             metric = 0
             for i, batch_data in enumerate(valid_loader):
@@ -175,7 +176,7 @@ class SupervisedLearner(Learner):
                 val_images = batch_data["image"].to(self.device)
                 val_labels = batch_data["label"].to(self.device)
                 # Inference
-                val_outputs = self.inferer(val_images, self.model)
+                val_outputs = self.inferer(val_images, model)
                 val_outputs = self.transform_post(val_outputs)
                 # Compute metric
                 metric_score = self.valid_metric(y_pred=val_outputs, y=val_labels)
@@ -306,7 +307,7 @@ class SupervisedLearner(Learner):
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
             # perform valid before local train
             global_metric = self.local_valid(
-                self.valid_loader, abort_signal, tb_id="val_metric_global_model", record_epoch=self.epoch_global
+                self.model, self.valid_loader, abort_signal, tb_id="val_metric_global_model", record_epoch=self.epoch_global
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
