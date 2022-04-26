@@ -192,11 +192,11 @@ class JobCommandModule(TrainingCommandModule):
         for job in jobs:
             table.add_row(
                 [
-                    job.meta.get("job_id"),
-                    job.meta.get("name"),
-                    job.meta.get("study_name"),
-                    job.meta.get("status"),
-                    job.meta.get("submit_time_iso"),
+                    job.meta.get("job_id", ""),
+                    job.meta.get("name", ""),
+                    job.meta.get("study_name", ""),
+                    job.meta.get("status", ""),
+                    job.meta.get("submit_time_iso", ""),
                 ]
             )
 

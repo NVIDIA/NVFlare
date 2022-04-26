@@ -275,6 +275,10 @@ class FileTransferModule(CommandModule):
                     meta = json.loads(meta_data)
                     if JobMetaKey.JOB_FOLDER_NAME not in meta:
                         meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
+                    study_name = meta.get(JobMetaKey.STUDY_NAME.value)
+                    if not study_name:
+                        meta[JobMetaKey.STUDY_NAME.value] = Study.DEFAULT_STUDY_NAME
+
                     valid, error = self._validate_job(meta, study_manager, fl_ctx)
                     if not valid:
                         conn.append_error(error)
