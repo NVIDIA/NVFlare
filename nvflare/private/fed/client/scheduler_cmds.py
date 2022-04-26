@@ -38,7 +38,7 @@ class CheckResourceProcessor(RequestProcessor):
         resource_manager = engine.get_component(SystemComponents.RESOURCE_MANAGER)
         if not isinstance(resource_manager, ResourceManagerSpec):
             raise RuntimeError(
-                f"resource_manager should be of type ResourceManagerSpec, but got {type(ResourceManagerSpec)}."
+                f"resource_manager should be of type ResourceManagerSpec, but got {type(resource_manager)}."
             )
         fl_ctx = FLContext()
         result = Shareable()
@@ -108,7 +108,7 @@ class CancelResourceProcessor(RequestProcessor):
         resource_manager = engine.get_component(SystemComponents.RESOURCE_MANAGER)
         if not isinstance(resource_manager, ResourceManagerSpec):
             raise RuntimeError(
-                f"resource_manager should be of type ResourceManagerSpec, but got {type(ResourceManagerSpec)}."
+                f"resource_manager should be of type ResourceManagerSpec, but got {type(resource_manager)}."
             )
         with engine.new_context() as fl_ctx:
             result = Shareable()
