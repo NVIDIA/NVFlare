@@ -57,8 +57,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             aggregation_epochs=aggregation_epochs,
             train_task_name=train_task_name,
         )
-        self.ditto_helper = PTDittoHelper()
-        self.ditto_helper.ditto_model_epochs = ditto_model_epochs
+        self.ditto_model_epochs = ditto_model_epochs
 
     def train_config(self, fl_ctx: FLContext):
         # Initialize superclass
@@ -67,14 +66,9 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
         app_dir = ws.get_app_dir(fl_ctx.get_run_number())
-        self.ditto_helper.init(app_dir=app_dir)
 
-        # Ditto specific
-        self.ditto_helper.ditto_lr = self.config_info["ditto_learning_rate"]
-        self.ditto_helper.ditto_lambda = self.config_info["ditto_lambda"]
-        self.ditto_helper.ditto_criterion = DiceLoss(sigmoid=True)
-        self.ditto_helper.ditto_prox_criterion = PTFedProxLoss(mu=self.ditto_helper.ditto_lambda)
-        self.ditto_helper.ditto_model = UNet(
+        # Initialize PTDittoHelper
+        ditto_model = UNet(
             dimensions=2,
             in_channels=1,
             out_channels=1,
@@ -82,11 +76,19 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             strides=(2, 2, 2, 2),
             num_res_units=2,
         ).to(self.device)
-        self.ditto_helper.ditto_optimizer = optim.Adam(
-            self.ditto_helper.ditto_model.parameters(), lr=self.ditto_helper.ditto_lr
+        ditto_optimizer = optim.Adam(
+            ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"]
         )
-        self.ditto_helper.ditto_best_metric = 0
-        self.ditto_helper.device = self.device
+        self.ditto_helper = PTDittoHelper(
+            lr=self.config_info["ditto_learning_rate"],
+            ditto_lambda=self.config_info["ditto_lambda"],
+            criterion=DiceLoss(sigmoid=True),
+            model=ditto_model,
+            optimizer=ditto_optimizer,
+            model_epochs=self.ditto_model_epochs,
+            app_dir=app_dir,
+            device=self.device
+        )
 
     def train(
         self,
@@ -130,7 +132,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
         self.model.load_state_dict(local_var_dict)
 
         # Load Ditto personalized model
-        self.ditto_helper.load_ditto_model(local_var_dict)
+        self.ditto_helper.load_model(local_var_dict)
 
         # local steps
         epoch_len = len(self.train_loader)
@@ -155,7 +157,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
         self.epoch_of_start_time += self.aggregation_epochs
 
         # local train ditto model
-        self.ditto_helper.local_train_ditto(
+        self.ditto_helper.local_train(
             train_loader=self.train_loader, model_global=model_global, abort_signal=abort_signal, writer=self.writer
         )
         if abort_signal.triggered:
@@ -163,20 +165,17 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         # local valid ditto model each round
         metric = self.local_valid(
-            self.ditto_helper.ditto_model,
+            self.ditto_helper.model,
             self.valid_loader,
             abort_signal,
             tb_id="val_metric_per_model",
-            record_epoch=self.ditto_helper.ditto_epoch_global,
+            record_epoch=self.ditto_helper.epoch_global,
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         self.log_info(fl_ctx, f"val_metric_per_model: {metric:.4f}")
         # save model
-        self.ditto_helper.save_ditto_model(is_best=False)
-        if metric > self.ditto_helper.ditto_best_metric:
-            self.ditto_helper.ditto_best_metric = metric
-            self.ditto_helper.save_ditto_model(is_best=True)
+        self.ditto_helper.update_metric_save_model(metric=metric)
 
         # compute delta model, global model has the primary key set
         local_weights = self.model.state_dict()
@@ -195,3 +194,6 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo.to_shareable()
+
+
+
