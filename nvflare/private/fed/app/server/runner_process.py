@@ -26,6 +26,7 @@ from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
 
 def main():
@@ -79,6 +80,9 @@ def main():
             logger.error("loglevel error enabled")
             logger.critical("loglevel critical enabled")
         conf.configure()
+
+        log_file = os.path.join(args.workspace, args.run_number, "log.txt")
+        add_logfile_handler(log_file)
 
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)

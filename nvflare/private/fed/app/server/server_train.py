@@ -30,6 +30,7 @@ from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 
@@ -86,6 +87,9 @@ def main():
             logger.error("loglevel error enabled")
             logger.critical("loglevel critical enabled")
         conf.configure()
+
+        log_file = os.path.join(args.workspace, "log.txt")
+        add_logfile_handler(log_file)
 
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
