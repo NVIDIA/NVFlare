@@ -108,5 +108,5 @@ class PTDittoHelper(object):
     def update_metric_save_model(self, metric):
         self.save_model(is_best=False)
         if metric > self.best_metric:
-            self._best_metric = metric
+            self.best_metric = metric
             self.save_model(is_best=True)
