@@ -75,9 +75,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             strides=(2, 2, 2, 2),
             num_res_units=2,
         ).to(self.device)
-        ditto_optimizer = optim.Adam(
-            ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"]
-        )
+        ditto_optimizer = optim.Adam(ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"])
         self.ditto_helper = PTDittoHelper(
             ditto_lambda=self.config_info["ditto_lambda"],
             criterion=DiceLoss(sigmoid=True),
@@ -85,7 +83,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             optimizer=ditto_optimizer,
             model_epochs=self.ditto_model_epochs,
             app_dir=app_dir,
-            device=self.device
+            device=self.device,
         )
 
     def train(
@@ -192,4 +190,3 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo.to_shareable()
-    

@@ -21,6 +21,7 @@ from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
+
 class PTDittoHelper(object):
     """Helper to be used with Ditto components.
     Implements the functions used for the algorithm proposed in
@@ -28,16 +29,7 @@ class PTDittoHelper(object):
     (https://arxiv.org/abs/2012.04221) using PyTorch.
     """
 
-    def __init__(
-            self,
-            ditto_lambda,
-            criterion,
-            model,
-            optimizer,
-            model_epochs,
-            app_dir,
-            device
-    ):
+    def __init__(self, ditto_lambda, criterion, model, optimizer, model_epochs, app_dir, device):
         self.criterion = criterion
         self.model = model
         self.optimizer = optimizer

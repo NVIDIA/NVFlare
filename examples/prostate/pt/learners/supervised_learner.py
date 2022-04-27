@@ -307,7 +307,11 @@ class SupervisedLearner(Learner):
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
             # perform valid before local train
             global_metric = self.local_valid(
-                self.model, self.valid_loader, abort_signal, tb_id="val_metric_global_model", record_epoch=self.epoch_global
+                self.model,
+                self.valid_loader,
+                abort_signal,
+                tb_id="val_metric_global_model",
+                record_epoch=self.epoch_global,
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
