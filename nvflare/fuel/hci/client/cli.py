@@ -132,6 +132,7 @@ class AdminClient(cmd.Cmd):
             overseer_agent=self.overseer_agent,
             auto_login=True,
             user_name=self.user_name,
+            poc_key="admin",
             debug=self.debug,
             poc=poc,
         )
