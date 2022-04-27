@@ -67,7 +67,7 @@ class JobRunner(FLComponent):
             for p in participants:
                 if p == "server":
                     success = deploy_app(app_name=app_name, site_name="server", workspace=workspace, app_data=app_data)
-                    self.log_debug(
+                    self.log_info(
                         fl_ctx, f"Application{app_name} deployed to the server for run:{run_number}", fire_event=False
                     )
                     if not success:
@@ -77,8 +77,10 @@ class JobRunner(FLComponent):
                         client_sites.append(p)
 
             self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
-            self.log_debug(
-                fl_ctx, f"Application{app_name} deployed to the clients for run:{run_number}", fire_event=False
+            display_sites = ",".join(client_sites)
+            self.log_info(
+                fl_ctx, f"Application{app_name} deployed to the clients: {display_sites} for run:{run_number}",
+                fire_event=False
             )
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
@@ -123,6 +125,8 @@ class JobRunner(FLComponent):
         if not replies:
             raise RuntimeError("Failed to start the App to the clients")
 
+        display_sites = ",".join(list(client_sites.keys()))
+        self.log_info(fl_ctx, f"Started run: {run_number} for clients: {display_sites}")
         self.fire_event(EventType.JOB_STARTED, fl_ctx)
 
     def _stop_run(self, run_number, fl_ctx: FLContext):
