@@ -372,10 +372,32 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def list_jobs(self) -> FLAdminAPIResponse:
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("list_jobs")
+    def list_jobs(self, options: str = None) -> FLAdminAPIResponse:
+        command = "list_jobs"
+        if options:
+            options = self._validate_options_string(options)
+            command = command + " " + options
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
         if reply_data_full_response:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
+    def abort_job(self, job_id: str) -> FLAdminAPIResponse:
+        if not job_id:
+            raise APISyntaxError("job_id is required but not specified.")
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("abort_job " + job_id)
+        if reply_data_full_response:
+            if "Abort signal has been sent" in reply_data_full_response:
+                return FLAdminAPIResponse(
+                    APIStatus.SUCCESS,
+                    {"message": reply_data_full_response},
+                    reply,
+                )
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )

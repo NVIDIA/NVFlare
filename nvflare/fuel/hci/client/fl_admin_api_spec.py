@@ -118,8 +118,23 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def list_jobs(self) -> FLAdminAPIResponse:
+    def list_jobs(self, options: str = None) -> FLAdminAPIResponse:
         """List the jobs in the system.
+
+        Args:
+            options (str): the options string as provided to the list_jobs command for admin client.
+
+        Returns: FLAdminAPIResponse
+
+        """
+        pass
+
+    @abstractmethod
+    def abort_job(self, job_id: str) -> FLAdminAPIResponse:
+        """Abort a job that is running.
+
+        Args:
+            job_id (str): the job_id to abort
 
         Returns: FLAdminAPIResponse
 

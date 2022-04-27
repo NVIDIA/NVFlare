@@ -50,6 +50,7 @@ class JobCommandModule(TrainingCommandModule):
                     description="delete a job",
                     usage="delete_job job_id",
                     handler_func=self.delete_job,
+                    authz_func=self.authorize_job,
                 ),
                 CommandSpec(
                     name="abort_job",
@@ -63,18 +64,19 @@ class JobCommandModule(TrainingCommandModule):
                     description="clone a job with a new job_id",
                     usage="clone_job job_id",
                     handler_func=self.clone_job,
+                    authz_func=self.authorize_job,
                 ),
             ],
         )
 
     def authorize_job(self, conn: Connection, args: List[str]):
         if len(args) != 2:
-            conn.append_error("syntax error: missing run_number")
+            conn.append_error("syntax error: missing job_id")
             return False, None
 
-        run_number = args[1].lower()
-        conn.set_prop(self.RUN_NUMBER, run_number)
-        args.append("server")
+        job_id = args[1].lower()
+        conn.set_prop(self.RUN_NUMBER, job_id)
+        args.append("server")  # for now, checking permissions against server
 
         return self._authorize_actions(conn, args[2:], [Action.TRAIN])
 
@@ -122,9 +124,7 @@ class JobCommandModule(TrainingCommandModule):
         conn.append_success("")
 
     def delete_job(self, conn: Connection, args: List[str]):
-        if len(args) != 2:
-            conn.append_error("syntax error: usage: delete_job job_id")
-        job_id = args[1]
+        job_id = conn.get_prop(self.RUN_NUMBER)
         engine = conn.app_ctx
         try:
             if not isinstance(engine, ServerEngine):
@@ -153,9 +153,7 @@ class JobCommandModule(TrainingCommandModule):
         conn.append_success("")
 
     def clone_job(self, conn: Connection, args: List[str]):
-        if len(args) != 2:
-            conn.append_error("syntax error: usage: clone_job job_id")
-        job_id = args[1]
+        job_id = conn.get_prop(self.RUN_NUMBER)
         engine = conn.app_ctx
         try:
             if not isinstance(engine, ServerEngine):
