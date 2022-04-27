@@ -265,9 +265,7 @@ stop_fl_sh: |
     exit
   fi
   kill -9 $pid
-  pid=`cat $DIR/../tee.fl`
-  kill -9 $pid
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
   echo "Shutdown process finished."
 
 sub_start_cln_sh: |
@@ -293,7 +291,7 @@ sub_start_cln_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt & echo $! >$DIR/../tee.fl )
+  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -311,9 +309,7 @@ sub_start_cln_sh: |
       return
     fi
     kill -9 $pid
-    pid=`cat $DIR/../tee.fl`
-    kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
   }
     
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
@@ -359,7 +355,7 @@ sub_start_cln_sh: |
     fi
   done
 
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
 
 sub_start_svr_sh: |
   #!/usr/bin/env bash
@@ -382,7 +378,7 @@ sub_start_svr_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt & echo $! >$DIR/../tee.fl )
+  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -400,9 +396,7 @@ sub_start_svr_sh: |
       return
     fi
     kill -9 $pid
-    pid=`cat $DIR/../tee.fl`
-    kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
   }
     
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
@@ -448,7 +442,7 @@ sub_start_svr_sh: |
     fi
   done
 
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
 
 docker_cln_sh: |
   #!/usr/bin/env bash
