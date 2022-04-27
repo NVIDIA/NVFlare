@@ -80,7 +80,6 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"]
         )
         self.ditto_helper = PTDittoHelper(
-            lr=self.config_info["ditto_learning_rate"],
             ditto_lambda=self.config_info["ditto_lambda"],
             criterion=DiceLoss(sigmoid=True),
             model=ditto_model,

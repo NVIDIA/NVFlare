@@ -30,7 +30,6 @@ class PTDittoHelper(object):
 
     def __init__(
             self,
-            lr,
             ditto_lambda,
             criterion,
             model,
@@ -39,7 +38,6 @@ class PTDittoHelper(object):
             app_dir,
             device
     ):
-        self.lr = lr
         self.criterion = criterion
         self.model = model
         self.optimizer = optimizer
