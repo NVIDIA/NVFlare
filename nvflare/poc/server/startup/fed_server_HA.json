@@ -54,7 +54,7 @@
   "components": [
     {
       "id": "job_scheduler",
-      "path": "nvflare.apis.impl.job_scheduler.DefaultJobScheduler",
+      "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
       "args": {
         "max_jobs": 4
       }
@@ -69,7 +69,7 @@
     },
     {
       "id": "job_store",
-      "name": "FilesystemStorage",
+      "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
       "args": {}
     },
     {

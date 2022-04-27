@@ -76,7 +76,7 @@ builders:
       components:
         server:
           - id: job_scheduler  # This id is reserved by system.  Do not change it.
-            path: nvflare.private.fed.server.job_scheduler.DefaultJobScheduler
+            path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
             args:
               max_jobs: 4
           - id: job_manager    # This id is reserved by system.  Do not change it.

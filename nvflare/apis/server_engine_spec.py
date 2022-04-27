@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from nvflare.apis.shareable import Shareable
 from nvflare.widgets.widget import Widget
@@ -156,4 +156,35 @@ class ServerEngineSpec(ABC):
         Returns:
 
         """
+        pass
+
+    @abstractmethod
+    def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, str]]:
+        """Sends the check_client_resources requests to the clients.
+
+        Args:
+            resource_reqs: A dict of {client_name: resource requirements dict}
+
+        Returns:
+            A dict of {client_name: client_check_result} where client_check_result
+                is a tuple of {client check OK, resource reserve token if any}
+        """
+        pass
+
+    @abstractmethod
+    def cancel_client_resources(
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+    ):
+        """Cancels the request resources for the job.
+
+        Args:
+            resource_check_results: A dict of {client_name: client_check_result}
+                where client_check_result is a tuple of {client check OK, resource reserve token if any}
+            resource_reqs: A dict of {client_name: resource requirements dict}
+        """
+        pass
+
+    @abstractmethod
+    def get_client_name_from_token(self, token: str) -> str:
+        """Gets client name from a client login token."""
         pass

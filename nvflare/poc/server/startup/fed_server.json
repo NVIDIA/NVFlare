@@ -49,7 +49,7 @@
   "components": [
     {
       "id": "job_scheduler",
-      "path": "nvflare.private.fed.server.job_scheduler.DefaultJobScheduler",
+      "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
       "args": {
         "max_jobs": 4
       }
