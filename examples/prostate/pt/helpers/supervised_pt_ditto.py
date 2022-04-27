@@ -28,7 +28,6 @@ class SupervisedPTDittoHelper(PTDittoHelper):
     def local_train(self, train_loader, model_global, abort_signal: Signal, writer):
         # Train personal model for self.model_epochs, and keep track of curves
         # This part is task dependent, need customization
-        pass
         for epoch in range(self.model_epochs):
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
