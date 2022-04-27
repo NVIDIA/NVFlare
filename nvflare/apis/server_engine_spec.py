@@ -146,31 +146,6 @@ class ServerEngineSpec(ABC):
         pass
 
     @abstractmethod
-    def check_client_resources(self, resource_reqs):
-        """To send the check_client_resources requests to the clients
-
-        Args:
-            resource_reqs: resource_reqs for the job
-
-        Returns:
-
-        """
-        pass
-
-    @abstractmethod
-    def cancel_client_resources(self, resource_check_results, resource_reqs):
-        """To cancel the request resources for the job
-
-        Args:
-            resource_check_results: reserved resources
-            resource_reqs: resource_reqs for the job
-
-        Returns:
-
-        """
-        pass
-
-    @abstractmethod
     def start_client_job(self, run_number, client_sites):
         """To send the start client run commands to the clients
 

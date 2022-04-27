@@ -1,7 +1,5 @@
 {
-  "study_name": "demo-study",
   "name": "hello-numpy-sag",
-  "resource_spec": {"site-1": {}, "site-2": {}},
   "deploy_map": {
     "hello-numpy-sag": ["server", "site-1", "site-2"]
   }

@@ -34,17 +34,17 @@
   "components": [
     {
       "id": "resource_manager",
-      "path": "nvflare.apis.impl.list_resource_manager.ListResourceManager",
+      "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
       "args":  {
-        "resources": {"gpu": [0,1,2,3]}
-        }
+        "resources": {"gpu": [0, 1, 2, 3]}
+      }
     },
     {
       "id": "resource_consumer",
-      "path": "nvflare.apis.impl.gpu_resource_consumer.GPUResourceConsumer",
+      "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
       "args":  {
         "gpu_resource_key": "gpu"
-        }
+      }
     }
   ]
 }

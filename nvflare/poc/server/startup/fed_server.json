@@ -30,10 +30,10 @@
     }
   ],
   "snapshot_persistor": {
-    "name": "StorageStatePersistor",
+    "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
     "args": {
       "storage": {
-        "name": "FilesystemStorage",
+        "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
         "args": {}
       },
       "location": "/tmp/snapshot-storage"
@@ -49,7 +49,7 @@
   "components": [
     {
       "id": "job_scheduler",
-      "path": "nvflare.apis.impl.job_scheduler.DefaultJobScheduler",
+      "path": "nvflare.private.fed.server.job_scheduler.DefaultJobScheduler",
       "args": {
         "max_jobs": 4
       }
@@ -64,7 +64,7 @@
     },
     {
       "id": "job_store",
-      "name": "FilesystemStorage",
+      "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
       "args": {}
     },
     {

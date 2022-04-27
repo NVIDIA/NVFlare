@@ -76,7 +76,7 @@ builders:
       components:
         server:
           - id: job_scheduler  # This id is reserved by system.  Do not change it.
-            path: nvflare.apis.impl.job_scheduler.DefaultJobScheduler
+            path: nvflare.private.fed.server.job_scheduler.DefaultJobScheduler
             args:
               max_jobs: 4
           - id: job_manager    # This id is reserved by system.  Do not change it.
@@ -94,12 +94,12 @@ builders:
             path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
         client:
           - id: resource_manager    # This id is reserved by system.  Do not change it.
-            path: nvflare.apis.impl.list_resource_manager.ListResourceManager
+            path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
             args:
               resources:
-                gpu: [0,1,2,3]
+                gpu: [0, 1, 2, 3]
           - id: resource_consumer    # This id is reserved by system.  Do not change it.
-            path: nvflare.apis.impl.gpu_resource_consumer.GPUResourceConsumer
+            path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
             args:
               gpu_resource_key: gpu
 

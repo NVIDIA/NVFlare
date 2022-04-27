@@ -16,7 +16,6 @@ import uuid
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 
 
@@ -38,7 +37,6 @@ class ListResourceManager(ResourceManagerSpec):
             resources (dict): Specify the list of resources unit
         """
         super().__init__()
-        self.committed_jobs: Optional[List[Job]] = None
         if not isinstance(resources, dict):
             raise TypeError(f"resources should be of type dict, but got {type(resources)}.")
         self.resources = {}
