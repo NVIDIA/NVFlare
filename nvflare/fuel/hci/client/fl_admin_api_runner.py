@@ -120,9 +120,7 @@ class FLAdminAPIRunner:
             os.makedirs(download_dir)
 
         assert os.path.isdir(admin_dir), f"admin directory does not exist at {admin_dir}"
-        if self.poc:
-            poc_key = "admin"
-        else:
+        if not self.poc:
             assert os.path.isfile(ca_cert), f"rootCA.pem does not exist at {ca_cert}"
             assert os.path.isfile(client_cert), f"client.crt does not exist at {client_cert}"
             assert os.path.isfile(client_key), f"client.key does not exist at {client_key}"
@@ -137,7 +135,6 @@ class FLAdminAPIRunner:
             download_dir=download_dir,
             overseer_agent=conf.overseer_agent,
             user_name=username,
-            poc_key=poc_key,
             poc=self.poc,
             debug=debug,
         )

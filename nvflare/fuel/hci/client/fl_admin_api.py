@@ -96,7 +96,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         cmd_modules: Optional[List] = None,
         overseer_agent: OverseerAgent = None,
         user_name: str = None,
-        poc_key: str = None,
         poc=False,
         debug=False,
     ):
@@ -112,7 +111,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            poc_key: Key used in POC mode to authenticate with FL server (not used in secure mode with SSL)
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages. False by default.
         """
@@ -127,7 +125,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             overseer_agent=overseer_agent,
             auto_login=True,
             user_name=user_name,
-            poc_key=poc_key,
             poc=poc,
             debug=debug,
         )
