@@ -427,6 +427,8 @@ class AdminClient(cmd.Cmd):
         if self.credential_type == CredentialType.PASSWORD:
             self.user_name = "admin"
             self.pwd = hash_password("admin")
+        else:
+            self.user_name = input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response
