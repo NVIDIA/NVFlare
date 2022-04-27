@@ -48,7 +48,6 @@ class AdminController:
             poc=True,
             debug=False,
             user_name="admin",
-            poc_key="admin",
         )
 
         self.logger = logging.getLogger(self.__class__.__name__)

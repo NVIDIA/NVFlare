@@ -116,6 +116,8 @@ class AdminClient(cmd.Cmd):
                 modules.append(m)
 
         poc = True if self.credential_type == CredentialType.PASSWORD else False
+        if poc:
+            self.user_name = "admin"
 
         self._get_login_creds()
 
@@ -132,7 +134,6 @@ class AdminClient(cmd.Cmd):
             overseer_agent=self.overseer_agent,
             auto_login=True,
             user_name=self.user_name,
-            poc_key="admin",
             debug=self.debug,
             poc=poc,
         )

@@ -103,7 +103,6 @@ class AdminAPI(AdminAPISpec):
         overseer_agent: OverseerAgent = None,
         auto_login: bool = False,
         user_name: str = None,
-        poc_key: str = None,
         poc: bool = False,
         debug: bool = False,
     ):
@@ -122,7 +121,6 @@ class AdminAPI(AdminAPISpec):
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             auto_login: Whether to use stored credentials to automatically log in (required to be True with OverseerAgent to provide high availability)
             user_name: Username to authenticate with FL server
-            poc_key: Key used in POC mode to authenticate with FL server (not used in secure mode with SSL)
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
         """
@@ -145,7 +143,9 @@ class AdminAPI(AdminAPISpec):
         self.host = host
         self.port = port
         self.poc = poc
-        if not self.poc:
+        if self.poc:
+            self.poc_key = "admin"
+        else:
             if len(ca_cert) <= 0:
                 raise Exception("missing CA Cert file name")
             self.ca_cert = ca_cert
@@ -176,10 +176,6 @@ class AdminAPI(AdminAPISpec):
             if not user_name:
                 raise Exception("for auto_login, user_name is required.")
             self.user_name = user_name
-            if self.poc:
-                if not poc_key:
-                    raise Exception("for auto_login, poc_key is required for poc mode.")
-                self.poc_key = poc_key
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
         self.client_cmd_reg = CommandRegister(app_ctx=self)
