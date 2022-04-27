@@ -102,9 +102,9 @@ class TestStorage:
 
         print("Finished teardown.")
 
-    @pytest.mark.parametrize("n_files", [20])
-    @pytest.mark.parametrize("n_folders", [5])
-    @pytest.mark.parametrize("path_depth", [3])
+    @pytest.mark.parametrize("n_files", [20, 100])
+    @pytest.mark.parametrize("n_folders", [5, 20])
+    @pytest.mark.parametrize("path_depth", [3, 10])
     def test_large_storage(self, n_folders, n_files, path_depth, storage):
         storage = self.storages[storage]
         test_tmp_dir = tempfile.TemporaryDirectory()
