@@ -102,8 +102,9 @@ class SupervisedLearner(Learner):
         self.inferer
         self.valid_metric
         """
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
     def finalize(self, fl_ctx: FLContext):
         # collect threads, close files here
         pass

@@ -22,18 +22,33 @@ from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
 
 class PTDittoHelper(object):
-    """Helper to be used with Ditto components.
-    Implements the functions used for the algorithm proposed in
-    Li et al. "Ditto: Fair and Robust Federated Learning Through Personalization"
-    (https://arxiv.org/abs/2012.04221) using PyTorch.
-    """
-
     def __init__(self, ditto_lambda, criterion, model, optimizer, model_epochs, app_dir, device):
+        """Helper to be used with Ditto components.
+        Implements the functions used for the algorithm proposed in
+        Li et al. "Ditto: Fair and Robust Federated Learning Through Personalization"
+        (https://arxiv.org/abs/2012.04221) using PyTorch.
+
+        Args:
+            ditto_lambda: lambda weight for Ditto prox loss term when combining with the base loss
+            criterion: base loss criterion
+            model: the personalized model of Ditto method
+            optimizer: training optimizer for personalized model
+            model_epochs: training epoch for personalized model
+            app_dir: needed for local personalized model saving
+            device: device for personalized model training
+
+        Returns:
+            None
+        """
+
         self.criterion = criterion
         self.model = model
         self.optimizer = optimizer
         self.model_epochs = model_epochs
-        self.device = device
+        if device is None:
+            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = device
         # initialize Ditto criterion
         self.prox_criterion = PTFedProxLoss(mu=ditto_lambda)
         # check model and optimizer type
@@ -84,4 +99,4 @@ class PTDittoHelper(object):
         # Train personal model for self.model_epochs, and keep track of curves
         # This part is task dependent, need customization
         # Basic idea is to train personalized model with prox term as compare to model_global
-        pass
+        raise NotImplementedError
