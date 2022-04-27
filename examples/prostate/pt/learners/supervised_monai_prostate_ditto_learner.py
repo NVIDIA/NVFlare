@@ -28,7 +28,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 from nvflare.app_common.pt.pt_ditto import PTDittoHelper
 
 
@@ -193,6 +192,4 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo.to_shareable()
-
-
-
+    
