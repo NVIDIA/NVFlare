@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 echo "Centralized"
 python3 ./result_stat/prostate_test_only.py --model_path "./workspace_prostate/server/run_1/app_server/best_FL_global_model.pt"
 echo "FedAvg"
