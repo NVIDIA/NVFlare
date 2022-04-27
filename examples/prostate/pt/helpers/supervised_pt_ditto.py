@@ -22,8 +22,8 @@ from nvflare.app_common.pt.pt_ditto import PTDittoHelper
 class SupervisedPTDittoHelper(PTDittoHelper):
     """Helper to be used with Ditto components under supervised training specs."""
 
-    def __init__(self, ditto_lambda, criterion, model, optimizer, model_epochs, app_dir, device):
-        super().__init__(ditto_lambda, criterion, model, optimizer, model_epochs, app_dir, device)
+    def __init__(self, criterion, model, optimizer, device, app_dir, ditto_lambda, model_epochs):
+        super().__init__(criterion, model, optimizer, device, app_dir, ditto_lambda, model_epochs)
 
     def local_train(self, train_loader, model_global, abort_signal: Signal, writer):
         # Train personal model for self.model_epochs, and keep track of curves

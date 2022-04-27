@@ -22,20 +22,22 @@ from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
 
 class PTDittoHelper(object):
-    def __init__(self, ditto_lambda, criterion, model, optimizer, model_epochs, app_dir, device):
+    def __init__(
+        self, criterion, model, optimizer, device, app_dir: str, ditto_lambda: float = 0.1, model_epochs: int = 1
+    ):
         """Helper to be used with Ditto components.
         Implements the functions used for the algorithm proposed in
         Li et al. "Ditto: Fair and Robust Federated Learning Through Personalization"
         (https://arxiv.org/abs/2012.04221) using PyTorch.
 
         Args:
-            ditto_lambda: lambda weight for Ditto prox loss term when combining with the base loss
             criterion: base loss criterion
             model: the personalized model of Ditto method
             optimizer: training optimizer for personalized model
-            model_epochs: training epoch for personalized model
-            app_dir: needed for local personalized model saving
             device: device for personalized model training
+            app_dir: needed for local personalized model saving
+            ditto_lambda: lambda weight for Ditto prox loss term when combining with the base loss, defaults to 0.1
+            model_epochs: training epoch for personalized model, defaults to 1
 
         Returns:
             None
@@ -44,18 +46,22 @@ class PTDittoHelper(object):
         self.criterion = criterion
         self.model = model
         self.optimizer = optimizer
-        self.model_epochs = model_epochs
         if device is None:
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
+        self.model_epochs = model_epochs
         # initialize Ditto criterion
         self.prox_criterion = PTFedProxLoss(mu=ditto_lambda)
-        # check model and optimizer type
-        if self.model is None or not isinstance(self.model, torch.nn.Module):
+        # check criterion, model, and optimizer type
+        if not isinstance(self.criterion, torch.nn.modules.loss._Loss):
+            raise ValueError(f"criterion component must be torch loss. " f"But got: {type(self.criterion)}")
+        if not isinstance(self.model, torch.nn.Module):
             raise ValueError(f"model component must be torch model. " f"But got: {type(self.model)}")
-        if self.optimizer is None or not isinstance(self.optimizer, torch.optim.Optimizer):
+        if not isinstance(self.optimizer, torch.optim.Optimizer):
             raise ValueError(f"optimizer component must be torch optimizer. " f"But got: {type(self.optimizer)}")
+        if not isinstance(self.device, torch.device):
+            raise ValueError(f"device component must be torch device. " f"But got: {type(self.device)}")
 
         # initialize other recording related parameters
         self.epoch_global = 0

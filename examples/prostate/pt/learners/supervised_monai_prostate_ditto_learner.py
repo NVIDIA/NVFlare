@@ -77,13 +77,13 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
         ).to(self.device)
         ditto_optimizer = optim.Adam(ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"])
         self.ditto_helper = SupervisedPTDittoHelper(
-            ditto_lambda=self.config_info["ditto_lambda"],
             criterion=DiceLoss(sigmoid=True),
             model=ditto_model,
             optimizer=ditto_optimizer,
-            model_epochs=self.ditto_model_epochs,
-            app_dir=app_dir,
             device=self.device,
+            app_dir=app_dir,
+            ditto_lambda=self.config_info["ditto_lambda"],
+            model_epochs=self.ditto_model_epochs,
         )
 
     def train(
