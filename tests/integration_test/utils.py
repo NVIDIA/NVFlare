@@ -39,6 +39,7 @@ def generate_meta(
 
 def generate_job_dir_for_single_app_job(app_root_folder: str, app_name: str, clients: List[str], destination: str):
     app_folder = os.path.join(app_root_folder, app_name)
+    print(os.path.abspath(app_folder))
     if not os.path.exists(app_folder):
         raise RuntimeError(f"App folder {app_folder} does not exist.")
     if not os.path.isdir(app_folder):

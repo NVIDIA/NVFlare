@@ -1,0 +1,19 @@
+poc: ../../nvflare/poc
+n_clients: 2
+jobs_root_dir: ./jobs
+apps_root_dir: ./apps
+snapshot_path: /tmp/snapshot-storage
+ha: True
+cleanup: True
+
+tests:
+  # - app_name: pt
+  #   validators:
+  #     - tests.integration_test.validators.pt_model_validator.PTModelValidator
+  # - app_name: cyclic
+  #   validators:
+  #     - tests.integration_test.validators.tf_model_validator.TFModelValidator
+  - app_name: sag
+    validators:
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+

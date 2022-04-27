@@ -42,7 +42,7 @@
   "overseer_agent": {
     "path": "nvflare.ha.overseer_agent.HttpOverseerAgent",
     "args": {
-      "overseer_end_point": "http://localhost:6000/api/v1",
+      "overseer_end_point": "http://localhost:5000/api/v1",
       "project": "example_project",
       "role": "server",
       "name": "localhost",
@@ -50,5 +50,39 @@
       "admin_port": "8003",
       "heartbeat_interval": 6
     }
-  }
+  },
+  "components": [
+    {
+      "id": "job_scheduler",
+      "path": "nvflare.apis.impl.job_scheduler.DefaultJobScheduler",
+      "args": {
+        "max_jobs": 4
+      }
+    },
+    {
+      "id": "job_manager",
+      "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+      "args": {
+        "uri_root": "/tmp/jobs-storage",
+        "job_store_id": "job_store"
+      }
+    },
+    {
+      "id": "job_store",
+      "name": "FilesystemStorage",
+      "args": {}
+    },
+    {
+      "id": "study_manager",
+      "path": "nvflare.apis.impl.study_manager.StudyManager",
+      "args": {
+        "study_store_id": "study_store"
+      }
+    },
+    {
+      "id": "study_store",
+      "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+      "args": {}
+    }
+  ]
 }

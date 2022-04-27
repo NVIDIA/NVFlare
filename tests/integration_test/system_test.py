@@ -25,6 +25,7 @@ import yaml
 from tests.integration_test.admin_controller import AdminController
 from tests.integration_test.site_launcher import SiteLauncher
 from tests.integration_test.utils import generate_job_dir_for_single_app_job
+from tests.integration_test.test_ha import ha_tests
 
 
 def get_module_class_from_full_path(full_path):
@@ -46,7 +47,8 @@ def read_yaml(yaml_file_path):
 
 params = [
     # "./test_examples.yml",
-    "./test_internal.yml"
+    "./test_internal.yml",
+    "./test_ha.yml",
 ]
 
 
@@ -80,6 +82,7 @@ class TestSystem:
         n_clients = system_config["n_clients"]
         jobs_root_dir = system_config["jobs_root_dir"]
         snapshot_path = system_config["snapshot_path"]
+        ha = system_config.get("ha", False)
         try:
             print(f"cleanup = {cleanup}")
             print(f"poc = {poc}")
@@ -87,9 +90,10 @@ class TestSystem:
             print(f"jobs_root_dir = {jobs_root_dir}")
             print(f"snapshot_path = {snapshot_path}")
 
-            site_launcher = SiteLauncher(poc_directory=poc)
-
-            site_launcher.start_server()
+            site_launcher = SiteLauncher(poc_directory=poc, ha=ha)
+            if ha:
+                site_launcher.start_overseer()
+            site_launcher.start_servers(1)
             site_launcher.start_clients(n=n_clients)
 
             # testing jobs
@@ -108,7 +112,7 @@ class TestSystem:
                 test_jobs.append((x["app_name"], x["validators"]))
                 generated_jobs.append(job)
 
-            admin_controller = AdminController(jobs_root_dir=jobs_root_dir)
+            admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
             admin_controller.initialize()
 
             admin_controller.ensure_clients_started(num_clients=n_clients)
@@ -125,10 +129,14 @@ class TestSystem:
 
                 admin_controller.submit_job(job_name=test_job)
 
+                time.sleep(15)
                 print(f"Server status after job submission: {admin_controller.server_status()}.")
                 print(f"Client status after job submission: {admin_controller.client_status()}")
 
-                admin_controller.wait_for_job_done()
+                if ha:
+                    admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
+                else:
+                    admin_controller.wait_for_job_done()
 
                 server_data = site_launcher.get_server_data()
                 client_data = site_launcher.get_client_data()
@@ -143,6 +151,7 @@ class TestSystem:
                         app_validator_cls = getattr(importlib.import_module(module_name), class_name)
                         app_validator = app_validator_cls()
 
+                        print(server_data)
                         app_validate_res = app_validator.validate_results(
                             server_data=server_data,
                             client_data=client_data,
@@ -174,9 +183,10 @@ class TestSystem:
             print(f"Exception in test run: {e.__str__()}")
             raise ValueError("Tests failed") from e
         finally:
+            if ha and admin_controller:
+                admin_controller.admin_api.overseer_agent.end()
             if admin_controller:
                 admin_controller.finalize()
-
             if site_launcher:
                 site_launcher.stop_all_sites()
 

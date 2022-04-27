@@ -10,7 +10,7 @@
       "path": "nvflare.ha.overseer_agent.HttpOverseerAgent",
       "args": {
         "role": "admin",
-        "overseer_end_point": "http://localhost:6000/api/v1",
+        "overseer_end_point": "http://localhost:5000/api/v1",
         "project": "example_project",
         "name": "admin"
       }
