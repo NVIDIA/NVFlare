@@ -13,13 +13,13 @@
 # limitations under the License.
 
 import copy
-import os
 
 import numpy as np
 import torch
 import torch.optim as optim
 from monai.losses import DiceLoss
 from monai.networks.nets.unet import UNet
+from pt.helpers.supervised_pt_ditto import SupervisedPTDittoHelper
 from pt.learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
@@ -28,7 +28,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.pt.pt_ditto import PTDittoHelper
 
 
 class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
@@ -56,6 +55,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             aggregation_epochs=aggregation_epochs,
             train_task_name=train_task_name,
         )
+        self.ditto_helper = None
         self.ditto_model_epochs = ditto_model_epochs
 
     def train_config(self, fl_ctx: FLContext):
@@ -76,7 +76,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             num_res_units=2,
         ).to(self.device)
         ditto_optimizer = optim.Adam(ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"])
-        self.ditto_helper = PTDittoHelper(
+        self.ditto_helper = SupervisedPTDittoHelper(
             ditto_lambda=self.config_info["ditto_lambda"],
             criterion=DiceLoss(sigmoid=True),
             model=ditto_model,

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+from abc import abstractmethod
 
 import numpy as np
 import torch
@@ -81,6 +82,7 @@ class SupervisedLearner(Learner):
         # set the training-related contexts, this is task-specific
         self.train_config(fl_ctx)
 
+    @abstractmethod
     def train_config(self, fl_ctx: FLContext):
         """Traning configurations customized to individual tasks
         This can be specified / loaded in any ways

@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import os
+from abc import abstractmethod
 
 import torch
 
-from nvflare.apis.fl_constant import ReturnCode
-from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
@@ -37,6 +36,12 @@ class PTDittoHelper(object):
         self.device = device
         # initialize Ditto criterion
         self.prox_criterion = PTFedProxLoss(mu=ditto_lambda)
+        # check model and optimizer type
+        if self.model is None or not isinstance(self.model, torch.nn.Module):
+            raise ValueError(f"model component must be torch model. " f"But got: {type(self.model)}")
+        if self.optimizer is None or not isinstance(self.optimizer, torch.optim.Optimizer):
+            raise ValueError(f"optimizer component must be torch optimizer. " f"But got: {type(self.optimizer)}")
+
         # initialize other recording related parameters
         self.epoch_global = 0
         self.epoch_of_start_time = 0
@@ -68,37 +73,15 @@ class PTDittoHelper(object):
         else:
             torch.save(save_dict, self.model_file_path)
 
-    def local_train(self, train_loader, model_global, abort_signal: Signal, writer):
-        # Train personal model for self.model_epochs, and keep track of curves
-        for epoch in range(self.model_epochs):
-            if abort_signal.triggered:
-                return make_reply(ReturnCode.TASK_ABORTED)
-            self.model.train()
-            epoch_len = len(train_loader)
-            self.epoch_global = self.epoch_of_start_time + epoch + 1
-            for i, batch_data in enumerate(train_loader):
-                if abort_signal.triggered:
-                    return make_reply(ReturnCode.TASK_ABORTED)
-                inputs = batch_data["image"].to(self.device)
-                labels = batch_data["label"].to(self.device)
-
-                # forward + backward + optimize
-                outputs = self.model(inputs)
-                loss = self.criterion(outputs, labels)
-
-                # add the Ditto prox loss term for Ditto
-                loss = self.prox_criterion(self.model, model_global)
-                loss += loss
-
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-
-                current_step = epoch_len * self.epoch_global + i
-                writer.add_scalar("train_loss_ditto", loss.item(), current_step)
-
     def update_metric_save_model(self, metric):
         self.save_model(is_best=False)
         if metric > self.best_metric:
             self.best_metric = metric
             self.save_model(is_best=True)
+
+    @abstractmethod
+    def local_train(self, train_loader, model_global, abort_signal: Signal, writer):
+        # Train personal model for self.model_epochs, and keep track of curves
+        # This part is task dependent, need customization
+        # Basic idea is to train personalized model with prox term as compare to model_global
+        pass
