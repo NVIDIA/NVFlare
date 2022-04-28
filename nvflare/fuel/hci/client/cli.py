@@ -116,8 +116,6 @@ class AdminClient(cmd.Cmd):
                 modules.append(m)
 
         poc = True if self.credential_type == CredentialType.PASSWORD else False
-        if poc:
-            self.user_name = "admin"
 
         self._get_login_creds()
 
@@ -426,48 +424,11 @@ class AdminClient(cmd.Cmd):
             self.overseer_agent.end()
 
     def _get_login_creds(self):
-        self.user_name = input("User Name: ")
         if self.credential_type == CredentialType.PASSWORD:
-            self.password = getpass.getpass("Password: ")
-            self.pwd = hash_password(self.password)
-
-    def login(self):
-        if self.require_login:
-            if self.user_name:
-                user_name = self.user_name
-            else:
-                user_name = input("User Name: ")
-
-            if self.credential_type == CredentialType.PASSWORD:
-                while True:
-                    if self.password:
-                        pwd = self.password
-                    else:
-                        pwd = getpass.getpass("Password: ")
-                    # print(f"host: {self.api.host} port: {self.api.port}")
-                    self.api.login_with_poc(username=user_name, poc_key=pwd)
-                    self.stdout.write(f"login_result: {self.api.login_result} token: {self.api.token}\n{self.prompt}")
-                    if self.api.login_result == "OK":
-                        self.user_name = user_name
-                        self.password = pwd
-                        self.pwd = hash_password(pwd)
-                        break
-                    elif self.api.login_result == "REJECT":
-                        print("Incorrect password - please try again")
-                    else:
-                        print("Communication Error - please try later")
-                        return False
-            elif self.credential_type == CredentialType.CERT:
-                self.api.login(username=user_name)
-                if self.api.login_result == "OK":
-                    self.user_name = user_name
-                elif self.api.login_result == "REJECT":
-                    print("Incorrect user name or certificate")
-                    return False
-                else:
-                    print("Communication Error - please try later")
-                    return False
-        return True
+            self.user_name = "admin"
+            self.pwd = hash_password("admin")
+        else:
+            self.user_name = input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response
