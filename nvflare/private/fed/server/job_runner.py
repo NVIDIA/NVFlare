@@ -104,7 +104,7 @@ class JobRunner(FLComponent):
         replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
         return replies
 
-    def _start_run(self, run_number, job: Job, client_sites: list, fl_ctx: FLContext):
+    def _start_run(self, run_number, job: Job, client_sites: dict, fl_ctx: FLContext):
         """Start the application
 
         Args:
