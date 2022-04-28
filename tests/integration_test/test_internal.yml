@@ -2,8 +2,8 @@ poc: ../../nvflare/poc
 n_clients: 2
 jobs_root_dir: ./jobs
 apps_root_dir: ./apps
-snapshot_path: /tmp/snapshot-storage
-job_store_path: /tmp/jobs-storage
+snapshot_path: /tmp/snapshot-storage # need to match what's inside poc, TODO: auto generate
+job_store_path: /tmp/jobs-storage # need to match what's inside poc, TODO: auto generate
 cleanup: True
 
 
