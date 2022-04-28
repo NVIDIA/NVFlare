@@ -102,7 +102,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
 
         Upon initialization, FLAdminAPI will start the overseer agent to get the active server and then try to log in.
-        This happens in a thread, so code that executes after should check that the FLAdminAP is successfully logged in.
+        This happens in a thread, so code that executes after should check that the FLAdminAPI is successfully logged in.
 
         Args:
             ca_cert: path to CA Cert file, by default provisioned rootCA.pem
