@@ -79,8 +79,9 @@ class JobRunner(FLComponent):
             self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
             display_sites = ",".join(client_sites)
             self.log_info(
-                fl_ctx, f"Application{app_name} deployed to the clients: {display_sites} for run:{run_number}",
-                fire_event=False
+                fl_ctx,
+                f"Application{app_name} deployed to the clients: {display_sites} for run:{run_number}",
+                fire_event=False,
             )
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
