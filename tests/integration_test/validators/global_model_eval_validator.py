@@ -71,11 +71,4 @@ def check_global_model_eval_result(server_data, client_data, run_data):
 
 class GlobalModelEvalValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        cross_val_result = check_global_model_eval_result(server_data, client_data, run_data)
-
-        print(f"CrossVal Result: {cross_val_result}")
-
-        if not cross_val_result:
-            raise ValueError("Cross val failed.")
-
-        return cross_val_result
+        return check_global_model_eval_result(server_data, client_data, run_data)

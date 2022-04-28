@@ -3,6 +3,7 @@ n_clients: 2
 jobs_root_dir: ./jobs
 apps_root_dir: ./apps
 snapshot_path: /tmp/snapshot-storage
+job_store_path: /tmp/jobs-storage
 cleanup: True
 
 

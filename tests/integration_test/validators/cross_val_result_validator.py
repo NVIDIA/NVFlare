@@ -77,23 +77,9 @@ def check_cross_validation_result(server_data, client_data, run_data, n_clients=
 
 class CrossValResultValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        cross_val_result = check_cross_validation_result(server_data, client_data, run_data)
-
-        print(f"CrossVal Result: {cross_val_result}")
-
-        if not cross_val_result:
-            raise ValueError("Cross val failed.")
-
-        return cross_val_result
+        return check_cross_validation_result(server_data, client_data, run_data)
 
 
 class CrossValSingleClientResultValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        cross_val_result = check_cross_validation_result(server_data, client_data, run_data, n_clients=1)
-
-        print(f"CrossVal Result: {cross_val_result}")
-
-        if not cross_val_result:
-            raise ValueError("Cross val failed.")
-
-        return cross_val_result
+        return check_cross_validation_result(server_data, client_data, run_data, n_clients=1)
