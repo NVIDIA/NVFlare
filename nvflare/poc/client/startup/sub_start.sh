@@ -23,7 +23,7 @@ start_fl() {
     exit
   fi
   lst=$SECONDS
-((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false uid=${client} config_folder=config sp=${sp} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
+((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false uid=${client} config_folder=config sp=${sp} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
   pid=`cat $DIR/../pid.fl`
 }
 

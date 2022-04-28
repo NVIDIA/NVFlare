@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 import os
 import pickle
 import shutil
+from logging.handlers import RotatingFileHandler
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
@@ -63,3 +64,12 @@ def deploy_app(app_name, site_name, workspace, app_data):
         return True
     except:
         return False
+
+
+def add_logfile_handler(log_file):
+    root_logger = logging.getLogger()
+    main_handler = root_logger.handlers[0]
+    file_handler = RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
+    file_handler.setLevel(main_handler.level)
+    file_handler.setFormatter(main_handler.formatter)
+    root_logger.addHandler(file_handler)

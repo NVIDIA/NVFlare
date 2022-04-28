@@ -30,6 +30,7 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
 
 def main():
@@ -112,6 +113,9 @@ def main():
             kv_list=args.set,
         )
         conf.configure()
+
+        log_file = os.path.join(args.workspace, run_number, "log.txt")
+        add_logfile_handler(log_file)
 
         deployer = conf.base_deployer
         federated_client = deployer.create_fed_client(args)

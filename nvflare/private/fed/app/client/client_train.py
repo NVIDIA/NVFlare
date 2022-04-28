@@ -30,6 +30,7 @@ from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
 
 def main():
@@ -77,6 +78,9 @@ def main():
             kv_list=args.set,
         )
         conf.configure()
+
+        log_file = os.path.join(args.workspace, "log.txt")
+        add_logfile_handler(log_file)
 
         trainer = conf.base_deployer
 
