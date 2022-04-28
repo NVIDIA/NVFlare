@@ -29,17 +29,17 @@ def process_logs(logs, run_state):
 
     prev_run_state = run_state.copy()
 
-    # matches latest instance of "wf={workflow}," or "wf={workflow}]"
+    # matches the latest instance of "wf={workflow}," or "wf={workflow}]"
     match = re.search("(wf=)([^,\\]]+)(,|\\])(?!.*(wf=)([^,\\]]+)(,|\\]))", logs)
     if match:
         run_state["workflow"] = match.group(2)
 
-    # matches latest instance of "task_name={validate}, or "task_name={validate}"
+    # matches the latest instance of "task_name={validate}, or "task_name={validate}"
     match = re.search("(task_name=)([^,\\]]+)(,|\\])(?!.*(task_name=)([^,\\]]+)(,|\\]))", logs)
     if match:
         run_state["task"] = match.group(2)
 
-    # matches latest instance of "Round {0-999} started."
+    # matches the latest instance of "Round {0-999} started."
     match = re.search(
         "Round ([0-9]|[1-9][0-9]|[1-9][0-9][0-9]) started\\.(?!.*Round ([0-9]|[1-9][0-9]|[1-9][0-9][0-9]) started\\.)",
         logs,

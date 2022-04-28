@@ -210,7 +210,6 @@ class AdminAPI(AdminAPISpec):
 
                 thread = threading.Thread(target=self._login_sp)
                 thread.start()
-                thread.join()
 
     def _login_sp(self):
         if not self._auto_login():
