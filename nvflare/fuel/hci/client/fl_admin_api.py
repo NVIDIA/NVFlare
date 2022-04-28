@@ -69,7 +69,7 @@ def default_client_status_handling_cb(reply: FLAdminAPIResponse) -> bool:
     client_statuses = reply.get("details").get("client_statuses")
     stopped_client_count = 0
     for i in range(1, len(client_statuses)):
-        if client_statuses[i][3] == "stopped":
+        if client_statuses[i][3] == "No Jobs":
             stopped_client_count = stopped_client_count + 1
     if stopped_client_count == len(client_statuses) - 1:
         return True
@@ -100,6 +100,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         debug=False,
     ):
         """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
+
+        Upon initialization, FLAdminAPI will start the overseer agent to get the active server and then try to log in.
+        This happens in a thread, so code that executes after should check that the FLAdminAPI is successfully logged in.
 
         Args:
             ca_cert: path to CA Cert file, by default provisioned rootCA.pem
