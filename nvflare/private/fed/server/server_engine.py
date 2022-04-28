@@ -696,15 +696,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def _send_admin_requests(self, requests) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
 
-    def check_client_resources(self, resource_reqs) -> List[ClientReply]:
-        """To send the check_client_resources requests to the clients
-
-        Args:
-            resource_reqs: resource_reqs for the job
-
-        Returns:
-            A list of ClientReply.
-        """
+    def check_client_resources(self, resource_reqs) -> Dict[str, Tuple[bool, str]]:
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
@@ -717,17 +709,22 @@ class ServerEngine(ServerEngineInternalSpec):
         replies = []
         if requests:
             replies = self._send_admin_requests(requests)
-        return replies
+        result = {}
+        for r in replies:
+            site_name = self.get_client_name_from_token(r.client_token)
+            if r.reply:
+                resp = pickle.loads(r.reply.body)
+                result[site_name] = (
+                    resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                    resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
+                )
+            else:
+                result[site_name] = (False, "")
+        return result
 
     def cancel_client_resources(
         self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
     ):
-        """To cancel the request resources for the job
-
-        Args:
-            resource_check_results: reserved resources
-            resource_reqs: resource_reqs for the job
-        """
         requests = {}
         for site_name, result in resource_check_results.items():
             check_result, token = result

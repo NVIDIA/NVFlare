@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
 import threading
 from typing import Dict, List, Optional, Tuple
 
@@ -20,9 +19,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
-from nvflare.private.fed.server.admin import ClientReply
-from nvflare.private.fed.server.server_engine import ServerEngine
-from nvflare.private.scheduler_constants import ShareableHeader
+from nvflare.apis.server_engine_spec import ServerEngineSpec
 
 
 def _check_client_resources(resource_reqs: Dict[str, dict], fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
@@ -36,22 +33,10 @@ def _check_client_resources(resource_reqs: Dict[str, dict], fl_ctx: FLContext) -
         where client_check_result is a tuple of {client check OK, resource reserve token if any}
     """
     engine = fl_ctx.get_engine()
-    if not isinstance(engine, ServerEngine):
-        raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngine, but got {type(engine)}.")
+    if not isinstance(engine, ServerEngineSpec):
+        raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-    replies: List[ClientReply] = engine.check_client_resources(resource_reqs)
-
-    result = {}
-    for r in replies:
-        site_name = engine.get_client_name_from_token(r.client_token)
-        if r.reply:
-            resp = pickle.loads(r.reply.body)
-            result[site_name] = (
-                resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
-                resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
-            )
-        else:
-            result[site_name] = (False, "")
+    result = engine.check_client_resources(resource_reqs)
 
     return result
 
@@ -68,8 +53,8 @@ def _cancel_resources(
         fl_ctx: FL context
     """
     engine = fl_ctx.get_engine()
-    if not isinstance(engine, ServerEngine):
-        raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngine, but got {type(engine)}.")
+    if not isinstance(engine, ServerEngineSpec):
+        raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
     engine.cancel_client_resources(resource_check_results, resource_reqs)
     return False, None
