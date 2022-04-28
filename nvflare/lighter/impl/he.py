@@ -61,7 +61,7 @@ class HEBuilder(Builder):
         # dynamically call different generate keys method
         # getattr(self._context, f'generate_{self.key_type}_keys')()
         self._context.generate_relin_keys()
-        self._context.global_scale = 2 ** self.scale_bits
+        self._context.global_scale = 2**self.scale_bits
 
     def build(self, project, ctx):
         servers = project.get_participants_by_type("server", first_only=False)
