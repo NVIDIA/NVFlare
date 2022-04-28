@@ -16,12 +16,86 @@ import logging
 import re
 import time
 
-from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
+from nvflare.ha.overseer_agent import HttpOverseerAgent
+
+
+def process_logs(logs, run_state):
+    # regex to extract run_state from logs
+
+    prev_run_state = run_state.copy()
+
+    # matches the latest instance of "wf={workflow}," or "wf={workflow}]"
+    match = re.search("(wf=)([^,\\]]+)(,|\\])(?!.*(wf=)([^,\\]]+)(,|\\]))", logs)
+    if match:
+        run_state["workflow"] = match.group(2)
+
+    # matches the latest instance of "task_name={validate}, or "task_name={validate}"
+    match = re.search("(task_name=)([^,\\]]+)(,|\\])(?!.*(task_name=)([^,\\]]+)(,|\\]))", logs)
+    if match:
+        run_state["task"] = match.group(2)
+
+    # matches the latest instance of "Round {0-999} started."
+    match = re.search(
+        "Round ([0-9]|[1-9][0-9]|[1-9][0-9][0-9]) started\\.(?!.*Round ([0-9]|[1-9][0-9]|[1-9][0-9][0-9]) started\\.)",
+        logs,
+    )
+    if match:
+        run_state["round_number"] = int(match.group(1))
+
+    return run_state != prev_run_state, run_state
+
+
+def process_stats(stats, run_state):
+    # extract run_state from stats
+    # {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
+    #        'details': {
+    #           'message': {
+    #               'ScatterAndGather': {
+    #                   'tasks': {'train': []},
+    #                   'phase': 'train',
+    #                   'current_round': 0,
+    #                   'num_rounds': 2},
+    #               'CrossSiteModelEval':
+    #                   {'tasks': {}},
+    #               'ServerRunner': {
+    #                   'run_number': 1,
+    #                   'status': 'started',
+    #                   'workflow': 'scatter_and_gather'
+    #                }
+    #            }
+    #       },
+    # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [{'type': 'dict', 'data': {'ScatterAndGather': {'tasks': {'train': []}, 'phase': 'train', 'current_round': 0, 'num_rounds': 2}, 'CrossSiteModelEval': {'tasks': {}}, 'ServerRunner': {'run_number': 1, 'status': 'started', 'workflow': 'scatter_and_gather'}}}], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
+    wfs = {}
+    prev_run_state = run_state.copy()
+    print(f"run_state {prev_run_state}", flush=True)
+    print(f"stats {stats}", flush=True)
+    if stats and "status" in stats and "details" in stats and stats["status"] == APIStatus.SUCCESS:
+        if "message" in stats["details"]:
+            wfs = stats["details"]["message"]
+            if wfs:
+                run_state["workflow"], run_state["task"], run_state["round_number"] = None, None, None
+            for item in wfs:
+                if wfs[item].get("tasks"):
+                    run_state["workflow"] = item
+                    run_state["task"] = list(wfs[item].get("tasks").keys())[0]
+                    if "current_round" in wfs[item]:
+                        run_state["round_number"] = wfs[item]["current_round"]
+                # if wfs[item].get("workflow"):
+                #     workflow = wfs[item].get("workflow")
+
+    if stats["status"] == APIStatus.SUCCESS:
+        run_state["run_finished"] = "ServerRunner" not in wfs.keys()
+    else:
+        run_state["run_finished"] = False
+
+    wfs = [wf for wf in list(wfs.items()) if "tasks" in wf[1]]
+
+    return run_state != prev_run_state, wfs, run_state
 
 
 class AdminController:
@@ -52,6 +126,7 @@ class AdminController:
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.job_id = None
+        self.last_job_name = ""
 
     def initialize(self):
         success = False
@@ -137,7 +212,7 @@ class AdminController:
 
     def submit_job(self, job_name) -> bool:
         if not self.admin_api:
-            return False
+            raise RuntimeError("Missing admin_api in admin_controller.")
 
         response = self.admin_api.submit_job(job_name)
         if response["status"] != APIStatus.SUCCESS:
@@ -185,7 +260,7 @@ class AdminController:
             stats = self.get_stats(TargetType.SERVER)
 
             # update run_state
-            changed, wfs, run_state = self.process_stats(stats, run_state)
+            changed, wfs, run_state = process_stats(stats, run_state)
 
             if changed or i % (10 / self.poll_period) == 0:
                 i = 0
@@ -304,78 +379,8 @@ class AdminController:
             print(f"{k}: {v}")
         print("-" * 30 + "\n")
 
-    def process_stats(self, stats, run_state):
-        # extract run_state from stats
-        # {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
-        #        'details': {
-        #           'message': {
-        #               'ScatterAndGather': {
-        #                   'tasks': {'train': []},
-        #                   'phase': 'train',
-        #                   'current_round': 0,
-        #                   'num_rounds': 2},
-        #               'CrossSiteModelEval':
-        #                   {'tasks': {}},
-        #               'ServerRunner': {
-        #                   'run_number': 1,
-        #                   'status': 'started',
-        #                   'workflow': 'scatter_and_gather'
-        #                }
-        #            }
-        #       },
-        # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [{'type': 'dict', 'data': {'ScatterAndGather': {'tasks': {'train': []}, 'phase': 'train', 'current_round': 0, 'num_rounds': 2}, 'CrossSiteModelEval': {'tasks': {}}, 'ServerRunner': {'run_number': 1, 'status': 'started', 'workflow': 'scatter_and_gather'}}}], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
-        wfs = {}
-        prev_run_state = run_state.copy()
-        print(f"run_state {prev_run_state}", flush=True)
-        print(f"stats {stats}", flush=True)
-        if stats and "status" in stats and "details" in stats and stats["status"] == APIStatus.SUCCESS:
-            if "message" in stats["details"]:
-                wfs = stats["details"]["message"]
-                if wfs:
-                    run_state["workflow"], run_state["task"], run_state["round_number"] = None, None, None
-                for item in wfs:
-                    if wfs[item].get("tasks"):
-                        run_state["workflow"] = item
-                        run_state["task"] = list(wfs[item].get("tasks").keys())[0]
-                        if "current_round" in wfs[item]:
-                            run_state["round_number"] = wfs[item]["current_round"]
-                    # if wfs[item].get("workflow"):
-                    #     workflow = wfs[item].get("workflow")
-
-        if stats["status"] == APIStatus.SUCCESS:
-            run_state["run_finished"] = "ServerRunner" not in wfs.keys()
-        else:
-            run_state["run_finished"] = False
-
-        wfs = [wf for wf in list(wfs.items()) if "tasks" in wf[1]]
-
-        return run_state != prev_run_state, wfs, run_state
-
-    def process_logs(self, logs, run_state):
-        # regex to extract run_state from logs
-
-        prev_run_state = run_state.copy()
-
-        # matches latest instance of "wf={workflow}," or "wf={workflow}]"
-        match = re.search("(wf=)([^\,\]]+)(\,|\])(?!.*(wf=)([^\,\]]+)(\,|\]))", logs)
-        if match:
-            run_state["workflow"] = match.group(2)
-
-        # matches latest instance of "task_name={validate}, or "task_name={validate}"
-        match = re.search("(task_name=)([^\,\]]+)(\,|\])(?!.*(task_name=)([^\,\]]+)(\,|\]))", logs)
-        if match:
-            run_state["task"] = match.group(2)
-
-        # matches latest instance of "Round {0-999} started."
-        match = re.search(
-            "Round ([0-9]|[1-9][0-9]|[1-9][0-9][0-9]) started\.(?!.*Round ([0-9]|[1-9][0-9]|[1-9][0-9][0-9]) started\.)",
-            logs,
-        )
-        if match:
-            run_state["round_number"] = int(match.group(1))
-
-        return run_state != prev_run_state, run_state
-
     def finalize(self):
+        if self.job_id:
+            self.admin_api.abort_job(self.job_id)
         self.admin_api.overseer_agent.end()
         self.admin_api.shutdown(target_type=TargetType.ALL)

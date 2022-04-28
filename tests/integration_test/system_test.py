@@ -23,9 +23,9 @@ import pytest
 import yaml
 
 from tests.integration_test.admin_controller import AdminController
-from tests.integration_test.site_launcher import SiteLauncher
-from tests.integration_test.utils import generate_job_dir_for_single_app_job
+from tests.integration_test.site_launcher import POCDirectory, SiteLauncher
 from tests.integration_test.test_ha import ha_tests
+from tests.integration_test.utils import generate_job_dir_for_single_app_job
 
 
 def get_module_class_from_full_path(full_path):
@@ -45,10 +45,16 @@ def read_yaml(yaml_file_path):
     return data
 
 
+def cleanup_path(path: str):
+    if os.path.exists(path):
+        print(f"Clean up directory: {path}")
+        shutil.rmtree(path)
+
+
 params = [
     # "./test_examples.yml",
     "./test_internal.yml",
-    "./test_ha.yml",
+    # "./test_ha.yml",
 ]
 
 
@@ -57,21 +63,18 @@ params = [
     params=params,
 )
 def system_config(request):
-    dirname = os.path.dirname(__file__)
-    yaml_path = os.path.join(dirname, request.param)
+    yaml_path = os.path.join(os.path.dirname(__file__), request.param)
     print("Loading params from ", yaml_path)
     data = read_yaml(yaml_path)
-    for x in ["cleanup", "poc", "n_clients", "jobs_root_dir", "snapshot_path"]:
+    for x in ["cleanup", "poc", "n_clients", "jobs_root_dir", "snapshot_path", "job_store_path"]:
         if x not in data:
             raise RuntimeError(f"YAML {yaml_path} missing required attributes {x}.")
-    snapshot_path = data["snapshot_path"]
-    if os.path.exists(snapshot_path):
-        print(f"Deleting snapshot storage directory: {snapshot_path}")
-        shutil.rmtree(snapshot_path)
+    cleanup_path(data["snapshot_path"])
+    cleanup_path(data["job_store_path"])
     return data
 
 
-@pytest.mark.xdist_group(name="storage_tests_group")
+@pytest.mark.xdist_group(name="system_tests_group")
 class TestSystem:
     def test_run_job_complete(self, system_config):
         site_launcher = None
@@ -82,6 +85,7 @@ class TestSystem:
         n_clients = system_config["n_clients"]
         jobs_root_dir = system_config["jobs_root_dir"]
         snapshot_path = system_config["snapshot_path"]
+        job_store_path = system_config["job_store_path"]
         ha = system_config.get("ha", False)
         try:
             print(f"cleanup = {cleanup}")
@@ -89,7 +93,9 @@ class TestSystem:
             print(f"n_clients = {n_clients}")
             print(f"jobs_root_dir = {jobs_root_dir}")
             print(f"snapshot_path = {snapshot_path}")
+            print(f"job_store_path = {job_store_path}")
 
+            poc = POCDirectory(poc_dir=poc)
             site_launcher = SiteLauncher(poc_directory=poc, ha=ha)
             if ha:
                 site_launcher.start_overseer()
@@ -106,15 +112,15 @@ class TestSystem:
                 job = generate_job_dir_for_single_app_job(
                     app_name=x["app_name"],
                     app_root_folder=system_config["apps_root_dir"],
-                    clients=[site_launcher.client_properties[i]["name"] for i in range(n_clients)],
+                    clients=[x["name"] for x in site_launcher.client_properties.values()],
                     destination=jobs_root_dir,
                 )
                 test_jobs.append((x["app_name"], x["validators"]))
                 generated_jobs.append(job)
 
             admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
-            admin_controller.initialize()
-
+            if not admin_controller.initialize():
+                raise RuntimeError("AdminController init failed.")
             admin_controller.ensure_clients_started(num_clients=n_clients)
 
             print(f"Server status: {admin_controller.server_status()}.")
@@ -129,7 +135,7 @@ class TestSystem:
 
                 admin_controller.submit_job(job_name=test_job)
 
-                time.sleep(15)
+                time.sleep(5)
                 print(f"Server status after job submission: {admin_controller.server_status()}.")
                 print(f"Client status after job submission: {admin_controller.client_status()}")
 
@@ -157,6 +163,9 @@ class TestSystem:
                             client_data=client_data,
                             run_data=run_data,
                         )
+                        print(
+                            f"Job {test_job}, Validator {app_validator.__class__.__name__} result: {app_validate_res}"
+                        )
                         validate_result = validate_result and app_validate_res
 
                     job_results.append((test_job, validate_result))
@@ -183,8 +192,6 @@ class TestSystem:
             print(f"Exception in test run: {e.__str__()}")
             raise ValueError("Tests failed") from e
         finally:
-            if ha and admin_controller:
-                admin_controller.admin_api.overseer_agent.end()
             if admin_controller:
                 admin_controller.finalize()
             if site_launcher:
@@ -192,6 +199,5 @@ class TestSystem:
 
                 if cleanup:
                     site_launcher.cleanup()
-                    if os.path.exists(snapshot_path):
-                        print(f"Deleting snapshot storage directory: {snapshot_path}")
-                        shutil.rmtree(snapshot_path)
+                    cleanup_path(snapshot_path)
+                    cleanup_path(job_store_path)

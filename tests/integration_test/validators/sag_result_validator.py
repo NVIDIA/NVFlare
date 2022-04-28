@@ -53,11 +53,4 @@ def check_sag_results(server_data, run_data):
 
 class SAGResultValidator(AppResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        fed_avg_result = check_sag_results(server_data, run_data)
-
-        print(f"ScatterAndGather Result: {fed_avg_result}")
-
-        if not fed_avg_result:
-            raise ValueError("Scatter and gather failed.")
-
-        return fed_avg_result
+        return check_sag_results(server_data, run_data)

@@ -59,7 +59,7 @@
         "submit_model_timeout": 600,
         "validation_timeout": 6000,
         "cleanup_models": false,
-        "participating_clients": ["client_0"]
+        "participating_clients": ["site-1"]
       }
     }
   ]

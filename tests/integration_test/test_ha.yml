@@ -3,6 +3,7 @@ n_clients: 2
 jobs_root_dir: ./jobs
 apps_root_dir: ./apps
 snapshot_path: /tmp/snapshot-storage
+job_store_path: /tmp/jobs-storage
 ha: True
 cleanup: True
 
@@ -16,4 +17,3 @@ tests:
   - app_name: sag
     validators:
       - tests.integration_test.validators.sag_result_validator.SAGResultValidator
-
