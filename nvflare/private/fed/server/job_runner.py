@@ -68,7 +68,7 @@ class JobRunner(FLComponent):
                 if p == "server":
                     success = deploy_app(app_name=app_name, site_name="server", workspace=workspace, app_data=app_data)
                     self.log_info(
-                        fl_ctx, f"Application{app_name} deployed to the server for run:{run_number}", fire_event=False
+                        fl_ctx, f"Application {app_name} deployed to the server for run:{run_number}", fire_event=False
                     )
                     if not success:
                         raise RuntimeError("Failed to deploy the App to the server")
@@ -80,7 +80,7 @@ class JobRunner(FLComponent):
             display_sites = ",".join(client_sites)
             self.log_info(
                 fl_ctx,
-                f"Application{app_name} deployed to the clients: {display_sites} for run:{run_number}",
+                f"Application {app_name} deployed to the clients: {display_sites} for run:{run_number}",
                 fire_event=False,
             )
 
