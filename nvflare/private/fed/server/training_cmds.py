@@ -520,6 +520,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
+        if engine.job_runner.running_jobs:
+            conn.append_error("There are still jobs running. Please let them finish or abort_job before restart.")
+            return
+
         target_type = args[1]
         if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
 
