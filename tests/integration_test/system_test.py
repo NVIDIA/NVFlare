@@ -54,7 +54,7 @@ def cleanup_path(path: str):
 params = [
     # "./test_examples.yml",
     "./test_internal.yml",
-    # "./test_ha.yml",
+    "./test_ha.yml",
 ]
 
 
