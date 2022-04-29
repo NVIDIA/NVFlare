@@ -150,10 +150,12 @@ def job_from_meta(meta: dict) -> Job:
         A Job object.
     """
     job = Job(
-        meta.get(JobMetaKey.JOB_ID),
-        meta.get(JobMetaKey.STUDY_NAME),
-        meta.get(JobMetaKey.RESOURCE_SPEC),
-        meta.get(JobMetaKey.DEPLOY_MAP),
-        meta,
+        job_id=meta.get(JobMetaKey.JOB_ID, ""),
+        study_name=meta.get(JobMetaKey.STUDY_NAME, ""),
+        resource_spec=meta.get(JobMetaKey.RESOURCE_SPEC),
+        deploy_map=meta.get(JobMetaKey.DEPLOY_MAP, {}),
+        meta=meta,
+        min_sites=meta.get(JobMetaKey.MIN_CLIENTS, 1),
+        required_sites=meta.get(JobMetaKey.MANDATORY_CLIENTS),
     )
     return job
