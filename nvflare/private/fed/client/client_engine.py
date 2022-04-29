@@ -22,12 +22,12 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ClientStatusKey
 from nvflare.private.fed.utils.fed_utils import deploy_app
-
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
@@ -56,6 +56,10 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client.process = None
         self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
 
+        self.fl_ctx_mgr = FLContextManager(
+            engine=self, identity_name=client_name, run_num="", public_stickers={}, private_stickers={}
+        )
+
         self.status = MachineStatus.STOPPED
 
         assert workers >= 1, "workers must >= 1"
@@ -73,6 +77,9 @@ class ClientEngine(ClientEngineInternalSpec):
         # thread.start()
 
         return "validate process started."
+
+    def new_context(self) -> FLContext:
+        return self.fl_ctx_mgr.new_context()
 
     def get_component(self, component_id: str) -> object:
         return self.client.components.get(component_id)

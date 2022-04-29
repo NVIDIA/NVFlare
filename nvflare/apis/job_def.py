@@ -43,6 +43,7 @@ class JobMetaKey(str, Enum):
     MANDATORY_CLIENTS = "mandatory_clients"
     SUBMIT_TIME = "submit_time"
     SUBMIT_TIME_ISO = "submit_time_iso"
+    REQUIRED_STIES = "mandatory_clients"
 
     def __repr__(self):
         return self.value
@@ -144,16 +145,18 @@ def job_from_meta(meta: dict) -> Job:
     """Converts information in meta into a Job object.
 
     Args:
-        meta: dict of meta information
+        meta: dict of meta information(
 
     Returns:
         A Job object.
     """
     job = Job(
-        meta.get(JobMetaKey.JOB_ID),
-        meta.get(JobMetaKey.STUDY_NAME),
-        meta.get(JobMetaKey.RESOURCE_SPEC),
-        meta.get(JobMetaKey.DEPLOY_MAP),
-        meta,
+        job_id=meta.get(JobMetaKey.JOB_ID),
+        study_name=meta.get(JobMetaKey.STUDY_NAME),
+        resource_spec=meta.get(JobMetaKey.RESOURCE_SPEC),
+        deploy_map=meta.get(JobMetaKey.DEPLOY_MAP),
+        meta=meta,
+        min_sites=meta.get(JobMetaKey.MIN_CLIENTS),
+        required_sites=meta.get(JobMetaKey.REQUIRED_STIES)
     )
     return job
