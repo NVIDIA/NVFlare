@@ -72,8 +72,12 @@ def get_datetime_input(prompt):
             result = int(time.mktime(datetime_result.timetuple()))
             break
         except:
-            print(f"Expect MM/DD/YYYY HH:mm:ss, but got {answer}")
+            print(f"Expect MM/DD/YYYY hh:mm:ss, but got {answer}")
     return result
+
+
+def str2b64str(string):
+    return base64.urlsafe_b64encode(string.encode("ascii")).decode("ascii").rstrip("=")
 
 
 def main():
@@ -147,21 +151,18 @@ def main():
         StudyUrn.START_TIME.value: start_time,
         StudyUrn.END_TIME.value: end_time,
     }
-    header_str = json.dumps({"typ": "nvflare_study", "alg": "PS256"})
-    base64_header_str = base64.urlsafe_b64encode(header_str.encode("ascii")).decode("ascii")
+    header_str = json.dumps({"typ": "nvflare_study", "alg": "RS256"})
+    base64_header_str = str2b64str(header_str)
     body_str = json.dumps(study_config)
-    base64_body_str = base64.urlsafe_b64encode(body_str.encode("ascii")).decode("ascii")
+    base64_body_str = str2b64str(body_str)
     message_str = f"{base64_header_str}.{base64_body_str}"
     message = message_str.encode("ascii")
     signature = pv_key.sign(
         data=message,
-        padding=padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH,
-        ),
+        padding=padding.PKCS1v15(),
         algorithm=hashes.SHA256(),
     )
-    base64_signature_str = base64.urlsafe_b64encode(signature).decode("ascii")
+    base64_signature_str = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
     with open(f"{name}.jws", "wt") as f:
         f.write(f"{message_str}.{base64_signature_str}")
     print(f"study config file was generated at {name}.jws")
