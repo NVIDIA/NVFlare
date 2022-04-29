@@ -26,6 +26,7 @@ META_DATA = """{{
   "resource_spec": {{
   }},
   "deploy_map": {{
+      "{}": []
   }},
   "min_clients": 1
 }}
@@ -39,10 +40,27 @@ def _path_join(base: str, *parts: str) -> str:
     return path.replace("\\", "/")
 
 
-def remove_leading_dotdot(path):
+def remove_leading_dotdot(path: str) -> str:
     while path.startswith("../"):
         path = path[3:]
     return path
+
+
+def split_path(path: str) -> (str, str):
+    """Split a path into prefix and folder name
+
+    Args:
+        path: Path to split
+
+    Returns: A tuple of (prefix, folder_name)
+    """
+
+    if path.endswith("/"):
+        full_path = path[:-1]
+    else:
+        full_path = path
+
+    return os.path.split(full_path)
 
 
 def get_all_file_paths(directory):
@@ -78,12 +96,13 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
     assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
 
     file_paths = get_all_file_paths(dir_name)
+    prefix_len = len(split_path(dir_name)[0])
 
     # writing files to a zipfile
     with ZipFile(writer, "w") as z:
         # writing each file one by one
         for full_path in file_paths:
-            rel_path = remove_leading_dotdot(os.path.relpath(full_path, root_dir))
+            rel_path = full_path[prefix_len:]
             z.write(full_path, arcname=rel_path)
 
 
