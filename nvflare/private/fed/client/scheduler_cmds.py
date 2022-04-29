@@ -43,7 +43,9 @@ class CheckResourceProcessor(RequestProcessor):
             result = Shareable()
             try:
                 resource_spec = pickle.loads(req.body)
-                check_result, token = resource_manager.check_resources(resource_requirement=resource_spec, fl_ctx=fl_ctx)
+                check_result, token = resource_manager.check_resources(
+                    resource_requirement=resource_spec, fl_ctx=fl_ctx
+                )
                 result.set_header(ShareableHeader.CHECK_RESOURCE_RESULT, check_result)
                 result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             except Exception:

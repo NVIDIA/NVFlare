@@ -156,6 +156,6 @@ def job_from_meta(meta: dict) -> Job:
         deploy_map=meta.get(JobMetaKey.DEPLOY_MAP),
         meta=meta,
         min_sites=meta.get(JobMetaKey.MIN_CLIENTS),
-        required_sites=meta.get(JobMetaKey.MANDATORY_CLIENTS)
+        required_sites=meta.get(JobMetaKey.MANDATORY_CLIENTS),
     )
     return job
