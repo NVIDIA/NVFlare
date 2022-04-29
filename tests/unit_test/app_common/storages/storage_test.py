@@ -16,9 +16,8 @@ import ast
 import json
 import os
 import random
-import subprocess
 import tempfile
-import time
+import uuid
 from collections import defaultdict
 from pathlib import Path
 
@@ -47,66 +46,35 @@ def random_meta():
     return {random.getrandbits(8): random.getrandbits(8) for _ in range(32)}
 
 
-MINIO_EXECUTABLE = "minio"
 ROOT_DIR = os.path.abspath(os.sep)
 
 
-@pytest.mark.xdist_group(name="storage_tests_group")
-@pytest.mark.parametrize("storage", ["FilesystemStorage", "S3Storage"])
-class TestStorage:
-
-    tmp_dir = None
-    storages = defaultdict()
-    minio_ps = None
-
-    @classmethod
-    def setup_class(cls):
-        cls.tmp_dir = tempfile.TemporaryDirectory()
-        tmp_dir_name = cls.tmp_dir.name
-
-        if os.path.exists(MINIO_EXECUTABLE):
-            os.remove(MINIO_EXECUTABLE)
-
-        # start local minio server as a compatible S3 bucket for testing
-        commands = [
-            ["wget", "https://dl.min.io/server/minio/release/linux-amd64/minio"],
-            ["chmod", "+x", MINIO_EXECUTABLE],
-            [f"./{MINIO_EXECUTABLE}", "server", os.path.join(tmp_dir_name, "s3-storage"), "--console-address", ":9001"],
-        ]
-
-        env = os.environ.update({"MINIO_ROOT_USER": "admin", "MINIO_ROOT_PASSWORD": "password"})
-        for command in commands:
-            cls.minio_ps = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
-            if command[0] != f"./{MINIO_EXECUTABLE}":
-                cls.minio_ps.communicate()
-
-        time.sleep(15)
-
-        cls.storages["FilesystemStorage"] = FilesystemStorage(root_dir=os.path.join(tmp_dir_name, "filesystem-storage"))
-        cls.storages["S3Storage"] = S3Storage(
-            endpoint="localhost:9000",
-            access_key="admin",
-            secret_key="password",
+@pytest.fixture(name="storage", params=["FilesystemStorage", "S3Storage"])
+def setup_and_teardown(request):
+    print(f"setup {request.param}")
+    if request.param == "FilesystemStorage":
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            storage = FilesystemStorage(root_dir=os.path.join(tmp_dir, "filesystem-storage"))
+    elif request.param == "S3Storage":
+        bucket_id = str(uuid.uuid4())
+        storage = S3Storage(
+            endpoint=f"localhost:{int(os.environ.get('MINIO_SERVER_PORT')) - 1}",
+            access_key=os.environ.get("MINIO_ROOT_USER"),
+            secret_key=os.environ.get("MINIO_ROOT_PASSWORD"),
             secure=False,
-            bucket_name="nvflare-storage",
+            bucket_name=bucket_id,
         )
+    else:
+        raise RuntimeError(f"Storage type {request.param} is not supported.")
+    yield storage
+    print("teardown")
 
-        print("Finished setup.")
 
-    @classmethod
-    def teardown_class(cls):
-        os.remove(MINIO_EXECUTABLE)
-        if cls.minio_ps and cls.minio_ps.poll() is not None:
-            cls.minio_ps.kill()
-        cls.tmp_dir.cleanup()
-
-        print("Finished teardown.")
-
+class TestStorage:
     @pytest.mark.parametrize("n_files", [20, 100])
     @pytest.mark.parametrize("n_folders", [5, 20])
     @pytest.mark.parametrize("path_depth", [3, 10])
-    def test_large_storage(self, n_folders, n_files, path_depth, storage):
-        storage = self.storages[storage]
+    def test_large_storage(self, storage, n_folders, n_files, path_depth):
         test_tmp_dir = tempfile.TemporaryDirectory()
         test_tmp_dir_name = test_tmp_dir.name
         dir_to_files = defaultdict(list)
@@ -140,7 +108,6 @@ class TestStorage:
 
                 storage.create_object(filepath, data, meta, overwrite_existing=True)
 
-        verified = 0
         for test_dirpath, _, object_files in os.walk(test_tmp_dir_name):
 
             dirpath = "/" + test_dirpath[len(test_tmp_dir_name) :].lstrip("/")
@@ -160,66 +127,64 @@ class TestStorage:
 
                 storage.delete_object(dirpath)
 
-                verified += 1
-
-        if isinstance(storage, FilesystemStorage):
-            for root, dirs, _ in os.walk(storage.root_dir, topdown=False):
-                for d in dirs:
-                    try:
-                        os.rmdir(os.path.join(root, d))
-                    except OSError:
-                        pass
-
         test_tmp_dir.cleanup()
-
-        print(f"Verified {verified} files")
 
     @pytest.mark.parametrize(
         "uri, data, meta, overwrite_existing",
         [
-            (1234, random_data(), random_meta(), True),
-            ("/test_dir/test_object", random_data(), "not a dictionary", True),
-            ("/test_dir/test_object", random_data(), random_meta(), "not a bool"),
-            ("/test_dir/test_object", "not a byte string", random_meta(), True),
+            (1234, b"c", {}, True),
+            ("/test_dir/test_object", "not a byte string", {}, True),
+            ("/test_dir/test_object", b"c", "not a dictionary", True),
+            ("/test_dir/test_object", b"c", {}, "not a bool"),
         ],
     )
-    def test_invalid_inputs(self, storage, uri, data, meta, overwrite_existing):
-        storage = self.storages[storage]
-
-        invalid_uri = 1234
-        invalid_data = "not a byte string"
-        invalid_meta = "not a dict"
-        invalid_bool = "not a bool"
-
+    def test_create_invalid_inputs(self, storage, uri, data, meta, overwrite_existing):
         with pytest.raises(TypeError):
             storage.create_object(uri, data, meta, overwrite_existing)
 
-        if uri == invalid_uri or meta == invalid_meta or overwrite_existing == invalid_bool:
-            with pytest.raises(TypeError):
-                storage.update_meta(uri, meta, overwrite_existing)
-
-        if uri == invalid_uri or data == invalid_data:
-            with pytest.raises(TypeError):
-                storage.update_data(uri, data)
-
-        if uri == invalid_uri:
-            with pytest.raises(TypeError):
-                storage.list_objects(uri)
-            with pytest.raises(TypeError):
-                storage.get_meta(uri)
-            with pytest.raises(TypeError):
-                storage.get_data(uri)
-            with pytest.raises(TypeError):
-                storage.get_detail(uri)
-            with pytest.raises(TypeError):
-                storage.delete_object(uri)
+    def test_invalid_inputs(self, storage):
+        uri = 1234
+        with pytest.raises(TypeError):
+            storage.list_objects(uri)
+        with pytest.raises(TypeError):
+            storage.get_meta(uri)
+        with pytest.raises(TypeError):
+            storage.get_data(uri)
+        with pytest.raises(TypeError):
+            storage.get_detail(uri)
+        with pytest.raises(TypeError):
+            storage.delete_object(uri)
 
     @pytest.mark.parametrize(
-        "uri, data, meta",
-        [("/test_dir/test_object", random_data(), random_meta())],
+        "uri, meta, overwrite_existing",
+        [
+            (1234, {}, True),
+            ("/test_dir/test_object", "not a dictionary", True),
+            ("/test_dir/test_object", {}, "not a bool"),
+        ],
     )
-    def test_create_read(self, storage, uri, data, meta):
-        storage = self.storages[storage]
+    def test_update_meta_invalid_inputs(self, storage, uri, meta, overwrite_existing):
+        with pytest.raises(TypeError):
+            storage.update_meta(uri, meta, overwrite_existing)
+
+    @pytest.mark.parametrize(
+        "uri, data",
+        [
+            (1234, "not bytes"),
+            ("/test_dir/test_object", "not bytes"),
+        ],
+    )
+    def test_update_data_invalid_inputs(self, storage, uri, data):
+        with pytest.raises(TypeError):
+            storage.update_data(uri, data)
+
+    @pytest.mark.parametrize(
+        "uri",
+        ["/test_dir/test_object"],
+    )
+    def test_create_read(self, storage, uri):
+        data = random_data()
+        meta = random_meta()
         storage.create_object(uri, data, meta, overwrite_existing=True)
 
         # get_data()
@@ -233,12 +198,12 @@ class TestStorage:
         storage.delete_object(uri)
 
     @pytest.mark.parametrize(
-        "uri, data, meta",
-        [("/test_dir/test_object", random_data(), random_meta())],
+        "uri",
+        ["/test_dir/test_object"],
     )
-    def test_create_overwrite(self, storage, uri, data, meta):
-        storage = self.storages[storage]
-
+    def test_create_overwrite(self, storage, uri):
+        data = random_data()
+        meta = random_meta()
         storage.create_object(uri, random_data(), random_meta(), overwrite_existing=True)
         storage.create_object(uri, data, meta, overwrite_existing=True)
 
@@ -255,7 +220,6 @@ class TestStorage:
         [("/test_dir/test_object", "/test_dir")],
     )
     def test_create_nonempty(self, storage, uri, test_uri):
-        storage = self.storages[storage]
         storage.create_object("/test_dir/test_object", random_data(), random_meta())
 
         # cannot create object at nonempty directory
@@ -265,17 +229,18 @@ class TestStorage:
         storage.delete_object(uri)
 
     @pytest.mark.parametrize(
-        "uri, data, meta",
-        [("/test_dir/test_object", random_data(), random_meta())],
+        "uri, overwrite_existing",
+        [("/test_dir/test_object", True), ("/test_dir/test_object", False)],
     )
-    def test_create_inside_preexisting(self, storage, uri, data, meta):
-        storage = self.storages[storage]
-        storage.create_object(uri, data, meta, True)
+    def test_create_inside_preexisting(self, storage, uri, overwrite_existing):
+        data = random_data()
+        meta = random_meta()
+        storage.create_object(uri, data, meta)
 
         # cannot create object inside a pre-existing object
         with pytest.raises(RuntimeError):
             storage.create_object(
-                os.path.join(uri, random_path(3)), random_data(), random_meta(), overwrite_existing=True
+                os.path.join(uri, random_path(3)), random_data(), random_meta(), overwrite_existing=overwrite_existing
             )
 
         storage.delete_object(uri)
@@ -285,7 +250,6 @@ class TestStorage:
         [("/test_dir/test_object", 10), ("/test_dir/test_happy/test_object", 20)],
     )
     def test_list(self, storage, dirpath, num):
-        storage = self.storages[storage]
         dir_to_files = defaultdict(list)
         for i in range(num):
             object_uri = os.path.join(dirpath, str(i))
@@ -300,7 +264,6 @@ class TestStorage:
 
     def test_delete(self, storage):
         uri = "/test_dir/test_object"
-        storage = self.storages[storage]
         storage.create_object(uri, random_data(), random_meta(), overwrite_existing=True)
 
         storage.delete_object(uri)
@@ -322,11 +285,12 @@ class TestStorage:
             storage.delete_object(uri)
 
     @pytest.mark.parametrize(
-        "uri, data, meta",
-        [("/test_dir/test_object", random_data(), random_meta())],
+        "uri",
+        ["/test_dir/test_object"],
     )
-    def test_data_read_update(self, storage, uri, data, meta):
-        storage = self.storages[storage]
+    def test_data_read_update(self, storage, uri):
+        data = random_data()
+        meta = random_meta()
         storage.create_object(uri, data, meta, overwrite_existing=True)
 
         # get_data()
@@ -342,11 +306,12 @@ class TestStorage:
         storage.delete_object(uri)
 
     @pytest.mark.parametrize(
-        "uri, data, meta",
-        [("/test_dir/test_object", random_data(), random_meta())],
+        "uri",
+        ["/test_dir/test_object"],
     )
-    def test_meta_read_update(self, storage, uri, data, meta):
-        storage = self.storages[storage]
+    def test_meta_read_update(self, storage, uri):
+        data = random_data()
+        meta = random_meta()
         storage.create_object(uri, data, meta, overwrite_existing=True)
 
         # get_meta()
