@@ -75,7 +75,17 @@ else
 fi
 echo "Done with pydocstyle docstring style checks"
 
-set -e
 echo "Running unit tests"
-python -m pytest --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --numprocesses=auto --dist loadgroup  tests/unit_test/
+wget "https://dl.min.io/server/minio/release/linux-amd64/minio"
+chmod +x ./minio
+export MINIO_STORE_PATH=nvflare_unittest_minio_server
+export MINIO_ROOT_USER=admin
+export MINIO_ROOT_PASSWORD=password
+export MINIO_SERVER_PORT=9001
+./minio server $MINIO_STORE_PATH --console-address :$MINIO_SERVER_PORT &
+echo $! > ./minio_pid
+minio_pid=`cat ./minio_pid`
+python -m pytest --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --numprocesses=auto --dist loadgroup tests/unit_test/
+kill -9 $minio_pid
+rm -rf ./$MINIO_STORE_PATH ./minio_pid ./minio
 echo "Done with unit tests"

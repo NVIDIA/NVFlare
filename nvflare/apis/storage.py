@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import ByteString, List, Tuple
+from typing import List, Tuple
 
 
 class StorageSpec(ABC):
@@ -27,8 +27,14 @@ class StorageSpec(ABC):
     """
 
     @abstractmethod
-    def create_object(self, uri: str, data: ByteString, meta: dict, overwrite_existing: bool):
-        """Create a new object or update an existing object
+    def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool):
+        """Creates an object.
+
+        Examples of URI:
+
+            /state/engine/...
+            /runs/approved/covid_exam.3
+            /runs/pending/spleen_seg.1
 
         Args:
             uri: URI of the object
@@ -36,33 +42,23 @@ class StorageSpec(ABC):
             meta: meta info of the object
             overwrite_existing: whether to overwrite the object if already exists
 
-        Returns:
-
         Raises exception when:
         - invalid URI specification
         - invalid args
         - object already exists and overwrite_existing is False
         - error creating the object
 
-        Examples of URI:
-
-        /state/engine/...
-        /runs/approved/covid_exam.3
-        /runs/pending/splee_seg.1
-
         """
         pass
 
     @abstractmethod
     def update_meta(self, uri: str, meta: dict, replace: bool):
-        """Update the meta info of the specified object
+        """Updates the meta info of the specified object.
 
         Args:
             uri: URI of the object
             meta: value of new meta info
             replace: whether to replace the current meta completely or partial update
-
-        Returns:
 
         Raises exception when:
         - invalid args
@@ -73,14 +69,12 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_data(self, uri: str, data: ByteString):
-        """Update the meta info of the specified object
+    def update_data(self, uri: str, data: bytes):
+        """Updates the data of the specified object.
 
         Args:
             uri: URI of the object
             data: value of new data
-
-        Returns:
 
         Raises exception when:
         - invalid args
@@ -92,7 +86,7 @@ class StorageSpec(ABC):
 
     @abstractmethod
     def list_objects(self, path: str) -> List[str]:
-        """List all objects in the specified path.
+        """Lists all objects in the specified path.
 
         Args:
             path: the path to the objects
@@ -105,7 +99,7 @@ class StorageSpec(ABC):
 
     @abstractmethod
     def get_meta(self, uri: str) -> dict:
-        """Get user defined meta info of the specified object
+        """Gets user defined meta info of the specified object.
 
         Args:
             uri: URI of the object
@@ -114,32 +108,15 @@ class StorageSpec(ABC):
             meta info of the object.
 
         Raises exception when:
-        - invalid args
-        - no such object
-
-        """
-        pass
-
-    @abstractmethod
-    def get_full_meta(self, uri: str) -> dict:
-        """Get full meta info of the specified object
-
-        Args:
-            uri: URI of the object
-
-        Returns:
-            meta info of the object.
-
-        Raises exception when:
-        - invalid args
-        - no such object
+          - invalid args
+          - no such object
 
         """
         pass
 
     @abstractmethod
     def get_data(self, uri: str) -> bytes:
-        """Get data of the specified object
+        """Gets data of the specified object.
 
         Args:
             uri: URI of the object
@@ -156,7 +133,7 @@ class StorageSpec(ABC):
 
     @abstractmethod
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
-        """Get both data and meta of the specified object
+        """Gets both data and meta of the specified object.
 
         Args:
             uri: URI of the object
@@ -173,16 +150,10 @@ class StorageSpec(ABC):
 
     @abstractmethod
     def delete_object(self, uri: str):
-        """Delete specified object
+        """Deletes specified object.
 
         Args:
             uri: URI of the object
-
-        Returns:
-
-        Raises exception when:
-        - invalid args
-        - no such object
 
         """
         pass
