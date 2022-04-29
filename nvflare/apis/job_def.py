@@ -43,7 +43,6 @@ class JobMetaKey(str, Enum):
     MANDATORY_CLIENTS = "mandatory_clients"
     SUBMIT_TIME = "submit_time"
     SUBMIT_TIME_ISO = "submit_time_iso"
-    REQUIRED_STIES = "mandatory_clients"
 
     def __repr__(self):
         return self.value
@@ -157,6 +156,6 @@ def job_from_meta(meta: dict) -> Job:
         deploy_map=meta.get(JobMetaKey.DEPLOY_MAP),
         meta=meta,
         min_sites=meta.get(JobMetaKey.MIN_CLIENTS),
-        required_sites=meta.get(JobMetaKey.REQUIRED_STIES)
+        required_sites=meta.get(JobMetaKey.MANDATORY_CLIENTS)
     )
     return job
