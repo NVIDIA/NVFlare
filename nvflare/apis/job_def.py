@@ -144,18 +144,18 @@ def job_from_meta(meta: dict) -> Job:
     """Converts information in meta into a Job object.
 
     Args:
-        meta: dict of meta information(
+        meta: dict of meta information
 
     Returns:
         A Job object.
     """
     job = Job(
-        job_id=meta.get(JobMetaKey.JOB_ID),
-        study_name=meta.get(JobMetaKey.STUDY_NAME),
+        job_id=meta.get(JobMetaKey.JOB_ID, ""),
+        study_name=meta.get(JobMetaKey.STUDY_NAME, ""),
         resource_spec=meta.get(JobMetaKey.RESOURCE_SPEC),
-        deploy_map=meta.get(JobMetaKey.DEPLOY_MAP),
+        deploy_map=meta.get(JobMetaKey.DEPLOY_MAP, {}),
         meta=meta,
-        min_sites=meta.get(JobMetaKey.MIN_CLIENTS),
+        min_sites=meta.get(JobMetaKey.MIN_CLIENTS, 1),
         required_sites=meta.get(JobMetaKey.MANDATORY_CLIENTS),
     )
     return job
