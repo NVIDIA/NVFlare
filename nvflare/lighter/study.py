@@ -21,11 +21,11 @@ import os
 import time
 from datetime import datetime
 
+import jwt
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization
 
-from nvflare.lighter.study_urn import StudyUrn
+from nvflare.apis.fl_constant import StudyUrn
 from nvflare.lighter.utils import load_yaml
 
 
@@ -141,30 +141,24 @@ def main():
     start_time = get_datetime_input("input start time of this study (MM/DD/YYYY hh:mm:ss) in UTC time: ")
     end_time = get_datetime_input("input end time of this study (MM/DD/YYYY hh:mm:ss) in UTC time: ")
 
-    study_config = {
-        StudyUrn.NAME.value: name,
-        StudyUrn.DESCRIPTION.value: description,
-        StudyUrn.CONTACT.value: contact,
-        StudyUrn.ADMINS.value: participating_admins,
-        StudyUrn.CLIENTS.value: participating_clients,
-        # reviewers=reviewer_dict,
-        StudyUrn.START_TIME.value: start_time,
-        StudyUrn.END_TIME.value: end_time,
-    }
-    header_str = json.dumps({"typ": "nvflare_study", "alg": "RS256"})
-    base64_header_str = str2b64str(header_str)
-    body_str = json.dumps(study_config)
-    base64_body_str = str2b64str(body_str)
-    message_str = f"{base64_header_str}.{base64_body_str}"
-    message = message_str.encode("ascii")
-    signature = pv_key.sign(
-        data=message,
-        padding=padding.PKCS1v15(),
-        algorithm=hashes.SHA256(),
+    study_config = dict(
+        name=name,
+        description=description,
+        contact=contact,
+        participating_admins=participating_admins,
+        participating_clients=participating_clients,
+        start_time=start_time,
+        end_time=end_time,
     )
-    base64_signature_str = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
+
+    studies_config = {StudyUrn.STUDIES.value: [study_config]}
+    headers = {"typ": "nvflare_study", "alg": "RS256"}
+    payload = studies_config
+    jws = jwt.api_jws.encode(
+        payload=json.dumps(payload, separators=(",", ":")).encode("utf-8"), key=pv_key, headers=headers
+    )
     with open(f"{name}.jws", "wt") as f:
-        f.write(f"{message_str}.{base64_signature_str}")
+        f.write(jws)
     print(f"study config file was generated at {name}.jws")
 
 
