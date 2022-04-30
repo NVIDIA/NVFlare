@@ -15,6 +15,10 @@ tests:
   - app_name: pt
     validators:
       - tests.integration_test.validators.pt_model_validator.PTModelValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/cifar10_data
   - app_name: cross_val_one_client
     validators:
       - tests.integration_test.validators.cross_val_result_validator.CrossValSingleClientResultValidator
