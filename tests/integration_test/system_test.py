@@ -117,7 +117,7 @@ class TestSystem:
                     clients=[x["name"] for x in site_launcher.client_properties.values()],
                     destination=jobs_root_dir,
                 )
-                test_jobs.append((x["app_name"],  x["validators"], x.get("setup", []), x.get("teardown", [])))
+                test_jobs.append((x["app_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
                 generated_jobs.append(job_dir)
 
             admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)

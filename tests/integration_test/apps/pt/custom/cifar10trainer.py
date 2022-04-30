@@ -64,9 +64,7 @@ class Cifar10Trainer(Executor):
         self.exclude_vars = exclude_vars
 
         # Cifar10 dataset for training.
-        self.train_dataset = torchvision.datasets.CIFAR10(
-            root=data_path, transform=self.transforms, train=True
-        )
+        self.train_dataset = torchvision.datasets.CIFAR10(root=data_path, transform=self.transforms, train=True)
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=4, shuffle=True)
         self.n_iterations = len(self.train_loader)
 
