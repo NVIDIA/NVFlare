@@ -15,11 +15,26 @@
 from __future__ import absolute_import
 
 import argparse
+import base64
 import json
 import os
+import time
 from datetime import datetime
 
+import jwt
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+
+from nvflare.apis.fl_constant import StudyUrn
 from nvflare.lighter.utils import load_yaml
+
+
+def get_root_ca(cert_file):
+    persistent_state = json.load(open(cert_file, "rt"))
+    pri_key = serialization.load_pem_private_key(
+        persistent_state["root_pri_key"].encode("ascii"), password=None, backend=default_backend()
+    )
+    return pri_key
 
 
 def get_input(prompt, item_list, multiple=False):
@@ -49,20 +64,26 @@ def get_input(prompt, item_list, multiple=False):
     return result
 
 
-def get_date_input(prompt):
+def get_datetime_input(prompt):
     while True:
         answer = input(prompt)
         try:
-            result = datetime.strptime(answer, "%m/%d/%Y").date().isoformat()
+            datetime_result = datetime.strptime(answer, "%m/%d/%Y %H:%M:%S")
+            result = int(time.mktime(datetime_result.timetuple()))
             break
         except:
-            print(f"Expect MM/DD/YYYY but got {answer}")
+            print(f"Expect MM/DD/YYYY hh:mm:ss, but got {answer}")
     return result
+
+
+def str2b64str(string):
+    return base64.urlsafe_b64encode(string.encode("ascii")).decode("ascii").rstrip("=")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--project_file", type=str, default="project.yml", help="file to describe FL project")
+    parser.add_argument("-s", "--state_directory", type=str, help="directory with root CA info")
 
     args = parser.parse_args()
 
@@ -74,6 +95,13 @@ def main():
     if not os.path.exists(project_full_path):
         print(f"{project_full_path} not found.  Running study requires that file.")
         exit(0)
+
+    state_dir_full_path = os.path.join(current_path, args.state_directory)
+    if not os.path.exists(state_dir_full_path):
+        print(f"{state_dir_full_path} not found.  Running study requires that directory.")
+        exit(0)
+
+    pv_key = get_root_ca(os.path.join(state_dir_full_path, "cert.json"))
 
     project = load_yaml(project_full_path)
     api_version = project.get("api_version")
@@ -101,7 +129,7 @@ def main():
     participating_clients = get_input(
         f"select participating clients (separated by ',') {client_list_string} ", client_list, multiple=True
     )
-    participating_clients_string = ", ".join([f"{i}:{v}" for i, v in enumerate(participating_clients)])
+    # participating_clients_string = ", ".join([f"{i}:{v}" for i, v in enumerate(participating_clients)])
     # reviewer_dict = dict()
     # for admin in participating_admins:
     #     reviewed_clients = get_input(
@@ -110,8 +138,8 @@ def main():
     #         multiple=True,
     #     )
     #     reviewer_dict[admin] = reviewed_clients
-    start_date = get_date_input("input start date of this study (MM/DD/YYYY): ")
-    end_date = get_date_input("input end date of this study (MM/DD/YYYY): ")
+    start_time = get_datetime_input("input start time of this study (MM/DD/YYYY hh:mm:ss) in UTC time: ")
+    end_time = get_datetime_input("input end time of this study (MM/DD/YYYY hh:mm:ss) in UTC time: ")
 
     study_config = dict(
         name=name,
@@ -119,13 +147,19 @@ def main():
         contact=contact,
         participating_admins=participating_admins,
         participating_clients=participating_clients,
-        # reviewers=reviewer_dict,
-        start_date=start_date,
-        end_date=end_date,
+        start_time=start_time,
+        end_time=end_time,
     )
-    with open(f"{name}.json", "wt") as f:
-        f.write(json.dumps(study_config, indent=2))
-    print(f"study config file was generated at {name}.json")
+
+    studies_config = {StudyUrn.STUDIES.value: [study_config]}
+    headers = {"typ": "nvflare_study", "alg": "RS256"}
+    payload = studies_config
+    jws = jwt.api_jws.encode(
+        payload=json.dumps(payload, separators=(",", ":")).encode("utf-8"), key=pv_key, headers=headers
+    )
+    with open(f"{name}.jws", "wt") as f:
+        f.write(jws)
+    print(f"study config file was generated at {name}.jws")
 
 
 if __name__ == "__main__":

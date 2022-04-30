@@ -257,3 +257,7 @@ class WorkspaceConstants:
 
     WORKSPACE_PREFIX = ""
     APP_PREFIX = "app_"
+
+
+class StudyUrn(str, Enum):
+    STUDIES = "urn:nvidia:nvflare:studies"
