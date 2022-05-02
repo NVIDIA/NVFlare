@@ -3,17 +3,18 @@
 ############################
 Provisioning in NVIDIA FLARE
 ############################
-
-A necessary first step in establishing a federation is provisioning, in which the Open Provision API and its builder
-modules are used to establish the identities of the server, clients, and admin clients.
+A necessary first step in establishing a federation is provisioning to establish the identities of the server, clients,
+and admin clients.
 
 When operating federated learning, communication channels use shared SSL certificates generated
 during provisioning to establish the identities and secure communication between participants.
 
 Provisioning in NVIDIA FLARE generates mutual-trusted system-wide configurations for all participants
-so all of them can join the NVIDIA FLARE system across different locations. The mutual-trust is a mandatory feature of the
-Open Provision API as every participant authenticates others by the information inside the configuration. The
-configurations usually include, but are not limited to, the following information:
+so all of them can join the NVIDIA FLARE system across different locations. To achieve this, a provisioning tool powered
+by the Open Provision API and its builder modules is included in NVIDIA FLARE (:mod:`nvflare.lighter`)
+to create a startup kit for each participant with the necessary configuration artifacts.
+
+The configurations usually include, but are not limited to, the following information:
 
     - network discovery, such as domain names, port numbers or IP addresses
     - credentials for authentication, such as certificates of participants and root authority
@@ -26,9 +27,9 @@ we created the Open Provision API. Now developers can take advantage of this API
 which meet their own requirements in addition to the default provisioning before for creating packages for the
 server, client, and administrators.
 
-******************
-Open Provision API
-******************
+*******************************
+NVIDIA FLARE Open Provision API
+*******************************
 
 Architecture
 ============
@@ -36,10 +37,10 @@ Architecture
 .. image:: ../resources/Open_Provision_API.png
     :height: 350px
 
-The above diagram describes the architecture of Open Provision API in blue.  Those two green blocks are the sample
-python code (provision.py) collecting information (project.yml) and interacting with components of Open Provision API to
-accomplish one provisioning task.  The Provisioner and blocks inside the blue box are classes or subclasses of Open
-Provision API.
+The above diagram describes the architecture of NVIDIA FLARE Open Provision API in blue. Those two green blocks are the
+sample python code (provision.py) collecting project configuration information (project.yml) and interacting with
+components of Open Provision API to accomplish a provisioning task. The Provisioner and blocks inside the blue box are
+classes or subclasses of Open Provision API.
 
 Details
 =======

@@ -40,8 +40,8 @@ After :ref:`installation`, the provisioning tool is available via ``provision`` 
 
 Provisioning a federated learning project
 =========================================
-The :ref:`provisioning` page has details on the contents of the provisioning tool and the Open Provision API, which you
-can use to customize configurations to fit your own requirements.
+The :ref:`provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open
+Provision API, which you can use to customize configurations to fit your own requirements.
 
 Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
 project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
