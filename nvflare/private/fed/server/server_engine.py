@@ -31,6 +31,7 @@ from threading import Lock
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
@@ -625,9 +626,10 @@ class ServerEngine(ServerEngineInternalSpec):
 
             snapshot = RunSnapshot()
             for component_id, component in self.run_manager.components.items():
-                snapshot.set_component_snapshot(
-                    component_id=component_id, component_state=component.get_persist_state(fl_ctx)
-                )
+                if isinstance(component, FLComponent):
+                    snapshot.set_component_snapshot(
+                        component_id=component_id, component_state=component.get_persist_state(fl_ctx)
+                    )
 
             snapshot.set_component_snapshot(
                 component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
