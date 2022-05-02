@@ -111,7 +111,9 @@ class JobCommandModule(TrainingCommandModule):
                     conn.append_error("No jobs matching the searching criteria")
                     return
 
-                if len(filtered_jobs) == 1 or parsed_args.d:
+                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
+
+                if parsed_args.d:
                     self._send_detail_list(conn, filtered_jobs)
                 else:
                     self._send_summary_list(conn, filtered_jobs)

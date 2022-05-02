@@ -96,7 +96,10 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
     assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
 
     file_paths = get_all_file_paths(dir_name)
-    prefix_len = len(split_path(dir_name)[0])
+    if folder_name:
+        prefix_len = len(split_path(dir_name)[0]) + 1
+    else:
+        prefix_len = len(dir_name) + 1
 
     # writing files to a zipfile
     with ZipFile(writer, "w") as z:
@@ -176,13 +179,13 @@ def convert_legacy_zip(zip_data: bytes) -> bytes:
 
         writer = io.BytesIO()
         with ZipFile(writer, "w") as out_zip:
-            out_zip.writestr(meta_path, META_DATA.format(Study.DEFAULT_STUDY_NAME, folder_name))
+            out_zip.writestr(meta_path, META_DATA.format(Study.DEFAULT_STUDY_NAME, folder_name, folder_name))
             # Push everything else to a sub folder with the same name:
             # hello-pt/README.md -> hello-pt/hello-pt/README.md
             for info in info_list:
                 name = info.filename
                 content = in_zip.read(name)
-                path = _path_join(folder_name, name)
+                path = folder_name + "/" + name
                 info.filename = path
                 out_zip.writestr(info, content)
 
