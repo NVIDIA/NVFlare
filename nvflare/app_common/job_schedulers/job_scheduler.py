@@ -122,7 +122,8 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if event_type == EventType.JOB_STARTED:
             with self.lock:
                 job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-                self.scheduled_jobs.append(job_id)
+                if job_id not in self.scheduled_jobs:
+                    self.scheduled_jobs.append(job_id)
         elif event_type == EventType.JOB_COMPLETED or event_type == EventType.JOB_ABORTED:
             with self.lock:
                 job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
@@ -138,7 +139,5 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         for job in job_candidates:
             ok, sites_dispatch_info = _try_job(job, fl_ctx)
             if ok:
-                # with self.lock:
-                #     self.scheduled_jobs.append(job)
                 return job, sites_dispatch_info
         return None, None

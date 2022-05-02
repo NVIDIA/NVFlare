@@ -537,8 +537,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 )
             else:
                 return {}
-        except:
-            self.logger.error(f"Failed to send the aux_message: {topic}")
+        except Exception as e:
+            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
 
     def sync_clients_from_main_process(self):
         with self.parent_conn_lock:
