@@ -4,7 +4,13 @@
 Provisioning in NVIDIA FLARE
 ############################
 
-The purpose of provisioning in NVIDIA FLARE is to generate mutual-trusted system-wide configurations for all participants
+A necessary first step in establishing a federation is provisioning, in which the Open Provision API and its builder
+modules are used to establish the identities of the server, clients, and admin clients.
+
+When operating federated learning, communication channels use shared SSL certificates generated
+during provisioning to establish the identities and secure communication between participants.
+
+Provisioning in NVIDIA FLARE generates mutual-trusted system-wide configurations for all participants
 so all of them can join the NVIDIA FLARE system across different locations. The mutual-trust is a mandatory feature of the
 Open Provision API as every participant authenticates others by the information inside the configuration. The
 configurations usually include, but are not limited to, the following information:
@@ -409,13 +415,14 @@ Running ``provision -h`` shows all available options.
 .. code-block:: shell
 
   (nvflare_venv) ~/workspace/repos/flare$ provision -h
-  usage: provision [-h] [-p PROJECT_FILE] [-o OUTPUT_DIR] [-n] [-u]
+  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [-u]
 
   optional arguments:
-    -h, --help                                  show this help message and exit
-    -p PROJECT_FILE, --project_file PROJECT_FILE    file to describe FL project
-    -w WORKSPACE, --workspace WORKSPACE             directory used by provision
-    -u, --ui_tool         Run provisioning UI tool to generate project.yml file
+    -h, --help                                               show this help message and exit
+    -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
+    -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
+    -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
+    -u, --ui_tool                      Run provisioning UI tool to generate project.yml file
 
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.

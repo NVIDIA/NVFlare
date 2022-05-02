@@ -1,6 +1,6 @@
-######################################
-User Guide - Provision, Start, Operate
-######################################
+###############################################
+User Guide - Provision and Operate an FL System
+###############################################
 
 This user guide shows how to use NVIDIA FLARE to deploy and operate an FL system on multiple sites with a
 Provision-Start-Operating procedure. A reference application will be used here to show provisioning and basic operation

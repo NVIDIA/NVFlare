@@ -4,8 +4,8 @@
 Quickstart
 ##########
 
-This section provides a starting point for new users to learn some basic concepts about NVIDIA FLARE.
-Users can work through the examples at the bottom of this page and get familiar with how NVIDIA FLARE is designed,
+This section provides a starting point for new users to start NVIDIA FLARE.
+Users can go through the :ref:`example_apps` and get familiar with how NVIDIA FLARE is designed,
 operates and works.
 
 Each example introduces concepts about NVIDIA FLARE, while showcasing how some popular libraries and frameworks can
@@ -15,6 +15,12 @@ easily be integrated into the FL process.
 
 Setting Up the Application Environment in POC Mode
 ==================================================
+
+.. warning::
+
+    POC mode is not intended to be secure and should not be run in any type of production environment or any environment
+    where the server's ports are exposed. For actual deployment and even development, it is recommended to use a
+    :ref:`secure provisioned setup <provisioned_setup>`.
 
 To get started with a proof of concept (POC) setup after :ref:`installation`, run this command to generates a poc folder
 with a server, two clients, and one admin:
@@ -68,41 +74,9 @@ In one last terminal, start the admin:
   $ ./poc/admin/startup/fl_admin.sh localhost
 
 This will launch a command prompt where you can input admin commands to control and monitor many aspects of
-the FL process. Log in by entering ``admin`` for both the username and password.
+the FL process.
 
-Custom Code in Example Apps
-===========================
+.. tip::
 
-There are several ways to make :ref:`custom code <custom_code>` available to clients when using NVIDIA FLARE. Most
-hello-* examples use a custom folder within the FL application. Note that using a custom folder in the app needs to be
-:ref:`allowed <troubleshooting_byoc>` when using secure provisioning. By default, this option is disabled in the secure
-mode. POC mode, however, will work with custom code by default.
-
-In contrast, the `CIFAR-10 <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_,
-`prostate segmentation <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_,
-and `BraTS18 segmentation <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>`_ examples assume that the
-learner code is already installed on the client's system and
-available in the PYTHONPATH. Hence, the app folders do not include the custom code there. The PYTHONPATH is
-set in the ``run_poc.sh`` or ``run_secure.sh`` scripts of the example. Running these scripts as described in the README
-will make the learner code available to the clients.
-
-.. _example_apps:
-
-Example Apps for NVIDIA FLARE
-=============================
-NVIDIA FLARE has several examples to help you get started with federated learning and to explore certain features in
-`the examples directory <https://github.com/NVIDIA/NVFlare/tree/main/examples>`_.
-
-The following quickstart guides walk you through some of these examples:
-
-.. toctree::
-   :maxdepth: 1
-
-   examples/hello_pt
-   examples/hello_pt_tb
-   examples/hello_numpy
-   examples/hello_tf2
-   examples/hello_cross_val
-   Federated Learning with CIFAR-10 <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>
-
-For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
+   For anything more than the most basic proof of concept examples, it is recommended that you use a
+   :ref:`secure provisioned setup <provisioned_setup>`.

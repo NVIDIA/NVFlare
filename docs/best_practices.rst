@@ -1,7 +1,10 @@
 .. _best_practices:
 
-NVIDIA FLARE Programming Best Practices
-=======================================
+App Programming Best Practices
+==============================
+With familiarity in all the concepts in the :ref:`Programming Guide <programming_guide>`, here is a list of important
+considerations to make when designing and building your own NVIDIA FLARE applications.
+
 .. currentmodule:: nvflare.apis.fl_component.FLComponent
 
 Define your logic in a subclass of FLComponent
