@@ -1,11 +1,10 @@
-poc: ../../nvflare/poc
-n_clients: 2
-jobs_root_dir: ./jobs
-apps_root_dir: ./apps
+system_setup: ./data/system/ha_1_server_2_clients.yml
+jobs_root_dir: ./data/jobs
+apps_root_dir: ./data/apps
 snapshot_path: /tmp/snapshot-storage
 job_store_path: /tmp/jobs-storage
-ha: True
 cleanup: True
+
 
 tests:
   # - app_name: pt
