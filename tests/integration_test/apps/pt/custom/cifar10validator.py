@@ -27,7 +27,7 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class Cifar10Validator(Executor):
-    def __init__(self, validate_task_name=AppConstants.TASK_VALIDATION):
+    def __init__(self, data_path, validate_task_name=AppConstants.TASK_VALIDATION):
         super(Cifar10Validator, self).__init__()
 
         self._validate_task_name = validate_task_name
@@ -44,7 +44,7 @@ class Cifar10Validator(Executor):
         self.model.to(self.device)
 
         # Preparing the dataset for testing.
-        self.test_data = torchvision.datasets.CIFAR10(root="~/data", train=False, transform=self.transforms)
+        self.test_data = torchvision.datasets.CIFAR10(root=data_path, train=False, transform=self.transforms)
         self.test_loader = torch.utils.data.DataLoader(self.test_data, batch_size=4, shuffle=False)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:

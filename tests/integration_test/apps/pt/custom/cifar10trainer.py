@@ -35,6 +35,7 @@ from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
 class Cifar10Trainer(Executor):
     def __init__(
         self,
+        data_path,
         lr=0.01,
         epochs=5,
         train_task_name=AppConstants.TASK_TRAIN,
@@ -63,9 +64,7 @@ class Cifar10Trainer(Executor):
         self.exclude_vars = exclude_vars
 
         # Cifar10 dataset for training.
-        self.train_dataset = torchvision.datasets.CIFAR10(
-            root="~/data", transform=self.transforms, download=True, train=True
-        )
+        self.train_dataset = torchvision.datasets.CIFAR10(root=data_path, transform=self.transforms, train=True)
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=4, shuffle=True)
         self.n_iterations = len(self.train_loader)
 

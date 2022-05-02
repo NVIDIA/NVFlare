@@ -14,7 +14,9 @@
 
 import importlib
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import time
 import traceback
@@ -107,16 +109,16 @@ class TestSystem:
             generated_jobs = []
             for x in system_config["tests"]:
                 if "job_name" in x:
-                    test_jobs.append((x["job_name"], x["validators"]))
+                    test_jobs.append((x["job_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
                     continue
-                job = generate_job_dir_for_single_app_job(
+                job_dir = generate_job_dir_for_single_app_job(
                     app_name=x["app_name"],
                     app_root_folder=system_config["apps_root_dir"],
                     clients=[x["name"] for x in site_launcher.client_properties.values()],
                     destination=jobs_root_dir,
                 )
-                test_jobs.append((x["app_name"], x["validators"]))
-                generated_jobs.append(job)
+                test_jobs.append((x["app_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
+                generated_jobs.append(job_dir)
 
             admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
             if not admin_controller.initialize():
@@ -129,11 +131,14 @@ class TestSystem:
             for job_data in test_jobs:
                 start_time = time.time()
 
-                test_job, validators = job_data
+                test_job_name, validators, setup, teardown = job_data
+                print(f"Running job {test_job_name}")
+                for command in setup:
+                    print(f"Running setup command: {command}")
+                    process = subprocess.Popen(shlex.split(command))
+                    process.wait()
 
-                print(f"Running job {test_job} with {validators}")
-
-                admin_controller.submit_job(job_name=test_job)
+                admin_controller.submit_job(job_name=test_job_name)
 
                 time.sleep(5)
                 print(f"Server status after job submission: {admin_controller.server_status()}.")
@@ -148,31 +153,35 @@ class TestSystem:
                 client_data = site_launcher.get_client_data()
                 run_data = admin_controller.get_run_data()
 
-                # Get the app validator
+                # Get the job validator
                 if validators:
                     validate_result = True
                     for validator_module in validators:
                         # Create validator instance
                         module_name, class_name = get_module_class_from_full_path(validator_module)
-                        app_validator_cls = getattr(importlib.import_module(module_name), class_name)
-                        app_validator = app_validator_cls()
+                        job_validator_cls = getattr(importlib.import_module(module_name), class_name)
+                        job_validator = job_validator_cls()
 
                         print(server_data)
-                        app_validate_res = app_validator.validate_results(
+                        job_validate_res = job_validator.validate_results(
                             server_data=server_data,
                             client_data=client_data,
                             run_data=run_data,
                         )
                         print(
-                            f"Job {test_job}, Validator {app_validator.__class__.__name__} result: {app_validate_res}"
+                            f"Job {test_job_name}, Validator {job_validator.__class__.__name__} result: {job_validate_res}"
                         )
-                        validate_result = validate_result and app_validate_res
+                        validate_result = validate_result and job_validate_res
 
-                    job_results.append((test_job, validate_result))
+                    job_results.append((test_job_name, validate_result))
                 else:
                     print("No validators provided so results can't be checked.")
 
-                print(f"Finished running {test_job} in {time.time() - start_time} seconds.")
+                print(f"Finished running {test_job_name} in {time.time() - start_time} seconds.")
+                for command in teardown:
+                    print(f"Running teardown command: {command}")
+                    process = subprocess.Popen(shlex.split(command))
+                    process.wait()
 
             print(f"Job results: {job_results}")
             failure = False
@@ -182,8 +191,9 @@ class TestSystem:
                     failure = True
 
             if cleanup:
-                for job in generated_jobs:
-                    shutil.rmtree(job)
+                for job_dir in generated_jobs:
+                    print(f"Cleaning up job {job_dir}")
+                    shutil.rmtree(job_dir)
 
             if failure:
                 sys.exit(1)
