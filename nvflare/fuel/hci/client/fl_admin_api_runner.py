@@ -122,6 +122,14 @@ class FLAdminAPIRunner:
             debug=debug,
         )
 
+        # wait for admin to login
+        _t_warning_start = time.time()
+        while self.api.login_result != "OK":
+            time.sleep(0.5)
+            if time.time() - _t_warning_start > 10:
+                print("Admin login is taking very long...")
+                _t_warning_start = time.time()
+
     def run(
         self,
         job_folder_name,
