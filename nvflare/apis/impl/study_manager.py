@@ -14,6 +14,7 @@
 
 import json
 import logging
+import time
 from datetime import date, datetime
 from typing import List, Optional, Tuple
 
@@ -61,7 +62,7 @@ class StudyManager(StudyManagerSpec):
 
             - The name of the study must be unique;
             - participating_clients and participating_admins must be defined;
-            - Start and end date must make sense.
+            - Start and end time must make sense.
 
         Args:
             study: the caller-provided study info
@@ -71,6 +72,8 @@ class StudyManager(StudyManagerSpec):
             updated study info (e.g. created_at is set) and an emtpy string if successful
             None and an error message if the provided study is not valid
         """
+        if not isinstance(study, Study):
+            return None, f"Expect Study object, received {study.__class__.__name__}"
         if study.name in self._existing_studies:
             return None, "Unable to add duplicated study name."
         if not study.participating_clients:
@@ -79,21 +82,21 @@ class StudyManager(StudyManagerSpec):
             return None, "Study has no contact info."
         if not study.participating_admins:
             return None, "Study has no participating admins."
-        if not study.start_date:
-            return None, "Study has no start date."
-        if not study.end_date:
-            return None, "Study has no end date."
-        if study.end_date < study.start_date:
+        if not study.start_time:
+            return None, "Study has no start time."
+        if not study.end_time:
+            return None, "Study has no end time."
+        if study.end_time < study.start_time:
             return (
                 None,
-                f"Expect end_date later than start_date.  Got start_date={study.start_date} and end_data={study.end_date}",
+                f"Expect end_time later than start_time.  Got start_time={study.start_time} and end_time={study.end_time}",
             )
-        study.created_at = datetime.utcnow()
+        study.created_at = time.time()
         serialized_study = self._study_to_bytes(study)
         try:
             store = self._get_store(fl_ctx)
         except BaseException as e:
-            return None, e.message
+            return None, str(e)
         try:
             self._existing_studies = json.loads(store.get_data(StudyManager.STORAGE_KEY).decode("utf-8"))
         except BaseException:
@@ -102,7 +105,7 @@ class StudyManager(StudyManagerSpec):
             store.create_object(
                 uri=study.name,
                 data=serialized_study,
-                meta={"start_date": study.start_date, "end_date": study.end_date},
+                meta={"start_time": study.start_time, "end_time": study.end_time},
                 overwrite_existing=True,
             )
             store.create_object(
@@ -121,9 +124,6 @@ class StudyManager(StudyManagerSpec):
     def _study_from_bytes(bytes_study):
         try:
             deserialized_study = json.loads(bytes_study.decode("utf-8"))
-            deserialized_study["start_date"] = date.fromisoformat(deserialized_study.pop("start_date"))
-            deserialized_study["end_date"] = date.fromisoformat(deserialized_study.pop("end_date"))
-            deserialized_study["created_at"] = datetime.fromisoformat(deserialized_study.pop("created_at"))
             return Study(**deserialized_study)
         except BaseException:
             return None
@@ -164,7 +164,7 @@ class StudyManager(StudyManagerSpec):
         Returns:
             A list of study names
         """
-        today = date.today()
+        current_time = time.time()
         active_studies = list()
         try:
             store = self._get_store(fl_ctx)
@@ -173,9 +173,9 @@ class StudyManager(StudyManagerSpec):
         for st in self.list_studies(fl_ctx):
             try:
                 meta = store.get_meta(st)
-                if meta["start_date"] > today:
+                if meta["start_time"] > current_time:
                     continue
-                if meta["end_date"] <= today:
+                if meta["end_time"] <= current_time:
                     continue
                 active_studies.append(st)
             except BaseException as e:

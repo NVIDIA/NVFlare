@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 from .fl_context import FLContext
@@ -30,18 +29,18 @@ class Study:
         contact: str,
         participating_clients: List[str],
         participating_admins: List[str],
-        start_date: date,
-        end_date: date,
+        start_time: float,
+        end_time: float,
         reviewers=None,
-        created_at: datetime = None,
+        created_at: float = None,
     ):
         self.name = name
         self.description = description
         self.contact = contact
         self.participating_clients = participating_clients
         self.participating_admins = participating_admins
-        self.start_date = start_date
-        self.end_date = end_date
+        self.start_time = start_time
+        self.end_time = end_time
         self.reviewers = reviewers
         self.created_at = created_at
 

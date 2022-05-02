@@ -69,7 +69,7 @@ def get_datetime_input(prompt):
         answer = input(prompt)
         try:
             datetime_result = datetime.strptime(answer, "%m/%d/%Y %H:%M:%S")
-            result = int(time.mktime(datetime_result.timetuple()))
+            result = time.mktime(datetime_result.timetuple())
             break
         except:
             print(f"Expect MM/DD/YYYY hh:mm:ss, but got {answer}")
