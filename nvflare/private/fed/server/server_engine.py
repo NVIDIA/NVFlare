@@ -525,17 +525,20 @@ class ServerEngine(ServerEngineInternalSpec):
         self.run_manager.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
     def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        if not targets:
-            self.sync_clients_from_main_process()
-            targets = []
-            for t in self.get_clients():
-                targets.append(t.name)
-        if targets:
-            return self.run_manager.aux_runner.send_aux_request(
-                targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
-            )
-        else:
-            return {}
+        try:
+            if not targets:
+                self.sync_clients_from_main_process()
+                targets = []
+                for t in self.get_clients():
+                    targets.append(t.name)
+            if targets:
+                return self.run_manager.aux_runner.send_aux_request(
+                    targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
+                )
+            else:
+                return {}
+        except Exception as e:
+            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
 
     def sync_clients_from_main_process(self):
         with self.parent_conn_lock:

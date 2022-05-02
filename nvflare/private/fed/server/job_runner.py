@@ -18,7 +18,7 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import RunProcessKey, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, RunStatus
 from nvflare.private.admin_defs import Message
@@ -168,7 +168,7 @@ class JobRunner(FLComponent):
                         if job:
                             job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
                             del self.running_jobs[run_number]
-                            self.scheduler.remove_job(job)
+                            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                             self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
                             self.log_debug(fl_ctx, f"Finished running job:{job.job_id}")
             time.sleep(1.0)
@@ -179,8 +179,8 @@ class JobRunner(FLComponent):
         threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
 
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        while not self.ask_to_stop:
-            if job_manager:
+        if job_manager:
+            while not self.ask_to_stop:
                 # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
                 if self.scheduler:
@@ -189,6 +189,7 @@ class JobRunner(FLComponent):
                     if ready_job:
                         try:
                             self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
+                            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
                             run_number = self._deploy_job(ready_job, sites, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
                             self._start_run(run_number, ready_job, sites, fl_ctx)
@@ -198,7 +199,9 @@ class JobRunner(FLComponent):
                         except Exception as e:
                             self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
-            time.sleep(1.0)
+                time.sleep(1.0)
+        else:
+            self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
     def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -220,9 +223,9 @@ class JobRunner(FLComponent):
             job = self.running_jobs.get(run_number)
             if job:
                 self.log_info(fl_ctx, f"Stop the job run:{run_number}")
+                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                 job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                 del self.running_jobs[run_number]
-                self.scheduler.remove_job(job)
                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)
 
     def stop_all_runs(self, fl_ctx: FLContext):

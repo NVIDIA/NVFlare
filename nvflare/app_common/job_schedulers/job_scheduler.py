@@ -15,7 +15,9 @@
 import threading
 from typing import Dict, List, Optional, Tuple
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
@@ -116,6 +118,18 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.scheduled_jobs = []
         self.lock = threading.Lock()
 
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.JOB_STARTED:
+            with self.lock:
+                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+                if job_id not in self.scheduled_jobs:
+                    self.scheduled_jobs.append(job_id)
+        elif event_type == EventType.JOB_COMPLETED or event_type == EventType.JOB_ABORTED:
+            with self.lock:
+                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+                if job_id in self.scheduled_jobs:
+                    self.scheduled_jobs.remove(job_id)
+
     def schedule_job(
         self, job_candidates: List[Job], fl_ctx: FLContext
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
@@ -125,12 +139,5 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         for job in job_candidates:
             ok, sites_dispatch_info = _try_job(job, fl_ctx)
             if ok:
-                with self.lock:
-                    self.scheduled_jobs.append(job)
                 return job, sites_dispatch_info
         return None, None
-
-    def remove_job(self, job: Job):
-        with self.lock:
-            if job in self.scheduled_jobs:
-                self.scheduled_jobs.remove(job)
