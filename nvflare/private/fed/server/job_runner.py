@@ -179,8 +179,8 @@ class JobRunner(FLComponent):
         threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
 
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        while not self.ask_to_stop:
-            if job_manager:
+        if job_manager:
+            while not self.ask_to_stop:
                 # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
                 if self.scheduler:
@@ -199,7 +199,9 @@ class JobRunner(FLComponent):
                         except Exception as e:
                             self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
-            time.sleep(1.0)
+                time.sleep(1.0)
+        else:
+            self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
     def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
