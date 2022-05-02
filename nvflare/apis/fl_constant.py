@@ -91,6 +91,7 @@ class ReservedKey(object):
     SECURE_MODE = "__secure_mode__"
     SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
+    CURRENT_JOB_ID = "__current_job_id__"
 
 
 class FLContextKey(object):
@@ -123,6 +124,7 @@ class FLContextKey(object):
     SECURE_MODE = ReservedKey.SECURE_MODE
     SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
+    CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
 
 
 class ReservedTopic(object):

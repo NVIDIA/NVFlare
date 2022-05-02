@@ -19,6 +19,7 @@ import logging.config
 import os
 import re
 
+from nvflare.apis.fl_component import FLComponent
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
@@ -78,6 +79,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         )
 
         self.components = {}  # id => component
+        self.handlers = []
 
         self.app_root = app_root
         self.server_config_file_name = server_config_file_name
@@ -108,6 +110,13 @@ class FLServerStarterConfiger(JsonConfigurator):
                     server[SSLConstants.ROOT_CERT] = os.path.join(self.app_root, server[SSLConstants.ROOT_CERT])
         except Exception:
             raise ValueError("Server config error: '{}'".format(self.server_config_file_name))
+
+    def build_component(self, config_dict):
+        t = super().build_component(config_dict)
+        if isinstance(t, FLComponent):
+            if type(t).__name__ not in [type(h).__name__ for h in self.handlers]:
+                self.handlers.append(t)
+        return t
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         """Process the config element.
@@ -178,6 +187,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             "snapshot_persistor": self.snapshot_persistor,
             "overseer_agent": self.overseer_agent,
             "server_components": self.components,
+            "server_handlers": self.handlers,
         }
 
         deployer = ServerDeployer()
@@ -230,6 +240,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         )
 
         self.components = {}  # id => component
+        self.handlers = []
 
         self.app_root = app_root
         self.client_config_file_name = client_config_file_name
@@ -269,6 +280,13 @@ class FLClientStarterConfiger(JsonConfigurator):
 
             self.components[cid] = c
             return
+
+    def build_component(self, config_dict):
+        t = super().build_component(config_dict)
+        if isinstance(t, FLComponent):
+            if type(t).__name__ not in [type(h).__name__ for h in self.handlers]:
+                self.handlers.append(t)
+        return t
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -310,6 +328,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             "enable_byoc": self.enable_byoc,
             "overseer_agent": self.overseer_agent,
             "client_components": self.components,
+            "client_handlers": self.handlers,
         }
 
         self.base_deployer = BaseClientDeployer()

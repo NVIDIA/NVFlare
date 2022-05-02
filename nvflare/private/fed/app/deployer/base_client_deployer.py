@@ -44,6 +44,7 @@ class BaseClientDeployer:
         self.enable_byoc = build_ctx["enable_byoc"]
         self.overseer_agent = build_ctx["overseer_agent"]
         self.components = build_ctx["client_components"]
+        self.handlers = build_ctx["client_handlers"]
 
     def set_model_manager(self, model_manager):
         self.model_manager = model_manager
@@ -82,6 +83,7 @@ class BaseClientDeployer:
             overseer_agent=self.overseer_agent,
             args=args,
             components=self.components,
+            handlers=self.handlers,
         )
         return self.federated_client
 

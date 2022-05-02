@@ -48,6 +48,7 @@ class ServerDeployer:
         self.snapshot_persistor = build_ctx["snapshot_persistor"]
         self.overseer_agent = build_ctx["overseer_agent"]
         self.components = build_ctx["server_components"]
+        self.handlers = build_ctx["server_handlers"]
 
     def train(self):
         """To start the ServerDeployer."""
@@ -115,7 +116,7 @@ class ServerDeployer:
             workspace=workspace,
             components=self.components,
             # client_manager=self.client_manager,
-            handlers=[],
+            handlers=self.handlers,
         )
         job_manager = self.components.get(SystemComponents.JOB_MANAGER)
         services.engine.set_run_manager(run_manager)
