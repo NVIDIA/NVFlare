@@ -27,11 +27,9 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def __init__(
         self,
-        client_req_timeout: float = 1.0,
         max_jobs: int = 1,
     ):
         super().__init__()
-        self.client_req_timeout = client_req_timeout
         self.max_jobs = max_jobs
         self.scheduled_jobs = []
         self.lock = threading.Lock()
