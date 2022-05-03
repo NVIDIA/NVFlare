@@ -22,9 +22,15 @@ from .job_def import Job
 class DispatchInfo:
     """Information needed for dispatch"""
 
-    def __init__(self, resource_requirements: dict, token: str):
+    def __init__(self, resource_requirements: dict, token: Optional[str]):
         self.resource_requirements = resource_requirements
         self.token = token
+
+    def __eq__(self, other):
+        return self.resource_requirements == other.resource_requirements and self.token == other.token
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}: resource_requirements: {self.resource_requirements}, token: {self.token}"
 
 
 class JobSchedulerSpec(ABC):

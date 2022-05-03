@@ -75,23 +75,31 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         return False, None
 
     def _try_job(self, job: Job, fl_ctx) -> (bool, Optional[Dict[str, DispatchInfo]]):
+        engine = fl_ctx.get_engine()
+        engine.sync_clients_from_main_process()
+        online_clients = engine.get_clients()
+        online_site_names = [x.name for x in online_clients]
+
+        if job.required_sites:
+            for s in job.required_sites:
+                if s not in online_site_names:
+                    return False, None
+
+        if job.min_sites and len(online_site_names) < job.min_sites:
+            return False, None
+
         if not job.resource_spec:
-            all_sites = set()
-            for i in job.deploy_map:
-                all_sites.update(job.deploy_map[i])
-            all_sites.update(job.required_sites)
-            return True, {x: DispatchInfo(resource_requirements={}, token="") for x in all_sites}
+            return True, {x: DispatchInfo(resource_requirements={}, token=None) for x in online_site_names}
 
         # we are assuming server resource is sufficient
-        resource_check_results = self._check_client_resources(resource_reqs=job.resource_spec, fl_ctx=fl_ctx)
+        resource_reqs = {}
+        for k, v in job.resource_spec.items():
+            if k in online_site_names:
+                resource_reqs[k] = v
+        resource_check_results = self._check_client_resources(resource_reqs=resource_reqs, fl_ctx=fl_ctx)
 
         if not resource_check_results:
             return False, None
-
-        if len(resource_check_results) < job.min_sites:
-            return self._cancel_resources(
-                resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
-            )
 
         required_sites_received = 0
         num_sites_ok = 0
@@ -99,7 +107,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         for site_name, check_result in resource_check_results.items():
             if check_result[0]:
                 sites_dispatch_info[site_name] = DispatchInfo(
-                    resource_requirements=job.resource_spec[site_name], token=check_result[1]
+                    resource_requirements=resource_reqs[site_name], token=check_result[1]
                 )
                 num_sites_ok += 1
                 if site_name in job.required_sites:
