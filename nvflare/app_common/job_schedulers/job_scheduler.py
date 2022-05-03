@@ -76,7 +76,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
     def _try_job(self, job: Job, fl_ctx) -> (bool, Optional[Dict[str, DispatchInfo]]):
         engine = fl_ctx.get_engine()
-        engine.sync_clients_from_main_process()
         online_clients = engine.get_clients()
         online_site_names = [x.name for x in online_clients]
 
