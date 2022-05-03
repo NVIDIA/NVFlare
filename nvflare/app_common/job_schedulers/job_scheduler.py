@@ -28,7 +28,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def __init__(
         self,
         client_req_timeout: float = 1.0,
-        max_jobs: int = 10,
+        max_jobs: int = 1,
     ):
         super().__init__()
         self.client_req_timeout = client_req_timeout
@@ -79,45 +79,77 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         online_clients = engine.get_clients()
         online_site_names = [x.name for x in online_clients]
 
+        if not job.deploy_map:
+            raise RuntimeError(f"Job ({job.job_id}) does not have deploy_map, can't be scheduled.")
+
+        # deploy_map: {"app_name": []} will be treated as deploying to all online clients
+        all_deploy_map_keys = list(job.deploy_map.keys())
+        if len(all_deploy_map_keys) == 1 and len(job.deploy_map[all_deploy_map_keys[0]]) == 0:
+            applicable_sites = online_site_names
+            sites_to_app = {x: all_deploy_map_keys[0] for x in applicable_sites}
+        else:
+            applicable_sites = []
+            sites_to_app = {}
+            for app_name in job.deploy_map:
+                for site_name in job.deploy_map[app_name]:
+                    if site_name in online_site_names:
+                        applicable_sites.append(site_name)
+                        sites_to_app[site_name] = app_name
+        self.log_debug(fl_ctx, f"Job {job.job_id} is checking against applicable sites: {applicable_sites}")
+
         if job.required_sites:
             for s in job.required_sites:
-                if s not in online_site_names:
+                if s not in applicable_sites:
+                    self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: required site {s} is not connected.")
                     return False, None
 
-        if job.min_sites and len(online_site_names) < job.min_sites:
+        if job.min_sites and len(applicable_sites) < job.min_sites:
+            self.log_debug(
+                fl_ctx,
+                f"Job {job.job_id} can't be scheduled: connected sites ({len(applicable_sites)}) "
+                f"are less than min_sites ({job.min_sites}).",
+            )
             return False, None
-
-        if not job.resource_spec:
-            return True, {x: DispatchInfo(resource_requirements={}, token=None) for x in online_site_names}
 
         # we are assuming server resource is sufficient
         resource_reqs = {}
-        for k, v in job.resource_spec.items():
-            if k in online_site_names:
-                resource_reqs[k] = v
+        for site_name in applicable_sites:
+            if site_name in job.resource_spec:
+                resource_reqs[site_name] = job.resource_spec[site_name]
+            else:
+                resource_reqs[site_name] = {}
         resource_check_results = self._check_client_resources(resource_reqs=resource_reqs, fl_ctx=fl_ctx)
 
         if not resource_check_results:
+            self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
             return False, None
 
-        required_sites_received = 0
+        required_sites_not_enough_resource = list(job.required_sites)
         num_sites_ok = 0
         sites_dispatch_info = {}
         for site_name, check_result in resource_check_results.items():
             if check_result[0]:
                 sites_dispatch_info[site_name] = DispatchInfo(
-                    resource_requirements=resource_reqs[site_name], token=check_result[1]
+                    app_name=sites_to_app[site_name],
+                    resource_requirements=resource_reqs[site_name],
+                    token=check_result[1],
                 )
                 num_sites_ok += 1
                 if site_name in job.required_sites:
-                    required_sites_received += 1
+                    required_sites_not_enough_resource.remove(site_name)
 
         if num_sites_ok < job.min_sites:
+            self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
             return self._cancel_resources(
                 resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
             )
 
-        if required_sites_received < len(job.required_sites):
+        if required_sites_not_enough_resource:
+            self.log_debug(
+                fl_ctx,
+                f"Job {job.job_id} can't be scheduled: required sites: {required_sites_not_enough_resource}"
+                f" don't have enough resources.",
+            )
             return self._cancel_resources(
                 resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
             )
@@ -140,11 +172,17 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self, job_candidates: List[Job], fl_ctx: FLContext
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
         if len(self.scheduled_jobs) >= self.max_jobs:
+            self.log_debug(
+                fl_ctx,
+                f"Skipping schedule job because scheduled_jobs ({len(self.scheduled_jobs)}) "
+                f"is greater than max_jobs ({self.max_jobs})",
+            )
             return None, None
 
         for job in job_candidates:
             ok, sites_dispatch_info = self._try_job(job, fl_ctx)
-            self.log_debug(fl_ctx, f"Try to schedule job {job.job_id}, get result: {ok}.")
+            self.log_debug(fl_ctx, f"Try to schedule job {job.job_id}, get result: {ok}, {sites_dispatch_info}.")
             if ok:
                 return job, sites_dispatch_info
+        self.log_debug(fl_ctx, "No job is scheduled.")
         return None, None

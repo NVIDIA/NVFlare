@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import re
 from typing import Dict, List, Optional, Tuple
 
 import pytest
@@ -132,7 +132,7 @@ class MockServerEngine(ServerEngineSpec):
         with self.new_context() as fl_ctx:
             for site_name, result in resource_check_results.items():
                 check_result, token = result
-                if check_result:
+                if check_result and token:
                     self.clients[site_name].resource_manager.cancel_resources(
                         resource_requirement=resource_reqs[site_name], token=token, fl_ctx=fl_ctx
                     )
@@ -190,6 +190,14 @@ job3 = create_job(
     min_sites=3,
 )
 
+job4 = create_job(
+    job_id="job4",
+    study_name="hello",
+    resource_spec={"site1": create_resource(2, 4), "site2": create_resource(5, 4), "site3": create_resource(12, 4)},
+    deploy_map={"app7": ["site1", "site2"], "app8": ["site3", "site4", "site5"]},
+    min_sites=3,
+)
+
 
 TEST_CASES = [
     (
@@ -202,9 +210,9 @@ TEST_CASES = [
         ],
         job1,
         {
-            "site1": DispatchInfo(resource_requirements=create_resource(1, 4), token=None),
-            "site2": DispatchInfo(resource_requirements=create_resource(1, 4), token=None),
-            "site3": DispatchInfo(resource_requirements=create_resource(2, 1), token=None),
+            "site1": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
+            "site2": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
+            "site3": DispatchInfo(app_name="app2", resource_requirements=create_resource(2, 1), token=None),
         },
     ),
     (
@@ -217,21 +225,117 @@ TEST_CASES = [
         ],
         job1,
         {
-            "site1": DispatchInfo(resource_requirements=create_resource(1, 4), token=None),
-            "site2": DispatchInfo(resource_requirements=create_resource(1, 4), token=None),
-            "site3": DispatchInfo(resource_requirements=create_resource(2, 1), token=None),
+            "site1": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
+            "site2": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
+            "site3": DispatchInfo(app_name="app2", resource_requirements=create_resource(2, 1), token=None),
         },
     ),
     (
         [job3],
         [Site(name=f"site{i}", resources=create_resource(16, 8)) for i in range(8)],
         job3,
-        {f"site{i}": DispatchInfo(resource_requirements={}, token=None) for i in range(8)},
+        {f"site{i}": DispatchInfo(app_name="app5", resource_requirements={}, token=None) for i in range(8)},
+    ),
+    (
+        [job4, job1],
+        [
+            Site(name="site1", resources=create_resource(16, 8)),
+            Site(name="site2", resources=create_resource(16, 8)),
+            Site(name="site3", resources=create_resource(32, 1)),
+            Site(name="site4", resources=create_resource(2, 1)),
+        ],
+        job4,
+        {
+            "site1": DispatchInfo(app_name="app7", resource_requirements=create_resource(2, 4), token=None),
+            "site2": DispatchInfo(app_name="app7", resource_requirements=create_resource(5, 4), token=None),
+            "site4": DispatchInfo(app_name="app8", resource_requirements={}, token=None),
+        },
     ),
 ]
 
 
+@pytest.fixture(
+    params=[{"num_sites": 3}],
+)
+def setup_and_teardown(request):
+    num_sites = request.param["num_sites"]
+    sites = [Site(name=f"site{i}", resources=create_resource(1, 1)) for i in range(num_sites)]
+    servers = create_servers(server_num=1, sites=sites)
+    scheduler = DefaultJobScheduler(max_jobs=1)
+    yield servers, scheduler, num_sites
+
+
 class TestDefaultJobScheduler:
+    def test_missing_deploy_map(self, setup_and_teardown):
+        servers, scheduler, num_sites = setup_and_teardown
+        candidate = create_job(
+            job_id="test_job",
+            study_name="test_study",
+            resource_spec={},
+            deploy_map=None,
+            min_sites=1,
+        )
+        with pytest.raises(
+            RuntimeError, match=re.escape("Job (test_job) does not have deploy_map, can't be scheduled.")
+        ):
+            with servers[0].new_context() as fl_ctx:
+                _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+
+    def test_less_active_than_min(self, setup_and_teardown):
+        servers, scheduler, num_sites = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            study_name="test_study",
+            resource_spec={},
+            deploy_map={"app5": []},
+            min_sites=num_sites + 1,
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+        assert job is None
+
+    def test_require_sites_not_active(self, setup_and_teardown):
+        servers, scheduler, num_sites = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            study_name="test_study",
+            resource_spec={},
+            deploy_map={"app5": []},
+            min_sites=1,
+            required_sites=[f"site{num_sites}"],
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+        assert job is None
+
+    def test_require_sites_not_enough_resource(self, setup_and_teardown):
+        servers, scheduler, num_sites = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            study_name="test_study",
+            resource_spec={"site2": create_resource(2, 2)},
+            deploy_map={"app5": []},
+            min_sites=1,
+            required_sites=["site2"],
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+        assert job is None
+
+    def test_not_enough_sites_has_enough_resource(self, setup_and_teardown):
+        servers, scheduler, num_sites = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            study_name="test_study",
+            resource_spec={f"site{i}": create_resource(2, 2) for i in range(num_sites)},
+            deploy_map={"app5": []},
+            min_sites=2,
+            required_sites=[],
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+        assert job is None
+
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
     def test_normal_case(self, job_candidates, sites, expected_job, expected_dispatch_info):
         servers = create_servers(server_num=1, sites=sites)
@@ -239,55 +343,7 @@ class TestDefaultJobScheduler:
         with servers[0].new_context() as fl_ctx:
             job, dispatch_info = scheduler.schedule_job(job_candidates=job_candidates, fl_ctx=fl_ctx)
         assert job == expected_job
-        for k1, k2 in zip(dispatch_info, expected_dispatch_info):
-            assert dispatch_info[k1] == expected_dispatch_info[k2]
-
-    def test_less_active_than_min(self):
-        sites = [Site(name=f"site{i}", resources=create_resource(1, 1)) for i in range(3)]
-        servers = create_servers(server_num=1, sites=sites)
-        scheduler = DefaultJobScheduler()
-        candidate = create_job(
-            job_id="job",
-            study_name="test_study",
-            resource_spec={},
-            deploy_map={"app5": []},
-            min_sites=5,
-        )
-        with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
-        assert job is None
-
-    def test_require_sites_not_active(self):
-        sites = [Site(name=f"site{i}", resources=create_resource(1, 1)) for i in range(3)]
-        servers = create_servers(server_num=1, sites=sites)
-        scheduler = DefaultJobScheduler()
-        candidate = create_job(
-            job_id="job",
-            study_name="test_study",
-            resource_spec={},
-            deploy_map={"app5": []},
-            min_sites=1,
-            required_sites=["site4"],
-        )
-        with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
-        assert job is None
-
-    def test_require_sites_not_enough_resource(self):
-        sites = [Site(name=f"site{i}", resources=create_resource(1, 1)) for i in range(3)]
-        servers = create_servers(server_num=1, sites=sites)
-        scheduler = DefaultJobScheduler()
-        candidate = create_job(
-            job_id="job",
-            study_name="test_study",
-            resource_spec={"site3": create_resource(2, 2)},
-            deploy_map={"app5": []},
-            min_sites=1,
-            required_sites=["site3"],
-        )
-        with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
-        assert job is None
+        assert dispatch_info == expected_dispatch_info
 
     @pytest.mark.parametrize("add_first_job", [True, False])
     def test_a_list_of_jobs(self, add_first_job):
