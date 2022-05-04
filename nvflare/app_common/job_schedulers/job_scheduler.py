@@ -95,8 +95,9 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                         sites_to_app[site_name] = app_name
         self.log_debug(fl_ctx, f"Job {job.job_id} is checking against applicable sites: {applicable_sites}")
 
-        if job.required_sites:
-            for s in job.required_sites:
+        required_sites = job.required_sites if job.required_sites else []
+        if required_sites:
+            for s in required_sites:
                 if s not in applicable_sites:
                     self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: required site {s} is not connected.")
                     return False, None
@@ -122,7 +123,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
             return False, None
 
-        required_sites_not_enough_resource = list(job.required_sites)
+        required_sites_not_enough_resource = list(required_sites)
         num_sites_ok = 0
         sites_dispatch_info = {}
         for site_name, check_result in resource_check_results.items():
@@ -133,7 +134,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     token=check_result[1],
                 )
                 num_sites_ok += 1
-                if site_name in job.required_sites:
+                if site_name in required_sites:
                     required_sites_not_enough_resource.remove(site_name)
 
         if num_sites_ok < job.min_sites:
