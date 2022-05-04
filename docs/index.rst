@@ -26,8 +26,10 @@ source code.
    highlights
    installation
    quickstart
+   example_applications
    user_guide
    programming_guide
+   best_practices
    faq
    API <apidocs/modules>
    appendix

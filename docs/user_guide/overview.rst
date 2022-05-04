@@ -26,24 +26,28 @@ Operate
 -------
 Lead scientists / administrators control the federated learning process: deploy application, check statuses, start / abort / shutdown training
 
+.. _provisioned_setup:
 
 ******************************************************************************
 Provision: Configure and generate packages for the server, clients, and admins
 ******************************************************************************
-
 One party leads the process of configuring the provisioning tool and using it to generate startup kits for each party in
 the federated learning training project:
 
 Preparation for using the provisioning tool
 ===========================================
-
 After :ref:`installation`, the provisioning tool is available via ``provision`` command.
 
 Provisioning a federated learning project
 =========================================
-The :ref:`provisioning` page has details on the contents of the
-provisioning tool. Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
-project requirements, then run the startup kit with (here we assume your project.yml is in current working directory)::
+The :ref:`provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open
+Provision API, which you can use to customize configurations to fit your own requirements.
+
+Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
+project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
+for your project).
+
+Then run the startup kit with (here we assume your project.yml is in current working directory)::
 
     provision -p project.yml
 
@@ -66,8 +70,6 @@ and "packages" folder to a safe location. The passwords shown below are for demo
     │ researcher@org2.com   │ org2   │ researcher@org2.com.zip   │ GJS6eb410q0ijlCZ │
     │ it@org2.com           │ org2   │ it@org2.com.zip           │ s3lYvaL2tqX0Wrjb │
     └───────────────────────┴────────┴───────────────────────────┴──────────────────┘
-
-.. tip:: You can run ``provision -n -p project.yml`` to generate zip files without password protection.
 
 .. tip:: For security reasons, it is recommended to send the password to each participant separately from the package itself.
 
@@ -93,7 +95,7 @@ running the package will need write access there.
 Start: Instructions for each participant to start running FL with their startup kits
 ************************************************************************************
 
-.. attention:: Please always safeguard .key files!
+.. attention:: Please always safeguard .key files! These are the critical keys for secure communication!
 
 Federated learning server ($SERVER_NAME.zip)
 ============================================
