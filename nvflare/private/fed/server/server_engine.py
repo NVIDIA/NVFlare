@@ -146,7 +146,7 @@ class ServerEngine(ServerEngineInternalSpec):
             try:
                 address = ("localhost", port)
                 self.parent_conn = CommandClient(address, authkey="parent process secret password".encode())
-            except Exception as e:
+            except BaseException:
                 time.sleep(1.0)
                 pass
 
@@ -227,7 +227,7 @@ class ServerEngine(ServerEngineInternalSpec):
                             targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
                         )
                         conn.send(replies)
-            except:
+            except BaseException:
                 self.logger.warning("Failed to process the child process command.")
 
     def wait_for_complete(self, run_number):
@@ -279,8 +279,7 @@ class ServerEngine(ServerEngineInternalSpec):
         )
         # use os.setsid to create new process group ID
 
-        # command = f"{sys.executable} -m nvflare.private.fed.app.server.worker_process"
-        process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
+        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
 
@@ -330,9 +329,6 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before abort."
 
         self.logger.info("Abort the server app run.")
-        # self.server.stop_training()
-        # self.server.shutdown = True
-        # self.server.abort_run()
 
         try:
             with self.lock:
@@ -342,7 +338,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     command_conn.send(data)
                     status_message = command_conn.recv()
                     self.logger.info(f"Abort server: {status_message}")
-        except:
+        except BaseException:
             with self.lock:
                 child_process = self.run_processes.get(run_number, {}).get(RunProcessKey.CHILD_PROCESS, None)
                 if child_process:
@@ -365,11 +361,9 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before shutdown."
 
         self.logger.info("FL server shutdown.")
-        # self.server.fl_shutdown()
-        # future = self.executor.submit(server_shutdown, (self.server))
 
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
-        future = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
         return ""
 
     def restart_server(self) -> str:
@@ -380,7 +374,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.logger.info("FL server restart.")
 
         touch_file = os.path.join(self.args.workspace, "restart.fl")
-        future = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
         return ""
 
     def get_widget(self, widget_id: str) -> Widget:
@@ -420,16 +414,10 @@ class ServerEngine(ServerEngineInternalSpec):
         return clients, invalid_inputs
 
     def get_app_data(self, app_name: str) -> Tuple[str, object]:
-        # folder = self._get_run_folder()
-        # data = zip_directory_to_bytes(folder, self._get_client_app_folder(client_name))
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, app_name)
         if not os.path.exists(fullpath_src):
             return f"App folder '{app_name}' does not exist in staging area.", None
 
-        # folder = self.args.workspace
-        # data = zip_directory_to_bytes(
-        #     folder, os.path.join(WorkspaceConstants.WORKSPACE_PREFIX + str(self.run_number), self._get_client_app_folder(client_name))
-        # )
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
 
@@ -442,7 +430,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_RUN_INFO, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     run_info = command_conn.recv()
-        except:
+        except BaseException:
             self.logger.error(f"Failed to get_app_run_info from run_{run_number}")
 
         return run_info
@@ -485,23 +473,20 @@ class ServerEngine(ServerEngineInternalSpec):
     def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
         return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + "server")
 
-    def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
-        return self.deploy_app(app_name, WorkspaceConstants.APP_PREFIX + client_name)
-
     def get_workspace(self) -> Workspace:
         return self.run_manager.get_workspace()
 
     def ask_to_stop(self):
         self.asked_to_stop = True
 
-    def deploy_app(self, run_number, src, dest):
+    def deploy_app(self, run_number, src, dst):
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, src)
-        fullpath_dest = os.path.join(self._get_run_folder(run_number), dest)
+        fullpath_dst = os.path.join(self._get_run_folder(run_number), dst)
         if not os.path.exists(fullpath_src):
             return f"App folder '{src}' does not exist in staging area."
-        if os.path.exists(fullpath_dest):
-            shutil.rmtree(fullpath_dest)
-        shutil.copytree(fullpath_src, fullpath_dest)
+        if os.path.exists(fullpath_dst):
+            shutil.rmtree(fullpath_dst)
+        shutil.copytree(fullpath_src, fullpath_dst)
 
         app_file = os.path.join(self._get_run_folder(run_number), "fl_app.txt")
         if os.path.exists(app_file):
@@ -517,7 +502,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def _remove_dead_client(self, token):
-        client = self.server.client_manager.remove_client(token)
+        _ = self.server.client_manager.remove_client(token)
         self.server.remove_client_data(token)
         if self.server.admin_server:
             self.server.admin_server.client_dead(token)
@@ -603,7 +588,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_conn = CommandClient(address, authkey="client process secret password".encode())
 
                 self.run_processes[run_number][RunProcessKey.CONNECTION] = command_conn
-            except Exception as e:
+            except Exception:
                 pass
         return command_conn
 
@@ -679,7 +664,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.SHOW_STATS, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     stats = command_conn.recv()
-        except:
+        except BaseException:
             self.logger.error(f"Failed to get_stats from run_{run_number}")
 
         return stats
@@ -693,7 +678,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_ERRORS, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     stats = command_conn.recv()
-        except:
+        except BaseException:
             self.logger.error(f"Failed to get_stats from run_{run_number}")
 
         return stats
