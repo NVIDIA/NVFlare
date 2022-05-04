@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import ast
 import os
 import re
 import time
@@ -20,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.overseer_spec import OverseerAgent
+from nvflare.apis.utils.format_check import type_pattern_mapping
 from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
@@ -201,7 +201,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     def _validate_sp_string(self, sp_string) -> str:
         if re.match(
-            r"^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]):[0-9]*:[0-9]*)$",
+            type_pattern_mapping.get("sp_end_point"),
             sp_string,
         ):
             return sp_string
@@ -223,17 +223,17 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             err = self._error_buffer
             self._error_buffer = None
             raise RuntimeError(err)
-        if reply.get("status"):
-            if reply.get("status") == APIStatus.SUCCESS:
-                success_in_data = True
+        if reply.get("status") == APIStatus.SUCCESS:
+            success_in_data = True
         reply_data_list = []
         reply_data_full_response = ""
         if reply.get("data"):
             for data in reply["data"]:
-                if data["type"] == "success":
-                    success_in_data = True
-                if data["type"] == "string" or data["type"] == "error":
-                    reply_data_list.append(data["data"])
+                if isinstance(data, dict):
+                    if data.get("type") == "success":
+                        success_in_data = True
+                    if data.get("type") == "string" or data.get("type") == "error":
+                        reply_data_list.append(data["data"])
             reply_data_full_response = "\n".join(reply_data_list)
             if "session_inactive" in reply_data_full_response:
                 raise ConnectionRefusedError(reply_data_full_response)
@@ -535,8 +535,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     @wrap_with_return_exception_responses
     def list_sp(self) -> FLAdminAPIResponse:
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("list_sp")
-        if reply.get("details"):
-            return FLAdminAPIResponse(APIStatus.SUCCESS, ast.literal_eval(reply.get("details")), reply)
+        if reply.get("data"):
+            return FLAdminAPIResponse(APIStatus.SUCCESS, reply.get("data"), reply)
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
