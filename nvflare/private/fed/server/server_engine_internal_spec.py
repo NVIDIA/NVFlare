@@ -73,21 +73,6 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
-        """Prepare to deploy the specified app to the specified client name.
-
-        Copy the app folder tree from staging area to the client's RUN area on Server
-        Args:
-            app_name: name of the app
-            app_staging_path: the full path to the app folder in staging area
-            client_name: name of the client
-
-        Returns:
-            An error message. An empty string if successful.
-        """
-        pass
-
-    @abstractmethod
     def get_app_data(self, app_name: str) -> (str, object):
         """Get data for deploying the app.
 
