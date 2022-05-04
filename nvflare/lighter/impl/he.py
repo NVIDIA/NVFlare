@@ -14,7 +14,10 @@
 
 import os
 
-import tenseal as ts
+try:
+    import tenseal as ts
+except ImportError:
+    ts = None
 
 from nvflare.lighter.spec import Builder
 
@@ -38,6 +41,11 @@ class HEBuilder(Builder):
             scale_bits: defaults to 40.
             scheme: defaults to "CKKS".
         """
+        if ts is None:
+            print(
+                "\n *** tenseal is not installed.  HEBuilder is ignored and no tenseal files will be generated. ***\n"
+            )
+            return
         self._context = None
         self.scheme_type_mapping = {
             "CKKS": ts.SCHEME_TYPE.CKKS,
@@ -52,6 +60,8 @@ class HEBuilder(Builder):
         self.serialized = None
 
     def initialize(self, ctx):
+        if ts is None:
+            return
         self._context = ts.context(
             self.scheme_type,
             poly_modulus_degree=self.poly_modulus_degree,
@@ -64,6 +74,8 @@ class HEBuilder(Builder):
         self._context.global_scale = 2 ** self.scale_bits
 
     def build(self, study, ctx):
+        if ts is None:
+            return
         server = study.get_participants_by_type("server")
         dest_dir = self.get_kit_dir(server, ctx)
         with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
@@ -74,6 +86,8 @@ class HEBuilder(Builder):
                 f.write(self.get_serialized_context(is_client=True))
 
     def get_serialized_context(self, is_client=False):
+        if ts is None:
+            return
         _serialized_context = self._context.serialize(
             save_public_key=is_client,
             save_secret_key=is_client,
