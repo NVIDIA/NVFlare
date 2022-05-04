@@ -29,9 +29,17 @@ class ServerDeployer:
 
     def __init__(self):
         """Init the ServerDeployer."""
-        # self.app_validator = None
         self.services = None
         self.cmd_modules = ServerCommandModules.cmd_modules
+        self.server_config = None
+        self.secure_train = None
+        self.app_validator = None
+        self.host = None
+        self.enable_byoc = None
+        self.snapshot_persistor = None
+        self.overseer_agent = None
+        self.components = None
+        self.handlers = None
 
     def build(self, build_ctx):
         """To build the ServerDeployer.
@@ -49,15 +57,6 @@ class ServerDeployer:
         self.overseer_agent = build_ctx["overseer_agent"]
         self.components = build_ctx["server_components"]
         self.handlers = build_ctx["server_handlers"]
-
-    def train(self):
-        """To start the ServerDeployer."""
-        self.services = self.deploy()
-        self.start_training(self.services)
-
-    def start_training(self, services):
-        """Start the deployemnt."""
-        services.start()
 
     def create_fl_server(self, args, secure_train=False):
         """To create the FL Server.
@@ -115,7 +114,6 @@ class ServerDeployer:
             run_num="",
             workspace=workspace,
             components=self.components,
-            # client_manager=self.client_manager,
             handlers=self.handlers,
         )
         job_manager = self.components.get(SystemComponents.JOB_MANAGER)
@@ -126,11 +124,9 @@ class ServerDeployer:
         run_manager.add_component(SystemComponents.JOB_RUNNER, job_runner)
         fl_ctx = services.engine.new_context()
 
-        # self._start_job_runner(args, services)
         threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
 
         services.engine.fire_event(EventType.SYSTEM_START, services.engine.new_context())
-        # self.create_builder(services)
         print("deployed FL server trainer.")
         return services
 
