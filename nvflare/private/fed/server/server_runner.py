@@ -100,11 +100,11 @@ class ServerRunner(FLComponent):
                     wf.responder.control_flow(self.abort_signal, fl_ctx)
             except WorkflowError as e:
                 with self.engine.new_context() as fl_ctx:
-                    self.log_exception(fl_ctx, "Fatal error occurred in workflow {}. Aborting the RUN".format(wf.id))
+                    self.log_exception(fl_ctx, f"Fatal error occurred in workflow {wf.id}: {e}. Aborting the RUN")
                 self.abort_signal.trigger(True)
             except BaseException as e:
                 with self.engine.new_context() as fl_ctx:
-                    self.log_exception(fl_ctx, "exception in workflow {}".format(wf.id))
+                    self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, e))
             finally:
                 with self.engine.new_context() as fl_ctx:
                     # do not execute finalize_run() until the wf_lock is acquired
@@ -119,8 +119,8 @@ class ServerRunner(FLComponent):
                     self.log_info(fl_ctx, f"Workflow: {wf.id} finalizing ...")
                     try:
                         wf.responder.finalize_run(fl_ctx)
-                    except:
-                        self.log_exception(fl_ctx, "error finalizing workflow {}".format(wf.id))
+                    except BaseException as e:
+                        self.log_exception(fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, e))
 
                     self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
                     self.fire_event(EventType.END_WORKFLOW, fl_ctx)
@@ -142,9 +142,9 @@ class ServerRunner(FLComponent):
         self.status = "started"
         try:
             self._execute_run()
-        except:
+        except BaseException as ex:
             with self.engine.new_context() as fl_ctx:
-                self.log_exception(fl_ctx, "Error executing RUN")
+                self.log_exception(fl_ctx, f"Error executing RUN: {ex}")
 
         # use wf_lock to ensure state of current_wf!
         self.status = "done"
@@ -272,7 +272,8 @@ class ServerRunner(FLComponent):
                     except BaseException as ex:
                         self.log_exception(
                             fl_ctx,
-                            "processing error in task data filter {}; asked client to try again later".format(type(f)),
+                            "processing error in task data filter {}: {}; "
+                            "asked client to try again later".format(type(f), ex),
                         )
 
                         with self.wf_lock:
@@ -284,8 +285,8 @@ class ServerRunner(FLComponent):
             self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
             self.log_info(fl_ctx, "sent task assignment to client")
             return task_name, task_id, task_data
-        except BaseException:
-            self.log_exception(fl_ctx, "error processing client task request; asked client to try again later")
+        except BaseException as e:
+            self.log_exception(fl_ctx, f"Error processing client task request: {e}; asked client to try again later")
             return self._task_try_again()
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
@@ -343,8 +344,8 @@ class ServerRunner(FLComponent):
             for f in filter_list:
                 try:
                     result = f.process(result, fl_ctx)
-                except BaseException:
-                    self.log_exception(fl_ctx, "processing error in task result filter {}".format(type(f)))
+                except BaseException as e:
+                    self.log_exception(fl_ctx, "Error processing in task result filter {}: {}".format(type(f), e))
                     return
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
@@ -376,8 +377,8 @@ class ServerRunner(FLComponent):
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
-            except BaseException:
-                self.log_exception(fl_ctx, "error processing client result by {}".format(self.current_wf.id))
+            except BaseException as e:
+                self.log_exception(fl_ctx, "Error processing client result by {}: {}".format(self.current_wf.id, e))
 
     def abort(self, fl_ctx: FLContext):
         self.status = "done"
