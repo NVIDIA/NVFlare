@@ -28,6 +28,7 @@ from nvflare.security.security import Action, FLAuthzContext
 
 from .app_authz import AppAuthzService
 from .cmd_utils import CommandUtil
+from .server_engine import ServerEngine
 
 
 class TrainingCommandModule(CommandModule, CommandUtil):
@@ -155,8 +156,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def delete_run_number(self, conn: Connection, args: List[str]):
         run_number = args[1]
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
         if run_number in engine.run_processes.keys():
             conn.append_error(f"Current running run_{run_number} can not be deleted.")
@@ -231,13 +232,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def _deploy_to_clients(self, conn: Connection, app_name, run_number) -> bool:
         # return True if successful
         engine = conn.app_ctx
-        client_names = conn.get_prop(self.TARGET_CLIENT_NAMES)
-        # for client_name in client_names:
-        #     err = engine.prepare_deploy_app_to_client(app_name, app_staging_path, client_name)
-        #     if err:
-        #         conn.append_error(err)
-        #         return False
-
         err, app_data = engine.get_app_data(app_name)
         if err:
             conn.append_error(err)
@@ -439,8 +433,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def shutdown(self, conn: Connection, args: List[str]):
         target_type = args[1]
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
         if engine.job_runner.running_jobs:
             conn.append_error("There are still jobs running. Please let them finish or abort_job before shutdown.")
@@ -517,8 +511,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def restart(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
         if engine.job_runner.running_jobs:
             conn.append_error("There are still jobs running. Please let them finish or abort_job before restart.")
@@ -585,16 +579,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        dest = args[1]
-        if dest == self.TARGET_TYPE_SERVER:
+        dst = args[1]
+        if dst == self.TARGET_TYPE_SERVER:
             engine_info = engine.get_engine_info()
-            # conn.append_string(f"FL_app name: {engine_info.app_name}")
             conn.append_string(f"Engine status: {engine_info.status.value}")
-            # run_info = engine.get_run_info()
-            # if engine.get_run_number() < 0:
-            #     conn.append_string("Run number has not been set.")
-            # else:
-            #     conn.append_string(f"Current run number: {engine.get_run_number()}")
             table = conn.append_table(["Run_number", "App Name"])
             for run_number, app_name in engine_info.app_names.items():
                 table.add_row([run_number, app_name])
@@ -608,12 +596,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     if not isinstance(c, Client):
                         raise TypeError("c must be Client but got {}".format(type(c)))
                     table.add_row([c.name, str(c.token), time.asctime(time.localtime(c.last_connect_time))])
-        elif dest == self.TARGET_TYPE_CLIENT:
+        elif dst == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=TrainingTopic.CHECK_STATUS, body="")
             replies = self.send_request_to_clients(conn, message)
             self._process_status_replies(conn, replies)
         else:
-            conn.append_error("invalid target type {}. Usage: check_status server|client ...".format(dest))
+            conn.append_error("invalid target type {}. Usage: check_status server|client ...".format(dst))
 
     def _process_status_replies(self, conn, replies):
         if not replies:
@@ -624,7 +612,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         table = conn.append_table(["client", "app_name", "run_number", "status"])
         for r in replies:
             run_num = "?"
-            status = "?"
             app_name = "?"
             client_name = engine.get_client_name_from_token(r.client_token)
 
@@ -641,9 +628,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                                 table.add_row([client_name, app_name, run_num, status])
                         else:
                             table.add_row([client_name, app_name, run_num, "No Jobs"])
-                except BaseException:
-                    self.logger.error("Bad reply from client")
-
-                # table.add_row([client_name, app_name, run_num, status])
+                except BaseException as ex:
+                    self.logger.error(f"Bad reply from client: {ex}")
             else:
                 table.add_row([client_name, app_name, run_num, "No Reply"])
