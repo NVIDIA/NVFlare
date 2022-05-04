@@ -18,6 +18,5 @@ __pycache__
 fedanalysis
 
 # data
-dataset
-dataset*
-*results*
+data/archive
+data/*.json
