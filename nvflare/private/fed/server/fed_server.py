@@ -90,7 +90,7 @@ class BaseServer(ABC):
         self.max_num_clients = max(max_num_clients, 1)
 
         self.heart_beat_timeout = heart_beat_timeout
-        self.handlers: [FLComponent] = handlers
+        self.handlers = handlers
         # self.cmd_modules = cmd_modules
 
         self.client_manager = ClientManager(
@@ -376,7 +376,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         if client:
             token = client.get_token()
 
-            client = self.client_manager.remove_client(token)
+            _ = self.client_manager.remove_client(token)
             self.tokens.pop(token, None)
             if self.admin_server:
                 self.admin_server.client_dead(token)
@@ -407,18 +407,18 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 # if self.server_runner is None or engine is None or self.engine.run_manager is None:
                 if run_number not in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
-                    taskname = SpecialTaskName.END_RUN
+                    task_name = SpecialTaskName.END_RUN
                     task_id = ""
                     shareable = None
                 else:
-                    shareable, task_id, taskname = self._process_task_request(client, fl_ctx, shared_fl_ctx)
+                    shareable, task_id, task_name = self._process_task_request(client, fl_ctx, shared_fl_ctx)
 
-                    # taskname, task_id, shareable = self.server_runner.process_task_request(client, fl_ctx)
+                    # task_name, task_id, shareable = self.server_runner.process_task_request(client, fl_ctx)
 
                 if shareable is None:
                     shareable = Shareable()
 
-                task = fed_msg.CurrentTask(task_name=taskname)
+                task = fed_msg.CurrentTask(task_name=task_name)
                 task.meta.CopyFrom(self.task_meta_info)
                 meta_data = self.get_current_model_meta_data()
 
@@ -432,10 +432,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                 current_model = shareable_to_modeldata(shareable, fl_ctx)
                 task.data.CopyFrom(current_model)
-                if taskname == SpecialTaskName.TRY_AGAIN:
-                    self.logger.debug(f"GetTask: Return task: {taskname} to client: {client.name} ({token}) ")
+                if task_name == SpecialTaskName.TRY_AGAIN:
+                    self.logger.debug(f"GetTask: Return task: {task_name} to client: {client.name} ({token}) ")
                 else:
-                    self.logger.info(f"GetTask: Return task: {taskname} to client: {client.name} ({token}) ")
+                    self.logger.info(f"GetTask: Return task: {task_name} to client: {client.name} ({token}) ")
 
                 return task
 
@@ -456,7 +456,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_conn.send(data)
 
                     return_data = command_conn.recv()
-                    taskname = return_data.get(ServerCommandKey.TASK_NAME)
+                    task_name = return_data.get(ServerCommandKey.TASK_NAME)
                     task_id = return_data.get(ServerCommandKey.TASK_ID)
                     shareable = return_data.get(ServerCommandKey.SHAREABLE)
                     child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
@@ -464,10 +464,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     fl_ctx.props.update(child_fl_ctx)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
-            taskname = SpecialTaskName.END_RUN
+            task_name = SpecialTaskName.END_RUN
             task_id = ""
             shareable = None
-        return shareable, task_id, taskname
+        return shareable, task_id, task_name
 
     def SubmitUpdate(self, request, context):
         """Handle client's submission of the federated updates."""
@@ -485,8 +485,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 response_comment = "Ignored the submit from invalid client. "
                 self.logger.info(response_comment)
             else:
-                token = client.get_token()
-
                 with self.lock:
                     shareable = Shareable()
                     shareable = shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
@@ -496,8 +494,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     if run_number not in self.engine.run_processes.keys():
                         self.logger.info("ignored result submission since Server Engine isn't ready")
                         context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
-
-                    # fl_ctx.set_peer_context(shared_fl_context)
 
                     shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=False)
 
@@ -567,8 +563,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if client is None:
                 response_comment = "Ignored the submit from invalid client. "
                 self.logger.info(response_comment)
-            else:
-                token = client.get_token()
 
             shareable = Shareable()
             shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
@@ -719,11 +713,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self.engine.engine_info.status = MachineStatus.STARTED
             while self.engine.engine_info.status != MachineStatus.STOPPED:
                 if self.engine.asked_to_stop:
-                    self.engine.abort_app_on_server()
-
-                # sequence_number += 1
-                #
-                # Call the SD add_payload() to report the server status (call Agent pass data....., sequence number...,)
+                    self.engine.engine_info.status = MachineStatus.STOPPED
 
                 time.sleep(3)
 
@@ -798,13 +788,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     if snapshot and not snapshot.completed:
                         # Restore the workspace
                         workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                        dest = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
-                        if os.path.exists(dest):
-                            shutil.rmtree(dest)
+                        dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+                        if os.path.exists(dst):
+                            shutil.rmtree(dst)
 
-                        if not os.path.exists(dest):
-                            os.makedirs(dest)
-                        unzip_all_from_bytes(workspace_data, dest)
+                        if not os.path.exists(dst):
+                            os.makedirs(dst)
+                        unzip_all_from_bytes(workspace_data, dst)
 
                         job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
                         job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_CLIENTS)
