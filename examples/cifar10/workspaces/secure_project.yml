@@ -1,40 +1,62 @@
-api_version: 2
+api_version: 3
 name: secure_project
-description: NVFlare sample project yaml file
+description: NVIDIA FLARE sample project yaml file for CIFAR-10 example
 
 participants:
+  # change overseer.nvflare.nvidia.com to the FQDN of the overseer
+  - name: overseer-server
+    type: overseer
+    org: nvidia
+    protocol: https
+    api_root: /api/v1
+    port: 8443
   # change example.com to the FQDN of the server
   - name: localhost
     type: server
     org: nvidia
     fed_learn_port: 8002
     admin_port: 8003
-    # `enable_byoc: true` would allow loading python codes in app.  Default is false.
-    # Needs to be enabled for each site if desired. Also enable `allow_byoc` for your admin group below.
+    # enable_byoc loads python codes in app.  Default is false.
+    enable_byoc: false
+  - name: localhost2
+    type: server
+    org: nvidia
+    fed_learn_port: 9002
+    admin_port: 9003
+    # enable_byoc loads python codes in app.  Default is false.
+    enable_byoc: false
   - name: site-1
     type: client
     org: nvidia
+    enable_byoc: false
   - name: site-2
     type: client
     org: nvidia
+    enable_byoc: false
   - name: site-3
     type: client
     org: nvidia
+    enable_byoc: false
   - name: site-4
     type: client
     org: nvidia
+    enable_byoc: false
   - name: site-5
     type: client
     org: nvidia
+    enable_byoc: false
   - name: site-6
     type: client
-    org: nvidia                    
+    org: nvidia      
+    enable_byoc: false
   - name: site-7
     type: client
     org: nvidia
+    enable_byoc: false
   - name: site-8
     type: client
     org: nvidia    
+    enable_byoc: false
   - name: admin@nvidia.com
     type: admin
     org: nvidia
@@ -49,10 +71,63 @@ builders:
   - path: nvflare.lighter.impl.template.TemplateBuilder
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
-      # config_folder can be set to inform NVFlare where to get configuration
+      # config_folder can be set to inform NVIDIA FLARE where to get configuration
       config_folder: config
+
+      # app_validator is used to verify if uploaded app has proper structures
+      # if not set, no app_validator is included in fed_server.json
+      # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
+
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
+
+      overseer_agent:
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        # if overseer_exists is true, args here are ignored.  Provisioning
+        #   tool will fill role, name and other local parameters automatically.
+        # if overseer_exists is false, args in this section will be used.
+        overseer_exists: false
+        args:
+           sp_end_point: localhost:8002:8003
+           heartbeat_interval: 6
+
+      snapshot_persistor:
+        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
+        args:
+          storage:
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+          location: /tmp/snapshot-storage
+
+      components:
+        server:
+          - id: job_scheduler  # This id is reserved by system.  Do not change it.
+            path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
+            args:
+              max_jobs: 2
+          - id: job_manager    # This id is reserved by system.  Do not change it.
+            path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
+            args:
+              uri_root: /tmp/jobs-storage
+              job_store_id: job_store
+          - id: study_manager    # This id is reserved by system.  Do not change it.
+            path: nvflare.apis.impl.study_manager.StudyManager
+            args:
+              study_store_id: study_store
+          - id: job_store
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+          - id: study_store
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+        client:
+          - id: resource_manager    # This id is reserved by system.  Do not change it.
+            path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
+            args:
+              resources:
+                gpu: [0, 1]
+          - id: resource_consumer    # This id is reserved by system.  Do not change it.
+            path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
+            args:
+              gpu_resource_key: gpu
+
   - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
     args:
       orgs:
@@ -60,22 +135,22 @@ builders:
           - relaxed
       roles:
         super: super user of system
-      groups: 
-        relaxed: 
+      groups:
+        relaxed:
           desc: org group with relaxed policies
-          rules: 
+          rules:
             allow_byoc: false
             allow_custom_datalist: false
       disabled: false
+
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.he.HEBuilder
     args:
-      poly_modulus_degree: 8192 
+      poly_modulus_degree: 8192
       coeff_mod_bit_sizes: [60, 40, 40]
       scale_bits: 40
       scheme: CKKS
   - path: nvflare.lighter.impl.signature.SignatureBuilder
   - path: nvflare.lighter.impl.workspace.DistributionBuilder
     args:
-      zip_password: true
-
+      zip_password: false
