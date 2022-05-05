@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
 import re
 import time
@@ -20,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.overseer_spec import OverseerAgent
+from nvflare.apis.utils.format_check import type_pattern_mapping
 from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
@@ -199,6 +199,15 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             )
         return file
 
+    def _validate_sp_string(self, sp_string) -> str:
+        if re.match(
+            type_pattern_mapping.get("sp_end_point"),
+            sp_string,
+        ):
+            return sp_string
+        else:
+            raise APISyntaxError("sp_string must be of the format example.com:8002:8003")
+
     def _get_processed_cmd_reply_data(self, command) -> Tuple[bool, str, Dict[str, Any]]:
         """Executes the specified command through the underlying AdminAPI's do_command() and checks the response to
         raise common errors.
@@ -207,7 +216,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             Tuple of bool to indicate if success is in reply data, str with full response of the reply data, and the raw
             reply.
         """
-        # TODO:: this only get success / string / error from reply message
         success_in_data = False
         reply = self.do_command(command)
         # handle errors from write_error (these can be from FileTransferModule)
@@ -215,14 +223,17 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             err = self._error_buffer
             self._error_buffer = None
             raise RuntimeError(err)
+        if reply.get("status") == APIStatus.SUCCESS:
+            success_in_data = True
         reply_data_list = []
         reply_data_full_response = ""
         if reply.get("data"):
             for data in reply["data"]:
-                if data["type"] == "success":
-                    success_in_data = True
-                if data["type"] == "string" or data["type"] == "error":
-                    reply_data_list.append(data["data"])
+                if isinstance(data, dict):
+                    if data.get("type") == "success":
+                        success_in_data = True
+                    if data.get("type") == "string" or data.get("type") == "error":
+                        reply_data_list.append(data["data"])
             reply_data_full_response = "\n".join(reply_data_list)
             if "session_inactive" in reply_data_full_response:
                 raise ConnectionRefusedError(reply_data_full_response)
@@ -517,6 +528,34 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("set_timeout " + str(timeout))
         if success:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
+    def list_sp(self) -> FLAdminAPIResponse:
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("list_sp")
+        if reply.get("data"):
+            return FLAdminAPIResponse(APIStatus.SUCCESS, reply.get("data"), reply)
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
+    def get_active_sp(self) -> FLAdminAPIResponse:
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("get_active_sp")
+        if reply.get("details"):
+            return FLAdminAPIResponse(APIStatus.SUCCESS, reply.get("details"), reply)
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
+    def promote_sp(self, sp_end_point: str) -> FLAdminAPIResponse:
+        sp_end_point = self._validate_sp_string(sp_end_point)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("promote_sp " + sp_end_point)
+        if success:
+            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply.get("details")}, reply)
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )

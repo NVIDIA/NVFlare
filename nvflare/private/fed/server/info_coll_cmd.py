@@ -42,16 +42,16 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             cmd_specs=[
                 CommandSpec(
                     name=AdminCommandNames.SHOW_STATS,
-                    description="show current system stats",
-                    usage="show_stats",
+                    description="show current system stats for an actively running job",
+                    usage="show_stats job_id server|client",
                     handler_func=self.show_stats,
                     authz_func=self.authorize_info_collection,
                     visible=True,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.SHOW_ERRORS,
-                    description="show latest errors",
-                    usage="show_errors",
+                    description="show latest errors in an actively running job",
+                    usage="show_errors job_id server|client",
                     handler_func=self.show_errors,
                     authz_func=self.authorize_info_collection,
                     visible=True,

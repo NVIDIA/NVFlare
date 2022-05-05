@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 
 from nvflare.fuel.hci.client.api_status import APIStatus
@@ -30,8 +31,8 @@ class HACommandModule(CommandModule):
             cmd_specs=[
                 CommandSpec(
                     name="list_sp",
-                    description="list service providers",
-                    usage="list_sp...",
+                    description="list service providers information from previous heartbeat",
+                    usage="list_sp",
                     handler_func=self.list_sp,
                 ),
                 CommandSpec(
@@ -56,7 +57,16 @@ class HACommandModule(CommandModule):
         )
 
     def list_sp(self, args, api):
-        return {"status": APIStatus.SUCCESS, "details": str(api.overseer_agent._overseer_info)}
+        """List service provider information based on the last heartbeat from the overseer.
+
+        Details are used for displaying the response in the CLI, and data is the data in a dict that is provided in FLAdminAPI.
+
+        """
+        return {
+            "status": APIStatus.SUCCESS,
+            "details": str(api.overseer_agent._overseer_info),
+            "data": api.overseer_agent._overseer_info,
+        }
 
     def get_active_sp(self, args, api):
         return {"status": APIStatus.SUCCESS, "details": str(api.overseer_agent.get_primary_sp())}
@@ -66,10 +76,17 @@ class HACommandModule(CommandModule):
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: promote_sp example1.com:8002:8003"}
 
         sp_end_point = args[1]
-
-        print("PROMOTING SP: {}".format(sp_end_point))
-        api.overseer_agent.promote_sp(sp_end_point)
-        return {"status": APIStatus.SUCCESS, "details": "Promoted endpoint. Synchronizing with overseer..."}
+        resp = api.overseer_agent.promote_sp(sp_end_point)
+        if json.loads(resp.text).get("Error"):
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Error: {}".format(json.loads(resp.text).get("Error")),
+            }
+        else:
+            return {
+                "status": APIStatus.SUCCESS,
+                "details": "Promoted endpoint: {}. Synchronizing with overseer...".format(sp_end_point),
+            }
 
     def shutdown_system(self, args, api):
         print("Shutting down the system...")
