@@ -455,7 +455,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     }
                     command_conn.send(data)
 
-                    return_data = command_conn.recv()
+                    return_data = pickle.loads(command_conn.recv())
                     task_name = return_data.get(ServerCommandKey.TASK_NAME)
                     task_id = return_data.get(ServerCommandKey.TASK_ID)
                     shareable = return_data.get(ServerCommandKey.SHAREABLE)
@@ -486,8 +486,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 self.logger.info(response_comment)
             else:
                 with self.lock:
-                    shareable = Shareable()
-                    shareable = shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
+                    shareable = Shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
                     shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
 
                     run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
@@ -514,8 +513,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     )
 
                     task_id = shareable.get_cookie(FLContextKey.TASK_ID)
+                    shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
+                    shareable.set_header(ServerCommandKey.FL_CLIENT, client)
+                    shareable.set_header(ServerCommandKey.TASK_NAME, contribution_task_name)
 
-                    self._submit_update(client, contribution_task_name, shareable, shared_fl_context, task_id)
+                    self._submit_update(shareable, shared_fl_context)
 
                     # self.server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
@@ -529,22 +531,15 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             return summary_info
 
-    def _submit_update(self, client, contribution_task_name, shareable, shared_fl_context, task_id):
+    def _submit_update(self, shareable, shared_fl_context):
         try:
             with self.engine.lock:
                 run_number = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
                 command_conn = self.engine.get_command_conn(str(run_number))
                 if command_conn:
-                    command_shareable = Shareable()
-                    command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
-                    command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
-                    command_shareable.set_header(ServerCommandKey.TASK_NAME, contribution_task_name)
-                    command_shareable.set_header(ServerCommandKey.TASK_ID, task_id)
-                    command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
-
                     data = {
                         ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
-                        ServerCommandKey.DATA: command_shareable,
+                        ServerCommandKey.DATA: shareable,
                     }
                     command_conn.send(data)
         except BaseException:

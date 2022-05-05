@@ -67,6 +67,18 @@ from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineIntern
 from .server_status import ServerStatus
 
 
+class ClientConnection:
+    def __init__(self, client):
+        self.client = client
+
+    def send(self, data):
+        data = pickle.dumps(data)
+        self.client.send(data)
+
+    def recv(self):
+        return self.client.recv()
+
+
 class ServerEngine(ServerEngineInternalSpec):
     def __init__(self, server, args, client_manager: ClientManager, snapshot_persistor, workers=3):
         """Server engine.
@@ -586,6 +598,7 @@ class ServerEngine(ServerEngineInternalSpec):
             try:
                 address = ("localhost", port)
                 command_conn = CommandClient(address, authkey="client process secret password".encode())
+                command_conn = ClientConnection(command_conn)
 
                 self.run_processes[run_number][RunProcessKey.CONNECTION] = command_conn
             except Exception:

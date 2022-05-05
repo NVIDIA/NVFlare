@@ -145,23 +145,23 @@ class ServerRunner(FLComponent):
         except BaseException as ex:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"Error executing RUN: {ex}")
+        finally:
+            # use wf_lock to ensure state of current_wf!
+            self.status = "done"
+            with self.wf_lock:
+                with self.engine.new_context() as fl_ctx:
+                    self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+                    self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
+                    self.fire_event(EventType.END_RUN, fl_ctx)
+                    self.log_info(fl_ctx, "END_RUN fired")
+                    self.engine.persist_components(fl_ctx, completed=True)
 
-        # use wf_lock to ensure state of current_wf!
-        self.status = "done"
-        with self.wf_lock:
-            with self.engine.new_context() as fl_ctx:
-                self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
-                self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
-                self.fire_event(EventType.END_RUN, fl_ctx)
-                self.log_info(fl_ctx, "END_RUN fired")
-                self.engine.persist_components(fl_ctx, completed=True)
+            # ask all clients to end run!
+            self.engine.send_aux_request(
+                targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
+            )
 
-        # ask all clients to end run!
-        self.engine.send_aux_request(
-            targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
-        )
-
-        self.log_info(fl_ctx, "Server runner finished.")
+            self.log_info(fl_ctx, "Server runner finished.")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
