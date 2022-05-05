@@ -82,10 +82,12 @@ setup(
         "numpy",
         "grpcio",
         "google-api-python-client",
-        "cryptography",
+        "cryptography>=36.0.0",
         "tenseal==0.3.0",
         "gunicorn",
-        "flask"
+        "flask",
+        "PyJWT",
+        "minio==7.1.6"
     ],
     entry_points={
         "console_scripts": [
