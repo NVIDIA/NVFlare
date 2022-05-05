@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,35 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
 import os
 import shutil
-from datetime import datetime
 
 from setuptools import find_packages, setup
 
 import versioneer
+
 # read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
-
-# with open(os.path.join(this_directory, "nvflare", "__init__.py"), encoding="utf-8") as f:
-#     for line in f.readlines():
-#         if "__version__" in line:
-#             init_version = line.split("=")[1].strip().strip('"')
-# 
-# nvfl_version = os.environ.get("NVFL_VERSION", init_version)
-# yymmdd = datetime.today().strftime("%y%m%d")
-# nvfl_nightly_version = f"{nvfl_version}.dev{yymmdd}"
-# 
-# if os.environ.get("NVFL_RELEASE"):
-#     package_name = "nvflare"
-#     version = nvfl_version
-# else:
-#     package_name = "nvflare-nightly"
-#     version = nvfl_nightly_version
-# 
 
 if os.path.exists(os.path.join(this_directory, "nvflare", "poc.zip")):
     os.remove(os.path.join(this_directory, "nvflare", "poc.zip"))
@@ -60,22 +42,20 @@ setup(
         include=[
             "*",
         ],
-        exclude=[
-            "test",
-        ],
+        exclude=["tests", "tests.*"],
     ),
     package_data={"": ["*.yml", "*.html", "poc.zip"]},
     zip_safe=True,
-    license_files=("LICENSE.pdf",),
+    license_files=("LICENSE",),
     classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: Other/Proprietary License",
-        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: POSIX :: Linux",
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    python_requires=">=3.7",
-    # install_requires=list(pkutils.parse_requirements("requirements.txt")),
+    python_requires=">=3.7,<3.9",
     install_requires=[
         "PyYAML",
         "psutil",
@@ -87,7 +67,7 @@ setup(
         "gunicorn",
         "flask",
         "PyJWT",
-        "minio==7.1.6"
+        "minio==7.1.6",
     ],
     entry_points={
         "console_scripts": [
