@@ -19,15 +19,15 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.filters import ExcludeVars
 
 TEST_CASES = [
-    [{"a": 1.0, "b": 2.0}, "a", {"b": 2.0}],
-    [{"a": 1.0, "b": 2.0, "c": 3.0}, ["a", "b"], {"c": 3.0}],
-    [{"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0}, ["a", "d"], {"b": 2.0, "c": 3.0}],
-    [
+    ({"a": 1.0, "b": 2.0}, "a", {"b": 2.0}),
+    ({"a": 1.0, "b": 2.0, "c": 3.0}, ["a", "b"], {"c": 3.0}),
+    ({"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0}, ["a", "d"], {"b": 2.0, "c": 3.0}),
+    (
         {"conv/a": 1.0, "conv/b": 2.0, "drop/c": 3.0, "conv/d": 4.0},
         ["conv/*"],
         {"conv/a": 1.0, "conv/b": 2.0, "drop/c": 3.0, "conv/d": 4.0},
-    ],
-    [{"conv/a": 1.0, "conv/b": 2.0, "drop/c": 3.0, "conv/d": 4.0}, "conv/*", {"drop/c": 3.0}],
+    ),
+    ({"conv/a": 1.0, "conv/b": 2.0, "drop/c": 3.0, "conv/d": 4.0}, "conv/*", {"drop/c": 3.0}),
 ]
 
 

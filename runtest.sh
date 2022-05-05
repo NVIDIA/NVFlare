@@ -85,7 +85,7 @@ export MINIO_SERVER_PORT=9001
 ./minio server $MINIO_STORE_PATH --console-address :$MINIO_SERVER_PORT &
 echo $! > ./minio_pid
 minio_pid=`cat ./minio_pid`
-python -m pytest --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --numprocesses=auto tests/unit_test/
+python -m pytest --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --numprocesses=auto tests/unit_test/
 kill -9 $minio_pid
 rm -rf ./$MINIO_STORE_PATH ./minio_pid ./minio
 echo "Done with unit tests"
