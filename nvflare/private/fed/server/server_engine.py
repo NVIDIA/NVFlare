@@ -718,7 +718,7 @@ class ServerEngine(ServerEngineInternalSpec):
         requests = {}
         for site_name, result in resource_check_results.items():
             check_result, token = result
-            if check_result:
+            if check_result and token:
                 resource_requirements = resource_reqs[site_name]
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)

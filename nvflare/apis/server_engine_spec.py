@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.shareable import Shareable
 from nvflare.widgets.widget import Widget
@@ -159,7 +159,7 @@ class ServerEngineSpec(ABC):
         pass
 
     @abstractmethod
-    def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, str]]:
+    def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
         """Sends the check_client_resources requests to the clients.
 
         Args:

@@ -56,7 +56,7 @@
       "id": "job_scheduler",
       "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
       "args": {
-        "max_jobs": 4
+        "max_jobs": 1
       }
     },
     {
