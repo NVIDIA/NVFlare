@@ -56,7 +56,11 @@ class JobRunner(FLComponent):
         workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
         count = 1
         while os.path.exists(workspace):
-            run_number = run_number + "_" + str(count)
+            parts = run_number.split(":")
+            if len(parts) == 1:
+                run_number = run_number + ":" + str(count)
+            else:
+                run_number = parts[0]  + ":" + str(count)
             workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
             count += 1
 
@@ -197,6 +201,7 @@ class JobRunner(FLComponent):
                                 self.running_jobs[run_number] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                         except Exception as e:
+                            job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
                             self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
                 time.sleep(1.0)
