@@ -26,6 +26,7 @@ META_DATA = """{{
   "resource_spec": {{
   }},
   "deploy_map": {{
+      "{}": []
   }},
   "min_clients": 1
 }}
@@ -39,10 +40,27 @@ def _path_join(base: str, *parts: str) -> str:
     return path.replace("\\", "/")
 
 
-def remove_leading_dotdot(path):
+def remove_leading_dotdot(path: str) -> str:
     while path.startswith("../"):
         path = path[3:]
     return path
+
+
+def split_path(path: str) -> (str, str):
+    """Split a path into prefix and folder name
+
+    Args:
+        path: Path to split
+
+    Returns: A tuple of (prefix, folder_name)
+    """
+
+    if path.endswith("/"):
+        full_path = path[:-1]
+    else:
+        full_path = path
+
+    return os.path.split(full_path)
 
 
 def get_all_file_paths(directory):
@@ -78,12 +96,16 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
     assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
 
     file_paths = get_all_file_paths(dir_name)
+    if folder_name:
+        prefix_len = len(split_path(dir_name)[0]) + 1
+    else:
+        prefix_len = len(dir_name) + 1
 
     # writing files to a zipfile
     with ZipFile(writer, "w") as z:
         # writing each file one by one
         for full_path in file_paths:
-            rel_path = remove_leading_dotdot(os.path.relpath(full_path, root_dir))
+            rel_path = full_path[prefix_len:]
             z.write(full_path, arcname=rel_path)
 
 
@@ -157,13 +179,13 @@ def convert_legacy_zip(zip_data: bytes) -> bytes:
 
         writer = io.BytesIO()
         with ZipFile(writer, "w") as out_zip:
-            out_zip.writestr(meta_path, META_DATA.format(Study.DEFAULT_STUDY_NAME, folder_name))
+            out_zip.writestr(meta_path, META_DATA.format(Study.DEFAULT_STUDY_NAME, folder_name, folder_name))
             # Push everything else to a sub folder with the same name:
             # hello-pt/README.md -> hello-pt/hello-pt/README.md
             for info in info_list:
                 name = info.filename
                 content = in_zip.read(name)
-                path = _path_join(folder_name, name)
+                path = folder_name + "/" + name
                 info.filename = path
                 out_zip.writestr(info, content)
 
