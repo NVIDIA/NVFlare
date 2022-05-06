@@ -24,6 +24,7 @@ import pytest
 import yaml
 
 from tests.integration_test.admin_controller import AdminController
+from tests.integration_test.oa_laucher import OALauncher
 from tests.integration_test.site_launcher import POCDirectory, SiteLauncher
 from tests.integration_test.utils import generate_job_dir_for_single_app_job
 
@@ -164,6 +165,26 @@ def setup_and_teardown(request):
 
 @pytest.mark.xdist_group(name="system_tests_group")
 class TestSystem:
+    def test_overseer_and_others(self):
+        oa_launcher = OALauncher()
+        try:
+            oa_launcher.start_overseer()
+            time.sleep(10)
+            server_agent_list = oa_launcher.start_servers(1)
+            client_agent_list = oa_launcher.start_clients(4)
+            time.sleep(30)
+            psp = oa_launcher.get_primary_sp(client_agent_list[0])
+            assert psp.name == "server00"
+            oa_launcher.pause_server(server_agent_list[0])
+            time.sleep(20)
+            psp = oa_launcher.get_primary_sp(client_agent_list[0])
+            assert psp.name == ""
+            oa_launcher.resume_server(server_agent_list[0])
+        finally:
+            oa_launcher.stop_clients()
+            oa_launcher.stop_servers()
+            oa_launcher.stop_overseer()
+
     def test_run_job_complete(self, setup_and_teardown):
         ha, test_jobs, site_launcher, admin_controller = setup_and_teardown
 
