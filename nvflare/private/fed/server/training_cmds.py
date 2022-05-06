@@ -88,7 +88,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.ABORT_TASK,
                     description="abort the client current task execution",
-                    usage="abort_task <client-name>",
+                    usage="abort_task run_number <client-name>",
                     handler_func=self.abort_task,
                     authz_func=self.authorize_abort_client,
                     visible=True,
