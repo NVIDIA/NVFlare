@@ -129,6 +129,7 @@ def start_server_app(server, args, app_root, run_number, snapshot):
         if not isinstance(server.engine, ServerEngine):
             raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
         server.engine.create_parent_connection(int(args.conn))
+        server.engine.sync_clients_from_main_process()
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
