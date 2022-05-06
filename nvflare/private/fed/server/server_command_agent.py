@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pickle
 import threading
 from multiprocessing.connection import Listener
 
@@ -50,6 +51,7 @@ class ServerCommandAgent(object):
                 while not self.asked_to_stop:
                     if conn.poll(1.0):
                         msg = conn.recv()
+                        msg = pickle.loads(msg)
                         command_name = msg.get(ServerCommandKey.COMMAND)
                         data = msg.get(ServerCommandKey.DATA)
                         command = ServerCommands.get_command(command_name)

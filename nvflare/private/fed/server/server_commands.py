@@ -15,6 +15,7 @@
 """FL Admin commands."""
 
 import copy
+import pickle
 import time
 
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandKey, ServerCommandNames
@@ -134,7 +135,7 @@ class GetTaskCommand(CommandProcessor):
             ServerCommandKey.SHAREABLE: shareable,
             ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
         }
-        return data
+        return pickle.dumps(data)
 
 
 class SubmitUpdateCommand(CommandProcessor):
@@ -163,10 +164,9 @@ class SubmitUpdateCommand(CommandProcessor):
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)
         contribution_task_name = data.get_header(ServerCommandKey.TASK_NAME)
-        task_id = data.get_header(ServerCommandKey.TASK_ID)
-        shareable = data.get_header(ServerCommandKey.SHAREABLE)
+        task_id = data.get_cookie(FLContextKey.TASK_ID)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
+        server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
 
         return ""
 
