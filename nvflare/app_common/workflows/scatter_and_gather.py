@@ -45,8 +45,8 @@ class ScatterAndGather(Controller):
 
         The ScatterAndGather workflow defines Federated training on all clients.
         The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.
-        Each clients sends it's updated weights after local training which is aggregated (aggregator_id). The
-        shareable generator is used to convert the aggregated weights to shareable and shareable back to weights.
+        Each client sends it's updated weights after local training which is aggregated (aggregator_id). The
+        shareable generator is used to convert the aggregated weights to shareable and shareable back to weight.
         The model_persistor also saves the model after training.
 
         Args:
@@ -60,7 +60,8 @@ class ScatterAndGather(Controller):
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
-            ignore_result_error (bool, optional): whether this controller can proceed if result has errors. Defaults to True.
+            ignore_result_error (bool, optional): whether this controller can proceed if result has errors.
+              Defaults to True.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -117,7 +118,9 @@ class ScatterAndGather(Controller):
         # workflow phases: init, train, validate
         self._phase = AppConstants.PHASE_INIT
         self._global_weights = None
-        self._current_round = None
+        self._current_round = start_round
+
+        self._end_round = self._start_round + self._num_rounds
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.log_info(fl_ctx, "Initializing ScatterAndGather workflow.")
@@ -138,7 +141,8 @@ class ScatterAndGather(Controller):
         self.shareable_gen = engine.get_component(self.shareable_generator_id)
         if not isinstance(self.shareable_gen, ShareableGenerator):
             self.system_panic(
-                f"Shareable generator {self.shareable_generator_id} must be a ShareableGenerator type object but got {type(self.shareable_gen)}",
+                f"Shareable generator {self.shareable_generator_id} must be a ShareableGenerator type object "
+                f"but got {type(self.shareable_gen)}",
                 fl_ctx,
             )
             return
@@ -146,7 +150,8 @@ class ScatterAndGather(Controller):
         self.persistor = engine.get_component(self.persistor_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.system_panic(
-                f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object but got {type(self.persistor)}",
+                f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object "
+                f"but got {type(self.persistor)}",
                 fl_ctx,
             )
             return
@@ -168,10 +173,7 @@ class ScatterAndGather(Controller):
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
-            # for self._current_round in range(self._start_round, self._start_round + self._num_rounds):
-            if self._current_round is None:
-                self._current_round = self._start_round
-            while self._current_round < self._start_round + self._num_rounds:
+            while self._current_round < self._end_round:
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
@@ -336,7 +338,8 @@ class ScatterAndGather(Controller):
     def get_persist_state(self, fl_ctx: FLContext) -> dict:
         return {
             "current_round": self._current_round,
-            "start_round": self._start_round,
+            "start_round": self._current_round,
+            "end_round": self._end_round,
             "num_rounds": self._num_rounds,
             "global_weights": self._global_weights,
         }
@@ -345,6 +348,7 @@ class ScatterAndGather(Controller):
         try:
             self._current_round = state_data.get("current_round")
             self._start_round = state_data.get("start_round")
+            self._end_round = state_data.get("end_round")
             self._num_rounds = state_data.get("num_rounds")
             self._global_weights = state_data.get("global_weights")
         finally:
