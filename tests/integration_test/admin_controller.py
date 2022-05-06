@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import os
 import re
 import time
 
@@ -156,9 +157,6 @@ class AdminController:
 
         return run_data
 
-    def get_stats(self, target):
-        return self.admin_api.show_stats(self.job_id, target)
-
     def ensure_clients_started(self, num_clients):
         if not self.admin_api:
             return False
@@ -238,12 +236,20 @@ class AdminController:
                         continue
                 training_done = True
 
-    def run_app_ha(self, site_launcher, ha_test):
+    def _get_stats(self, target):
+        return self.admin_api.show_stats(self.job_id, target)
+
+    def _get_job_log(self, target):
+        job_log_file = os.path.join(self.job_id, "log.txt")
+        logs = self.admin_api.cat_target(target, file=job_log_file)["details"]["message"].splitlines()
+        return logs
+
+    def run_event_sequence(self, site_launcher, event_sequence):
         run_state = {"workflow": None, "task": None, "round_number": None, "run_finished": None}
 
         last_read_line = 0
         event = 0
-        ha_events = ha_test["events"]
+        ha_events = event_sequence["events"]
         event_test_status = [False for _ in range(len(ha_events))]  # whether event has been successfully triggered
 
         i = 0
@@ -251,13 +257,12 @@ class AdminController:
         while not training_done:
             i += 1
 
-            server_logs = self.admin_api.cat_target(TargetType.SERVER, file="log.txt")["details"][
-                "message"
-            ].splitlines()[last_read_line:]
-            last_read_line = len(server_logs) + last_read_line
+            server_logs = self._get_job_log(target=TargetType.SERVER)
+            server_logs = server_logs[last_read_line:]
+            last_read_line += len(server_logs)
             server_logs_string = "\n".join(server_logs)
 
-            stats = self.get_stats(TargetType.SERVER)
+            stats = self._get_stats(TargetType.SERVER)
 
             # update run_state
             changed, wfs, run_state = process_stats(stats, run_state)
@@ -265,10 +270,10 @@ class AdminController:
             if changed or i % (10 / self.poll_period) == 0:
                 i = 0
                 print("STATS: ", stats)
-                self.print_state(ha_test, run_state)
+                self.print_state(event_sequence["description"], run_state)
 
             # check if event is triggered -> then execute the corresponding actions
-            if event <= len(ha_events) - 1 and not event_test_status[event]:
+            if event < len(ha_events) and not event_test_status[event]:
                 event_trigger = []
 
                 if isinstance(ha_events[event]["trigger"], dict):
@@ -297,7 +302,7 @@ class AdminController:
             ):
 
                 # compare run_state to expected result_state from the test case
-                if event <= len(ha_events) - 1 and event_test_status[event] and response["status"] == APIStatus.SUCCESS:
+                if event < len(ha_events) and event_test_status[event] and response["status"] == APIStatus.SUCCESS:
                     result_state = ha_events[event]["result_state"]
                     if any(list(run_state.values())):
                         if result_state == "unchanged":
@@ -370,10 +375,10 @@ class AdminController:
                         client_id = list(site_launcher.client_properties.keys())[0]
                     site_launcher.start_client(client_id)
 
-    def print_state(self, ha_test, state):
+    def print_state(self, test_description: str, state: dict):
         print("\n")
         print(f"Job name: {self.last_job_name}")
-        print(f"HA test case: {ha_test['name']}")
+        print(f"HA test: {test_description}")
         print("-" * 30)
         for k, v in state.items():
             print(f"{k}: {v}")
@@ -384,3 +389,4 @@ class AdminController:
             self.admin_api.abort_job(self.job_id)
         self.admin_api.overseer_agent.end()
         self.admin_api.shutdown(target_type=TargetType.ALL)
+        time.sleep(10)

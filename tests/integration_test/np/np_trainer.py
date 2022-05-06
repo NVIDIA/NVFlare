@@ -29,6 +29,18 @@ from nvflare.app_common.app_constant import AppConstants
 from .constants import NPConstants
 
 
+def _get_exception_shareable() -> Shareable:
+    """Abort execution. This is used if abort_signal is triggered. Users should
+    make sure they abort any running processes here.
+
+    Returns:
+        Shareable: Shareable with return_code.
+    """
+    shareable = Shareable()
+    shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+    return shareable
+
+
 class NPTrainer(Executor):
     def __init__(
         self,
@@ -73,7 +85,7 @@ class NPTrainer(Executor):
         count, interval = 0, 0.5
         while count < self._sleep_time:
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return _get_exception_shareable()
             time.sleep(interval)
             count += interval
 
@@ -83,7 +95,7 @@ class NPTrainer(Executor):
                 incoming_dxo = from_shareable(shareable)
             except BaseException as e:
                 self.system_panic(f"Unable to convert shareable to model definition. Exception {e.__str__()}", fl_ctx)
-                return self._get_exception_shareable()
+                return _get_exception_shareable()
 
             # Information about workflow is retrieved from the shareable header.
             current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
@@ -92,7 +104,7 @@ class NPTrainer(Executor):
             # Ensure that data is of type weights. Extract model data.
             if incoming_dxo.data_kind != DataKind.WEIGHTS:
                 self.system_panic("Model dex should be of kind DataKind.WEIGHTS.", fl_ctx)
-                return self._get_exception_shareable()
+                return _get_exception_shareable()
             np_data = incoming_dxo.data
 
             # Display properties.
@@ -105,7 +117,7 @@ class NPTrainer(Executor):
 
             # Check abort signal
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return _get_exception_shareable()
 
             # Doing some dummy training.
             if np_data:
@@ -122,7 +134,7 @@ class NPTrainer(Executor):
 
             # We check abort_signal regularly to make sure
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return _get_exception_shareable()
 
             # Save local numpy model
             try:
@@ -137,7 +149,7 @@ class NPTrainer(Executor):
 
             # Checking abort signal again.
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return _get_exception_shareable()
 
             # Prepare a DXO for our updated model. Create shareable and return
             outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={})
@@ -152,7 +164,7 @@ class NPTrainer(Executor):
 
             # Checking abort signal
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return _get_exception_shareable()
 
             # Create DXO and shareable from model data.
             model_shareable = Shareable()
@@ -178,7 +190,6 @@ class NPTrainer(Executor):
         model_path = os.path.join(run_dir, self._model_dir)
 
         model_load_path = os.path.join(model_path, self._model_name)
-        np_data = None
         try:
             np_data = np.load(model_load_path)
         except Exception as e:
@@ -200,17 +211,5 @@ class NPTrainer(Executor):
             os.makedirs(model_path)
 
         model_save_path = os.path.join(model_path, self._model_name)
-        with open(model_save_path, "wb") as f:
-            np.save(f, model[NPConstants.NUMPY_KEY])
+        np.save(model_save_path, model[NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")
-
-    def _get_exception_shareable(self) -> Shareable:
-        """Abort execution. This is used if abort_signal is triggered. Users should
-        make sure they abort any running processes here.
-
-        Returns:
-            Shareable: Shareable with return_code.
-        """
-        shareable = Shareable()
-        shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        return shareable

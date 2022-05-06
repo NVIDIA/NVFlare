@@ -84,6 +84,13 @@ class POCDirectory:
         return os.path.join(self.poc_dir, self.server_dir_name)
 
 
+def _kill_process(process, name: str):
+    os.killpg(process.pid, signal.SIGTERM)
+    subprocess.call(["kill", str(process.pid)])
+    print(f"Sent SIGTERM to {name}.")
+    process.communicate()
+
+
 class SiteLauncher:
     def __init__(
         self,
@@ -116,6 +123,9 @@ class SiteLauncher:
             shlex.split(command),
             preexec_fn=os.setsid,
             env=new_env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         print("Starting overseer ...")
 
@@ -270,11 +280,7 @@ class SiteLauncher:
         try:
             # Kill the process
             if "process" in self.overseer_properties and self.overseer_properties["process"]:
-                os.killpg(self.overseer_properties["process"].pid, signal.SIGTERM)
-
-                subprocess.call(["kill", str(self.overseer_properties["process"].pid)])
-                self.overseer_properties["process"].wait()
-                print("Sent SIGTERM to overseer.")
+                _kill_process(self.overseer_properties["process"], "overseer")
             else:
                 print("No overseer process.")
         except Exception as e:
@@ -287,11 +293,7 @@ class SiteLauncher:
         try:
             # Kill the process
             if "process" in server_prop and server_prop["process"]:
-                os.killpg(server_prop["process"].pid, signal.SIGTERM)
-
-                subprocess.call(["kill", str(server_prop["process"].pid)])
-                server_prop["process"].wait()
-                print("Sent SIGTERM to server.")
+                _kill_process(server_prop["process"], "server")
             else:
                 print("No server process.")
         except Exception as e:
@@ -307,11 +309,7 @@ class SiteLauncher:
             return False
 
         try:
-            os.killpg(self.client_properties[client_id]["process"].pid, signal.SIGTERM)
-            subprocess.call(["kill", str(self.client_properties[client_id]["process"].pid)])
-            self.client_properties[client_id]["process"].wait()
-
-            print(f"Sent SIGTERM to client {client_id}.")
+            _kill_process(self.client_properties[client_id]["process"], f"client: {client_id}")
         except Exception as e:
             print(f"Exception in stopping client {client_id}: {e.__str__()}")
             return False

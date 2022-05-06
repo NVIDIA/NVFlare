@@ -28,6 +28,18 @@ from nvflare.app_common.app_constant import AppConstants
 from .constants import NPConstants
 
 
+def _abort_execution() -> Shareable:
+    """Abort execution. This is used if abort_signal is triggered. Users should
+    make sure they abort any running processes here.
+
+    Returns:
+        Shareable: Shareable with return_code.
+    """
+    shareable = Shareable()
+    shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+    return shareable
+
+
 class NPValidator(Executor):
     def __init__(
         self,
@@ -64,7 +76,7 @@ class NPValidator(Executor):
         count, interval = 0, 0.5
         while count < self._sleep_time:
             if abort_signal.triggered:
-                return self._abort_execution()
+                return _abort_execution()
             time.sleep(interval)
             count += interval
 
@@ -98,7 +110,7 @@ class NPValidator(Executor):
 
             # Check abort signal regularly.
             if abort_signal.triggered:
-                return self._abort_execution()
+                return _abort_execution()
 
             # Check if key exists in model
             if NPConstants.NUMPY_KEY not in model:
@@ -116,7 +128,7 @@ class NPValidator(Executor):
 
             # Check abort signal regularly.
             if abort_signal.triggered:
-                return self._abort_execution()
+                return _abort_execution()
 
             self.log_info(fl_ctx, f"Validation result: {val_results}")
 
@@ -128,14 +140,3 @@ class NPValidator(Executor):
             shareable = Shareable()
             shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
             return shareable
-
-    def _abort_execution(self) -> Shareable:
-        """Abort execution. This is used if abort_signal is triggered. Users should
-        make sure they abort any running processes here.
-
-        Returns:
-            Shareable: Shareable with return_code.
-        """
-        shareable = Shareable()
-        shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        return shareable

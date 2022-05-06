@@ -1,0 +1,12 @@
+description: "upload a job, kill the server after we start training but no round is completed, restart it should pick up the work"
+events: [
+    {
+        "trigger": {"workflow": 0, "round_number": 0, "task": "train"},
+        "actions": [
+            "kill server",
+            "sleep 15",
+            "restart server",
+        ],
+        "result_state": {"workflow": 0, "round_number": 0, "task": "train"},
+    }
+]

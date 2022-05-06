@@ -26,7 +26,6 @@ import yaml
 
 from tests.integration_test.admin_controller import AdminController
 from tests.integration_test.site_launcher import POCDirectory, SiteLauncher
-from tests.integration_test.test_ha import ha_tests
 from tests.integration_test.utils import generate_job_dir_for_single_app_job
 
 
@@ -54,9 +53,9 @@ def cleanup_path(path: str):
 
 
 params = [
-    # "./test_examples.yml",
-    "./test_internal.yml",
-    "./test_ha.yml",
+    # "./data/test_examples.yml",
+    # "./data/test_internal.yml",
+    "./data/test_ha.yml",
 ]
 
 
@@ -112,7 +111,15 @@ def setup_and_teardown(request):
             clients=[x["name"] for x in site_launcher.client_properties.values()],
             destination=jobs_root_dir,
         )
-        test_jobs.append((x["app_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
+        test_jobs.append(
+            (
+                x["app_name"],
+                x["validators"],
+                x.get("setup", []),
+                x.get("teardown", []),
+                x.get("event_sequence_yaml", ""),
+            )
+        )
         generated_jobs.append(job_dir)
 
     admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
@@ -150,7 +157,7 @@ class TestSystem:
             for job_data in test_jobs:
                 start_time = time.time()
 
-                test_job_name, validators, setup, teardown = job_data
+                test_job_name, validators, setup, teardown, event_sequence_yaml = job_data
                 print(f"Running job {test_job_name}")
                 for command in setup:
                     print(f"Running setup command: {command}")
@@ -163,8 +170,9 @@ class TestSystem:
                 print(f"Server status after job submission: {admin_controller.server_status()}.")
                 print(f"Client status after job submission: {admin_controller.client_status()}")
 
-                if ha:
-                    admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
+                if event_sequence_yaml:
+                    # admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
+                    admin_controller.run_event_sequence(site_launcher, read_yaml(event_sequence_yaml))
                 else:
                     admin_controller.wait_for_job_done()
 

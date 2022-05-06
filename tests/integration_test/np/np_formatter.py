@@ -24,7 +24,7 @@ class NPFormatter(Formatter):
 
     def format(self, fl_ctx: FLContext) -> str:
         """The format function gets validation shareable locations from the dictionary. It loads each shareable,
-        get the validation results and converts it into human readable string.
+        get the validation results and converts it into human-readable string.
 
         Args:
             fl_ctx (FLContext): FLContext object.
