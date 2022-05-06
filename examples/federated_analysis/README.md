@@ -70,7 +70,7 @@ To do this, you need to log into the NVFlare admin console.
 1. Open a new terminal
 2. Activate the virtual environment (if needed): `source ./virtualenv/set_env.sh`
 3. Start the admin console: `./workspaces/poc_workspace/admin/startup/fl_admin.sh`
-4. Inside the console, submit the job: `submit_job [PWD]/configs/fed_analyis` (replace `[PWD]` with your current path) 
+4. Inside the console, submit the job: `submit_job [PWD]/configs/fed_analysis` (replace `[PWD]` with your current path) 
 
 ### 3.2 List the submitted job
 
@@ -79,7 +79,7 @@ You can list the running job by using `list_jobs` in the admin console.
 Your output should be similar to the following.
 
 ```
-
+!!!!!!!!!!
 ```
 
 **Note:** This example uses the [k-anonymity](https://en.wikipedia.org/wiki/K-anonymity) approach to ensure that no individual patient's data is leaked to the server. 
@@ -111,7 +111,7 @@ histograms.svg
 ```
 The result can be downloaded to the admin's machine using this command:
 ```
-> download_folder ../run_1
+> download_folder ../run_1  !!! update
 ```
 
 After download, the files will be available in the admin workspace under `transfer`.
