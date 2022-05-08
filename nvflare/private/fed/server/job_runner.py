@@ -56,12 +56,16 @@ class JobRunner(FLComponent):
         workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
         count = 1
         while os.path.exists(workspace):
-            run_number = run_number + "_" + str(count)
-            workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
+            work_folder = run_number + "_" + str(count)
+            workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + work_folder)
             count += 1
 
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
+
+            if not participants:
+                participants = ["server"]
+                participants.extend([client.name for client in engine.get_clients()])
 
             client_sites = []
             for p in participants:
