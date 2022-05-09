@@ -231,6 +231,8 @@ class JobRunner(FLComponent):
                 job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                 del self.running_jobs[run_number]
                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)
+            else:
+                raise RuntimeError(f"Job run: {run_number} does not exist.")
 
     def stop_all_runs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
