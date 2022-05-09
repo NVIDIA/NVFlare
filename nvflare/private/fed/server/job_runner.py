@@ -69,6 +69,10 @@ class JobRunner(FLComponent):
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
 
+            if not participants:
+                participants = ["server"]
+                participants.extend([client.name for client in engine.get_clients()])
+
             client_sites = []
             for p in participants:
                 if p == "server":
