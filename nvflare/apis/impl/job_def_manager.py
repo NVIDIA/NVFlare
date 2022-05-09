@@ -91,8 +91,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store"):
         super().__init__()
         self.uri_root = uri_root
-        if not os.path.exists(uri_root):
-            os.mkdir(uri_root)
+        os.makedirs(uri_root, exist_ok=True)
         self.job_store_id = job_store_id
 
     def _get_job_store(self, fl_ctx):
