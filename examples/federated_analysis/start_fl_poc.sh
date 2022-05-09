@@ -3,10 +3,8 @@
 export PYTHONPATH="${PYTHONPATH}:${PWD}"
 echo "PYTHONPATH is ${PYTHONPATH}"
 
-algorithms_dir="${PWD}/job_configs"
 servername="localhost"
 workspace="${PWD}/workspaces/poc_workspace"
-admin_username="admin"  # default admin
 site_pre="site-"
 
 n_clients=$1
