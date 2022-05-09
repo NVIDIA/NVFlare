@@ -23,13 +23,20 @@ pip install -r ./virtualenv/min-requirements.txt
 pip install -r ./virtualenv/plot-requirements.txt
 ```
 
-## 2. Create your FL workspace 
+## 2. Create your FL workspace and start FL system 
+
+The next scripts will start the FL server and 8 clients automatically to run FL experiments on localhost.
+In this example, we run all 8 clients on one GPU with 12 GB memory per job.
 
 ### 2.1 POC ("proof of concept") workspace
 To run FL experiments in POC mode, create your local FL workspace the below command. 
 In the following experiments, we will be using 8 clients. Press y and enter when prompted. 
 ```
 ./create_poc_workpace.sh 8
+```
+Then, start the FL system with 8 clients by running
+```
+./start_fl_poc.sh 8
 ```
 
 ### 2.2 (Optional) Secure FL workspace
@@ -41,11 +48,16 @@ To create the secure workspace, please use the following to build a package and 
 to `secure_workspace` for later experimentation.
 ```
 cd ./workspaces
-provision -p ./secure_project.yml
+python3 -m nvflare.lighter.provision -p ./secure_project.yml
 cp -r ./workspace/secure_project/prod_00 ./secure_workspace
 cd ..
 ```
-For more information about secure provisioning see the [documentation](https://nvidia.github.io/NVFlare/user_guide/provisioning_tool.html).
+For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/provisioning_tool.html).
+
+For starting the FL system with 8 clients in the secure workspace, run
+```
+./start_fl_secure.sh 8
+```
 
 > **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
 > with different amounts of clients.
@@ -55,42 +67,59 @@ For more information about secure provisioning see the [documentation](https://n
 > homomorphic encryption (HE) one shown below. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
 
+### Multi-tasking
+In this example, we assume two local GPUs with at least 12GB of memory are available. 
+Hence, in the secure project configuration [./workspaces/secure_project.yml](./workspaces/secure_project.yml), 
+we set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
+
+For the POC workspace, adjust the default values in `nvflare/poc/client/startup/fed_client.json` 
+and `nvflare/poc/server/startup/fed_server.json` in your NVFlare installation. 
+
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/job.html).
+
+### 2.3 Download the CIFAR-10 dataset 
+To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
+```
+python3 ./pt/utils/cifar10_download_data.py
+```
 
 ## 3. Run automated experiments
 
-Next, FL training will start automatically. 
+Next, we will submit jobs to start FL training automatically. 
 
-The [run_poc.sh](./run_poc.sh) and [run_secure.sh](./run_secure.sh) scripts follows this pattern:
-`./run_secure.sh [n_clients] [config] [run] [alpha]`
+The [submit_job.sh](./submit_job.sh) script follows this pattern:
+```
+./submit_job.sh [config] [alpha]
+```
+If you want to use the poc workspace, append `--poc` to this command, e.g,: 
+```
+./submit_job.sh [config] [alpha] --poc
+```
 
-These scripts will start the FL server and 8 clients automatically to run FL experiments on localhost. 
-Each client can be assigned a GPU using `CUDA_VISIBLE_DEVICES=GPU#`. 
-In this example, we run all 8 clients on one GPU with 12 GB memory.
+In this simulation, the server will split the CIFAR-10 dataset to simulate each client having different data distributions.
 
-It will then download and split the CIFAR-10 dataset to simulate each client having different data distributions.
-The `config` argument controls which experiment to run. The respective folder under `configs` will be selected and 
-uploaded to the server for distribution to each client using the admin API with [run_fl.py](./run_fl.py). 
-The run will time out if not completed in 2 hours. You can adjust this within the `run()` call of the admin API script. 
+The `config` argument controls which experiment job to submit. 
+The respective folder under `job_configs` will be submitted using the admin API with [submit_job.py](./submit_job.py) for scheduling.
+The admin API script ([submit_job.py](./submit_job.py)) also overwrites the alpha value inside the 
+job configuration file depending on the provided commandline argument.
+Jobs will be executed automatically depending on the available resources at each client (see "Multi-tasking" section).
 
 ### 3.1 Varying data heterogeneity of data splits
 
 We use an implementation to generated heterogeneous data splits from CIFAR-10 based a Dirichlet sampling strategy 
 from FedMA (https://github.com/IBM/FedMA), where `alpha` controls the amount of heterogeneity, 
-see https://arxiv.org/abs/2002.06440.
-
-We will run most experiments using the POC workspace which makes it easy to define new clients. 
-Just copy a client startup dir to a new client name, e.g. `cp -r client1 client9`. 
-The `run_*.sh` scripts can then be adjusted to execute the new client.
+see [Wang et al.](https://arxiv.org/abs/2002.06440)
 
 ### 3.2 Centralized training
 
 To simulate a centralized training baseline, we run FL with 1 client for 25 local epochs but only for one round. 
 It takes circa 6 minutes on an NVIDIA TitanX GPU.
 ```
-./run_poc.sh 1 cifar10_central 1 1.0
+./submit_job.sh cifar10_central 0.0
 ```
-You can visualize the training progress by running `tensorboard --logdir=[workspace]/.`
+Note, here `alpha=0.0` means that no heterogeneous data splits are being generated.
 
+You can visualize the training progress by running `tensorboard --logdir=[workspace]/.`
 ![Central training curve](./figs/central_training.png)
 
 ### 3.3 FedAvg on different data splits
@@ -101,27 +130,27 @@ Each run will take about 35 minutes, depending on your system.
 
 You can copy the whole block into the terminal, and it will execute each experiment one after the other.
 ```
-./run_poc.sh 8 cifar10_fedavg 2 1.0
-./run_poc.sh 8 cifar10_fedavg 3 0.5
-./run_poc.sh 8 cifar10_fedavg 4 0.3
-./run_poc.sh 8 cifar10_fedavg 5 0.1
+./submit_job.sh cifar10_fedavg 1.0
+./submit_job.sh cifar10_fedavg 0.5
+./submit_job.sh cifar10_fedavg 0.3
+./submit_job.sh cifar10_fedavg 0.1
 ```
 
 > **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
-  using `abort all`. If the admin API script is running, the FL system will automatically shut down using
-  the current setting defined in [run_fl.py](./run_fl.py). An automatic shutdown is useful here for development as code changes 
-> in your FL components will only be picked up on a restart of the FL system. 
-> For real-world deployments, the system should be kept running but the admin restart command can be used, 
-> see [here](https://nvidia.github.io/NVFlare/user_guide/admin_commands.html).
+  using `abort_job [RUN_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/admin_commands.html).
 
-> To log into the POC workspace admin console, use username "admin" and password "admin". 
+> To log into the POC workspace admin console no username is required 
+> (use "admin" for commands requiring conformation with username). 
+
 > For the secure workspace admin console, use username "admin@nvidia.com"
 
 After training, each client's best model will be used for cross-site validation. The results can be shown with
 for example
 ```
-  cat ./workspaces/poc_workspace/server/run_2/cross_site_val/cross_site_val.json
+  cat ./workspaces/poc_workspace/server/[RUN_ID]/cross_site_val/cross_site_val.json
 ```
+where [RUN_ID] is the ID assigned by the system when submitting the job.
 
 ### 3.4: Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
 
@@ -129,45 +158,45 @@ Next, let's try some different FL algorithms on a more heterogeneous split:
 
 [FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss used in `CIFAR10Learner` (`fedproxloss_mu`)`:
 ```
-./run_poc.sh 8 cifar10_fedprox 6 0.1
+./submit_job.sh cifar10_fedprox 0.1
 ```
 [FedOpt](https://arxiv.org/abs/2003.00295) uses a new ShareableGenerator to update the global model on the server using a PyTorch optimizer. 
 Here SGD with momentum and cosine learning rate decay:
 ```
-./run_poc.sh 8 cifar10_fedopt 7 0.1
+./submit_job.sh cifar10_fedopt 0.1
 ```
 [SCAFFOLD](https://arxiv.org/abs/1910.06378) uses a slightly modified version of the CIFAR-10 Learner implementation, namely the `CIFAR10ScaffoldLearner`, which adds a correction term during local training following the [implementation](https://github.com/Xtra-Computing/NIID-Bench) as described in [Li et al.](https://arxiv.org/abs/2102.02079)
 ```
-./run_poc.sh 8 cifar10_scaffold 8 0.1
+./submit_job.sh cifar10_scaffold 0.1
 ```
 
 ### 3.5 Secure aggregation using homomorphic encryption
 
 Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on the server in non-heterogeneous setting (`alpha=1`).
 
-> **_NOTE:_** For HE, we need to use the securely provisioned workspace, i.e. using `run_secure.sh`. 
+> **_NOTE:_** For HE, we need to use the securely provisioned workspace. 
 > It will also take longer due to the additional encryption, decryption, encrypted aggregation, 
 > and increased encrypted messages sizes involved.
 
 FedAvg with HE: 
 ```
-./run_secure.sh 8 cifar10_fedavg_he 9 1.0
+./submit_job.sh cifar10_fedavg_he 1.0
 ```
 
 > **_NOTE:_** Currently, FedOpt is not supported with HE as it would involve running the optimizer on encrypted values.
 
 ### 3.6 Running all examples
 
-You can use `./run_experiments.sh` to execute all above-mentioned experiments sequentially if preferred. 
+You can use `./run_experiments.sh` to submit all above-mentioned experiments at once if preferred. 
 This script uses the secure workspace to also support the HE experiment.
 
 ## 4. Results
 
-Let's summarize the result of the experiments run above. Next, we will compare the final validation scores of 
+Let's summarize the result of the experiments run above. First, we will compare the final validation scores of 
 the global models for different settings. In this example, all clients compute their validation scores using the
 same CIFAR-10 test set. The plotting script used for the below graphs is in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py) 
-(see also [./virtualenv/plot-requirements.txt](./virtualenv/plot-requirements.txt)).
+(please install [./virtualenv/plot-requirements.txt](./virtualenv/plot-requirements.txt)).
 
 ### 4.1 Central vs. FedAvg
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
@@ -216,6 +245,6 @@ to update the global model on the server. Both achieve better performance with t
 
 In a real-world scenario, the researcher won't have access to the TensorBoard events of the individual clients. In order to visualize the training performance in a central place, `AnalyticsSender`, `ConvertToFedEvent` on the client, and `TBAnalyticsReceiver` on the server can be used. For an example using FedAvg and metric streaming during training, run:
 ```
-./run_poc.sh 8 cifar10_fedavg_stream_tb 10 1.0
+./submit_job.sh cifar10_fedavg_stream_tb 1.0
 ```
-Using this configuration, a `tb_events` folder will be created under the `run_*` folder of the server that includes all the TensorBoard event values of the different clients.
+Using this configuration, a `tb_events` folder will be created under the `[RUN_ID]` folder of the server that includes all the TensorBoard event values of the different clients.

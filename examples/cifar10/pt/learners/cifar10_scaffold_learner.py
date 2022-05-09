@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ from nvflare.app_common.pt.pt_scaffold import PTScaffoldHelper, get_lr_values
 class CIFAR10ScaffoldLearner(CIFAR10Learner):
     def __init__(
         self,
-        dataset_root: str = "./dataset",
+        train_idx_root: str = "./dataset",
         aggregation_epochs: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
@@ -36,6 +36,8 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
         fedproxloss_mu: float = 0.0,
         central: bool = False,
         analytic_sender_id: str = "analytic_sender",
+        batch_size: int = 64,
+        num_workers: int = 0
     ):
         """Simple Scaffold CIFAR-10 Trainer.
         Implements the training algorithm proposed in
@@ -43,7 +45,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
         (https://arxiv.org/abs/1910.06378) using functions implemented in `PTScaffoldHelper` class.
 
         Args:
-            dataset_root: directory with CIFAR-10 data.
+            train_idx_root: directory with site training indices for CIFAR-10 data.
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
             submit_model_task_name: name of the task to submit the best local model.
@@ -51,23 +53,18 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
             fedproxloss_mu: weight for FedProx loss. Float number. Defaults to 0.0 (no FedProx).
             central: Bool. Whether to simulate central training. Default False.
             analytic_sender_id: id of `AnalyticsSender` if configured as a client component. If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
+            batch_size: batch size for training and validation.
+            num_workers: number of workers for data loaders.
 
         Returns:
             a Shareable with the updated local model after running `execute()`
             or the best local model depending on the specified task.
         """
 
-        CIFAR10Learner.__init__(
-            self,
-            dataset_root=dataset_root,
-            aggregation_epochs=aggregation_epochs,
-            train_task_name=train_task_name,
-            submit_model_task_name=submit_model_task_name,
-            lr=lr,
-            fedproxloss_mu=fedproxloss_mu,
-            central=central,
-            analytic_sender_id=analytic_sender_id,
-        )
+        CIFAR10Learner.__init__(self, train_idx_root=train_idx_root, aggregation_epochs=aggregation_epochs,
+                                train_task_name=train_task_name, submit_model_task_name=submit_model_task_name, lr=lr,
+                                fedproxloss_mu=fedproxloss_mu, central=central, analytic_sender_id=analytic_sender_id,
+                                batch_size=batch_size, num_workers=num_workers)
         self.scaffold_helper = PTScaffoldHelper()
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
