@@ -248,7 +248,7 @@ class AdminController:
         run_state = {"workflow": None, "task": None, "round_number": None, "run_finished": None}
 
         last_read_line = 0
-        event = 0
+        event_idx = 0
         ha_events = event_sequence["events"]
         event_test_status = [False for _ in range(len(ha_events))]  # whether event has been successfully triggered
 
@@ -273,24 +273,32 @@ class AdminController:
                 self.print_state(event_sequence["description"], run_state)
 
             # check if event is triggered -> then execute the corresponding actions
-            if event < len(ha_events) and not event_test_status[event]:
-                event_trigger = []
+            if event_idx < len(ha_events) and not event_test_status[event_idx]:
+                event_trigger = ha_events[event_idx]["trigger"]
+                event_triggered = True
 
-                if isinstance(ha_events[event]["trigger"], dict):
-                    for k, v in ha_events[event]["trigger"].items():
+                if isinstance(event_trigger, dict):
+                    for k, v in event_trigger.items():
                         if k == "workflow":
                             print(run_state)
                             print(wfs)
-                            event_trigger.append(run_state[k] == wfs[v][0])
+                            if run_state[k] != wfs[v][0]:
+                                event_triggered = False
+                                break
                         else:
-                            event_trigger.append(run_state[k] == v)
-                elif isinstance(ha_events[event]["trigger"], str) and ha_events[event]["trigger"] in server_logs_string:
-                    event_trigger.append(True)
+                            if run_state[k] != v:
+                                event_triggered = False
+                                break
+                elif isinstance(event_trigger, str):
+                    if event_trigger not in server_logs_string:
+                        event_triggered = False
+                else:
+                    raise RuntimeError(f"event_trigger type {type(event_trigger)} is not supported.")
 
-                if event_trigger and all(event_trigger):
-                    print(f"EVENT TRIGGERED: {ha_events[event]['trigger']}")
-                    event_test_status[event] = True
-                    self.execute_actions(site_launcher, ha_events[event]["actions"])
+                if event_triggered:
+                    print(f"EVENT TRIGGER '{event_trigger}' is TRIGGERED.")
+                    event_test_status[event_idx] = True
+                    self.execute_actions(site_launcher, ha_events[event_idx]["actions"])
                     continue
 
             response = self.admin_api.check_status(target_type=TargetType.SERVER)
@@ -302,11 +310,11 @@ class AdminController:
             ):
 
                 # compare run_state to expected result_state from the test case
-                if event < len(ha_events) and event_test_status[event] and response["status"] == APIStatus.SUCCESS:
-                    result_state = ha_events[event]["result_state"]
+                if event_idx < len(ha_events) and event_test_status[event_idx] and response["status"] == APIStatus.SUCCESS:
+                    result_state = ha_events[event_idx]["result_state"]
                     if any(list(run_state.values())):
                         if result_state == "unchanged":
-                            result_state = ha_events[event]["trigger"]
+                            result_state = ha_events[event_idx]["trigger"]
                         for k, v in result_state.items():
                             if k == "workflow":
                                 print(f"ASSERT Current {k}: {run_state[k]} == Expected {k}: {wfs[v][0]}")
@@ -315,7 +323,7 @@ class AdminController:
                                 print(f"ASSERT Current {k}: {run_state[k]} == Expected {k}: {v}")
                                 assert run_state[k] == v
                         print("\n")
-                        event += 1
+                        event_idx += 1
 
                 # check if run is stopped
                 if (
@@ -374,6 +382,8 @@ class AdminController:
                     else:
                         client_id = list(site_launcher.client_properties.keys())[0]
                     site_launcher.start_client(client_id)
+            else:
+                raise RuntimeError(f"Command {command} is not supported.")
 
     def print_state(self, test_description: str, state: dict):
         print("\n")
