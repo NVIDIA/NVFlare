@@ -91,8 +91,6 @@ class StartJobProcessor(RequestProcessor):
                 resource_consumer=resource_consumer,
                 resource_manager=resource_manager,
             )
-
-            resource_consumer.consume(allocated_resources)
         except Exception as e:
             result = f"Execution exception: {e}."
 
