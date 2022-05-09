@@ -5,7 +5,7 @@ n_clients=$1
 
 if test -z "${n_clients}"
 then
-      echo "Usage: ./create_poc_workspace.sh [n_clients], e.g. ./create_poc_workspace.sh 4"
+      echo "Usage: ./create_poc_workspace.sh [n_clients], e.g. ./create_poc_workspace.sh 8"
       exit 1
 fi
 
