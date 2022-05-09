@@ -50,7 +50,7 @@ def set_system_state(state):
 def check_integrity(privilege_file):
     data, sig = SecurityContentService.load_content(privilege_file)
     if sig != LoadResult.OK:
-        print("Priviledge file is tampered.  Priviledged API disaled.")
+        print("Privilege file is tampered.  Privileged API disabled.")
         data = None
     return data
 

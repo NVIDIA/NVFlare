@@ -18,7 +18,9 @@ to see the capabilities of the system and how it can be operated.
 
    user_guide/overview
    user_guide/application
+   user_guide/job
    user_guide/workspace
    user_guide/provisioning_tool
+   user_guide/high_availability
    user_guide/authorization
    user_guide/admin_commands

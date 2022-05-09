@@ -363,7 +363,7 @@ will ask you if you would like to have one sample copy of this file created.
 
 ..  Edit the project.yml configuration file to meet your project requirements:
 
-    - "api_version" must be 2 for current release of provisioning tool
+    - "api_version" must be 3 for current release of provisioning tool
     - "he_config" describes the Homomorphic Encryption configuration
     - "config_folder" is the folder name that contains configuration information
     - "disable_authz" is a boolean to instruct FL server whether to enforce role-based rights on admin users. true means all admin users are in role super.

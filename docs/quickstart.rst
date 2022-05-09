@@ -43,19 +43,25 @@ Starting the Application Environment in POC Mode
 ================================================
 
 Once you are ready to start the FL system, you can run the following commands to start all the different parties (it is
-recommended that you read into the specific example apps linked at the bottom of this page first, then start the FL
+recommended that you read into the specific :ref:`example apps <example_apps>` first, then start the FL
 system to follow along at the parts with admin commands for you to run the example app).
 
-FL systems usually have a server and multiple clients. We
-therefore have to start the server first:
+FL systems usually have an overseer, server, and multiple clients. We therefore have to start the overseer first:
+
+.. code-block:: shell
+
+    $ ./poc/overseer/startup/start.sh
+
+Once the overseer is running, you can start the server and clients in different terminals (make sure your terminals are
+using the environment with NVIDIA FLARE :ref:`installed <installation>`).
+
+Open a new terminal and start the server:
 
 .. code-block:: shell
 
     $ ./poc/server/startup/start.sh
 
-Once the server is running you can start the clients in different terminals (make sure your terminals are using the
-environment with NVIDIA FLARE :ref:`installed <installation>`).
-Open a new terminal and start the first client:
+Once the server is running, open a new terminal and start the first client:
 
 .. code-block:: shell
 

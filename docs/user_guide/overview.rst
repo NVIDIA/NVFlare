@@ -6,10 +6,10 @@ Overview
 Introduction
 ************
 
-NVIDIA FLARE utilizes provisioning and admin client to reduce the amount of human coordination involved to set up a federated learning project
-and provides an admin the ability to deploy the server and client configurations, start the server / clients, abort the training,
-restart the training, and more. A provisioning tool can be configured to create one startup kit for each site in an encrypted package.
-These packages can then be delivered to each site ready to go, streamlining the process to provision, start, and operate federated learning.
+NVIDIA FLARE utilizes provisioning and admin clients to reduce the amount of human coordination involved to set up a
+federated learning project. A provisioning tool can be configured to create a startup kit for each site in an encrypted
+package. These packages can then be delivered to each site ready to go, streamlining the process to provision, start,
+and operate federated learning with a trusted setup.
 
 Provision - Start - Operate
 ===========================
@@ -24,7 +24,7 @@ Site IT each installs their own packages, starts the services, and maps the data
 
 Operate
 -------
-Lead scientists / administrators control the federated learning process: deploy application, check statuses, start / abort / shutdown training
+Lead scientists / administrators control the federated learning process: submit jobs to deploy applications, check statuses, abort / shutdown training
 
 .. _provisioned_setup:
 
@@ -97,9 +97,31 @@ Start: Instructions for each participant to start running FL with their startup 
 
 .. attention:: Please always safeguard .key files! These are the critical keys for secure communication!
 
-Federated learning server ($SERVER_NAME.zip)
-============================================
+Overseer ($OVERSEER_NAME.zip)
+=============================
 One single server will coordinate the federated learning training and be the main hub all clients and administrator
+clients connect to.
+
+After unzipping the package server.zip, run the start.sh file from the "startup" folder you unzipped to start the server.
+
+The rootCA.pem file is pointed to by "ssl_root_cert" in fed_server.json.  If you plan to move/copy it to a different place,
+you will need to modify fed_server.json.  The same applies to the other two files, server.crt and server.key.
+
+.. note::
+
+   When launching the FL server inside a docker with ``docker run``, use ``--net=host`` to map hostname into that
+   docker instance.  For secure gRPC communication, the FL server has to bind to the hostname specified in the
+   provisioning stage. Always make sure that hostname is what FL server can bind to. Additionally,
+   the port that the server communicates on must also not be blocked by any firewalls.
+
+If clients from other machines cannot connect to the server, make sure that the hostname (name of the server under
+participants in project.yml) specified when generating the startup kits in the provisioning process resolves to the
+correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
+to ``/etc/hosts`` with the internal IP and the hostname.
+
+Federated learning servers ($SERVER_NAME.zip)
+============================================
+Server will coordinate the federated learning training and be the main hub all clients and admin
 clients connect to.
 
 After unzipping the package server.zip, run the start.sh file from the "startup" folder you unzipped to start the server.

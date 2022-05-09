@@ -56,6 +56,7 @@ this can be used in your own workflow.
     - :mod:`nvflare.apis` - the generic class definitions
     - :mod:`nvflare.app_common` - higher level controllers, workflows, and algorithms
     - :mod:`nvflare.fuel` - supporting components of the provisioning and admin systems
+    - :mod:`nvflare.ha` - overseer and overseer agent to support :ref:`high_availability`
     - :mod:`nvflare.lighter` - configuration, scripts, and Builders to support the provisioning tool
     - :mod:`nvflare.poc` - configurations for the poc tool
     - :mod:`nvflare.private` - low-level implementation of the platform and communication
