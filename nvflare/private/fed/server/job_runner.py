@@ -57,11 +57,7 @@ class JobRunner(FLComponent):
         workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
         count = 1
         while os.path.exists(workspace):
-            parts = run_number.split(":")
-            if len(parts) == 1:
-                run_number = run_number + ":" + str(count)
-            else:
-                run_number = parts[0] + ":" + str(count)
+            run_number = job.job_id + ":" + str(count)
             workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
             count += 1
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
