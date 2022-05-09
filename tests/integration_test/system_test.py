@@ -173,6 +173,7 @@ class TestSystem:
             server_agent_list = oa_launcher.start_servers(1)
             client_agent_list = oa_launcher.start_clients(4)
             time.sleep(30)
+            overseer_info = oa_launcher.get_overseer_info(client_agent_list[0])
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server00"
             oa_launcher.pause_server(server_agent_list[0])

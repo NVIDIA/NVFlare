@@ -73,6 +73,10 @@ class OALauncher:
         agent = self._get_agent(agent_id)
         return agent.get_primary_sp()
 
+    def get_overseer_info(self, agent_id):
+        agent = self._get_agent(agent_id)
+        return agent._overseer_info
+
     def _stop(self, role):
         stopped_list = list()
         for key, agent in self._agent_dict[role].items():
