@@ -90,5 +90,11 @@ class HACommandModule(CommandModule):
 
     def shutdown_system(self, args, api):
         print("Shutting down the system...")
-        api.overseer_agent.set_state("shutdown")
-        return {"status": APIStatus.SUCCESS, "details": "Set state to shutdown in overseer."}
+        resp = api.overseer_agent.set_state("shutdown")
+        if json.loads(resp.text).get("Error"):
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Error: {}".format(json.loads(resp.text).get("Error")),
+            }
+        else:
+            return {"status": APIStatus.SUCCESS, "details": "Set state to shutdown in overseer."}
