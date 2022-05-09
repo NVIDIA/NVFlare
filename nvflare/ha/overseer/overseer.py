@@ -38,13 +38,13 @@ def heartbeat():
         project = req.get("project")
         role = req.get("role")
         if project is None or role is None:
-            return jsonify({"error": "project and role must be provided"})
+            return jsonify({"Error": "project and role must be provided"})
         now = datetime.utcnow()
         update_sp_state(project, now)
         if role == "server":
             sp_end_point = req.get("sp_end_point")
             if sp_end_point is None:
-                return jsonify({"error": "sp_end_point is not provided"})
+                return jsonify({"Error": "sp_end_point is not provided"})
             incoming_sp = dict(sp_end_point=sp_end_point, project=project)
             psp = simple_PSP_policy(incoming_sp, now)
         elif role in ["client", "admin"]:

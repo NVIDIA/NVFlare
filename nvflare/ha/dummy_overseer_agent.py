@@ -55,7 +55,7 @@ class DummyOverseerAgent(OverseerAgent):
     def promote_sp(self, sp_end_point, headers=None):
         resp = Response()
         resp.status_code = 200
-        resp.content = json.dumps({"error": "this functionality is not supported by the dummy agent"})
+        resp.content = json.dumps({"Error": "this functionality is not supported by the dummy agent"})
         return resp
 
     def start(self, update_callback=None, conditional_cb=False):
@@ -73,7 +73,7 @@ class DummyOverseerAgent(OverseerAgent):
     def set_state(self, state):
         resp = Response()
         resp.status_code = 200
-        resp.content = json.dumps({"error": "this functionality is not supported by the dummy agent"})
+        resp.content = json.dumps({"Error": "this functionality is not supported by the dummy agent"})
         return resp
 
     def end(self):
