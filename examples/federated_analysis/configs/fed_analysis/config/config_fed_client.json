@@ -6,7 +6,7 @@
       "executor": {
         "path": "analysis_executor.AnalysisExecutor",
         "args": {
-          "data_root": "/home/hroth/Code2/nvflare/dev-2.1-fedanalysis/examples/federated_analysis/data",
+          "data_root": "PWD/data",
           "supported_task": "histogram"
         }
       }
