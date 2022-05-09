@@ -149,10 +149,14 @@ class JobCommandModule(TrainingCommandModule):
         if not isinstance(engine, ServerEngine):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
-        run_number = conn.get_prop(self.RUN_NUMBER)
-        engine.job_runner.stop_run(run_number, engine.new_context())
-        conn.append_string("Abort signal has been sent to the server app.")
-        conn.append_success("")
+        try:
+            run_number = conn.get_prop(self.RUN_NUMBER)
+            engine.job_runner.stop_run(run_number, engine.new_context())
+            conn.append_string("Abort signal has been sent to the server app.")
+            conn.append_success("")
+        except Exception as e:
+            conn.append_error("Exception occurred trying to abort job: " + str(e))
+            return
 
     def clone_job(self, conn: Connection, args: List[str]):
         job_id = conn.get_prop(self.RUN_NUMBER)
