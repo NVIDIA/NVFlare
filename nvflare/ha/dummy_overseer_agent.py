@@ -46,7 +46,17 @@ class DummyOverseerAgent(OverseerAgent):
 
         name, fl_port, admin_port = self.sp_end_point.split(":")
         self._psp = SP(name, fl_port, admin_port, DummyOverseerAgent.SSID, True)
-        self._overseer_info = {"primary_sp": self._psp, "sp_list": [self._psp], "system": "ready"}
+        psp_dict = {
+            "sp_end_point": sp_end_point,
+            "service_seesion_id": DummyOverseerAgent.SSID,
+            "primary": True,
+            "state": "online",
+        }
+        self._overseer_info = {
+            "primary_sp": psp_dict,
+            "sp_list": [psp_dict],
+            "system": "ready",
+        }
 
     def get_primary_sp(self) -> SP:
         """Return current primary service provider. The PSP is static in the dummy agent."""
