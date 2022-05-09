@@ -46,6 +46,7 @@ class DummyOverseerAgent(OverseerAgent):
 
         name, fl_port, admin_port = self.sp_end_point.split(":")
         self._psp = SP(name, fl_port, admin_port, DummyOverseerAgent.SSID, True)
+        self._overseer_info = {"primary_sp": self._psp, "sp_list": [self._psp], "system": "ready"}
 
     def get_primary_sp(self) -> SP:
         """Return current primary service provider. The PSP is static in the dummy agent."""
@@ -68,6 +69,12 @@ class DummyOverseerAgent(OverseerAgent):
 
     def resume(self):
         self._flag.set()
+
+    def set_state(self, state):
+        resp = Response()
+        resp.status_code = 200
+        resp.content = json.dumps({"error": "this functionality is not supported by the dummy agent"})
+        return resp
 
     def end(self):
         self._flag.set()
