@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -56,7 +57,7 @@ class ClientRunner(FLComponent):
         self,
         config: ClientRunnerConfig,
         run_num: int,
-        engine: ClientEngineSpec,
+        engine: ClientEngineExecutorSpec,
         task_fetch_interval: int = 5,  # fetch task every 5 secs
     ):
         """To init the ClientRunner.

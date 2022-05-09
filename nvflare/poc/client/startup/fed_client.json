@@ -34,7 +34,7 @@
   "components": [
     {
       "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+      "path": "nvflare.app_common.resource_managers.gpu_list_resource_manager.GPUListResourceManager",
       "args": {
         "resources": {
           "gpu": [
@@ -44,13 +44,6 @@
             3
           ]
         }
-      }
-    },
-    {
-      "id": "resource_consumer",
-      "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
-      "args": {
-        "gpu_resource_key": "gpu"
       }
     }
   ]

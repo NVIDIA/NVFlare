@@ -71,7 +71,7 @@ class StartJobProcessor(RequestProcessor):
                 f"resource_manager should be of type ResourceManagerSpec, but got {type(resource_manager)}."
             )
         resource_consumer = engine.get_component(SystemComponents.RESOURCE_CONSUMER)
-        if not isinstance(resource_consumer, ResourceConsumerSpec):
+        if resource_consumer and not isinstance(resource_consumer, ResourceConsumerSpec):
             raise RuntimeError(
                 f"resource_consumer should be of type ResourceConsumerSpec, but got {type(resource_consumer)}."
             )
@@ -90,8 +90,6 @@ class StartJobProcessor(RequestProcessor):
             resource_consumer=resource_consumer,
             resource_manager=resource_manager,
         )
-
-        resource_consumer.consume(allocated_resources)
 
         if not result:
             result = "OK"

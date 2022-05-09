@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+from abc import ABC, abstractmethod
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
@@ -29,7 +30,7 @@ from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from .client_status import ClientStatus, get_status_message
 
 
-class ClientExecutor(object):
+class ClientExecutor(ABC):
     def __init__(self, uid, startup) -> None:
         """To init the ClientExecutor.
 
@@ -44,6 +45,7 @@ class ClientExecutor(object):
         self.pipe = FilePipe(root_path=pipe_path, name="training")
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    @abstractmethod
     def start_train(
         self,
         client,
@@ -54,8 +56,8 @@ class ClientExecutor(object):
         listen_port,
         allocated_resource,
         token,
-        resource_consumer,
         resource_manager,
+        resource_consumer=None,
     ):
         """start_train method to start the FL client training.
 
@@ -68,12 +70,13 @@ class ClientExecutor(object):
             listen_port: port to listen the command.
             allocated_resource: allocated resources
             token: token from resource manager
-            resource_consumer: resource consumer
             resource_manager: resource manager
+            resource_consumer: resource consumer
 
         """
         pass
 
+    @abstractmethod
     def check_status(self, client, run_number) -> str:
         """To check the status of the running client.
 
@@ -86,6 +89,7 @@ class ClientExecutor(object):
         """
         pass
 
+    @abstractmethod
     def abort_train(self, client, run_number):
         """To abort the client training.
 
@@ -95,14 +99,17 @@ class ClientExecutor(object):
         """
         pass
 
+    @abstractmethod
     def abort_task(self, client, run_number):
         """To abort the client executing task.
 
         Args:
             client: the FL client object
+            run_number: the run_number
         """
         pass
 
+    @abstractmethod
     def get_run_info(self, run_number) -> dict:
         """Get the run information.
 
@@ -111,6 +118,7 @@ class ClientExecutor(object):
         """
         pass
 
+    @abstractmethod
     def get_errors(self, run_number):
         """Get the error information.
 
@@ -120,15 +128,18 @@ class ClientExecutor(object):
         """
         pass
 
+    @abstractmethod
     def reset_errors(self, run_number):
         """Reset the error information."""
         pass
 
+    @abstractmethod
     def send_aux_command(self, shareable: Shareable, run_number):
         """To send the aux command to child process.
 
         Args:
             shareable: aux message Shareable
+            run_number: the run_number
         """
         pass
 
@@ -185,8 +196,8 @@ class ProcessExecutor(ClientExecutor):
         listen_port,
         allocated_resource,
         token,
-        resource_consumer,
         resource_manager,
+        resource_consumer=None,
     ):
 
         new_env = os.environ.copy()
@@ -205,11 +216,11 @@ class ProcessExecutor(ClientExecutor):
             " --set" + command_options + " print_conf=True"
         )
         # use os.setsid to create new process group ID
-        process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
+        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         print("training child process ID: {}".format(process.pid))
 
-        if allocated_resource:
+        if allocated_resource and resource_consumer:
             resource_consumer.consume(allocated_resource)
 
         client.multi_gpu = False

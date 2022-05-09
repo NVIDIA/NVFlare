@@ -150,8 +150,8 @@ class ClientEngine(ClientEngineInternalSpec):
             open_port,
             allocated_resource,
             token,
-            resource_consumer,
             resource_manager,
+            resource_consumer,
         )
 
         return "Start the client app..."
