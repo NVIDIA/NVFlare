@@ -2,7 +2,6 @@
 echo "PYTHONPATH is ${PYTHONPATH}"
 
 algorithms_dir="${PWD}/job_configs"
-site_pre="site-"
 
 config=$1
 alpha=$2
@@ -14,12 +13,10 @@ then
     echo "${poc} not supported to run POC mode. Use --poc"
   fi
   echo "Submit poc job ${config} with alpha=${alpha}"
-  servername="server"
   workspace="${PWD}/workspaces/poc_workspace"
   admin_username="admin"
 else
   echo "Submit secure job ${config} with alpha=${alpha}"
-  servername="localhost"
   workspace="${PWD}/workspaces/secure_workspace"
   admin_username="admin@nvidia.com"
 fi
