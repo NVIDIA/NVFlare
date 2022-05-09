@@ -40,7 +40,7 @@ class JobRunner(FLComponent):
             engine = fl_ctx.get_engine()
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
 
-    def _deploy_job(self, job: Job, sites: list, fl_ctx: FLContext) -> str:
+    def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> str:
         """deploy the application to the list of participants
 
         Args:
@@ -51,14 +51,16 @@ class JobRunner(FLComponent):
         Returns:
 
         """
+        fl_ctx.remove_prop(FLContextKey.JOB_RUN_NUMBER)
         engine = fl_ctx.get_engine()
         run_number = job.job_id
         workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
         count = 1
         while os.path.exists(workspace):
-            work_folder = run_number + "_" + str(count)
-            workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + work_folder)
+            run_number = job.job_id + ":" + str(count)
+            workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
             count += 1
+        fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
 
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
@@ -161,6 +163,32 @@ class JobRunner(FLComponent):
             if err:
                 self.log_error(fl_ctx, f"Failed to abort the server for run_.{run_number}")
 
+    def _delete_run(self, run_number, sites: dict, fl_ctx: FLContext):
+        """Delete the run workspace
+
+        Args:
+            run_number: run_number
+            sites: participating sites
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+        engine = fl_ctx.get_engine()
+
+        client_sites = list(sites.keys())
+        admin_server = engine.server.admin_server
+        message = Message(topic=TrainingTopic.DELETE_RUN, body="")
+        message.set_header(RequestHeader.RUN_NUM, str(run_number))
+        self.log_debug(fl_ctx, f"Send delete_run command to the site for run:{run_number}")
+        replies = self._send_to_clients(admin_server, client_sites, engine, message)
+        if not replies:
+            self.log_error(fl_ctx, f"Failed to send delete_run command to clients for run_{run_number}")
+
+        err = engine.delete_run_number(run_number)
+        if err:
+            self.log_error(fl_ctx, f"Failed to delete_run the server for run_.{run_number}")
+
     def _job_complete_process(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
@@ -201,6 +229,10 @@ class JobRunner(FLComponent):
                                 self.running_jobs[run_number] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                         except Exception as e:
+                            run_number = fl_ctx.get_prop(FLContextKey.JOB_RUN_NUMBER)
+                            if run_number:
+                                self._delete_run(run_number, sites, fl_ctx)
+                            job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
                             self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
                 time.sleep(1.0)

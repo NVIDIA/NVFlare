@@ -27,6 +27,7 @@ class RunStatus(str, Enum):
     RUNNING = "RUNNING"
     FINISHED_COMPLETED = "FINISHED:COMPLETED"
     FINISHED_ABORTED = "FINISHED:ABORTED"
+    FAILED_TO_RUN = "FAILED_TO_RUN"
 
 
 class JobMetaKey(str, Enum):
