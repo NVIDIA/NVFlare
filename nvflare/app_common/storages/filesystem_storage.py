@@ -16,6 +16,7 @@ import ast
 import json
 import os
 import shutil
+import uuid
 from pathlib import Path
 from typing import List, Tuple
 
@@ -26,18 +27,20 @@ URI_ROOT = os.path.abspath(os.sep)
 
 
 def _write(path: str, content):
+    tmp_name = "_" + str(uuid.uuid4())
     try:
         Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
-        with open(path + "_tmp", "wb") as f:
+        with open(path + tmp_name, "wb") as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
     except Exception as e:
-        if os.path.isfile(path + "_tmp"):
-            os.remove(path + "_tmp")
+        if os.path.isfile(path + tmp_name):
+            os.remove(path + tmp_name)
         raise IOError("failed to write content: {}".format(e))
 
-    os.rename(path + "_tmp", path)
+    if os.path.exists(path + tmp_name):
+        os.rename(path + tmp_name, path)
 
 
 def _read(path: str) -> bytes:
