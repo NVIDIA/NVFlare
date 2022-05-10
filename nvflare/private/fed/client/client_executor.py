@@ -188,13 +188,12 @@ class ProcessExecutor(ClientExecutor):
         resource_consumer,
         resource_manager,
     ):
+        if allocated_resource:
+            resource_consumer.consume(allocated_resource)
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
-
-        if allocated_resource:
-            resource_consumer.consume(allocated_resource)
 
         command_options = ""
         for t in args.set:
