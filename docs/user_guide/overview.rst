@@ -120,7 +120,7 @@ correct IP. If the FL server is on an internal network without a DNS hostname, i
 to ``/etc/hosts`` with the internal IP and the hostname.
 
 Federated learning servers ($SERVER_NAME.zip)
-============================================
+=============================================
 Server will coordinate the federated learning training and be the main hub all clients and admin
 clients connect to.
 

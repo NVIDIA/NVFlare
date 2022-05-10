@@ -291,7 +291,7 @@ Server related questions
 
 #. What happens if the FL server crashes?
 
-    See :ref:`high_availability` for the features implemented in NVIDIA FLARE 2.1 around FL server failover.
+    See :ref:`high_availability` for the features implemented in NVIDIA FLARE 2.1.0 around FL server failover.
 
 #. Why does my FL server keep crashing after a certain round?
 

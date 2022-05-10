@@ -10,7 +10,7 @@ Initialization
 It is recommended to use the :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` to
 initialize the API, or use it as a guide to write your own code to use the FLAdminAPI.
 
-Compared to before NVIDIA FLARE 2.1, the FLAdminAPI now requires an overseer_agent to be provided, and this is automatically
+Compared to before NVIDIA FLARE 2.1.0, the FLAdminAPI now requires an overseer_agent to be provided, and this is automatically
 created by the :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` with the
 information in ``fed_admin.json`` in the provided admin_dir's startup directory.
 

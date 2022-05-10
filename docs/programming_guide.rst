@@ -43,6 +43,7 @@ Please refer to :ref:`user_guide/application:NVIDIA FLARE Application` for more 
    programming_guide/shareable
    programming_guide/data_exchange_object
    programming_guide/fl_component
+   programming_guide/federated_learning
 
 Code Structure
 ==============

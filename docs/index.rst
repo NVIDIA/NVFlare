@@ -15,9 +15,9 @@ results.
 NVIDIA FLARE is built on a componentized architecture, which allows researchers to customize workflows to their
 liking and experiment with different ideas quickly.
 
-With NVIDIA FLARE 2.1, :ref:`High Availability (HA) <high_availability>` and :ref:`Multi-Job Execution <multi_job>`
+With NVIDIA FLARE 2.1.0, :ref:`High Availability (HA) <high_availability>` and :ref:`Multi-Job Execution <multi_job>`
 introduce new concepts and change the way the system needs to be configured and operated. See
-`conversion from 2.0 <appendix/converting_from_20>`_ for details.
+`conversion from 2.0 <appendix/converting_from_previous.html>`_ for details.
 
 .. toctree::
    :maxdepth: 1

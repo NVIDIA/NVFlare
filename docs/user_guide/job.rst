@@ -3,7 +3,7 @@
 ###########################################
 Jobs: Defining Jobs and Multi-Job Execution
 ###########################################
-Newly introduced in NVIDIA FLARE 2.1, Jobs now organize and streamline the running of apps to allow for multi-job
+Newly introduced in NVIDIA FLARE 2.1.0, Jobs now organize and streamline the running of apps to allow for multi-job
 execution and the running of multiple experiments in parallel.
 
 ********
@@ -12,7 +12,7 @@ Concepts
 
 Job
 ===
-In NVIDIA FLARE 2.1, to be able to run multiple experiments in parallel, the system needs to be able to make decisions
+In NVIDIA FLARE 2.1.0, to be able to run multiple experiments in parallel, the system needs to be able to make decisions
 as to when to run which experiments.
 
 To be able to do this, the system now has to know everything about the experiment: which study it belongs to, which app(s)
@@ -80,12 +80,12 @@ Resources
 =========
 For a job to be runnable, the system must have sufficient resources: all relevant sites of the job must be able to
 support the job’s specified resource requirements. Since resource is a generic concept - anything could be regarded
-as a resource - NVIDIA FLARE 2.1 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
+as a resource - NVIDIA FLARE 2.1.0 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
 framework for resource definition and interpretation.
 
 Study
 =====
-In NVIDIA FLARE 2.0 and before, there was no explicit distinction between the definition of "study" vs. "project". From 2.1,
+In NVIDIA FLARE 2.0 and before, there was no explicit distinction between the definition of "study" vs. "project". From 2.1.0,
 "study" and "project" are no longer the same thing: "project" defines the NVIDIA FLARE system as a whole (provisioned FL clients, security
 credentials, etc.); and "study" defines a particular way of using the system.
 
@@ -104,9 +104,9 @@ A study definition contains the following information:
 
 Study Creation
 ==============
-NVIDIA FLARE 2.1 could be set up and kept running for a long time. During this time, multiple Studies could be conducted.
+NVIDIA FLARE 2.1.0 could be set up and kept running for a long time. During this time, multiple Studies could be conducted.
 
-NVIDIA FLARE 2.1 provides a Study Creation tool that creates a signed study file based on user-provided study configuration.
+NVIDIA FLARE 2.1.0 provides a Study Creation tool that creates a signed study file based on user-provided study configuration.
 
 Admin Commands are also provided to load the study file into the Study Storage, and to show details of studies.
 
@@ -115,7 +115,7 @@ Study-less Jobs
 Even though the use of Study is very useful when NVIDIA FLARE is used as part of a platform that keeps running for a long time, it
 could be an unnecessary burden for other use cases.
 
-NVIDIA FLARE 2.1 supports study-less jobs - you do not need to specify the "study_name" and can leave it empty in the job
+NVIDIA FLARE 2.1.0 supports study-less jobs - you do not need to specify the "study_name" and can leave it empty in the job
 definition.
 
 If there is no study for the definition of participating sites:
