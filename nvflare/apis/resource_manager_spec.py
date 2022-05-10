@@ -29,8 +29,6 @@ class ResourceManagerSpec(ABC):
     def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
         """Checks whether the specified resource requirement can be satisfied.
 
-        This is to respond to the Scheduler's request to check resource availabilities
-
         Args:
             resource_requirement: a dict that specifies resource requirement
             fl_ctx: the FLContext
@@ -45,9 +43,7 @@ class ResourceManagerSpec(ABC):
 
     @abstractmethod
     def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
-        """Cancels resources reserved if any.
-
-        This happens when the Scheduler check and Dispatcher decided to not dispatch the job to the client.
+        """Cancels reserved resources if any.
 
         Args:
             resource_requirement: a dict that specifies resource requirement
@@ -61,10 +57,7 @@ class ResourceManagerSpec(ABC):
 
     @abstractmethod
     def allocate_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext) -> dict:
-        """Allocate resources.
-
-        This is called by the Dispatcher on the client after the Server deploys a job to the client.
-        The Deployer calls this method to allocate/obtain resources for the requirement (committed when check_resource).
+        """Allocates resources.
 
         Note:
             resource requirements and resources may be different things.
@@ -81,7 +74,7 @@ class ResourceManagerSpec(ABC):
 
     @abstractmethod
     def free_resources(self, resources: dict, token: str, fl_ctx: FLContext):
-        """Free the resources.
+        """Frees resources.
 
         Args:
             resources: resources to be freed

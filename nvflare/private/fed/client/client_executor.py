@@ -188,6 +188,8 @@ class ProcessExecutor(ClientExecutor):
         resource_consumer,
         resource_manager,
     ):
+        if allocated_resource:
+            resource_consumer.consume(allocated_resource)
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -205,12 +207,9 @@ class ProcessExecutor(ClientExecutor):
             " --set" + command_options + " print_conf=True"
         )
         # use os.setsid to create new process group ID
-        process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
+        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         print("training child process ID: {}".format(process.pid))
-
-        if allocated_resource:
-            resource_consumer.consume(allocated_resource)
 
         client.multi_gpu = False
 
