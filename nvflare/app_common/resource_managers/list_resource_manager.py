@@ -91,12 +91,8 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                 self.cleanup_thread.join()
                 self.cleanup_thread = None
 
-    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
-        if not isinstance(resource_requirement, dict):
-            raise TypeError(f"resource_requirement should be of type dict, but got {type(resource_requirement)}.")
-
+    def _check_all_required_resource_available(self, resource_requirement: dict, fl_ctx: FLContext) -> bool:
         check_result = True
-        token = None
         with self.lock:
             for k in resource_requirement:
                 if k in self.resources:
@@ -108,6 +104,14 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                     check_result = False
                     self.log_debug(fl_ctx, f"Missing {k} in resources.")
                     break
+        return check_result
+
+    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
+        if not isinstance(resource_requirement, dict):
+            raise TypeError(f"resource_requirement should be of type dict, but got {type(resource_requirement)}.")
+
+        check_result = self._check_all_required_resource_available(resource_requirement, fl_ctx)
+        token = None
 
         # reserve resource only when check is True
         if check_result:
