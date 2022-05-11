@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import from_bytes, DataKind
+from nvflare.apis.dxo import DataKind, from_bytes
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.formatter import \
-    Formatter
+from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.app_constant import AppConstants
 
 
@@ -34,9 +33,7 @@ class NPFormatter(Formatter):
             str: Human readable validation results.
         """
         # Get the val shareables
-        validation_shareables_dict = fl_ctx.get_prop(
-            AppConstants.VALIDATION_RESULT, {}
-        )
+        validation_shareables_dict = fl_ctx.get_prop(AppConstants.VALIDATION_RESULT, {})
 
         # Result dictionary
         res = {}
@@ -56,7 +53,7 @@ class NPFormatter(Formatter):
                             metric_dxo = from_bytes(f.read())
 
                         # Get metrics from shareable
-                        if metric_dxo and metric_dxo.data_kind== DataKind.METRICS:
+                        if metric_dxo and metric_dxo.data_kind == DataKind.METRICS:
                             metrics = metric_dxo.data
                             res[data_client][model_name] = metrics
         except Exception as e:
