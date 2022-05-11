@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,12 +16,13 @@ import os
 
 import numpy as np
 
-from constants import NPConstants
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable, ModelLearnableKey
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
+
+from .constants import NPConstants
 
 
 class NPModelPersistor(ModelPersistor):
@@ -32,9 +33,7 @@ class NPModelPersistor(ModelPersistor):
         self.model_name = model_name
 
         # This is default model that will be used if not local model is provided.
-        self.default_data = np.array(
-            [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32
-        )
+        self.default_data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         # Get start round from FLContext. If start_round > 0, we will try loading model from disk.
@@ -50,9 +49,7 @@ class NPModelPersistor(ModelPersistor):
                 data = np.load(model_path)
             except Exception as e:
                 self.log_exception(
-                    fl_ctx,
-                    f"Unable to load model from {model_path}. Using default data instead.",
-                    fire_event=False
+                    fl_ctx, f"Unable to load model from {model_path}. Using default data instead.", fire_event=False
                 )
                 data = self.default_data.copy()
         else:

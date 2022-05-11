@@ -1,6 +1,0 @@
-{
-  "name": "hello-numpy-sag",
-  "deploy_map": {
-    "hello-numpy-sag": ["server", "site-1", "site-2"]
-  }
-}

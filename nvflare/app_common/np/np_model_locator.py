@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +17,12 @@ from typing import List
 
 import numpy as np
 
-from constants import NPConstants
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model_locator import (
-    ModelLocator,
-)
+from nvflare.app_common.abstract.model_locator import ModelLocator
+
+from .constants import NPConstants
 
 
 class NPModelLocator(ModelLocator):
