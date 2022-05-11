@@ -27,20 +27,20 @@ URI_ROOT = os.path.abspath(os.sep)
 
 
 def _write(path: str, content):
-    tmp_name = "_" + str(uuid.uuid4())
+    tmp_path = path + "_" + str(uuid.uuid4())
     try:
         Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
-        with open(path + tmp_name, "wb") as f:
+        with open(tmp_path, "wb") as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
     except Exception as e:
-        if os.path.isfile(path + tmp_name):
-            os.remove(path + tmp_name)
+        if os.path.isfile(tmp_path):
+            os.remove(tmp_path)
         raise IOError("failed to write content: {}".format(e))
 
-    if os.path.exists(path + tmp_name):
-        os.rename(path + tmp_name, path)
+    if os.path.exists(tmp_path):
+        os.rename(tmp_path, path)
 
 
 def _read(path: str) -> bytes:
@@ -110,13 +110,14 @@ class FilesystemStorage(StorageSpec):
         data_path = os.path.join(full_uri, "data")
         meta_path = os.path.join(full_uri, "meta")
 
-        _write(data_path + "_tmp", data)
+        tmp_data_path = data_path + "_" + str(uuid.uuid4())
+        _write(tmp_data_path, data)
         try:
             _write(meta_path, json.dumps(str(meta)).encode("utf-8"))
         except Exception as e:
-            os.remove(data_path + "_tmp")
+            os.remove(tmp_data_path)
             raise e
-        os.rename(data_path + "_tmp", data_path)
+        os.rename(tmp_data_path, data_path)
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta of the specified object.
