@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,14 +17,15 @@ import time
 
 import numpy as np
 
-from constants import NPConstants
-from nvflare.apis.dxo import from_shareable, DataKind, DXO
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+
+from .constants import NPConstants
 
 
 class NPValidator(Executor):
@@ -80,8 +81,9 @@ class NPValidator(Executor):
                 if model_dxo.data and model_dxo.data_kind == DataKind.WEIGHTS:
                     model = model_dxo.data
                 else:
-                    self.log_error(fl_ctx, f"Model DXO doesn't have data or is not of type DataKind.WEIGHTS. Unable  "
-                                           "to validate.")
+                    self.log_error(
+                        fl_ctx, "Model DXO doesn't have data or is not of type DataKind.WEIGHTS. Unable to validate."
+                    )
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Check if key exists in model
@@ -104,9 +106,7 @@ class NPValidator(Executor):
 
                 # Do some dummy validation.
                 random_epsilon = np.random.random()
-                self.log_info(
-                    fl_ctx, f"Adding random epsilon {random_epsilon} in validation."
-                )
+                self.log_info(fl_ctx, f"Adding random epsilon {random_epsilon} in validation.")
                 val_results = {}
                 np_data = model[NPConstants.NUMPY_KEY]
                 np_data = np.sum(np_data / np.max(np_data))

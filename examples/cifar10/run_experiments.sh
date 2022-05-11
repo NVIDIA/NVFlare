@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# download dataset
+python3 ./pt/utils/cifar10_download_data.py
+
 # central
 ./submit_job.sh cifar10_central 0.0
 

@@ -8,7 +8,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "np_model_persistor.NPModelPersistor",
+      "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
       "args": {}
     },
     {
