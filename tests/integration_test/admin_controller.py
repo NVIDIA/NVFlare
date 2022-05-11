@@ -227,6 +227,8 @@ class AdminController:
             response = self.admin_api.check_status(target_type=TargetType.SERVER)
             if response["status"] != APIStatus.SUCCESS:
                 raise RuntimeError(f"check_status failed: {response}")
+            if not response["details"]:
+                raise RuntimeError(f"response {response} does not have details.")
             if response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped":
                 response = self.admin_api.check_status(target_type=TargetType.CLIENT)
                 if response["status"] != APIStatus.SUCCESS:
