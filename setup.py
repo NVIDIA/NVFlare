@@ -14,6 +14,7 @@
 
 import os
 import shutil
+import datetime
 
 from setuptools import find_packages, setup
 
@@ -30,9 +31,20 @@ shutil.make_archive(base_name="poc", format="zip", root_dir=os.path.join(this_di
 shutil.move("poc.zip", os.path.join(this_directory, "nvflare", "poc.zip"))
 package_name = "nvflare"
 
+versions = versioneer.get_versions()
+if versions["error"]:
+    today = datetime.date.today().timetuple()
+    year = today[0] % 1000
+    month = today[1]
+    day = today[2]
+    version = f"0.0.{year:02d}{month:02d}{day:02d}"
+    package_name = "nvflare-nightly"
+else:
+    version = versions["version"]
+
 setup(
     name=package_name,
-    version=versioneer.get_version(),
+    version=version,
     cmdclass=versioneer.get_cmdclass(),
     description="Federated Learning Application Runtime Environment",
     url="https://github.com/NVIDIA/NVFlare",
