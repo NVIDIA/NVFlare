@@ -21,7 +21,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n*nvflare/private/fed/protos/federated.proto\x12\x08\x66\x65\x64learn\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xcd\x01\n\x08MetaData\x12+\n\x07project\x18\x01 \x01(\x0b\x32\x1a.fedlearn.MetaData.Project\x12\x15\n\rcurrent_round\x18\x02 \x01(\x03\x12\x12\n\nnum_rounds\x18\x03 \x01(\x03\x12\x12\n\nrun_number\x18\x04 \x01(\x03\x12+\n\x07\x63reated\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a(\n\x07Project\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\t\"~\n\tModelData\x12/\n\x06params\x18\x01 \x03(\x0b\x32\x1f.fedlearn.ModelData.ParamsEntry\x1a@\n\x0bParamsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12 \n\x05value\x18\x02 \x01(\x0b\x32\x11.fedlearn.NDArray:\x02\x38\x01\"\x1a\n\x07NDArray\x12\x0f\n\x07ndarray\x18\x01 \x01(\x0c\"\x91\x01\n\x0b\x43urrentTask\x12 \n\x04meta\x18\x01 \x01(\x0b\x32\x12.fedlearn.MetaData\x12!\n\x04\x64\x61ta\x18\x02 \x01(\x0b\x32\x13.fedlearn.ModelData\x12*\n\tmeta_data\x18\x03 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x11\n\ttask_name\x18\x04 \x01(\t\"b\n\x10\x46\x65\x64\x65ratedSummary\x12 \n\x04meta\x18\x01 \x01(\x0b\x32\x12.fedlearn.MetaData\x12\x0f\n\x07\x63omment\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\x12\x0c\n\x04ssid\x18\x04 \x01(\t\"f\n\x0b\x43lientLogin\x12\x13\n\x0b\x63lient_name\x18\x01 \x01(\t\x12\r\n\x05token\x18\x02 \x01(\t\x12\x11\n\tclient_ip\x18\x03 \x01(\t\x12 \n\x04meta\x18\x04 \x01(\x0b\x32\x12.fedlearn.MetaData\"\x85\x02\n\x0b\x43lientState\x12 \n\x04meta\x18\x01 \x01(\x0b\x32\x12.fedlearn.MetaData\x12\x13\n\x0b\x63lient_name\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\x12*\n\tmeta_data\x18\x04 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x33\n\x07\x63ontext\x18\x05 \x03(\x0b\x32\".fedlearn.ClientState.ContextEntry\x12\x0c\n\x04ssid\x18\x06 \x01(\t\x1a\x41\n\x0c\x43ontextEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12 \n\x05value\x18\x02 \x01(\x0b\x32\x11.fedlearn.NDArray:\x02\x38\x01\"\xb5\x01\n\x0c\x43ontribution\x12%\n\x06\x63lient\x18\x01 \x01(\x0b\x32\x15.fedlearn.ClientState\x12\x0e\n\x06n_iter\x18\x02 \x01(\x03\x12\x0c\n\x04type\x18\x03 \x01(\t\x12!\n\x04\x64\x61ta\x18\x04 \x01(\x0b\x32\x13.fedlearn.ModelData\x12*\n\tmeta_data\x18\x05 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x11\n\ttask_name\x18\x06 \x01(\t\"9\n\x05Token\x12\r\n\x05token\x18\x01 \x01(\t\x12\x13\n\x0b\x63lient_name\x18\x02 \x01(\t\x12\x0c\n\x04ssid\x18\x03 \x01(\t\"\xa1\x01\n\nAuxMessage\x12%\n\x06\x63lient\x18\x01 \x01(\x0b\x32\x15.fedlearn.ClientState\x12,\n\x04\x64\x61ta\x18\x02 \x03(\x0b\x32\x1e.fedlearn.AuxMessage.DataEntry\x1a>\n\tDataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12 \n\x05value\x18\x02 \x01(\x0b\x32\x11.fedlearn.NDArray:\x02\x38\x01\"-\n\x08\x41uxReply\x12!\n\x04\x64\x61ta\x18\x01 \x01(\x0b\x32\x13.fedlearn.ModelData2\x8c\x03\n\x11\x46\x65\x64\x65ratedTraining\x12?\n\x08Register\x12\x15.fedlearn.ClientLogin\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12;\n\x04Quit\x12\x15.fedlearn.ClientState\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12\x39\n\x07GetTask\x12\x15.fedlearn.ClientState\x1a\x15.fedlearn.CurrentTask\"\x00\x12\x44\n\x0cSubmitUpdate\x12\x16.fedlearn.Contribution\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12:\n\tHeartbeat\x12\x0f.fedlearn.Token\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12<\n\x0e\x41uxCommunicate\x12\x14.fedlearn.AuxMessage\x1a\x12.fedlearn.AuxReply\"\x00\x62\x06proto3'
+  serialized_pb=b'\n*nvflare/private/fed/protos/federated.proto\x12\x08\x66\x65\x64learn\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xcd\x01\n\x08MetaData\x12+\n\x07project\x18\x01 \x01(\x0b\x32\x1a.fedlearn.MetaData.Project\x12\x15\n\rcurrent_round\x18\x02 \x01(\x03\x12\x12\n\nnum_rounds\x18\x03 \x01(\x03\x12\x12\n\nrun_number\x18\x04 \x01(\x03\x12+\n\x07\x63reated\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a(\n\x07Project\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\t\"~\n\tModelData\x12/\n\x06params\x18\x01 \x03(\x0b\x32\x1f.fedlearn.ModelData.ParamsEntry\x1a@\n\x0bParamsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12 \n\x05value\x18\x02 \x01(\x0b\x32\x11.fedlearn.NDArray:\x02\x38\x01\"\x1a\n\x07NDArray\x12\x0f\n\x07ndarray\x18\x01 \x01(\x0c\"\x91\x01\n\x0b\x43urrentTask\x12 \n\x04meta\x18\x01 \x01(\x0b\x32\x12.fedlearn.MetaData\x12!\n\x04\x64\x61ta\x18\x02 \x01(\x0b\x32\x13.fedlearn.ModelData\x12*\n\tmeta_data\x18\x03 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x11\n\ttask_name\x18\x04 \x01(\t\"b\n\x10\x46\x65\x64\x65ratedSummary\x12 \n\x04meta\x18\x01 \x01(\x0b\x32\x12.fedlearn.MetaData\x12\x0f\n\x07\x63omment\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\x12\x0c\n\x04ssid\x18\x04 \x01(\t\"f\n\x0b\x43lientLogin\x12\x13\n\x0b\x63lient_name\x18\x01 \x01(\t\x12\r\n\x05token\x18\x02 \x01(\t\x12\x11\n\tclient_ip\x18\x03 \x01(\t\x12 \n\x04meta\x18\x04 \x01(\x0b\x32\x12.fedlearn.MetaData\"\x85\x02\n\x0b\x43lientState\x12 \n\x04meta\x18\x01 \x01(\x0b\x32\x12.fedlearn.MetaData\x12\x13\n\x0b\x63lient_name\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\x12*\n\tmeta_data\x18\x04 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x33\n\x07\x63ontext\x18\x05 \x03(\x0b\x32\".fedlearn.ClientState.ContextEntry\x12\x0c\n\x04ssid\x18\x06 \x01(\t\x1a\x41\n\x0c\x43ontextEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12 \n\x05value\x18\x02 \x01(\x0b\x32\x11.fedlearn.NDArray:\x02\x38\x01\"\xb5\x01\n\x0c\x43ontribution\x12%\n\x06\x63lient\x18\x01 \x01(\x0b\x32\x15.fedlearn.ClientState\x12\x0e\n\x06n_iter\x18\x02 \x01(\x03\x12\x0c\n\x04type\x18\x03 \x01(\t\x12!\n\x04\x64\x61ta\x18\x04 \x01(\x0b\x32\x13.fedlearn.ModelData\x12*\n\tmeta_data\x18\x05 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x11\n\ttask_name\x18\x06 \x01(\t\"G\n\x05Token\x12\r\n\x05token\x18\x01 \x01(\t\x12\x13\n\x0b\x63lient_name\x18\x02 \x01(\t\x12\x0c\n\x04ssid\x18\x03 \x01(\t\x12\x0c\n\x04jobs\x18\x04 \x03(\t\"\xa1\x01\n\nAuxMessage\x12%\n\x06\x63lient\x18\x01 \x01(\x0b\x32\x15.fedlearn.ClientState\x12,\n\x04\x64\x61ta\x18\x02 \x03(\x0b\x32\x1e.fedlearn.AuxMessage.DataEntry\x1a>\n\tDataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12 \n\x05value\x18\x02 \x01(\x0b\x32\x11.fedlearn.NDArray:\x02\x38\x01\"-\n\x08\x41uxReply\x12!\n\x04\x64\x61ta\x18\x01 \x01(\x0b\x32\x13.fedlearn.ModelData2\x8c\x03\n\x11\x46\x65\x64\x65ratedTraining\x12?\n\x08Register\x12\x15.fedlearn.ClientLogin\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12;\n\x04Quit\x12\x15.fedlearn.ClientState\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12\x39\n\x07GetTask\x12\x15.fedlearn.ClientState\x1a\x15.fedlearn.CurrentTask\"\x00\x12\x44\n\x0cSubmitUpdate\x12\x16.fedlearn.Contribution\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12:\n\tHeartbeat\x12\x0f.fedlearn.Token\x1a\x1a.fedlearn.FederatedSummary\"\x00\x12<\n\x0e\x41uxCommunicate\x12\x14.fedlearn.AuxMessage\x1a\x12.fedlearn.AuxReply\"\x00\x62\x06proto3'
   ,
   dependencies=[google_dot_protobuf_dot_timestamp__pb2.DESCRIPTOR,google_dot_protobuf_dot_struct__pb2.DESCRIPTOR,])
 
@@ -588,6 +588,13 @@ _TOKEN = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='jobs', full_name='fedlearn.Token.jobs', index=3,
+      number=4, type=9, cpp_type=9, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
   ],
   extensions=[
   ],
@@ -601,7 +608,7 @@ _TOKEN = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=1283,
-  serialized_end=1340,
+  serialized_end=1354,
 )
 
 
@@ -639,8 +646,8 @@ _AUXMESSAGE_DATAENTRY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1442,
-  serialized_end=1504,
+  serialized_start=1456,
+  serialized_end=1518,
 )
 
 _AUXMESSAGE = _descriptor.Descriptor(
@@ -677,8 +684,8 @@ _AUXMESSAGE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1343,
-  serialized_end=1504,
+  serialized_start=1357,
+  serialized_end=1518,
 )
 
 
@@ -709,8 +716,8 @@ _AUXREPLY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1506,
-  serialized_end=1551,
+  serialized_start=1520,
+  serialized_end=1565,
 )
 
 _METADATA_PROJECT.containing_type = _METADATA
@@ -871,8 +878,8 @@ _FEDERATEDTRAINING = _descriptor.ServiceDescriptor(
   index=0,
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_start=1554,
-  serialized_end=1950,
+  serialized_start=1568,
+  serialized_end=1964,
   methods=[
   _descriptor.MethodDescriptor(
     name='Register',

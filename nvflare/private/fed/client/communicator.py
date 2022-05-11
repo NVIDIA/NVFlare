@@ -391,7 +391,7 @@ class Communicator:
                     time.sleep(3)
         return server_message
 
-    def send_heartbeat(self, servers, task_name, token, ssid, client_name):
+    def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine):
         message = fed_msg.Token()
         message.token = token
         message.ssid = ssid
@@ -405,6 +405,9 @@ class Communicator:
                 while retry > 0:
                     try:
                         self.logger.debug(f"Send {task_name} heartbeat {token}")
+                        run_numbers = engine.get_all_run_numbers()
+                        del message.jobs[:]
+                        message.jobs.extend(run_numbers)
                         stub.Heartbeat(message)
                         break
                     except grpc.RpcError as grpc_error:

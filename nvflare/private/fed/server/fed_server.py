@@ -634,8 +634,19 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if self.admin_server:
                 self.admin_server.client_heartbeat(token)
 
+            self._sync_client_jobs(request, client_name)
+
             summary_info = fed_msg.FederatedSummary()
             return summary_info
+
+    def _sync_client_jobs(self, request, client_name):
+        client_jobs = request.jobs
+        server_jobs = self.engine.run_processes.keys()
+        jobs_need_abort = list(set(client_jobs).difference(server_jobs))
+        with self.engine.new_context() as fl_ctx:
+            job_runner = self.engine.job_runner
+            for run_number in jobs_need_abort:
+                job_runner.abort_client_run(self.engine, run_number, [client_name], fl_ctx)
 
     def Retrieve(self, request, context):
         client_name = request.client_name
