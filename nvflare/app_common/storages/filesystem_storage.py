@@ -27,7 +27,7 @@ URI_ROOT = os.path.abspath(os.sep)
 
 
 def _write(path: str, content):
-    tmp_path = "_" + str(uuid.uuid4())
+    tmp_path = path + "_" + str(uuid.uuid4())
     try:
         Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
         with open(tmp_path, "wb") as f:
