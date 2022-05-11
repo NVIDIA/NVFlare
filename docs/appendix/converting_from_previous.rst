@@ -30,7 +30,8 @@ In 2.0, admin users (researchers) conduct a RUN by first creating apps, and then
 apps interactively via admin commands. As discussed above, this changes in 2.1.0, where the user simply submits the
 jobs and lets the system do the rest.
 
-This means that the user, instead of creating only apps, will need to create jobs. A Job is a folder that contains
+This means that the user, instead of creating only apps, will need to create jobs (an app that is uploaded as job will
+automatically be converted into a simple job for compatibility without creating a job). A Job is a folder that contains
 one or more apps, and the extra meta.json file. Please look under Job above to see sample contents of meta.json as
 well as the keys that are required. The “deploy_map” will specify which sites each app should be deployed to, and all
 of the specified apps must be in the Job folder.

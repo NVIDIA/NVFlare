@@ -9,8 +9,8 @@ automatic cutover when the currently active server becomes unavailable.
 
 The following areas were enhanced for supporting HA:
 
-    - There can now be any number of FL servers (e.g. SP1, SP2, ...), and only one of them is in active service mode (hot), with
-      all others in standby mode (cold).
+    - There can now be any number of FL servers (e.g. SP1, SP2, where SP stands for service provider), and only one
+      of them is in active service mode (hot), with all others in standby mode (cold).
     - A new service called Overseer was added to oversee the overall availability of its clients (e.g. which SP is the
       hot or active one). Overseer setup is now required in provisioning.
     - State Storage is now used by the Overseer to keep system availability state info.
@@ -180,7 +180,9 @@ HA Running Job Migration
 All the FLComponents in the FL workflow have the option to implement the StatePersistable, which is to decide what
 kind of data needs to persist and migrate to another server in the case of HA SP cutover. The FL snapshot includes
 the current running state of all the FLComponents, the FLContext, and the current Job workspace. Once the HA SP cutover
-occurs, the new SP will restore the FLContext, the Job workspace, and all the components' working states.
+occurs, the new SP will restore the FLContext, the Job workspace, and all the components' working states. Note that
+depending on when the state is persisted, there is potentially a portion of work that may still be lost when the state
+is restored.
 
 FLCompoent
 ==========

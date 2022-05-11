@@ -99,22 +99,12 @@ Start: Instructions for each participant to start running FL with their startup 
 
 Overseer ($OVERSEER_NAME.zip)
 =============================
-One single server will coordinate the federated learning training and be the main hub all clients and administrator
-clients connect to.
+One single Overseer will keep track of all the FL servers and communicate to all the participants through their Overseer
+Agents the active FL server or SP.
 
-After unzipping the package server.zip, run the start.sh file from the "startup" folder you unzipped to start the server.
+After unzipping the package for the Overseer, run the start.sh file from the "startup" folder you unzipped to start the Overseer.
 
-The rootCA.pem file is pointed to by "ssl_root_cert" in fed_server.json.  If you plan to move/copy it to a different place,
-you will need to modify fed_server.json.  The same applies to the other two files, server.crt and server.key.
-
-.. note::
-
-   When launching the FL server inside a docker with ``docker run``, use ``--net=host`` to map hostname into that
-   docker instance.  For secure gRPC communication, the FL server has to bind to the hostname specified in the
-   provisioning stage. Always make sure that hostname is what FL server can bind to. Additionally,
-   the port that the server communicates on must also not be blocked by any firewalls.
-
-If clients from other machines cannot connect to the server, make sure that the hostname (name of the server under
+If clients from other machines cannot connect to the Overseer, make sure that the hostname (name of the server under
 participants in project.yml) specified when generating the startup kits in the provisioning process resolves to the
 correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
 to ``/etc/hosts`` with the internal IP and the hostname.

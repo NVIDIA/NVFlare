@@ -89,6 +89,14 @@ NVIDIA FLARE provides a simple implementation that is based on scanning of job d
 
     - :class:`Simple Job Def Manager<nvflare.apis.impl.job_def_manager.SimpleJobDefManager>`
 
+Job Storage
+^^^^^^^^^^^
+The Job definition is stored in a persistent store (used by Simple Job Def Manager). The Job Storage config specifies the Python object that manages the access to the store.
+
+This component is specified as one item in the components.server section.
+
+This configuration is included in the fed_server.json of the Server’s Startup Kit.
+
 Job Scheduler
 -------------
 The Job scheduler is responsible for determining the next job to run. Job scheduler config specifies the Job scheduler Python object.
@@ -107,32 +115,8 @@ NVIDIA FLARE provides a default implementation of the Job Scheduler that does re
 
 Storage
 -------
+Storage is used in Study Storage, Job Storage, and Job Execution State Storage. See the specific sections for more details.
 
-Study Storage
-^^^^^^^^^^^^^
-The Study definition is stored in a persistent store. The Study Storage config specifies the Python object that manages the access to the store.
-
-This component is specified as one item in the components.server section.
-
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
-
-Job Storage
-^^^^^^^^^^^
-The Job definition is stored in a persistent store. The Job Storage config specifies the Python object that manages the access to the store.
-
-This component is specified as one item in the components.server section.
-
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
-
-Job Execution State Storage
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The Job Execution State is stored in a persistent store. The Job Execution State Storage config specifies the Python
-object that manages the access to the store.
-
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
-
-StorageSpec
-^^^^^^^^^^^
 :class:`Storage Spec<nvflare.apis.storage.StorageSpec>`
 
 NVIDIA FLARE provides two simple storage implementations:
@@ -156,8 +140,16 @@ NVIDIA FLARE provides a simple implementation:
 
     - :class:`Study Manager<nvflare.apis.impl.study_manager.StudyManager>`
 
+Study Storage
+^^^^^^^^^^^^^
+The Study definition is stored in a persistent store. The Study Storage config specifies the Python object that manages the access to the store.
+
+This component is specified as one item in the components.server section.
+
+This configuration is included in the fed_server.json of the Server’s Startup Kit.
+
 Resource Manager
------------------------------
+-----------------
 The Resource Manager is responsible for managing job resources on FL Client. Resource Manager config specifies the Resource Manager Python object.
 
 The system reserved component id, resource_manager, is used to denote the Resource Manager in the project.yml file.
@@ -188,3 +180,14 @@ This component is specified as one item in the components.client section.
 NVIDIA FLARE provides a GPU resource consumer:
 
     - :class:`GPU Resource Consumer<nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer>`
+
+Snapshot Persisting
+-------------------
+The Job Execution State is persisted in snapshots with the Job Execution State Storage.
+
+Job Execution State Storage
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The Job Execution State is stored in a persistent store. The Job Execution State Storage config specifies the Python
+object that manages the access to the store.
+
+This configuration is included in the fed_server.json of the Server’s Startup Kit.

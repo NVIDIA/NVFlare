@@ -94,9 +94,7 @@ Viewing the TensorBoard Dashboard during Training
 Now you can use admin command prompt to submit and start this example app. To do this on a proof of concept local
 FL system, follow the sections :ref:`setting_up_poc` and :ref:`starting_poc` if you have not already.
 
-With the admin client command prompt successfully connected and logged in, enter the command below.  Pay close
-attention to what happens in each of four terminals. You can see how the admin submits the job to the server and how
-the JobRunner on the server automatically picks up the job to deploy and start the run.
+.. include:: run_example.rst
 
 Log into the Admin client by entering ``admin`` for both the username and password.
 Then, use these Admin commands to run the experiment:

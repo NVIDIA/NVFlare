@@ -43,14 +43,14 @@ Here is an example for meta.json::
       },
       "deploy_map": {
         "hello-numpy-sag-server": [
-              "server"
+          "server"
         ],
         "hello-numpy-sag-client": [
           "client1",
           "client2"
         ],
         "hello-numpy-sag-client3": [
-              "client3"
+          "client3"
         ]
       },
       "min_clients": 2,
