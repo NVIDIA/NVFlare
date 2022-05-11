@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import sys
 import time
-import traceback
 
 import pytest
 import yaml
@@ -217,7 +216,7 @@ class TestSystem:
             print(f"Job name: {job_name}, Result: {job_result}")
             if not job_result:
                 failure = True
-        print(f"Final result: {failure}")
+        print(f"Final result: {not failure}")
         print("==============================================================")
 
         if failure:

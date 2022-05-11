@@ -17,7 +17,7 @@ import time
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 
@@ -67,21 +67,8 @@ class NPTrainer(Executor):
         count, interval = 0, 0.5
         while count < self._sleep_time:
             if abort_signal.triggered:
-                return self._get_exception_shareable()
+                return make_reply(ReturnCode.TASK_ABORTED)
             time.sleep(interval)
             count += interval
 
-        shareable = Shareable()
-        shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        return shareable
-
-    def _get_exception_shareable(self) -> Shareable:
-        """Abort execution. This is used if abort_signal is triggered. Users should
-        make sure they abort any running processes here.
-
-        Returns:
-            Shareable: Shareable with return_code.
-        """
-        shareable = Shareable()
-        shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        return shareable
+        return make_reply(ReturnCode.EXECUTION_EXCEPTION)
