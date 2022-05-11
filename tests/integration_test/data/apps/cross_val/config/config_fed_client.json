@@ -7,7 +7,7 @@
         "submit_model"
       ],
       "executor": {
-        "path": "tests.integration_test.np.np_trainer.NPTrainer",
+        "path": "nvflare.app_common.np.np_trainer.NPTrainer",
         "args": {}
       }
     },
@@ -16,7 +16,7 @@
         "validate"
       ],
       "executor": {
-        "path": "tests.integration_test.np.np_validator.NPValidator"
+        "path": "nvflare.app_common.np.np_validator.NPValidator"
       }
     }
   ],

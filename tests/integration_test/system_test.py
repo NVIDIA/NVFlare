@@ -53,7 +53,7 @@ def cleanup_path(path: str):
 
 
 params = [
-    # "./data/test_examples.yml",
+    "./data/test_examples.yml",
     "./data/test_internal.yml",
     "./data/test_ha.yml",
 ]
@@ -110,6 +110,7 @@ def setup_and_teardown(request):
             app_root_folder=test_config["apps_root_dir"],
             clients=[x["name"] for x in site_launcher.client_properties.values()],
             destination=jobs_root_dir,
+            app_as_job=True,
         )
         test_jobs.append(
             (

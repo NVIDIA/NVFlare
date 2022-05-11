@@ -33,7 +33,9 @@ def generate_meta(job_name: str, clients: List[str], study_name: str = Study.DEF
     return meta
 
 
-def generate_job_dir_for_single_app_job(app_root_folder: str, app_name: str, clients: List[str], destination: str):
+def generate_job_dir_for_single_app_job(
+    app_root_folder: str, app_name: str, clients: List[str], destination: str, app_as_job: bool = True
+):
     app_folder = os.path.join(app_root_folder, app_name)
     print(os.path.abspath(app_folder))
     if not os.path.exists(app_folder):
@@ -44,12 +46,15 @@ def generate_job_dir_for_single_app_job(app_root_folder: str, app_name: str, cli
     job_folder = os.path.join(destination, app_name)
     if os.path.exists(job_folder):
         shutil.rmtree(job_folder)
-    os.makedirs(job_folder)
-    shutil.copytree(app_folder, os.path.join(job_folder, app_name))
+    if app_as_job:
+        shutil.copytree(app_folder, job_folder)
+    else:
+        os.makedirs(job_folder)
+        shutil.copytree(app_folder, os.path.join(job_folder, app_name))
 
-    meta = generate_meta(job_name=app_name, clients=clients)
-    with open(os.path.join(job_folder, "meta.json"), "w") as f:
-        json.dump(meta, f, indent=2)
+        meta = generate_meta(job_name=app_name, clients=clients)
+        with open(os.path.join(job_folder, "meta.json"), "w") as f:
+            json.dump(meta, f, indent=2)
 
     return job_folder
 

@@ -310,7 +310,11 @@ class AdminController:
             ):
 
                 # compare run_state to expected result_state from the test case
-                if event_idx < len(ha_events) and event_test_status[event_idx] and response["status"] == APIStatus.SUCCESS:
+                if (
+                    event_idx < len(ha_events)
+                    and event_test_status[event_idx]
+                    and response["status"] == APIStatus.SUCCESS
+                ):
                     result_state = ha_events[event_idx]["result_state"]
                     if any(list(run_state.values())):
                         if result_state == "unchanged":

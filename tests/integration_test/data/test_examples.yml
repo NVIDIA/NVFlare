@@ -1,14 +1,15 @@
-poc: ../../nvflare/poc
-n_clients: 2
-jobs_root_dir: ./jobs
+system_setup: ./data/system/1_server_2_clients.yml
+jobs_root_dir: ./data/jobs
 apps_root_dir: ../../examples
-snapshot_path: /tmp/snapshot-storage
+snapshot_path: /tmp/snapshot-storage # need to match what's inside poc, TODO: auto generate
+job_store_path: /tmp/jobs-storage # need to match what's inside poc, TODO: auto generate
 cleanup: True
 
+
 tests:
-  - app_name: hello-pt
+  - app_name: hello-cyclic
     validators:
-      - tests.integration_test.validators.pt_model_validator.PTModelValidator
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator
   - app_name: hello-numpy-cross-val
     validators:
       - tests.integration_test.validators.cross_val_result_validator.CrossValResultValidator
@@ -16,9 +17,13 @@ tests:
   - app_name: hello-numpy-sag
     validators:
       - tests.integration_test.validators.sag_result_validator.SAGResultValidator
-  - app_name: hello-tf2
+  - app_name: hello-pt
     validators:
-      - tests.integration_test.validators.tf_model_validator.TFModelValidator
-  - app_name: hello-cyclic
+      - tests.integration_test.validators.pt_model_validator.PTModelValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/cifar10_data
+  - app_name: hello-tf2
     validators:
       - tests.integration_test.validators.tf_model_validator.TFModelValidator
