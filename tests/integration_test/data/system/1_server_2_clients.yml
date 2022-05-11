@@ -1,0 +1,3 @@
+poc: ../../nvflare/poc
+n_servers: 1
+n_clients: 2

@@ -49,7 +49,9 @@ class NPModelPersistor(ModelPersistor):
                 data = np.load(model_path)
             except Exception as e:
                 self.log_exception(
-                    fl_ctx, f"Unable to load model from {model_path}. Using default data instead.", fire_event=False
+                    fl_ctx,
+                    f"Unable to load model from {model_path}: {e}. Using default data instead.",
+                    fire_event=False,
                 )
                 data = self.default_data.copy()
         else:
@@ -72,6 +74,5 @@ class NPModelPersistor(ModelPersistor):
 
         model_save_path = os.path.join(model_path, self.model_name)
         if model_save_path:
-            with open(model_save_path, "wb") as f:
-                np.save(f, model[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
+            np.save(model_save_path, model[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
             self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")

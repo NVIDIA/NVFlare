@@ -41,6 +41,7 @@ class POCDirectory:
     def __init__(
         self,
         poc_dir,
+        ha=False,
         server_dir_name="server",
         client_dir_name="client",
         admin_dir_name="admin",
@@ -54,6 +55,7 @@ class POCDirectory:
             if not os.path.isdir(os.path.join(poc_dir, f)):
                 raise ValueError(f"{f} is not a directory inside poc.")
         self.poc_dir = poc_dir
+        self.ha = ha
         self.server_dir_name = server_dir_name
         self.client_dir_name = client_dir_name
         self.admin_dir_name = admin_dir_name
@@ -63,6 +65,10 @@ class POCDirectory:
         if os.path.exists(dst):
             shutil.rmtree(dst)
         shutil.copytree(self.poc_dir, dst)
+        if self.ha:
+            for name in ("admin", "server", "client"):
+                d = os.path.join(dst, f"{name}", "startup")
+                os.rename(os.path.join(d, f"fed_{name}_HA.json"), os.path.join(d, f"fed_{name}.json"))
         return POCDirectory(
             poc_dir=dst,
             server_dir_name=self.server_dir_name,
@@ -78,11 +84,17 @@ class POCDirectory:
         return os.path.join(self.poc_dir, self.server_dir_name)
 
 
+def _kill_process(process, name: str):
+    os.killpg(process.pid, signal.SIGTERM)
+    subprocess.call(["kill", str(process.pid)])
+    print(f"Sent SIGTERM to {name}.")
+    process.communicate()
+
+
 class SiteLauncher:
     def __init__(
         self,
         poc_directory: POCDirectory,
-        ha=False,
     ):
         """
         This class sets up the test environment for a test. It will launch and keep track of servers and clients.
@@ -97,16 +109,9 @@ class SiteLauncher:
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # TODO: What is log directory and should it be added here?
         root_dir = tempfile.mkdtemp()
         self.poc_directory = self.original_poc_directory.copy_to(root_dir)
         print(f"Using POC at dir: {self.poc_directory.poc_dir}")
-
-        if ha:
-            for name in ("admin", "server", "client"):
-                d = os.path.join(self.poc_directory.poc_dir, f"{name}", "startup")
-                os.rename(os.path.join(d, f"fed_{name}.json"), os.path.join(d, f"fed_{name}_old.json"))
-                os.rename(os.path.join(d, f"fed_{name}_HA.json"), os.path.join(d, f"fed_{name}.json"))
 
     def start_overseer(self):
         overseer_dir = self.poc_directory.overseer_dir()
@@ -118,11 +123,11 @@ class SiteLauncher:
             shlex.split(command),
             preexec_fn=os.setsid,
             env=new_env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         print("Starting overseer ...")
-
-        # t = threading.Thread(target=process_logs, args=(log_path, process))
-        # t.start()
 
         self.overseer_properties["path"] = overseer_dir
         self.overseer_properties["process"] = process
@@ -150,8 +155,7 @@ class SiteLauncher:
                 with open(fed_server_path, "r") as f:
                     fed_server_json = f.read()
 
-                admin_port = f"8{i}03"
-                fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", admin_port)
+                fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", f"8{i}03")
 
                 with open(fed_server_path, "w") as f:
                     f.write(fed_server_json)
@@ -187,14 +191,7 @@ class SiteLauncher:
         )
         self.server_properties[server_id]["process"] = process
 
-        print(f"Starting server ({server_id}) with {command}: {process.pid}")
-
-        # t = threading.Thread(target=process_logs, args=(log_path, process))
-        # t.start()
-
-        # self.server_properties["path"] = server_dir_name
-        # self.server_properties["process"] = process
-        # self.server_properties["log_path"] = log_path
+        print(f"Launched server ({server_id}) using {command}. process_id: {process.pid}")
 
     def start_clients(self, n=2):
         # Make sure that previous clients are killed
@@ -240,10 +237,7 @@ class SiteLauncher:
         )
         self.client_properties[client_id]["process"] = process
 
-        print(f"Launched client {client_id} process with {command}.")
-
-        # t = threading.Thread(target=process_logs, args=(log_path, process))
-        # t.start()
+        print(f"Launched client {client_id} process using {command}. process_id: {process.pid}")
 
     def get_active_server_id(self, port):
         active_server_id = -1
@@ -267,7 +261,7 @@ class SiteLauncher:
                 "server_path": server_prop["path"],
                 "server_process": server_prop["process"],
                 "server_name": server_prop["name"],
-                "root_dir": self.poc_directory,
+                "root_dir": self.poc_directory.poc_dir,
                 "log_path": server_prop["log_path"],
             }
 
@@ -286,11 +280,7 @@ class SiteLauncher:
         try:
             # Kill the process
             if "process" in self.overseer_properties and self.overseer_properties["process"]:
-                os.killpg(self.overseer_properties["process"].pid, signal.SIGTERM)
-
-                subprocess.call(["kill", str(self.overseer_properties["process"].pid)])
-                self.overseer_properties["process"].wait()
-                print("Sent SIGTERM to overseer.")
+                _kill_process(self.overseer_properties["process"], "overseer")
             else:
                 print("No overseer process.")
         except Exception as e:
@@ -303,11 +293,7 @@ class SiteLauncher:
         try:
             # Kill the process
             if "process" in server_prop and server_prop["process"]:
-                os.killpg(server_prop["process"].pid, signal.SIGTERM)
-
-                subprocess.call(["kill", str(server_prop["process"].pid)])
-                server_prop["process"].wait()
-                print("Sent SIGTERM to server.")
+                _kill_process(server_prop["process"], "server")
             else:
                 print("No server process.")
         except Exception as e:
@@ -323,11 +309,7 @@ class SiteLauncher:
             return False
 
         try:
-            os.killpg(self.client_properties[client_id]["process"].pid, signal.SIGTERM)
-            subprocess.call(["kill", str(self.client_properties[client_id]["process"].pid)])
-            self.client_properties[client_id]["process"].wait()
-
-            print(f"Sent SIGTERM to client {client_id}.")
+            _kill_process(self.client_properties[client_id]["process"], f"client: {client_id}")
         except Exception as e:
             print(f"Exception in stopping client {client_id}: {e.__str__()}")
             return False

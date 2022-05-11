@@ -28,6 +28,18 @@ from nvflare.app_common.app_constant import AppConstants
 from .constants import NPConstants
 
 
+def _abort_execution() -> Shareable:
+    """Abort execution. This is used if abort_signal is triggered. Users should
+    make sure they abort any running processes here.
+
+    Returns:
+        Shareable: Shareable with return_code.
+    """
+    shareable = Shareable()
+    shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+    return shareable
+
+
 class NPValidator(Executor):
     def __init__(
         self,

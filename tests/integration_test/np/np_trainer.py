@@ -29,6 +29,18 @@ from nvflare.app_common.app_constant import AppConstants
 from .constants import NPConstants
 
 
+def _get_exception_shareable() -> Shareable:
+    """Abort execution. This is used if abort_signal is triggered. Users should
+    make sure they abort any running processes here.
+
+    Returns:
+        Shareable: Shareable with return_code.
+    """
+    shareable = Shareable()
+    shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+    return shareable
+
+
 class NPTrainer(Executor):
     def __init__(
         self,
@@ -205,6 +217,5 @@ class NPTrainer(Executor):
             os.makedirs(model_path)
 
         model_save_path = os.path.join(model_path, self._model_name)
-        with open(model_save_path, "wb") as f:
-            np.save(f, model[NPConstants.NUMPY_KEY])
+        np.save(model_save_path, model[NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")

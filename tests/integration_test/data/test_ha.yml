@@ -1,0 +1,27 @@
+system_setup: ./data/system/ha_1_server_2_clients.yml
+jobs_root_dir: ./data/jobs
+apps_root_dir: ./data/apps
+snapshot_path: /tmp/snapshot-storage # need to match what's inside poc, TODO: auto generate
+job_store_path: /tmp/jobs-storage # need to match what's inside poc, TODO: auto generate
+cleanup: True
+
+
+tests:
+  # - app_name: pt
+  #   validators:
+  #     - tests.integration_test.validators.pt_model_validator.PTModelValidator
+  # - app_name: cyclic
+  #   validators:
+  #     - tests.integration_test.validators.tf_model_validator.TFModelValidator
+#  - app_name: sag
+#    validators:
+#      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+#    event_sequence_yaml: ./data/ha/kill_server_during_training_before_first_round.yml
+#  - app_name: sag
+#    validators:
+#      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+#    event_sequence_yaml: ./data/ha/kill_server_during_training_after_first_round.yml
+  - app_name: sag
+    validators:
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+    event_sequence_yaml: ./data/ha/kill_server_during_training_sending_model.yml
