@@ -49,7 +49,7 @@ class NPValidator(Executor):
         # if event_type == EventType.START_RUN:
         #     Create all major components here. This is a simple app that doesn't need any components.
         # elif event_type == EventType.END_RUN:
-        #     # Clean up resources (closing files, joining threads, removing dirs etc)
+        #     # Clean up resources (closing files, joining threads, removing dirs etc.)
         pass
 
     def execute(
@@ -59,8 +59,8 @@ class NPValidator(Executor):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Shareable:
-        # Any long tasks should check abort_signal regularly. Otherwise abort client
-        # will not work.
+        # Any long tasks should check abort_signal regularly.
+        # Otherwise, abort client will not work.
         count, interval = 0, 0.5
         while count < self._sleep_time:
             if abort_signal.triggered:
@@ -121,8 +121,8 @@ class NPValidator(Executor):
                 # Create DXO for metrics and return shareable.
                 metric_dxo = DXO(data_kind=DataKind.METRICS, data=val_results)
                 return metric_dxo.to_shareable()
-            except:
-                self.log_exception(fl_ctx, "Exception in NPValidator execute.")
+            except Exception as e:
+                self.log_exception(fl_ctx, f"Exception in NPValidator execute: {e}.")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)

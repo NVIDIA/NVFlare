@@ -58,7 +58,7 @@ class NPTrainer(Executor):
         # if event_type == EventType.START_RUN:
         #     Create all major components here. This is a simple app that doesn't need any components.
         # elif event_type == EventType.END_RUN:
-        #     # Clean up resources (closing files, joining threads, removing dirs etc)
+        #     # Clean up resources (closing files, joining threads, removing dirs etc.)
         pass
 
     def _train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
@@ -205,6 +205,5 @@ class NPTrainer(Executor):
             os.makedirs(model_path)
 
         model_save_path = os.path.join(model_path, self._model_name)
-        with open(model_save_path, "wb") as f:
-            np.save(f, model[NPConstants.NUMPY_KEY])
+        np.save(model_save_path, model[NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")

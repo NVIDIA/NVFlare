@@ -73,7 +73,7 @@ class NPModelLocator(ModelLocator):
                 if np_data is not None:
                     weights = {NPConstants.NUMPY_KEY: np_data}
                     dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
-            except:
-                self.log_exception(fl_ctx, f"Exception in retrieving {NPModelLocator.SERVER_MODEL_NAME} model.")
+            except Exception as e:
+                self.log_exception(fl_ctx, f"Exception in retrieving {NPModelLocator.SERVER_MODEL_NAME} model: {e}.")
 
         return dxo
