@@ -28,18 +28,7 @@ pip install -r ./virtualenv/plot-requirements.txt
 The next scripts will start the FL server and 8 clients automatically to run FL experiments on localhost.
 In this example, we run all 8 clients on one GPU with 12 GB memory per job.
 
-### 2.1 POC ("proof of concept") workspace
-To run FL experiments in POC mode, create your local FL workspace the below command. 
-In the following experiments, we will be using 8 clients. Press y and enter when prompted. 
-```
-./create_poc_workpace.sh 8
-```
-Then, start the FL system with 8 clients by running
-```
-./start_fl_poc.sh 8
-```
-
-### 2.2 (Optional) Secure FL workspace
+### 2.1 Secure FL workspace
 
 The project file for creating the secure workspace used in this example is shown at 
 [./workspaces/secure_project.yml](./workspaces/secure_project.yml).
@@ -57,6 +46,17 @@ For more information about secure provisioning see the [documentation](https://n
 For starting the FL system with 8 clients in the secure workspace, run
 ```
 ./start_fl_secure.sh 8
+```
+
+### 2.2 (Optional) POC ("proof of concept") workspace
+To run FL experiments in POC mode, create your local FL workspace the below command. 
+In the following experiments, we will be using 8 clients. Press y and enter when prompted. 
+```
+./create_poc_workpace.sh 8
+```
+Then, start the FL system with 8 clients by running
+```
+./start_fl_poc.sh 8
 ```
 
 > **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
@@ -82,6 +82,8 @@ To speed up the following experiments, first download the [CIFAR-10](https://www
 ```
 python3 ./pt/utils/cifar10_download_data.py
 ```
+> **_NOTE:_** This is important for running multi-task experiments. Otherwise, each job will try to download the dataset 
+> to the same location which might cause a file corruption.
 
 ## 3. Run automated experiments
 

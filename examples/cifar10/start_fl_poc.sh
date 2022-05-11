@@ -17,7 +17,7 @@ fi
 
 # start server
 echo "STARTING SERVER"
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0  # in case FedOpt uses GPU
 "${workspace}/server/startup/start.sh" ${servername} &
 sleep 10
 
@@ -25,7 +25,7 @@ sleep 10
 echo "STARTING ${n_clients} CLIENTS"
 for id in $(eval echo "{1..$n_clients}")
 do
-  export CUDA_VISIBLE_DEVICES=0
+  #export CUDA_VISIBLE_DEVICES=0  # Client GPU resources will be managed by nvflare
   "${workspace}/${site_pre}${id}/startup/start.sh" "${servername}:8002:8003" "${site_pre}${id}" &
 done
 sleep 10
