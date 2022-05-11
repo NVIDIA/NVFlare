@@ -25,6 +25,6 @@ Filters can convert data formats and a lot more. You can apply any type of massa
 purpose of security. In fact, privacy and homomorphic encryption techniques are all implemented as filters:
 
     - ExcludeVars to exclude variables from shareable (:mod:`nvflare.app_common.filters.exclude_vars`)
-    - PercentilePrivacy (:mod:`nvflare.app_common.filters.percentile_privacy`)
-    - SVTPrivacy for differential privacy (:mod:`nvflare.app_common.filters.svt_privacy`)
-    - Homomorphic encryption (:mod:`nvflare.app_common.homomorphic_encryption.he_model_encryptor.py` and :mod:`nvflare.app_common.homomorphic_encryption.he_model_decryptor`)
+    - PercentilePrivacy for truncation of weights by percentile (:mod:`nvflare.app_common.filters.percentile_privacy`)
+    - SVTPrivacy for differential privacy through sparse vector techniques (:mod:`nvflare.app_common.filters.svt_privacy`)
+    - Homomorphic encryption filters to encrypt data before sharing (:mod:`nvflare.app_common.homomorphic_encryption.he_model_encryptor.py` and :mod:`nvflare.app_common.homomorphic_encryption.he_model_decryptor`)

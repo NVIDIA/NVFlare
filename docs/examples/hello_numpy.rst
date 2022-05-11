@@ -118,23 +118,20 @@ Here, in ``executors``, the Trainer implementation ``NPTrainer`` is configured f
 Federated Numpy with Scatter and Gather Workflow!
 -------------------------------------------------
 
-Now you can use admin commands to upload, deploy, and start this example app. To do this on a proof of concept local
+Now you can use admin command prompt to submit and start this example app. To do this on a proof of concept local
 FL system, follow the sections :ref:`setting_up_poc` and :ref:`starting_poc` if you have not already.
 
 Running the FL System
 ^^^^^^^^^^^^^^^^^^^^^
 
-With the admin client command prompt successfully connected and logged in, enter the commands below in order.  Pay close
-attention to what happens in each of four terminals.  You can see how the admin controls the server and clients with
-each command.
+.. include:: run_example.rst
 
 .. code-block:: shell
 
-    > upload_job hello-numpy-sag
+    > submit_job hello-numpy-sag
 
-Uploads the job configuration from the admin client to the server.
-A job id will be returned, and we can use that id to access job information.
-
+This command uploads the job configuration from the admin client to the server. A job id will be returned, and we can
+use that id to access job information.
 
 From time to time, you can issue ``check_status server`` in the admin client to check the entire training progress.
 

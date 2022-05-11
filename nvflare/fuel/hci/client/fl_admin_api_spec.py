@@ -191,7 +191,9 @@ class FLAdminAPISpec(ABC):
     def remove_client(self, targets: List[str]) -> FLAdminAPIResponse:
         """Issue a command to remove a specific FL client or FL clients.
 
-        Note that the targets will not be able to start with an API command after shutting down.
+        Note that the targets will not be able to start with an API command after shutting down. Also, you will not be
+        able to issue admin commands through the server to that client until the client is restarted (this includes
+        being able to issue the restart command through the API).
 
         Args:
             targets: a list of client names
@@ -203,10 +205,13 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def set_timeout(self, timeout: float) -> FLAdminAPIResponse:
-        """Sets the timeout for admin commands on the server.
+        """Sets the timeout for admin commands on the server in seconds.
+
+        This timeout is the maximum amount of time the server will wait for replies from clients. If the timeout is too
+        short, the server may not receive a response because clients may not have a chance to reply.
 
         Args:
-            timeout: timeout of admin commands to set on the server
+            timeout: timeout in seconds of admin commands to set on the server
 
         Returns: FLAdminAPIResponse
 
@@ -249,15 +254,18 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def ls_target(self, target: str, options: str = None, path: str = None) -> FLAdminAPIResponse:
-        """Issue ls command.
+        """Issue ls command to retrieve the contents of the path.
 
         Sends the shell command to get the directory listing of the target allowing for options that the ls command
-        of admin client allows.
+        of admin client allows. If no path is specified, the contents of the working directory are returned. The target
+        can be "server" or a specific client name for example "site2". The allowed options are: "-a" for all, "-l" to
+        use a long listing format, "-t" to sort by modification time newest first, "-S" to sort by file size largest
+        first, "-R" to list subdirectories recursively, "-u" with -l to show access time otherwise sort by access time.
 
         Args:
             target (str):  either server or single client's client name.
             options (str): the options string as provided to the ls command for admin client.
-            path (str):    optionally, the path to specify
+            path (str):    optionally, the path to specify (relative to the working directory of the specified target)
 
         Returns: FLAdminAPIResponse
 
@@ -269,7 +277,10 @@ class FLAdminAPISpec(ABC):
         """Issue cat command.
 
         Sends the shell command to get the contents of the target's specified file allowing for options that the cat
-        command of admin client allows.
+        command of admin client allows. The target can be "server" or a specific client name for example "site2". The
+        file is required and should contain the relative path to the file from the working directory of the target. The
+        allowed options are "-n" to number all output lines, "-b" to number nonempty output lines, "-s" to suppress
+        repeated empty output lines, and "-T" to display TAB characters as ^I.
 
         Args:
             target (str):  either server or single client's client name.
@@ -284,6 +295,9 @@ class FLAdminAPISpec(ABC):
     @abstractmethod
     def tail_target_log(self, target: str, options: str = None) -> FLAdminAPIResponse:
         """Returns the end of target's log allowing for options that the tail of admin client allows.
+
+        The option "-n" can be used to specify the number of lines for example "-n 100", or "-c" can specify the
+        number of bytes.
 
         Args:
             target (str):  either server or single client's client name.
@@ -326,7 +340,10 @@ class FLAdminAPISpec(ABC):
         """Issue grep command.
 
         Sends the shell command to grep the contents of the target's specified file allowing for options that the grep
-        command of admin client allows.
+        command of admin client allows. The target can be "server" or a specific client name for example "site2". The
+        file is required and should contain the relative path to the file from the working directory of the target. The
+        pattern is also required. The allowed options are "-n" to print line number with output lines, "-i" to ignore
+        case distinctions, and "-b" to print the byte offset with output lines.
 
         Args:
             target (str):  either server or single client's client name.
