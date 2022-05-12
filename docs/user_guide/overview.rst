@@ -142,7 +142,7 @@ from the "startup" folder you unzipped to start the client.
 .. tip::
 
    You need to first install NVIDIA FLARE package before running the ``start.sh`` shell script.  NVIDIA FLARE is available
-   on PyPi and can be installed with ``python3 -m pip install nvflare``.
+   on PyPi and can be installed with ``python3 -m pip install nvflare>=2.0.16``.
 
    Depending on the deployed application which shall start later, your environment may need some additional
    Python packages.  If you haven't installed them, do it after you install NVIDIA FLARE.  NVIDIA FLARE does not dictate
