@@ -99,7 +99,7 @@ class EventRecorder(Widget):
         super().__init__()
 
         all_ctx_reqs = {
-            "__run_num__": _CtxPropReq(dtype=int, is_private=False, is_sticky=True),
+            "__run_num__": _CtxPropReq(dtype=str, is_private=False, is_sticky=True),
             "__identity_name__": _CtxPropReq(dtype=str, is_private=False, is_sticky=True),
         }
 
@@ -263,7 +263,7 @@ class ServerEventRecorder(EventRecorder):
                 "testPublicClientSticky",
             ],
             peer_ctx_reqs={
-                "__run_num__": _CtxPropReq(dtype=int, is_private=None, is_sticky=None),
+                "__run_num__": _CtxPropReq(dtype=str, is_private=None, is_sticky=None),
                 "__identity_name__": _CtxPropReq(dtype=str, is_private=None, is_sticky=None),
                 "testPublicClientSticky": _CtxPropReq(dtype=str, is_private=None, is_sticky=None),
             },
@@ -328,7 +328,7 @@ class ClientEventRecorder(EventRecorder):
                 "testPublicServerSticky",
             ],
             peer_ctx_reqs={
-                "__run_num__": _CtxPropReq(dtype=int, is_private=None, is_sticky=None),
+                "__run_num__": _CtxPropReq(dtype=str, is_private=None, is_sticky=None),
                 "__identity_name__": _CtxPropReq(dtype=str, is_private=None, is_sticky=None),
                 "testPublicServerSticky": _CtxPropReq(dtype=str, is_private=None, is_sticky=None),
             },
