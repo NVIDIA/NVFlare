@@ -73,10 +73,16 @@ def get_test_config(test_config_yaml: str):
         if x not in test_config:
             raise RuntimeError(f"Test config: {test_config_yaml} missing required attributes {x}.")
         print(f"\t{x}: {test_config[x]}")
-    if not test_config["single_app_as_job"] and "jobs_root_dir" not in test_config:
-        raise RuntimeError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
-    if test_config["single_app_as_job"] and "apps_root_dir" not in test_config:
-        raise RuntimeError(f"Test config: {test_config_yaml} missing apps_root_dir.")
+
+    if test_config["single_app_as_job"]:
+        if "apps_root_dir" not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing apps_root_dir.")
+        print(f"\tapps_root_dir: {test_config['apps_root_dir']}")
+    else:
+        if "jobs_root_dir" not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
+        print(f"\tjobs_root_dir: {test_config['jobs_root_dir']}")
+
     return test_config
 
 
@@ -92,7 +98,6 @@ def setup_and_teardown(request):
     test_config = get_test_config(yaml_path)
     system_setup = get_system_setup(test_config["system_setup"])
 
-    jobs_root_dir = test_config["jobs_root_dir"]
     cleanup = test_config["cleanup"]
 
     poc = system_setup["poc"]
@@ -102,11 +107,6 @@ def setup_and_teardown(request):
     cleanup_path(job_store_path)
 
     ha = system_setup["ha"]
-
-    # print test config params
-    print(f"jobs_root_dir = {jobs_root_dir}")
-    print(f"cleanup = {cleanup}")
-
     poc = POCDirectory(poc_dir=poc, ha=ha)
     site_launcher = SiteLauncher(poc_directory=poc)
     if ha:
