@@ -35,6 +35,16 @@ We only cover POC mode in this example. To run it with Secure mode, please refer
 > The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
 
+### Multi-tasking
+In this example, we assume two local GPUs with at least 12GB of memory are available. 
+
+As we use the POC workspace, adjust the default values in `workspace_prostate/client_${dataset}/startup/fed_client.json` 
+and `workspace_server/server/startup/fed_server.json` in your experimental environment.  
+
+In the secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
+
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/job.html).
+
 ## 2. Run automated experiments
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
 ### 2.1 Prepare local configs

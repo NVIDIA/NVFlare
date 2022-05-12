@@ -227,3 +227,6 @@ Save json to ./datalist/client_NCI_ISBI_Dx.json
 Mode: file
 In total 39 cases, 20 for training, 10 for validation, and 9 for testing
 ```
+
+## 3. Federated Training for Prostate Tasks
+Please go to subfolders `prostate_2D` and `prostate_3D` for further instructions on federated training.
