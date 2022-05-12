@@ -40,8 +40,8 @@ parser.add_argument("--out_path", type=str, help="Path to datalist json file")
 def partition_data(mode, data_path, site_name, train, valid, test, out_path):
     assert mode in ["folder", "file"], "mode should either be 'folder' or 'file'"
     print(f"Generate data split for {data_path}/{site_name}, with train:validation:test {train}:{valid}:{test}")
-    print(f"Save json to {out_path}/client_{site_name}.json")
-    print(f"Mode {mode}")
+    print(f"Save json to {out_path}")
+    print(f"Mode: {mode}")
     tra = 0
     val = 0
     tst = 0

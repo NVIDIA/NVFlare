@@ -1,0 +1,35 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": [
+        "train", "validate"
+      ],
+      "executor": {
+        "id": "Executor",
+        "name": "LearnerExecutor",
+        "args": {
+          "learner_id": "prostate-learner"
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+
+  "components": [
+    {
+      "id": "prostate-learner",
+      "path": "pt.learners.supervised_monai_prostate_ditto_learner.SupervisedMonaiProstateDittoLearner",
+      "args": {
+        "train_config_filename": "config_train.json",
+        "aggregation_epochs": 10,
+        "ditto_model_epochs": 10
+      }
+    }
+  ]
+}

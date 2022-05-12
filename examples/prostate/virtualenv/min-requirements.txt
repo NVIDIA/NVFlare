@@ -5,5 +5,3 @@ tensorboard
 monai
 tqdm
 nibabel
-dicom2nifti
-pynrrd
