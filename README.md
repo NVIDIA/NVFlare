@@ -16,7 +16,7 @@ Learn more - [NVIDIA FLARE](https://nvidia.github.io/NVFlare).
 To install [the current release](https://pypi.org/project/nvflare), you can simply run:
 
 ```bash
-pip install nvflare
+pip install nvflare>=2.0.16
 ```
 
 ## Third party license

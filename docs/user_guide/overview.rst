@@ -184,7 +184,7 @@ the admin client is launched.
 
 Install the wheel package first with::
 
-    python3 -m pip install nvflare
+    python3 -m pip install nvflare>=2.0.16
 
 
 After installation, you can run the **fl_admin.sh** file to start communicating to the FL server.

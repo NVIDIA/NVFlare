@@ -62,7 +62,7 @@ Install Stable Release
 
 Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nvflare>`_::
 
-  $ python3 -m pip install nvflare
+  $ python3 -m pip install nvflare>=2.0.16
 
 
 Clone Repository and Examples

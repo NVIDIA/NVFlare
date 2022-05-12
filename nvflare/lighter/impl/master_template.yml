@@ -9,7 +9,7 @@ readme_am: |
   client.key
   fl_admin.sh
   
-  Please install the nvflare package by 'python3 -m pip nvflare.'  This will install a set of Python codes
+  Please install the nvflare package by 'python3 -m pip nvflare>=2.0.16'.  This will install a set of Python codes
   in your environment.  After installation, you can run the fl_admin.sh file to start communicating to the admin server.
 
   The rootCA.pem file is pointed by "ca_cert" in fl_admin.sh.  If you plan to move/copy it to a different place,
