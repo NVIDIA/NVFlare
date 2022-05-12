@@ -28,15 +28,13 @@ commands shown as examples of how they may be run with a description.
     check_status,``check_status server``,"The FL run number, FL server status, and the registered clients with their names and tokens are displayed. If training is running, the round information is also displayed."
     ,``check_status client``,"The name, token, and status of each connected client are displayed."
     ,``check_status client clientname``,"The name, token, and status of the specified client with *clientname* are displayed."
-    upload_app,``upload_app applicationname``,Uploads the application folder to the FL server. Note that *applicationname* is the folder path relative to the "transfer" directory which is at the same level as the "startup" directory containing the script running the admin client.
-    set_run_number,``set_run_number 1``,Creates a folder "run_1" on the server at the same level as the "startup" directory to contain all of the applications for deployment.
-    deploy_app,``deploy_app applicatonname server``,"Deploys the application specified by *applicationname* to the server. Note that *applicationname* is expected to be an application which has been uploaded to the server already and resides in the *transfer* directory on the server (which is at the same level as the *startup* directory by
-    default). *applicationname* can be a relative path if the application is contained in any parent directories, for example apps/segmentation_ct_spleen."
-    ,``deploy_app applicationname client``,Deploys the application specified by *applicationname* to each client. This can also be done per client by specifying a specific client name for this command. Please note that the deployed applications are also in their own workspace named after the run number set by set_run_number above.
-    start_app,``start_app server``,Starts the server training.
-    ,``start_app client``,Starts all of the clients. Individual clients can be started by specifying the client instance name after the start client command.
-    abort,``abort client``,Aborts all of the clients. Individual clients can be aborted by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
-    ,``abort server``,Aborts the server training
+    submit_job,``submit_job job_folder_name``,Submits the job to the server.
+    list_jobs,``list_jobs``,Lists the jobs on the server. (Options: [-n name_prefix] [-s study_prefix] [-d] [job_id_prefix])
+    delete_job,``delete_job job_id``,Deletes the job of the specified job_id
+    abort_job,``abort_job job_id``,Aborts the job of the specified job_id if it is running or dispatched
+    clone_job,``clone_job job_id``,Creates a copy of the specified job with a new job_id
+    abort,``abort job_id client``,Aborts the job for the specified job_id for all clients. Individual client jobs can be aborted by specifying *clientname*.
+    ,``abort job_id server``,Aborts the server job for the specified job_id.
     download_folder,``download_folder foldername``,Download folder from the server's file_download_dir (set to transfer by default)
     cat,``cat server startup/fed_server.json -ns``,Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)
     ,``cat clientname startup/docker.sh -bT``,Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)
@@ -53,10 +51,15 @@ commands shown as examples of how they may be run with a description.
     ,``pwd clientname``,Print the name of workspace root directory
     sys_info,``sys_info server``,Get system information
     ,``sys_info client *clientname*``,Get system information. Individual clients can be shutdown by specifying *clientname*.
+    remove_client,``remove_client clientname``,Issue command for server to release client before the 10 minute timeout to allow client to rejoin after manual restart.
     restart,``restart client``,Restarts all of the clients. Individual clients can be restarted by specifying *clientname*.
     ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
-    ,``shutdown server``,Shuts down the server. Clients must be shut down first before the server is shut down.
+    ,``shutdown server``,Shuts down the active server. Clients must be shut down first before the server is shut down. Note this will not shut down the Overseer or other SPs.
+    get_active_sp,``get_active_sp``,Get information on the active SP (service provider or FL server).
+    list_sp,``list_sp``,Get data from last heartbeat of the active and available SP endpoint information.
+    promote_sp,``promote_sp sp_end_point``,promote a specified SP to become the active SP (promote_sp example1.com:8002:8003)
+    shutdown_system,``shutdown_system``,Shut down entire system by setting the system state to shutdown through the overseer
 
 
 .. tip::

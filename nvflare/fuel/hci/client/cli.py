@@ -444,7 +444,9 @@ class AdminClient(cmd.Cmd):
 
         if "data" in resp:
             for item in resp["data"]:
-                item_type = item["type"]
+                if not isinstance(item, dict):
+                    continue
+                item_type = item.get("type")
                 if item_type == "string":
                     self.write_string(item["data"])
                 elif item_type == "table":

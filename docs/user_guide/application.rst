@@ -5,7 +5,11 @@ NVIDIA FLARE Application
 ########################
 
 To upload and run your FL application with NVIDIA FLARE, you need to put required files into an application folder.
-The structure of the folder needs to be::
+
+Note that apps can be configured to run on certain sites in a job's deploy_map configuration. An application can also be
+run without a job. To do this, simply submit an app as a job and a default deploy map of all sites will be used.
+
+The structure of the app folder needs to be::
 
     app_folder/
         config/

@@ -1,0 +1,43 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "handlers": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
+      "args": {}
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "event_recorder",
+      "name": "ServerEventRecorder",
+      "args": {}
+    },
+    {
+      "id": "tb_analytics_receive",
+      "path": "nvflare.app_common.pt.tb_receiver.TBAnalyticsReceiver",
+      "args": {"events": ["fed.analytix_log_stats"]}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "CustomController",
+      "path": "custom_controller.CustomController",
+      "args": {
+        "min_clients": 2,
+        "num_rounds": 1,
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator"
+      }
+    }
+  ]
+}

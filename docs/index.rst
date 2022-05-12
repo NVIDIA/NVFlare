@@ -15,10 +15,9 @@ results.
 NVIDIA FLARE is built on a componentized architecture, which allows researchers to customize workflows to their
 liking and experiment with different ideas quickly.
 
-Collaborative computing is not limited to deep learning, and with NVIDIA FLARE 2.0, you can develop any FL workflows
-with the newly provided `Controller API <programming_guide/controllers>`_. A full reference implementation of the
-`previous default workflow <programming_guide/controllers/scatter_and_gather_workflow>`_ is included along with the
-source code.
+With NVIDIA FLARE 2.1.0, :ref:`High Availability (HA) <high_availability>` and :ref:`Multi-Job Execution <multi_job>`
+introduce new concepts and change the way the system needs to be configured and operated. See
+`conversion from 2.0 <appendix/converting_from_previous.html>`_ for details.
 
 .. toctree::
    :maxdepth: 1
@@ -26,8 +25,10 @@ source code.
    highlights
    installation
    quickstart
+   example_applications
    user_guide
    programming_guide
+   best_practices
    faq
    API <apidocs/modules>
    appendix

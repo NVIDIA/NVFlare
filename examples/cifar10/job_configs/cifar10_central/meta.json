@@ -1,0 +1,19 @@
+{
+  "study_name": "",
+  "name": "cifar10_central",
+  "resource_spec": {
+    "site-1": {
+      "gpu": 1
+    }
+  },
+  "deploy_map": {
+    "cifar10_central": [
+      "server",
+      "site-1"
+    ]
+  },
+  "min_clients": 1,
+  "mandatory_clients": [
+    "site-1"
+  ]
+}

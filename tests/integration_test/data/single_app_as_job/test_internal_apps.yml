@@ -1,0 +1,44 @@
+system_setup: ./data/system/1_server_2_clients.yml
+apps_root_dir: ./data/apps
+single_app_as_job: True
+cleanup: True
+
+
+tests:
+  - app_name: global_model_eval
+    validators:
+      - tests.integration_test.validators.global_model_eval_validator.GlobalModelEvalValidator
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: pt
+    validators:
+      - tests.integration_test.validators.pt_model_validator.PTModelValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/cifar10_data
+  - app_name: cross_val_one_client
+    validators:
+      - tests.integration_test.validators.cross_val_result_validator.CrossValSingleClientResultValidator
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: cross_val
+    validators:
+      - tests.integration_test.validators.cross_val_result_validator.CrossValResultValidator
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: sag
+    validators:
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: sag_weights_diff
+    validators:
+      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+  - app_name: filters
+    validators:
+      - tests.integration_test.validators.filters_result_validator.FiltersResultValidator
+  - app_name: tb_streaming
+    validators:
+      - tests.integration_test.validators.tb_result_validator.TBResultValidator
+  - app_name: tf
+    validators:
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator
+  - app_name: cyclic
+    validators:
+      - tests.integration_test.validators.tf_model_validator.TFModelValidator

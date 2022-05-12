@@ -3,11 +3,18 @@
 ############################
 Provisioning in NVIDIA FLARE
 ############################
+A necessary first step in establishing a federation is provisioning to establish the identities of the server, clients,
+and admin clients.
 
-The purpose of provisioning in NVIDIA FLARE is to generate mutual-trusted system-wide configurations for all participants
-so all of them can join the NVIDIA FLARE system across different locations. The mutual-trust is a mandatory feature of the
-Open Provision API as every participant authenticates others by the information inside the configuration. The
-configurations usually include, but are not limited to, the following information:
+When operating federated learning, communication channels use shared SSL certificates generated
+during provisioning to establish the identities and secure communication between participants.
+
+Provisioning in NVIDIA FLARE generates mutual-trusted system-wide configurations for all participants
+so all of them can join the NVIDIA FLARE system across different locations. To achieve this, a provisioning tool powered
+by the Open Provision API and its builder modules is included in NVIDIA FLARE (:mod:`nvflare.lighter`)
+to create a startup kit for each participant with the necessary configuration artifacts.
+
+The configurations usually include, but are not limited to, the following information:
 
     - network discovery, such as domain names, port numbers or IP addresses
     - credentials for authentication, such as certificates of participants and root authority
@@ -20,9 +27,9 @@ we created the Open Provision API. Now developers can take advantage of this API
 which meet their own requirements in addition to the default provisioning before for creating packages for the
 server, client, and administrators.
 
-******************
-Open Provision API
-******************
+*******************************
+NVIDIA FLARE Open Provision API
+*******************************
 
 Architecture
 ============
@@ -30,10 +37,10 @@ Architecture
 .. image:: ../resources/Open_Provision_API.png
     :height: 350px
 
-The above diagram describes the architecture of Open Provision API in blue.  Those two green blocks are the sample
-python code (provision.py) collecting information (project.yml) and interacting with components of Open Provision API to
-accomplish one provisioning task.  The Provisioner and blocks inside the blue box are classes or subclasses of Open
-Provision API.
+The above diagram describes the architecture of NVIDIA FLARE Open Provision API in blue. Those two green blocks are the
+sample python code (provision.py) collecting project configuration information (project.yml) and interacting with
+components of Open Provision API to accomplish a provisioning task. The Provisioner and blocks inside the blue box are
+classes or subclasses of Open Provision API.
 
 Details
 =======
@@ -288,6 +295,8 @@ From the cases shown previously, implementing your own Builders only requires th
 #. Builders have to coordinate with one another.  For example, the WebPostDistributionBuilder generates zip files from the
    contents inside kit directories.  That implies some other builders have to write those contents first.
 
+.. _bundled_builders:
+
 Bundled builders
 ================
 The following is the list of bundled builders included by default in the NVIDIA FLARE package.  They are provided as a
@@ -354,39 +363,22 @@ will ask you if you would like to have one sample copy of this file created.
   /home/nvflare/workspace/project.yml was created.  Please edit it to fit your FL configuration.
 
 
-..  Edit the project.yml configuration file to meet your project requirements:
+Edit the project.yml configuration file to meet your project requirements:
 
-    - "api_version" must be 2 for current release of provisioning tool
-    - "he_config" describes the Homomorphic Encryption configuration
-    - "config_folder" is the folder name that contains configuration information
-    - "disable_authz" is a boolean to instruct FL server whether to enforce role-based rights on admin users. true means all admin users are in role super.
+    - "api_version" must be 3 for current release of provisioning tool
     - "name" is used to identify this project.
-    - "server" section describes the FL server.
-        - "org" is for the name of the owner of this server.
-        - "cn" is the "Fully Qualified Domain Name" and it is very important that this is correct. If this information is not completely correct, the security handshake between the server and clients will fail. Please note that this cannot just be an IP address.
-        - "fed_learn_port" is the port number for communication between the FL server and FL clients
-        - "admin_port" is the port number for communication between the FL server and FL administration client
-        - "admin_storage" is directory name, related to the WORKSPACE, to store files by admin process on server
-        - "min_num_clients" is the minimum number of clients for federated learning to begin
-        - "max_num_clients" is the maximum number of clients allowed in this instance of federated learning
-        - "config_validator" is the class that validates if the uploaded app has correct syntax
-    - The "fl_clients" section describes the FL clients, with one "org", "client_name", and "email" for each client. Please note that each "client_name" must be unique. It will show in the admin console.
-    - The "admin_clients" section describes the FL admin clients. The "email" for each must be unique.
-    - The "authz_policy" section describes the policy imposed on organizations and roles.  Roles of each organization have specific rights.  Sites of each
-    organization have specific rules.  Rights grant roles to do certain operations.  Rules allow certain operations performed in sites.
-
-.. attention:: Please make sure that the FL server port number is accessible by all participating sides.
-
-
-.. _project_yml:
-
-Default project.yml file
-========================
-
-The following is an example of the default project.yml file.
-
-.. literalinclude:: ../../nvflare/lighter/project.yml
-  :language: yaml
+    - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
+      should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the Overseer and servers should
+      be in the format of fully qualified domain names. It is possible to use a unique hostname rather than FQDN, with
+      the IP mapped to the hostname by having it added to ``/etc/hosts``.
+        - Type "overseer" describes the Overseer, with the "org", "name", "protocol", "api_root", and "port".
+        - Type "server" describes the FL servers, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc".
+            - "fed_learn_port" is the port number for communication between the FL server and FL clients
+            - "admin_port" is the port number for communication between the FL server and FL administration client
+        - Type "client" describes the FL clients, with one "org" and "name" for each client as well as "enable_byoc" settings.
+        - Type "admin" describes the admin clients with the name being a unique email. The roles must be defined in AuthPolicyBuilder below.
+    - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
+    - See :ref:`system_components` for information on the components configured in StaticFileBuilder.
 
 .. note::
 
@@ -400,6 +392,18 @@ The following is an example of the default project.yml file.
    Here, ``byoc`` is referring to the custom code in the custom folder in an FL application. Code already in the python path
    through other means is not considered ``byoc`` for these purposes.
 
+.. _project_yml:
+
+Default project.yml file
+========================
+
+The following is an example of the default project.yml file.
+
+.. literalinclude:: ../../nvflare/lighter/project.yml
+  :language: yaml
+
+.. attention:: Please make sure that the Overseer and FL servers ports are accessible by all participating sites.
+
 *****************************
 Provision commandline options
 *****************************
@@ -409,13 +413,14 @@ Running ``provision -h`` shows all available options.
 .. code-block:: shell
 
   (nvflare_venv) ~/workspace/repos/flare$ provision -h
-  usage: provision [-h] [-p PROJECT_FILE] [-o OUTPUT_DIR] [-n] [-u]
+  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [-u]
 
   optional arguments:
-    -h, --help                                  show this help message and exit
-    -p PROJECT_FILE, --project_file PROJECT_FILE    file to describe FL project
-    -w WORKSPACE, --workspace WORKSPACE             directory used by provision
-    -u, --ui_tool         Run provisioning UI tool to generate project.yml file
+    -h, --help                                               show this help message and exit
+    -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
+    -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
+    -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
+    -u, --ui_tool                      Run provisioning UI tool to generate project.yml file
 
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.

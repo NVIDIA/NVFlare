@@ -210,42 +210,20 @@ code is all open source now, so feel free to study and use it as inspiration to 
 Train the Model, Federated!
 ---------------------------
 
-Now you can use admin commands to upload, deploy, and start this example app. To do this on a proof of concept local
+Now you can use admin command prompt to submit and start this example app. To do this on a proof of concept local
 FL system, follow the sections :ref:`setting_up_poc` and :ref:`starting_poc` if you have not already.
 
 Running the FL System
 ^^^^^^^^^^^^^^^^^^^^^
 
-With the admin client command prompt successfully connected and logged in, enter the commands below in order.  Pay close
-attention to what happens in each of four terminals.  You can see how the admin controls the server and clients with
-each command.
+.. include:: run_example.rst
 
 .. code-block:: shell
 
-    > upload_app hello-pt
+    > submit_job hello-pt
 
-Uploads the application from the admin client to the server's staging area.
-
-.. code-block:: shell
-
-    > set_run_number 1
-
-Creates a run directory in the workspace for the run_number on the server and all clients. The run directory allows for
-the isolation of different runs so the information in one particular run does not interfere with other runs.
-
-.. code-block:: shell
-
-    > deploy_app hello-pt all
-
-This will make the hello-pt application the active one in the run_number workspace.  After the above two commands,
-the server and all the clients know the hello-pt application will reside in the ``run_1`` workspace.
-
-
-.. code-block:: shell
-
-    > start_app all
-
-This ``start_app`` command instructs the NVIDIA FLARE server and clients to start training with the hello-pt application in that ``run_1`` workspace.
+This command uploads the job configuration from the admin client to the server. A job id will be returned, and we can
+use that id to access job information.
 
 From time to time, you can issue ``check_status server`` in the admin client to check the entire training progress.
 

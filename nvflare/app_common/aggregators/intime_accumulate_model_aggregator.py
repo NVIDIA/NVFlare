@@ -49,8 +49,10 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
         expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
     ):
-        """Perform accumulated weighted aggregation
-        It parses the shareable and aggregates the contained DXO(s).
+        """Perform accumulated weighted aggregation.
+
+        This is often used as the default aggregation method and can be used for FedAvg. It parses the shareable and
+        aggregates the contained DXO(s).
 
         Args:
             exclude_vars (Union[str, Dict[str, str]], optional):

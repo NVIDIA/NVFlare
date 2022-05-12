@@ -107,7 +107,6 @@ class FLAdminAPIRunner:
             assert os.path.isfile(ca_cert), f"rootCA.pem does not exist at {ca_cert}"
             assert os.path.isfile(client_cert), f"client.crt does not exist at {client_cert}"
             assert os.path.isfile(client_key), f"client.key does not exist at {client_key}"
-            poc_key = None
 
         # Connect with admin client
         self.api = FLAdminAPI(

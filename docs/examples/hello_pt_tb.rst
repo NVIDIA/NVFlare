@@ -91,19 +91,20 @@ You can learn more about other supported writer methods in :class:`AnalyticsSend
 Viewing the TensorBoard Dashboard during Training
 --------------------------------------------------
 
-Now you can use admin commands to upload, deploy, and start this example app. To do this on a proof of concept local
+Now you can use admin command prompt to submit and start this example app. To do this on a proof of concept local
 FL system, follow the sections :ref:`setting_up_poc` and :ref:`starting_poc` if you have not already.
+
+.. include:: run_example.rst
 
 Log into the Admin client by entering ``admin`` for both the username and password.
 Then, use these Admin commands to run the experiment:
 
 .. code-block:: shell
 
-    > set_run_number 1
-    > upload_app hello-pt-tb
-    > deploy_app hello-pt-tb
-    > start_app all
+    > submit_job hello-pt-tb
 
+This command uploads the job configuration from the admin client to the server. A job id will be returned, and we can
+use that id to access job information.
 
 On the client side, the ``AnalyticsSender`` works as a TensorBoard SummaryWriter. Instead of writing to TB files, it actually generates NVFLARE events of type ``analytix_log_stats``.
 The ``ConvertToFedEvent`` widget will turn the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``, which will be delivered to the server side.

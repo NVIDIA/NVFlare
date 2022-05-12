@@ -1,0 +1,8 @@
+description: "upload a job, kill the server during sending models to clients, restart it should pick up the work"
+events: [
+    {
+        "trigger": "sent task assignment to client",
+        "actions": ["kill server", "sleep 10", "restart server"],
+        "result_state": {"workflow": 0, "round_number": 0},
+    },
+]

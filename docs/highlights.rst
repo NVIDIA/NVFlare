@@ -1,5 +1,16 @@
 .. _highlights:
 
+##########
+Highlights
+##########
+
+New in NVIDIA FLARE 2.1.0
+=========================
+    - :ref:`High Availability (HA) <high_availability>` supports multiple FL Servers and automatically cuts
+      over to another server when the currently active server becomes unavailable.
+    - :ref:`Multi-Job Execution <multi_job>` supports resource-based multi-job execution by allowing for concurrent runs
+      provided resources required by the jobs are satisfied.
+
 NVIDIA FLARE Key Features
 =========================
 NVIDIA FLARE provides a set of commonly-used algorithms to illustrate best practices and allow simplified development of

@@ -18,15 +18,14 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
-import traceback
 
 import pytest
 import yaml
 
 from tests.integration_test.admin_controller import AdminController
 from tests.integration_test.site_launcher import POCDirectory, SiteLauncher
-from tests.integration_test.test_ha import ha_tests
 from tests.integration_test.utils import generate_job_dir_for_single_app_job
 
 
@@ -53,161 +52,190 @@ def cleanup_path(path: str):
         shutil.rmtree(path)
 
 
-params = [
-    # "./test_examples.yml",
-    "./test_internal.yml",
-    "./test_ha.yml",
-]
+def get_system_setup(system_setup_yaml: str):
+    """Gets system setup config from yaml."""
+    system_setup = read_yaml(system_setup_yaml)
+    print(f"System setup from {system_setup_yaml}:")
+    system_setup["ha"] = system_setup.get("ha", False)
+    for x in ["n_clients", "n_servers", "poc", "snapshot_path", "job_store_path", "ha"]:
+        if x not in system_setup:
+            raise RuntimeError(f"System setup: {system_setup_yaml} missing required attributes {x}.")
+        print(f"\t{x}: {system_setup[x]}")
+    return system_setup
+
+
+def get_test_config(test_config_yaml: str):
+    print(f"Test config from:  {test_config_yaml}")
+    test_config = read_yaml(test_config_yaml)
+    test_config["single_app_as_job"] = test_config.get("single_app_as_job", False)
+    test_config["cleanup"] = test_config.get("cleanup", True)
+    for x in ["system_setup", "cleanup", "single_app_as_job"]:
+        if x not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing required attributes {x}.")
+        print(f"\t{x}: {test_config[x]}")
+
+    if test_config["single_app_as_job"]:
+        if "apps_root_dir" not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing apps_root_dir.")
+        print(f"\tapps_root_dir: {test_config['apps_root_dir']}")
+    else:
+        if "jobs_root_dir" not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
+        print(f"\tjobs_root_dir: {test_config['jobs_root_dir']}")
+
+    return test_config
+
+
+test_configs = read_yaml("./test_cases.yml")
 
 
 @pytest.fixture(
     scope="class",
-    params=params,
+    params=test_configs["test_configs"],
 )
-def system_config(request):
+def setup_and_teardown(request):
     yaml_path = os.path.join(os.path.dirname(__file__), request.param)
-    print("Loading params from ", yaml_path)
-    data = read_yaml(yaml_path)
-    for x in ["cleanup", "poc", "n_clients", "jobs_root_dir", "snapshot_path", "job_store_path"]:
-        if x not in data:
-            raise RuntimeError(f"YAML {yaml_path} missing required attributes {x}.")
-    cleanup_path(data["snapshot_path"])
-    cleanup_path(data["job_store_path"])
-    return data
+    test_config = get_test_config(yaml_path)
+    system_setup = get_system_setup(test_config["system_setup"])
+
+    cleanup = test_config["cleanup"]
+
+    poc = system_setup["poc"]
+    snapshot_path = system_setup["snapshot_path"]
+    job_store_path = system_setup["job_store_path"]
+    cleanup_path(snapshot_path)
+    cleanup_path(job_store_path)
+
+    ha = system_setup["ha"]
+    poc = POCDirectory(poc_dir=poc, ha=ha)
+    site_launcher = SiteLauncher(poc_directory=poc)
+    if ha:
+        site_launcher.start_overseer()
+    site_launcher.start_servers(n=system_setup["n_servers"])
+    site_launcher.start_clients(n=system_setup["n_clients"])
+
+    # testing jobs
+    test_jobs = []
+    if test_config["single_app_as_job"]:
+        jobs_root_dir = tempfile.mkdtemp()
+        for x in test_config["tests"]:
+            _ = generate_job_dir_for_single_app_job(
+                app_name=x["app_name"],
+                app_root_folder=test_config["apps_root_dir"],
+                clients=[x["name"] for x in site_launcher.client_properties.values()],
+                destination=jobs_root_dir,
+                app_as_job=True,
+            )
+            test_jobs.append(
+                (
+                    x["app_name"],
+                    x["validators"],
+                    x.get("setup", []),
+                    x.get("teardown", []),
+                    x.get("event_sequence_yaml", ""),
+                )
+            )
+    else:
+        jobs_root_dir = test_config["jobs_root_dir"]
+        for x in test_config["tests"]:
+            test_jobs.append((x["job_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
+
+    admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
+    if not admin_controller.initialize():
+        raise RuntimeError("AdminController init failed.")
+    admin_controller.ensure_clients_started(num_clients=system_setup["n_clients"])
+
+    yield ha, test_jobs, site_launcher, admin_controller
+
+    if admin_controller:
+        admin_controller.finalize()
+    if site_launcher:
+        site_launcher.stop_all_sites()
+
+        if cleanup:
+            site_launcher.cleanup()
+
+    if cleanup:
+        if test_config["single_app_as_job"]:
+            print(f"Cleaning up generated job dir {jobs_root_dir}")
+            shutil.rmtree(jobs_root_dir)
+        cleanup_path(snapshot_path)
+        cleanup_path(job_store_path)
 
 
 @pytest.mark.xdist_group(name="system_tests_group")
 class TestSystem:
-    def test_run_job_complete(self, system_config):
-        site_launcher = None
-        admin_controller = None
+    def test_run_job_complete(self, setup_and_teardown):
+        ha, test_jobs, site_launcher, admin_controller = setup_and_teardown
 
-        cleanup = system_config["cleanup"]
-        poc = system_config["poc"]
-        n_clients = system_config["n_clients"]
-        jobs_root_dir = system_config["jobs_root_dir"]
-        snapshot_path = system_config["snapshot_path"]
-        job_store_path = system_config["job_store_path"]
-        ha = system_config.get("ha", False)
-        try:
-            print(f"cleanup = {cleanup}")
-            print(f"poc = {poc}")
-            print(f"n_clients = {n_clients}")
-            print(f"jobs_root_dir = {jobs_root_dir}")
-            print(f"snapshot_path = {snapshot_path}")
-            print(f"job_store_path = {job_store_path}")
+        print(f"Server status: {admin_controller.server_status()}.")
 
-            poc = POCDirectory(poc_dir=poc)
-            site_launcher = SiteLauncher(poc_directory=poc, ha=ha)
-            if ha:
-                site_launcher.start_overseer()
-            site_launcher.start_servers(1)
-            site_launcher.start_clients(n=n_clients)
+        job_results = []
+        for job_data in test_jobs:
+            start_time = time.time()
 
-            # testing jobs
-            test_jobs = []
-            generated_jobs = []
-            for x in system_config["tests"]:
-                if "job_name" in x:
-                    test_jobs.append((x["job_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
-                    continue
-                job_dir = generate_job_dir_for_single_app_job(
-                    app_name=x["app_name"],
-                    app_root_folder=system_config["apps_root_dir"],
-                    clients=[x["name"] for x in site_launcher.client_properties.values()],
-                    destination=jobs_root_dir,
-                )
-                test_jobs.append((x["app_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
-                generated_jobs.append(job_dir)
+            test_job_name, validators, setup, teardown, event_sequence_yaml = job_data
+            print(f"Running job {test_job_name}")
+            for command in setup:
+                print(f"Running setup command: {command}")
+                process = subprocess.Popen(shlex.split(command))
+                process.wait()
 
-            admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
-            if not admin_controller.initialize():
-                raise RuntimeError("AdminController init failed.")
-            admin_controller.ensure_clients_started(num_clients=n_clients)
+            admin_controller.submit_job(job_name=test_job_name)
 
-            print(f"Server status: {admin_controller.server_status()}.")
+            time.sleep(5)
+            print(f"Server status after job submission: {admin_controller.server_status()}.")
+            print(f"Client status after job submission: {admin_controller.client_status()}")
 
-            job_results = []
-            for job_data in test_jobs:
-                start_time = time.time()
+            if event_sequence_yaml:
+                # admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
+                admin_controller.run_event_sequence(site_launcher, read_yaml(event_sequence_yaml))
+            else:
+                admin_controller.wait_for_job_done()
 
-                test_job_name, validators, setup, teardown = job_data
-                print(f"Running job {test_job_name}")
-                for command in setup:
-                    print(f"Running setup command: {command}")
-                    process = subprocess.Popen(shlex.split(command))
-                    process.wait()
+            server_data = site_launcher.get_server_data()
+            client_data = site_launcher.get_client_data()
+            run_data = admin_controller.get_run_data()
 
-                admin_controller.submit_job(job_name=test_job_name)
+            # Get the job validator
+            if validators:
+                validate_result = True
+                for validator_module in validators:
+                    # Create validator instance
+                    module_name, class_name = get_module_class_from_full_path(validator_module)
+                    job_validator_cls = getattr(importlib.import_module(module_name), class_name)
+                    job_validator = job_validator_cls()
 
-                time.sleep(5)
-                print(f"Server status after job submission: {admin_controller.server_status()}.")
-                print(f"Client status after job submission: {admin_controller.client_status()}")
+                    print(server_data)
+                    job_validate_res = job_validator.validate_results(
+                        server_data=server_data,
+                        client_data=client_data,
+                        run_data=run_data,
+                    )
+                    print(
+                        f"Job {test_job_name}, Validator {job_validator.__class__.__name__} result: {job_validate_res}"
+                    )
+                    validate_result = validate_result and job_validate_res
 
-                if ha:
-                    admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
-                else:
-                    admin_controller.wait_for_job_done()
+                job_results.append((test_job_name, validate_result))
+            else:
+                print("No validators provided so results can't be checked.")
 
-                server_data = site_launcher.get_server_data()
-                client_data = site_launcher.get_client_data()
-                run_data = admin_controller.get_run_data()
+            print(f"Finished running {test_job_name} in {time.time() - start_time} seconds.")
+            for command in teardown:
+                print(f"Running teardown command: {command}")
+                process = subprocess.Popen(shlex.split(command))
+                process.wait()
 
-                # Get the job validator
-                if validators:
-                    validate_result = True
-                    for validator_module in validators:
-                        # Create validator instance
-                        module_name, class_name = get_module_class_from_full_path(validator_module)
-                        job_validator_cls = getattr(importlib.import_module(module_name), class_name)
-                        job_validator = job_validator_cls()
+        print("==============================================================")
+        print(f"Job results: {job_results}")
+        failure = False
+        for job_name, job_result in job_results:
+            print(f"Job name: {job_name}, Result: {job_result}")
+            if not job_result:
+                failure = True
+        print(f"Final result: {not failure}")
+        print("==============================================================")
 
-                        print(server_data)
-                        job_validate_res = job_validator.validate_results(
-                            server_data=server_data,
-                            client_data=client_data,
-                            run_data=run_data,
-                        )
-                        print(
-                            f"Job {test_job_name}, Validator {job_validator.__class__.__name__} result: {job_validate_res}"
-                        )
-                        validate_result = validate_result and job_validate_res
-
-                    job_results.append((test_job_name, validate_result))
-                else:
-                    print("No validators provided so results can't be checked.")
-
-                print(f"Finished running {test_job_name} in {time.time() - start_time} seconds.")
-                for command in teardown:
-                    print(f"Running teardown command: {command}")
-                    process = subprocess.Popen(shlex.split(command))
-                    process.wait()
-
-            print(f"Job results: {job_results}")
-            failure = False
-            for job_name, job_result in job_results:
-                print(f"Job name: {job_name}, Result: {job_result}")
-                if not job_result:
-                    failure = True
-
-            if cleanup:
-                for job_dir in generated_jobs:
-                    print(f"Cleaning up job {job_dir}")
-                    shutil.rmtree(job_dir)
-
-            if failure:
-                sys.exit(1)
-        except BaseException as e:
-            traceback.print_exc()
-            print(f"Exception in test run: {e.__str__()}")
-            raise ValueError("Tests failed") from e
-        finally:
-            if admin_controller:
-                admin_controller.finalize()
-            if site_launcher:
-                site_launcher.stop_all_sites()
-
-                if cleanup:
-                    site_launcher.cleanup()
-                    cleanup_path(snapshot_path)
-                    cleanup_path(job_store_path)
+        if failure:
+            sys.exit(1)

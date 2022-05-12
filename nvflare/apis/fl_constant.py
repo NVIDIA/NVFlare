@@ -92,6 +92,7 @@ class ReservedKey(object):
     SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
     CURRENT_JOB_ID = "__current_job_id__"
+    JOB_RUN_NUMBER = "__job_run_number__"
 
 
 class FLContextKey(object):
@@ -125,6 +126,7 @@ class FLContextKey(object):
     SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
+    JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
 
 
 class ReservedTopic(object):

@@ -6,10 +6,10 @@ Overview
 Introduction
 ************
 
-NVIDIA FLARE utilizes provisioning and admin client to reduce the amount of human coordination involved to set up a federated learning project
-and provides an admin the ability to deploy the server and client configurations, start the server / clients, abort the training,
-restart the training, and more. A provisioning tool can be configured to create one startup kit for each site in an encrypted package.
-These packages can then be delivered to each site ready to go, streamlining the process to provision, start, and operate federated learning.
+NVIDIA FLARE utilizes provisioning and admin clients to reduce the amount of human coordination involved to set up a
+federated learning project. A provisioning tool can be configured to create a startup kit for each site in an encrypted
+package. These packages can then be delivered to each site ready to go, streamlining the process to provision, start,
+and operate federated learning with a trusted setup.
 
 Provision - Start - Operate
 ===========================
@@ -24,26 +24,30 @@ Site IT each installs their own packages, starts the services, and maps the data
 
 Operate
 -------
-Lead scientists / administrators control the federated learning process: deploy application, check statuses, start / abort / shutdown training
+Lead scientists / administrators control the federated learning process: submit jobs to deploy applications, check statuses, abort / shutdown training
 
+.. _provisioned_setup:
 
 ******************************************************************************
 Provision: Configure and generate packages for the server, clients, and admins
 ******************************************************************************
-
 One party leads the process of configuring the provisioning tool and using it to generate startup kits for each party in
 the federated learning training project:
 
 Preparation for using the provisioning tool
 ===========================================
-
 After :ref:`installation`, the provisioning tool is available via ``provision`` command.
 
 Provisioning a federated learning project
 =========================================
-The :ref:`provisioning` page has details on the contents of the
-provisioning tool. Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
-project requirements, then run the startup kit with (here we assume your project.yml is in current working directory)::
+The :ref:`provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open
+Provision API, which you can use to customize configurations to fit your own requirements.
+
+Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
+project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
+for your project).
+
+Then run the startup kit with (here we assume your project.yml is in current working directory)::
 
     provision -p project.yml
 
@@ -66,8 +70,6 @@ and "packages" folder to a safe location. The passwords shown below are for demo
     │ researcher@org2.com   │ org2   │ researcher@org2.com.zip   │ GJS6eb410q0ijlCZ │
     │ it@org2.com           │ org2   │ it@org2.com.zip           │ s3lYvaL2tqX0Wrjb │
     └───────────────────────┴────────┴───────────────────────────┴──────────────────┘
-
-.. tip:: You can run ``provision -n -p project.yml`` to generate zip files without password protection.
 
 .. tip:: For security reasons, it is recommended to send the password to each participant separately from the package itself.
 
@@ -93,11 +95,23 @@ running the package will need write access there.
 Start: Instructions for each participant to start running FL with their startup kits
 ************************************************************************************
 
-.. attention:: Please always safeguard .key files!
+.. attention:: Please always safeguard .key files! These are the critical keys for secure communication!
 
-Federated learning server ($SERVER_NAME.zip)
-============================================
-One single server will coordinate the federated learning training and be the main hub all clients and administrator
+Overseer ($OVERSEER_NAME.zip)
+=============================
+One single Overseer will keep track of all the FL servers and communicate to all the participants through their Overseer
+Agents the active FL server or SP.
+
+After unzipping the package for the Overseer, run the start.sh file from the "startup" folder you unzipped to start the Overseer.
+
+If clients from other machines cannot connect to the Overseer, make sure that the hostname (name of the server under
+participants in project.yml) specified when generating the startup kits in the provisioning process resolves to the
+correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
+to ``/etc/hosts`` with the internal IP and the hostname.
+
+Federated learning servers ($SERVER_NAME.zip)
+=============================================
+Server will coordinate the federated learning training and be the main hub all clients and admin
 clients connect to.
 
 After unzipping the package server.zip, run the start.sh file from the "startup" folder you unzipped to start the server.
