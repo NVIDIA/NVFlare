@@ -22,6 +22,17 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
 
+def _prepare_training_ctx(client_task: ClientTask, fl_ctx: FLContext):
+    task = client_task.task
+    fl_ctx.set_prop("current_round", task.props["round"], private=False)
+    fl_ctx.set_prop("total_rounds", task.props["total"], private=False)
+
+
+def _process_training_result(client_task: ClientTask, fl_ctx: FLContext):
+    task = client_task.task
+    task.data = client_task.result
+
+
 class CustomController(Controller):
     def __init__(
         self,
@@ -59,15 +70,6 @@ class CustomController(Controller):
         self._global_model = self.persistor.load(fl_ctx)
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_model, private=True, sticky=True)
 
-    def _prepare_training_ctx(self, client_task: ClientTask, fl_ctx: FLContext):
-        task = client_task.task
-        fl_ctx.set_prop("current_round", task.props["round"], private=False)
-        fl_ctx.set_prop("total_rounds", task.props["total"], private=False)
-
-    def _process_training_result(self, client_task: ClientTask, fl_ctx: FLContext):
-        task = client_task.task
-        task.data = client_task.result
-
     def process_result_of_unknown_task(
         self,
         client: Client,
@@ -91,8 +93,8 @@ class CustomController(Controller):
                 data=self.shareable_gen.learnable_to_shareable(self._global_model, fl_ctx),
                 props={"round": r, "total": self._num_rounds},
                 timeout=0,
-                before_task_sent_cb=self._prepare_training_ctx,
-                result_received_cb=self._process_training_result,
+                before_task_sent_cb=_prepare_training_ctx,
+                result_received_cb=_process_training_result,
             )
 
             client_list = engine.get_clients()

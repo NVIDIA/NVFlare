@@ -18,6 +18,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 import pytest
@@ -51,39 +52,61 @@ def cleanup_path(path: str):
         shutil.rmtree(path)
 
 
-params = [
-    "./data/test_examples.yml",
-    "./data/test_internal.yml",
-    "./data/test_ha.yml",
-]
+def get_system_setup(system_setup_yaml: str):
+    """Gets system setup config from yaml."""
+    system_setup = read_yaml(system_setup_yaml)
+    print(f"System setup from {system_setup_yaml}:")
+    system_setup["ha"] = system_setup.get("ha", False)
+    for x in ["n_clients", "n_servers", "poc", "snapshot_path", "job_store_path", "ha"]:
+        if x not in system_setup:
+            raise RuntimeError(f"System setup: {system_setup_yaml} missing required attributes {x}.")
+        print(f"\t{x}: {system_setup[x]}")
+    return system_setup
+
+
+def get_test_config(test_config_yaml: str):
+    print(f"Test config from:  {test_config_yaml}")
+    test_config = read_yaml(test_config_yaml)
+    test_config["single_app_as_job"] = test_config.get("single_app_as_job", False)
+    test_config["cleanup"] = test_config.get("cleanup", True)
+    for x in ["system_setup", "cleanup", "single_app_as_job"]:
+        if x not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing required attributes {x}.")
+        print(f"\t{x}: {test_config[x]}")
+
+    if test_config["single_app_as_job"]:
+        if "apps_root_dir" not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing apps_root_dir.")
+        print(f"\tapps_root_dir: {test_config['apps_root_dir']}")
+    else:
+        if "jobs_root_dir" not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
+        print(f"\tjobs_root_dir: {test_config['jobs_root_dir']}")
+
+    return test_config
+
+
+test_configs = read_yaml("./test_cases.yml")
 
 
 @pytest.fixture(
     scope="class",
-    params=params,
+    params=test_configs["test_configs"],
 )
 def setup_and_teardown(request):
     yaml_path = os.path.join(os.path.dirname(__file__), request.param)
-    print("Loading params from ", yaml_path)
-    test_config = read_yaml(yaml_path)
-    for x in ["system_setup", "cleanup", "jobs_root_dir", "snapshot_path", "job_store_path"]:
-        if x not in test_config:
-            raise RuntimeError(f"YAML {yaml_path} missing required attributes {x}.")
-    cleanup_path(test_config["snapshot_path"])
-    cleanup_path(test_config["job_store_path"])
-    system_setup = read_yaml(test_config["system_setup"])
-    for x in ["n_clients", "n_servers", "poc"]:
-        if x not in system_setup:
-            raise RuntimeError(f"system setup {test_config['system_setup']} missing required attributes {x}.")
+    test_config = get_test_config(yaml_path)
+    system_setup = get_system_setup(test_config["system_setup"])
 
-    jobs_root_dir = test_config["jobs_root_dir"]
-    snapshot_path = test_config["snapshot_path"]
-    job_store_path = test_config["job_store_path"]
     cleanup = test_config["cleanup"]
 
     poc = system_setup["poc"]
-    ha = system_setup.get("ha", False)
+    snapshot_path = system_setup["snapshot_path"]
+    job_store_path = system_setup["job_store_path"]
+    cleanup_path(snapshot_path)
+    cleanup_path(job_store_path)
 
+    ha = system_setup["ha"]
     poc = POCDirectory(poc_dir=poc, ha=ha)
     site_launcher = SiteLauncher(poc_directory=poc)
     if ha:
@@ -91,36 +114,31 @@ def setup_and_teardown(request):
     site_launcher.start_servers(n=system_setup["n_servers"])
     site_launcher.start_clients(n=system_setup["n_clients"])
 
-    print(f"cleanup = {cleanup}")
-    print(f"poc = {poc}")
-    print(f"jobs_root_dir = {jobs_root_dir}")
-    print(f"snapshot_path = {snapshot_path}")
-    print(f"job_store_path = {job_store_path}")
-
     # testing jobs
     test_jobs = []
-    generated_jobs = []
-    for x in test_config["tests"]:
-        if "job_name" in x:
-            test_jobs.append((x["job_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
-            continue
-        job_dir = generate_job_dir_for_single_app_job(
-            app_name=x["app_name"],
-            app_root_folder=test_config["apps_root_dir"],
-            clients=[x["name"] for x in site_launcher.client_properties.values()],
-            destination=jobs_root_dir,
-            app_as_job=True,
-        )
-        test_jobs.append(
-            (
-                x["app_name"],
-                x["validators"],
-                x.get("setup", []),
-                x.get("teardown", []),
-                x.get("event_sequence_yaml", ""),
+    if test_config["single_app_as_job"]:
+        jobs_root_dir = tempfile.mkdtemp()
+        for x in test_config["tests"]:
+            _ = generate_job_dir_for_single_app_job(
+                app_name=x["app_name"],
+                app_root_folder=test_config["apps_root_dir"],
+                clients=[x["name"] for x in site_launcher.client_properties.values()],
+                destination=jobs_root_dir,
+                app_as_job=True,
             )
-        )
-        generated_jobs.append(job_dir)
+            test_jobs.append(
+                (
+                    x["app_name"],
+                    x["validators"],
+                    x.get("setup", []),
+                    x.get("teardown", []),
+                    x.get("event_sequence_yaml", ""),
+                )
+            )
+    else:
+        jobs_root_dir = test_config["jobs_root_dir"]
+        for x in test_config["tests"]:
+            test_jobs.append((x["job_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
 
     admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
     if not admin_controller.initialize():
@@ -138,9 +156,9 @@ def setup_and_teardown(request):
             site_launcher.cleanup()
 
     if cleanup:
-        for job_dir in generated_jobs:
-            print(f"Cleaning up job {job_dir}")
-            shutil.rmtree(job_dir)
+        if test_config["single_app_as_job"]:
+            print(f"Cleaning up generated job dir {jobs_root_dir}")
+            shutil.rmtree(jobs_root_dir)
         cleanup_path(snapshot_path)
         cleanup_path(job_store_path)
 
