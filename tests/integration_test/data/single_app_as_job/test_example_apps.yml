@@ -1,5 +1,4 @@
 system_setup: ./data/system/1_server_2_clients.yml
-jobs_root_dir: ./data/jobs
 apps_root_dir: ../../examples
 single_app_as_job: True
 cleanup: True
