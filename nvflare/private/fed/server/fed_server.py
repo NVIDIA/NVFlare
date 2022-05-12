@@ -634,9 +634,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if self.admin_server:
                 self.admin_server.client_heartbeat(token)
 
-            self._sync_client_jobs(request, client_name)
-
-            summary_info = fed_msg.FederatedSummary()
+            display_jobs = ",".join(self._sync_client_jobs(request, client_name))
+            summary_info = fed_msg.FederatedSummary(comment=f"Abort jobs: {display_jobs}")
             return summary_info
 
     def _sync_client_jobs(self, request, client_name):
@@ -647,6 +646,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             job_runner = self.engine.job_runner
             for run_number in jobs_need_abort:
                 job_runner.abort_client_run(self.engine, run_number, [client_name], fl_ctx)
+        return jobs_need_abort
 
     def Retrieve(self, request, context):
         client_name = request.client_name

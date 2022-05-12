@@ -244,8 +244,9 @@ class FederatedClientBase:
             if self.token:
                 while not self.engine:
                     time.sleep(1.0)
-                self.communicator.send_heartbeat(self.servers, project_name, self.token, self.ssid, self.client_name,
-                                                 self.engine)
+                self.communicator.send_heartbeat(
+                    self.servers, project_name, self.token, self.ssid, self.client_name, self.engine
+                )
         except FLCommunicationError as e:
             self.communicator.heartbeat_done = True
 
