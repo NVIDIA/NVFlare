@@ -68,9 +68,9 @@ Each event has the following attributes:
 | result_state | What state to expect after these actions are finished. |
 
 Triggers can be triggered based on its type:
-  - str: match a string based on log output from server                                                      |
+  - str: match a string based on log output from server
   - dict: state based on predefined tracked state variables
-    (workflow, task, round_number, run_finished etc.) |
+    (workflow, task, round_number, run_finished etc.)
 
 ## Folder Structure
 
@@ -87,5 +87,7 @@ Triggers can be triggered based on its type:
 ### apps
 
 Because the applications inside the `apps` folder is treated as single app job.
+
 Each application in apps folder should contain `config` folder.
+
 And should have `config_fed_server.json` and `config_fed_client.json` inside the config folder.
