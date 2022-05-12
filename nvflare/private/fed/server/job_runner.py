@@ -82,13 +82,14 @@ class JobRunner(FLComponent):
                     if p in sites:
                         client_sites.append(p)
 
-            self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
-            display_sites = ",".join(client_sites)
-            self.log_info(
-                fl_ctx,
-                f"Application {app_name} deployed to the clients: {display_sites} for run:{run_number}",
-                fire_event=False,
-            )
+            if client_sites:
+                self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
+                display_sites = ",".join(client_sites)
+                self.log_info(
+                    fl_ctx,
+                    f"Application {app_name} deployed to the clients: {display_sites} for run:{run_number}",
+                    fire_event=False,
+                )
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number
@@ -101,7 +102,8 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.APP_NAME, app_name)
         replies = self._send_to_clients(admin_server, client_sites, engine, message)
         if not replies:
-            raise RuntimeError("Failed to deploy the App to the clients")
+            display_sites = ",".join(client_sites)
+            raise RuntimeError(f"Failed to deploy the App to the clients: {display_sites}")
 
     def _send_to_clients(self, admin_server, client_sites, engine, message):
         clients, invalid_inputs = engine.validate_clients(client_sites)
