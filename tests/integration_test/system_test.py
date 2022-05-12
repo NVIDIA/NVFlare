@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import sys
 import time
-import traceback
 
 import pytest
 import yaml
@@ -53,7 +52,7 @@ def cleanup_path(path: str):
 
 
 params = [
-    # "./data/test_examples.yml",
+    "./data/test_examples.yml",
     "./data/test_internal.yml",
     "./data/test_ha.yml",
 ]
@@ -110,6 +109,7 @@ def setup_and_teardown(request):
             app_root_folder=test_config["apps_root_dir"],
             clients=[x["name"] for x in site_launcher.client_properties.values()],
             destination=jobs_root_dir,
+            app_as_job=True,
         )
         test_jobs.append(
             (
@@ -150,76 +150,74 @@ class TestSystem:
     def test_run_job_complete(self, setup_and_teardown):
         ha, test_jobs, site_launcher, admin_controller = setup_and_teardown
 
-        try:
-            print(f"Server status: {admin_controller.server_status()}.")
+        print(f"Server status: {admin_controller.server_status()}.")
 
-            job_results = []
-            for job_data in test_jobs:
-                start_time = time.time()
+        job_results = []
+        for job_data in test_jobs:
+            start_time = time.time()
 
-                test_job_name, validators, setup, teardown, event_sequence_yaml = job_data
-                print(f"Running job {test_job_name}")
-                for command in setup:
-                    print(f"Running setup command: {command}")
-                    process = subprocess.Popen(shlex.split(command))
-                    process.wait()
+            test_job_name, validators, setup, teardown, event_sequence_yaml = job_data
+            print(f"Running job {test_job_name}")
+            for command in setup:
+                print(f"Running setup command: {command}")
+                process = subprocess.Popen(shlex.split(command))
+                process.wait()
 
-                admin_controller.submit_job(job_name=test_job_name)
+            admin_controller.submit_job(job_name=test_job_name)
 
-                time.sleep(5)
-                print(f"Server status after job submission: {admin_controller.server_status()}.")
-                print(f"Client status after job submission: {admin_controller.client_status()}")
+            time.sleep(5)
+            print(f"Server status after job submission: {admin_controller.server_status()}.")
+            print(f"Client status after job submission: {admin_controller.client_status()}")
 
-                if event_sequence_yaml:
-                    # admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
-                    admin_controller.run_event_sequence(site_launcher, read_yaml(event_sequence_yaml))
-                else:
-                    admin_controller.wait_for_job_done()
+            if event_sequence_yaml:
+                # admin_controller.run_app_ha(site_launcher, ha_tests["pt"][0])
+                admin_controller.run_event_sequence(site_launcher, read_yaml(event_sequence_yaml))
+            else:
+                admin_controller.wait_for_job_done()
 
-                server_data = site_launcher.get_server_data()
-                client_data = site_launcher.get_client_data()
-                run_data = admin_controller.get_run_data()
+            server_data = site_launcher.get_server_data()
+            client_data = site_launcher.get_client_data()
+            run_data = admin_controller.get_run_data()
 
-                # Get the job validator
-                if validators:
-                    validate_result = True
-                    for validator_module in validators:
-                        # Create validator instance
-                        module_name, class_name = get_module_class_from_full_path(validator_module)
-                        job_validator_cls = getattr(importlib.import_module(module_name), class_name)
-                        job_validator = job_validator_cls()
+            # Get the job validator
+            if validators:
+                validate_result = True
+                for validator_module in validators:
+                    # Create validator instance
+                    module_name, class_name = get_module_class_from_full_path(validator_module)
+                    job_validator_cls = getattr(importlib.import_module(module_name), class_name)
+                    job_validator = job_validator_cls()
 
-                        print(server_data)
-                        job_validate_res = job_validator.validate_results(
-                            server_data=server_data,
-                            client_data=client_data,
-                            run_data=run_data,
-                        )
-                        print(
-                            f"Job {test_job_name}, Validator {job_validator.__class__.__name__} result: {job_validate_res}"
-                        )
-                        validate_result = validate_result and job_validate_res
+                    print(server_data)
+                    job_validate_res = job_validator.validate_results(
+                        server_data=server_data,
+                        client_data=client_data,
+                        run_data=run_data,
+                    )
+                    print(
+                        f"Job {test_job_name}, Validator {job_validator.__class__.__name__} result: {job_validate_res}"
+                    )
+                    validate_result = validate_result and job_validate_res
 
-                    job_results.append((test_job_name, validate_result))
-                else:
-                    print("No validators provided so results can't be checked.")
+                job_results.append((test_job_name, validate_result))
+            else:
+                print("No validators provided so results can't be checked.")
 
-                print(f"Finished running {test_job_name} in {time.time() - start_time} seconds.")
-                for command in teardown:
-                    print(f"Running teardown command: {command}")
-                    process = subprocess.Popen(shlex.split(command))
-                    process.wait()
+            print(f"Finished running {test_job_name} in {time.time() - start_time} seconds.")
+            for command in teardown:
+                print(f"Running teardown command: {command}")
+                process = subprocess.Popen(shlex.split(command))
+                process.wait()
 
-            print(f"Job results: {job_results}")
-            failure = False
-            for job_name, job_result in job_results:
-                print(f"Job name: {job_name}, Result: {job_result}")
-                if not job_result:
-                    failure = True
+        print("==============================================================")
+        print(f"Job results: {job_results}")
+        failure = False
+        for job_name, job_result in job_results:
+            print(f"Job name: {job_name}, Result: {job_result}")
+            if not job_result:
+                failure = True
+        print(f"Final result: {not failure}")
+        print("==============================================================")
 
-            if failure:
-                sys.exit(1)
-        except BaseException as e:
-            traceback.print_exc()
-            print(f"Exception in test run: {e.__str__()}")
-            raise ValueError("Tests failed") from e
+        if failure:
+            sys.exit(1)

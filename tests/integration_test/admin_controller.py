@@ -227,6 +227,8 @@ class AdminController:
             response = self.admin_api.check_status(target_type=TargetType.SERVER)
             if response["status"] != APIStatus.SUCCESS:
                 raise RuntimeError(f"check_status failed: {response}")
+            if not response["details"]:
+                raise RuntimeError(f"response {response} does not have details.")
             if response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped":
                 response = self.admin_api.check_status(target_type=TargetType.CLIENT)
                 if response["status"] != APIStatus.SUCCESS:
@@ -310,7 +312,11 @@ class AdminController:
             ):
 
                 # compare run_state to expected result_state from the test case
-                if event_idx < len(ha_events) and event_test_status[event_idx] and response["status"] == APIStatus.SUCCESS:
+                if (
+                    event_idx < len(ha_events)
+                    and event_test_status[event_idx]
+                    and response["status"] == APIStatus.SUCCESS
+                ):
                     result_state = ha_events[event_idx]["result_state"]
                     if any(list(run_state.values())):
                         if result_state == "unchanged":
