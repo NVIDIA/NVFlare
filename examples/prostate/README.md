@@ -30,7 +30,10 @@ install required packages for training
 pip3 install --upgrade pip
 pip3 install -r ./virtualenv/min-requirements.txt
 ```
-
+(optional) if you would like to plot the TensorBoard event files as shown below, please also install
+```
+pip install -r ./virtualenv/plot-requirements.txt
+```
 ## 2. Multi-source Data Preparation
 To run this example, we are going to make use of three open prostate datasets which we split into four FL clients with comparable sizes. Each of them needs some special preprocessing steps. 
 
