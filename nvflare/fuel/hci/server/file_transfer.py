@@ -11,21 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 import os
 import shutil
 import tempfile
 import traceback
-from io import BytesIO
-from typing import List, Tuple
-from zipfile import ZipFile
+from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.fl_constant import SystemComponents
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
-from nvflare.apis.study_manager_spec import Study, StudyManagerSpec
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -37,6 +32,7 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.private.fed.server.job_validator import JobValidator
 
 
 class FileTransferModule(CommandModule):
@@ -269,20 +265,11 @@ class FileTransferModule(CommandModule):
 
         try:
             with engine.new_context() as fl_ctx:
-                with ZipFile(BytesIO(data_bytes), "r") as zf:
-                    meta_file = folder_name + "/meta.json"
-                    meta_data = zf.read(meta_file)
-                    meta = json.loads(meta_data)
-                    if JobMetaKey.JOB_FOLDER_NAME not in meta:
-                        meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
-                    study_name = meta.get(JobMetaKey.STUDY_NAME.value)
-                    if not study_name:
-                        meta[JobMetaKey.STUDY_NAME.value] = Study.DEFAULT_STUDY_NAME
-
-                    valid, error = self._validate_job(meta, study_manager, fl_ctx)
-                    if not valid:
-                        conn.append_error(error)
-                        return
+                job_validator = JobValidator(fl_ctx)
+                valid, error, meta = job_validator.validate(folder_name, data_bytes)
+                if not valid:
+                    conn.append_error(error)
+                    return
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -333,42 +320,3 @@ class FileTransferModule(CommandModule):
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))
         conn.append_string("Server Download Source: {}".format(self.download_dir))
-
-    def _validate_job(self, meta: dict, study_manager: StudyManagerSpec, fl_ctx: FLContext) -> Tuple[bool, str]:
-
-        study_name = meta.get(JobMetaKey.STUDY_NAME)
-        if not study_name or study_name == Study.DEFAULT_STUDY_NAME:
-            return True, ""
-
-        if not isinstance(meta.get(JobMetaKey.RESOURCE_SPEC), dict):
-            return False, "RESOURCE_SPEC is expected in meta.json to be a dict"
-        if not isinstance(meta.get(JobMetaKey.DEPLOY_MAP), dict):
-            return False, "DEPLOY_MAP is expected in meta.json to be a dict"
-
-        study = study_manager.get_study(study_name, fl_ctx)
-        if not study:
-            return False, "Study {} does not exist".format(study_name)
-
-        if study.participating_clients:
-
-            # Gather all the clients used in deploy_map or which are mandatory
-            required_clients = set()
-            deploy_map = meta.get(JobMetaKey.DEPLOY_MAP)
-            if deploy_map:
-                for k, v in deploy_map.items():
-                    required_clients.update(v)
-
-            mandatory_clients = meta.get(JobMetaKey.MANDATORY_CLIENTS)
-            if mandatory_clients:
-                required_clients.update(mandatory_clients)
-
-            required_clients.remove("server")
-
-            participants = set(study.participating_clients)
-            if not required_clients.issubset(participants):
-                diff = required_clients - participants
-                return False, "Following clients are not participants of the study {}: {}".format(study_name, diff)
-
-        # TODO: Validate resources against resource manager
-
-        return True, ""
