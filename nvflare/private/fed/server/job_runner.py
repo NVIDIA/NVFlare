@@ -77,18 +77,19 @@ class JobRunner(FLComponent):
                         fl_ctx, f"Application {app_name} deployed to the server for run:{run_number}", fire_event=False
                     )
                     if not success:
-                        raise RuntimeError("Failed to deploy the App to the server")
+                        raise RuntimeError(f"Failed to deploy the App: {app_name} to the server")
                 else:
                     if p in sites:
                         client_sites.append(p)
 
-            self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
-            display_sites = ",".join(client_sites)
-            self.log_info(
-                fl_ctx,
-                f"Application {app_name} deployed to the clients: {display_sites} for run:{run_number}",
-                fire_event=False,
-            )
+            if client_sites:
+                self._deploy_clients(app_data, app_name, run_number, client_sites, engine)
+                display_sites = ",".join(client_sites)
+                self.log_info(
+                    fl_ctx,
+                    f"Application {app_name} deployed to the clients: {display_sites} for run:{run_number}",
+                    fire_event=False,
+                )
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number
@@ -101,7 +102,8 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.APP_NAME, app_name)
         replies = self._send_to_clients(admin_server, client_sites, engine, message)
         if not replies:
-            raise RuntimeError("Failed to deploy the App to the clients")
+            display_sites = ",".join(client_sites)
+            raise RuntimeError(f"Failed to deploy the App to the clients: {display_sites}")
 
     def _send_to_clients(self, admin_server, client_sites, engine, message):
         clients, invalid_inputs = engine.validate_clients(client_sites)
@@ -126,13 +128,13 @@ class JobRunner(FLComponent):
         job_clients = engine.get_job_clients(client_sites)
         err = engine.start_app_on_server(run_number, job_id=job.job_id, job_clients=job_clients)
         if err:
-            raise RuntimeError("Could not start the server App.")
+            raise RuntimeError(f"Could not start the server App for Run: {run_number}.")
 
         replies = engine.start_client_job(run_number, client_sites)
-        if not replies:
-            raise RuntimeError("Failed to start the App to the clients")
-
         display_sites = ",".join(list(client_sites.keys()))
+        if not replies:
+            raise RuntimeError(f"Failed to start the Run: {run_number} to the clients: {display_sites}")
+
         self.log_info(fl_ctx, f"Started run: {run_number} for clients: {display_sites}")
         self.fire_event(EventType.JOB_STARTED, fl_ctx)
 
