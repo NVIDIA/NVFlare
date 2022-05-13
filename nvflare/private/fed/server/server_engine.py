@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import fcntl
 import logging
 import multiprocessing
 import os
@@ -612,7 +613,16 @@ class ServerEngine(ServerEngineInternalSpec):
         #    Make sure to include the current round number
         # 2. call persistence API to save the component states
 
-        with self.snapshot_lock:
+        lockfile = open(os.path.join(fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT), "snapshot.flock"), "w")
+        acquired_lock = False
+        while not acquired_lock:
+            try:
+                fcntl.flock(lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired_lock = True
+            except IOError:
+                time.sleep(0.1)
+
+        try:
             fl_snapshot = self.snapshot_persistor.retrieve()
             if fl_snapshot:
                 for run_number in list(fl_snapshot.run_snapshots.keys()):
@@ -657,6 +667,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
             fl_snapshot.add_snapshot(fl_ctx.get_prop(FLContextKey.CURRENT_RUN), snapshot)
             self.server.snapshot_location = self.snapshot_persistor.save(snapshot=fl_snapshot)
+        finally:
+            lockfile.close()
         self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):

@@ -785,10 +785,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                         workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
                         dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
                         if os.path.exists(dst):
-                            shutil.rmtree(dst)
+                            shutil.rmtree(dst, ignore_errors=True)
 
-                        if not os.path.exists(dst):
-                            os.makedirs(dst)
+                        os.makedirs(dst, exist_ok=True)
                         unzip_all_from_bytes(workspace_data, dst)
 
                         job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
