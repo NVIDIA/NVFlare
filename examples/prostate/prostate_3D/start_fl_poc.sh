@@ -32,7 +32,7 @@ sleep 10
 
 # start clients
 echo "STARTING CLIENTS"
-i=1
+i=0
 for id in ${client_ids}
 do
   gpu_idx=$((${i} % ${n_gpus}))
