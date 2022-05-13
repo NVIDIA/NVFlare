@@ -23,10 +23,7 @@ Log into the Admin client by entering `admin` for both the username and password
 Then, use these Admin commands to run the experiment:
 
 ```
-set_run_number 1
-upload_app hello-pt-tb
-deploy_app hello-pt-tb all
-start_app all
+submit_job hello-pt-tb
 ```
 
 ### 4. Tensorboard Streaming
@@ -35,12 +32,12 @@ On the client side, the `AnalyticsSender` works as a TensorBoard SummaryWriter. 
 The `ConvertToFedEvent` widget will turn the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`, which will be delivered to the server side.
 
 On the server side, the `TBAnalyticsReceiver` is configured to process `fed.analytix_log_stats` events, which writes received TB data into appropriate TB files on the server
-(defaults to `server/run_1/tb_events`).
+(defaults to `server/[run number]/tb_events`).
 
 To view training metrics that are being streamed to the server, run:
 
 ```
-tensorboard --logdir=poc/server/run_1/tb_events
+tensorboard --logdir=poc/server/[run number]/tb_events
 ```
 
 Note: if the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser. For example:

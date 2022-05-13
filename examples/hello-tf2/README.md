@@ -10,7 +10,7 @@ Follow the [Installation](https://nvidia.github.io/NVFlare/installation.html) in
 Install additional requirements:
 
 ```
-pip3 install torch
+pip3 install tensorflow
 ```
 
 ### 2. Set up your FL workspace
@@ -23,10 +23,7 @@ Log into the Admin client by entering `admin` for both the username and password
 Then, use these Admin commands to run the experiment:
 
 ```
-set_run_number 1
-upload_app hello-tf2
-deploy_app hello-tf2 all
-start_app all
+submit_job hello-tf2
 ```
 
 ### 4. Shut down the server/clients

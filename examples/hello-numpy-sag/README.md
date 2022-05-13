@@ -19,7 +19,7 @@ Log into the Admin client by entering `admin` for both the username and password
 Then, use these Admin commands to run the experiment:
 
 ```
-upload_job hello-numpy-sag
+submit_job hello-numpy-sag
 ```
 
 ### 4. Shut down the server/clients

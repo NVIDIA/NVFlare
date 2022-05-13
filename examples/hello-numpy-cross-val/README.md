@@ -18,10 +18,7 @@ Log into the Admin client by entering `admin` for both the username and password
 Then, use these Admin commands to run the experiment:
 
 ```
-set_run_number 1
-upload_app hello-numpy-cross-val
-deploy_app hello-numpy-cross-val all
-start_app all
+submit_job hello-numpy-cross-val
 ```
 
 ### 4. Shut down the server/clients
