@@ -42,7 +42,7 @@ class JobCommandModule(TrainingCommandModule):
                 CommandSpec(
                     name="list_jobs",
                     description="list submitted jobs",
-                    usage="list_jobs [-n name_prefix] [-s study_prefix] [-d] [job_id_prefix]",
+                    usage="list_jobs [-n name_prefix] [-d] [job_id_prefix]",
                     handler_func=self.list_jobs,
                 ),
                 CommandSpec(
@@ -87,7 +87,6 @@ class JobCommandModule(TrainingCommandModule):
             parser.add_argument("job_id", nargs="?", help="Job ID prefix")
             parser.add_argument("-d", action="store_true", help="Show detailed list")
             parser.add_argument("-n", help="Filter by job name prefix")
-            parser.add_argument("-s", help="Filter by study name prefix")
             parsed_args = parser.parse_args(args[1:])
 
             engine = conn.app_ctx
@@ -104,9 +103,8 @@ class JobCommandModule(TrainingCommandModule):
             if jobs:
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
-                study_prefix = parsed_args.s
 
-                filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, study_prefix)]
+                filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix)]
                 if not filtered_jobs:
                     conn.append_error("No jobs matching the searching criteria")
                     return
@@ -179,11 +177,9 @@ class JobCommandModule(TrainingCommandModule):
             return
         conn.append_success("")
 
-    def _job_match(self, job_meta: Dict, id_prefix: str, name_prefix: str, study_prefix: str) -> bool:
-        return (
-            ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower()))
-            and ((not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower()))
-            and ((not study_prefix) or job_meta.get("study_name").lower().startswith(study_prefix.lower()))
+    def _job_match(self, job_meta: Dict, id_prefix: str, name_prefix: str) -> bool:
+        return ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower())) and (
+            (not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower())
         )
 
     def _send_detail_list(self, conn: Connection, jobs: List[Job]):
@@ -192,13 +188,12 @@ class JobCommandModule(TrainingCommandModule):
 
     def _send_summary_list(self, conn: Connection, jobs: List[Job]):
 
-        table = Table(["Job ID", "Name", "Study", "Status", "Submit Time"])
+        table = Table(["Job ID", "Name", "Status", "Submit Time"])
         for job in jobs:
             table.add_row(
                 [
                     job.meta.get("job_id", ""),
                     job.meta.get("name", ""),
-                    job.meta.get("study_name", ""),
                     job.meta.get("status", ""),
                     job.meta.get("submit_time_iso", ""),
                 ]
