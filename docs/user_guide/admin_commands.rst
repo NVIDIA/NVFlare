@@ -30,7 +30,6 @@ commands shown as examples of how they may be run with a description.
     ,``check_status client clientname``,"The name, token, and status of the specified client with *clientname* are displayed."
     submit_job,``submit_job job_folder_name``,Submits the job to the server.
     list_jobs,``list_jobs``,Lists the jobs on the server. (Options: [-n name_prefix] [-s study_prefix] [-d] [job_id_prefix])
-    delete_job,``delete_job job_id``,Deletes the job of the specified job_id
     abort_job,``abort_job job_id``,Aborts the job of the specified job_id if it is running or dispatched
     clone_job,``clone_job job_id``,Creates a copy of the specified job with a new job_id
     abort,``abort job_id client``,Aborts the job for the specified job_id for all clients. Individual client jobs can be aborted by specifying *clientname*.

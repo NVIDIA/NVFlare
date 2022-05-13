@@ -107,9 +107,9 @@ I’ll continue to use the current hot FL Server.
 
 Hot SP has changed
 ^^^^^^^^^^^^^^^^^^
-I’ll suspend current jobs (if any), and try to login to the new hot FL server. After that, I will resume current
-jobs, if any. If I run into any communication issues with the new server, I will keep retrying until success
-or the hot server endpoint changes again.
+I’ll suspend current jobs and abort current running tasks (if any), and try to login to the new hot FL server. After that,
+I will resume current jobs, if any. If I run into any communication issues with the new server, I will keep retrying
+until success or the hot server endpoint changes again.
 
 FL Server
 ---------
@@ -171,6 +171,9 @@ snapshot-based job continuation mechanism.
       whereas the cross-site-validation controller doesn’t create any snapshots.
     - After the SP cutover, the Controller will initiate the restoration of job execution state from the latest snapshot.
       If the Controller didn’t create additional snapshots, then the job will be executed from the beginning after the SP cutover.
+    - Note that if clients detect the SP change, they will call "abort_task" to abort the current running task, because
+      that task came from the previous SP. If at that moment there is a task running, it will be aborted with the "TASK_ABORTED"
+      return code.
     - After the job execution completes, the job snapshot will be deleted from the snapshot storage. If the SP cutover
       occurs after the job execution completes, the completed job will not be migrated over.
 
