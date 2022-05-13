@@ -17,7 +17,6 @@
 
 set -ex
 
-
 ## Unit Tests
 pip install -r requirements-dev.txt
 PYTHONPATH=$PWD
