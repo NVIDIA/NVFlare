@@ -22,13 +22,11 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import StorageSpec
-from nvflare.apis.study_manager_spec import StudyManagerSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
 
@@ -63,24 +61,11 @@ class _ReviewerFilter(_JobFilter):
         """Not used yet, for use in future implementations."""
         self.result = []
         self.reviewer_name = reviewer_name
-        engine = fl_ctx.get_engine()
-        self.study_manager = engine.get_component(SystemComponents.STUDY_MANAGER)
-        if not isinstance(self.study_manager, StudyManagerSpec):
-            raise TypeError(
-                f"engine should have a study manager component of type StudyManagerSpec, but got {type(self.study_manager)}"
-            )
 
     def filter_job(self, meta: dict):
-        study = self.study_manager.get_study(meta[JobMetaKey.STUDY_NAME])
-        if study and study.reviewers and self.reviewer_name in study.reviewers:
-            # this job requires review from this reviewer
-            # has it been reviewed already?
-            approvals = meta.get(JobMetaKey.APPROVALS)
-            if approvals and self.reviewer_name in approvals:
-                # already reviewed
-                return True
-            else:
-                self.result.append(job_from_meta(meta))
+        approvals = meta.get(JobMetaKey.APPROVALS)
+        if not approvals or self.reviewer_name not in approvals:
+            self.result.append(job_from_meta(meta))
         return True
 
 
@@ -108,7 +93,6 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Dict[str, Any]:
         # validate meta to make sure it has:
-        # - valid study ...
 
         jid = str(uuid.uuid4())
         meta[JobMetaKey.JOB_ID.value] = jid
@@ -128,7 +112,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         store.delete_object(self.job_uri(jid))
 
     def _validate_meta(self, meta):
-        """Validate meta against study.
+        """Validate meta
 
         Args:
             meta: meta to validate
@@ -141,12 +125,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def _validate_uploaded_content(self, uploaded_content) -> bool:
         """Validate uploaded content for creating a run config. (THIS NEEDS TO HAPPEN BEFORE CONTENT IS PROVIDED NOW)
 
-        Internally used by create and update. Use study_manager to get study info to validate.
+        Internally used by create and update.
 
-        1. check all sites in deployment are in study
-        2. check all sites in resources are in study
-        3. check all sites in deployment are in resources
-        4. each site in deployment need to have resources (each site in resource need to be in deployment ???)
+        1. check all sites in deployment are in resources
+        2. each site in deployment need to have resources (each site in resource need to be in deployment ???)
         """
         pass
 

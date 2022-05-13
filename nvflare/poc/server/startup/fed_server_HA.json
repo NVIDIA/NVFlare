@@ -71,18 +71,6 @@
       "id": "job_store",
       "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
       "args": {}
-    },
-    {
-      "id": "study_manager",
-      "path": "nvflare.apis.impl.study_manager.StudyManager",
-      "args": {
-        "study_store_id": "study_store"
-      }
-    },
-    {
-      "id": "study_store",
-      "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
-      "args": {}
     }
   ]
 }
