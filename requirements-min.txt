@@ -7,4 +7,3 @@ cryptography>=36.0.0
 tenseal==0.3.0
 gunicorn
 flask
-pyjwt

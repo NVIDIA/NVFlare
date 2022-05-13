@@ -31,7 +31,6 @@ class RunStatus(str, Enum):
 
 
 class JobMetaKey(str, Enum):
-    STUDY_NAME = "study_name"
     JOB_ID = "job_id"
     JOB_FOLDER_NAME = "job_folder_name"
     STATUS = "status"
@@ -53,7 +52,6 @@ class Job:
     def __init__(
         self,
         job_id: str,
-        study_name: str,
         resource_spec: Dict[str, Dict],
         deploy_map: Dict[str, List[str]],
         meta,
@@ -64,7 +62,6 @@ class Job:
 
         Args:
             job_id: Job ID
-            study_name: Study name
             resource_spec: Resource specification with information on the resources of each client
             deploy_map: Deploy map specifying each app and the sites that it should be deployed to
             meta: full contents of the persisted metadata for the job for persistent storage
@@ -72,7 +69,6 @@ class Job:
             required_sites: A list of required site names
         """
         self.job_id = job_id
-        self.study = study_name
         self.resource_spec = resource_spec  # resource_requirements should be {site name: resource}
         self.deploy_map = deploy_map  # should be {app name: a list of sites}
 
@@ -152,7 +148,6 @@ def job_from_meta(meta: dict) -> Job:
     """
     job = Job(
         job_id=meta.get(JobMetaKey.JOB_ID, ""),
-        study_name=meta.get(JobMetaKey.STUDY_NAME, ""),
         resource_spec=meta.get(JobMetaKey.RESOURCE_SPEC, {}),
         deploy_map=meta.get(JobMetaKey.DEPLOY_MAP, {}),
         meta=meta,

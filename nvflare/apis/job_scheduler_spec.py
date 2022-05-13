@@ -45,10 +45,6 @@ class JobSchedulerSpec(ABC):
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
         """Try to schedule a Job.
 
-        Note: the sites to be deployed to can be a subset of sites that the job's study
-           is configured to run, due to resources availability of the sites.
-
-
         Args:
             job_candidates: The candidate to choose from.
             fl_ctx: FLContext.
