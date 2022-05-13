@@ -13,16 +13,12 @@
 # limitations under the License.
 import collections
 import json
-import time
-from datetime import datetime
 from io import BytesIO
 from typing import Set, Tuple
 from zipfile import ZipFile
 
-from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.study_manager_spec import Study
 
 SERVER_CONFIG = "config_fed_server.json"
 CLIENT_CONFIG = "config_fed_client.json"
@@ -33,10 +29,6 @@ class JobValidator:
 
     def __init__(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
-        engine = fl_ctx.get_engine()
-        self.study_manager = engine.get_component(SystemComponents.STUDY_MANAGER)
-        if not self.study_manager:
-            raise ValueError("Server configuration error: no study manager is configured")
 
     def validate(self, job_name: str, job_data: bytes) -> Tuple[bool, str, dict]:
         """Validate job
@@ -58,8 +50,6 @@ class JobValidator:
                 if JobMetaKey.JOB_FOLDER_NAME not in meta:
                     meta[JobMetaKey.JOB_FOLDER_NAME.value] = job_name
 
-                study_name = meta.get(JobMetaKey.STUDY_NAME.value)
-                self._validate_study(study_name, meta)
                 self._validate_deployment(meta, zf)
 
                 # Validating resource_spec
@@ -71,38 +61,6 @@ class JobValidator:
             return False, str(e), meta
 
         return True, "", meta
-
-    def _validate_study(self, study_name: str, meta: dict) -> None:
-
-        # Default or empty study is always valid
-        if not study_name or study_name == Study.DEFAULT_STUDY_NAME:
-            return
-
-        study = self.study_manager.get_study(study_name, self.fl_ctx)
-        if not study:
-            raise ValueError(f"Study {study_name} does not exist")
-
-        # Validating all clients are participants of the study
-        all_clients = self._get_all_clients(meta)
-        if study.participating_clients:
-            participants = set(study.participating_clients)
-            if not all_clients.issubset(participants):
-                diff = all_clients - participants
-                raise ValueError("Following clients are not participants of the study {}: {}".format(study_name, diff))
-
-        # Validating study validity period
-        current_time = time.time()
-        if study.start_time and study.start_time > current_time:
-            raise ValueError(
-                f"Study {study_name} has not started yet. "
-                f"The start time is {datetime.utcfromtimestamp(study.start_time).isoformat()}"
-            )
-
-        if study.end_time and study.end_time < current_time:
-            raise ValueError(
-                f"Study {study_name} has ended. "
-                f"The end time is {datetime.utcfromtimestamp(study.end_time).isoformat()}"
-            )
 
     def _validate_deployment(self, meta: dict, zip_file: ZipFile) -> None:
 

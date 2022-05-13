@@ -18,7 +18,6 @@ import traceback
 from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.base64_utils import (
@@ -258,10 +257,6 @@ class FileTransferModule(CommandModule):
         zip_b64str = args[2]
         data_bytes = convert_legacy_zip(b64str_to_bytes(zip_b64str))
         engine = conn.app_ctx
-        study_manager = engine.get_component(SystemComponents.STUDY_MANAGER)
-        if not study_manager:
-            conn.append_error("Server configuration error: no study manager is configured")
-            return
 
         try:
             with engine.new_context() as fl_ctx:
