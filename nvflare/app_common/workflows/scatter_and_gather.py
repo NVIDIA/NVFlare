@@ -39,14 +39,14 @@ class ScatterAndGather(Controller):
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
-        ignore_result_error: bool = True,
+        ignore_result_error: bool = False,
     ):
-        """The controller for FederatedAveraging Workflow.
+        """The controller for ScatterAndGather Workflow.
 
-        The ScatterAndGather workflow defines Federated training on all clients.
+        The ScatterAndGather workflow defines FederatedAveraging on all clients.
         The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.
-        Each clients sends it's updated weights after local training which is aggregated (aggregator_id). The
-        shareable generator is used to convert the aggregated weights to shareable and shareable back to weights.
+        Each client sends it's updated weights after local training which is aggregated (aggregator_id). The
+        shareable generator is used to convert the aggregated weights to shareable and shareable back to weight.
         The model_persistor also saves the model after training.
 
         Args:
@@ -60,7 +60,8 @@ class ScatterAndGather(Controller):
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
-            ignore_result_error (bool, optional): whether this controller can proceed if result has errors. Defaults to True.
+            ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
+                Defaults to False.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -138,7 +139,8 @@ class ScatterAndGather(Controller):
         self.shareable_gen = engine.get_component(self.shareable_generator_id)
         if not isinstance(self.shareable_gen, ShareableGenerator):
             self.system_panic(
-                f"Shareable generator {self.shareable_generator_id} must be a ShareableGenerator type object but got {type(self.shareable_gen)}",
+                f"Shareable generator {self.shareable_generator_id} must be a ShareableGenerator type object, "
+                f"but got {type(self.shareable_gen)}",
                 fl_ctx,
             )
             return
@@ -146,7 +148,8 @@ class ScatterAndGather(Controller):
         self.persistor = engine.get_component(self.persistor_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.system_panic(
-                f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object but got {type(self.persistor)}",
+                f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object, "
+                f"but got {type(self.persistor)}",
                 fl_ctx,
             )
             return
