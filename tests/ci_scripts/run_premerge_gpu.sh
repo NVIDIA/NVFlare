@@ -17,18 +17,12 @@
 
 set -ex
 
-BUILD_TYPE=all
-
-if [[ $# -eq 1 ]]; then
-    BUILD_TYPE=$1
-
-elif [[ $# -gt 1 ]]; then
-    echo "ERROR: too many parameters are provided"
-    exit 1
-fi
-
 ## Integration Tests
-pip install tensorflow torch torchvision
-
-TF_FORCE_GPU_ALLOW_GROWTH=true pytest --junitxml=./integration_test.xml -v system_test.py -s
+pip install -r requirements-dev.txt
+testFolder = 'tests/integration_test'
+export PYTHONPATH=$PWD
+rm -rf /tmp/snapshot-storage
+cd ${testFolder}
+./run_integration_tests.sh
+rm -rf /tmp/snapshot-storage
 
