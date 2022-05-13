@@ -150,10 +150,9 @@ def create_resource(cpu, gpu):
     return {"cpu": cpu, "gpu": gpu}
 
 
-def create_job(job_id, study_name, resource_spec, deploy_map, min_sites, required_sites=None):
+def create_job(job_id, resource_spec, deploy_map, min_sites, required_sites=None):
     return Job(
         job_id=job_id,
-        study_name=study_name,
         resource_spec=resource_spec,
         deploy_map=deploy_map,
         min_sites=min_sites,
@@ -168,7 +167,6 @@ def create_jobs(num_jobs, prefix="job", **kwargs):
 
 job1 = create_job(
     job_id="job1",
-    study_name="hello",
     resource_spec={"site1": create_resource(1, 4), "site2": create_resource(1, 4), "site3": create_resource(2, 1)},
     deploy_map={"app1": ["site1", "site2"], "app2": ["site3"]},
     min_sites=3,
@@ -176,7 +174,6 @@ job1 = create_job(
 
 job2 = create_job(
     job_id="job2",
-    study_name="hello",
     resource_spec={"site1": create_resource(2, 4), "site2": create_resource(2, 4), "site3": create_resource(12, 4)},
     deploy_map={"app3": ["site1", "site2"], "app4": ["site3"]},
     min_sites=3,
@@ -184,7 +181,6 @@ job2 = create_job(
 
 job3 = create_job(
     job_id="job3",
-    study_name="number3",
     resource_spec={},
     deploy_map={"app5": []},
     min_sites=3,
@@ -192,7 +188,6 @@ job3 = create_job(
 
 job4 = create_job(
     job_id="job4",
-    study_name="hello",
     resource_spec={"site1": create_resource(2, 4), "site2": create_resource(5, 4), "site3": create_resource(12, 4)},
     deploy_map={"app7": ["site1", "site2"], "app8": ["site3", "site4", "site5"]},
     min_sites=3,
@@ -270,7 +265,6 @@ class TestDefaultJobScheduler:
         servers, scheduler, num_sites = setup_and_teardown
         candidate = create_job(
             job_id="test_job",
-            study_name="test_study",
             resource_spec={},
             deploy_map=None,
             min_sites=1,
@@ -285,7 +279,6 @@ class TestDefaultJobScheduler:
         servers, scheduler, num_sites = setup_and_teardown
         candidate = create_job(
             job_id="job",
-            study_name="test_study",
             resource_spec={},
             deploy_map={"app5": []},
             min_sites=num_sites + 1,
@@ -298,7 +291,6 @@ class TestDefaultJobScheduler:
         servers, scheduler, num_sites = setup_and_teardown
         candidate = create_job(
             job_id="job",
-            study_name="test_study",
             resource_spec={},
             deploy_map={"app5": []},
             min_sites=1,
@@ -312,7 +304,6 @@ class TestDefaultJobScheduler:
         servers, scheduler, num_sites = setup_and_teardown
         candidate = create_job(
             job_id="job",
-            study_name="test_study",
             resource_spec={"site2": create_resource(2, 2)},
             deploy_map={"app5": []},
             min_sites=1,
@@ -326,7 +317,6 @@ class TestDefaultJobScheduler:
         servers, scheduler, num_sites = setup_and_teardown
         candidate = create_job(
             job_id="job",
-            study_name="test_study",
             resource_spec={f"site{i}": create_resource(2, 2) for i in range(num_sites)},
             deploy_map={"app5": []},
             min_sites=2,
@@ -363,7 +353,6 @@ class TestDefaultJobScheduler:
         first_job = create_jobs(
             1,
             prefix="weird_job",
-            study_name="hello",
             resource_spec={"site0": {"gpu": 1}},
             deploy_map={"app": ["server", "site0"]},
             min_sites=1,
@@ -372,7 +361,6 @@ class TestDefaultJobScheduler:
         )
         jobs = create_jobs(
             num_jobs=num_jobs,
-            study_name="hello",
             resource_spec={f"site{i}": {"gpu": 1} for i in range(num_sites)},
             deploy_map={"app": ["server"] + [f"site{i}" for i in range(num_sites)]},
             min_sites=num_sites,
