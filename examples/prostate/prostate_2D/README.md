@@ -129,14 +129,16 @@ We provide a script for performing validation on testing data split, please add 
 ```
 bash ./result_stat/testing_models_2d.sh
 ```
+Note that for Ditto, the score is the average Dice among all 6 personalized models evaluated on their own testing data weighted by testing data size.
 
 The Dice results for the above run are:
 
-Centralized: 0.8590
+| Config	          | 	Val Dice	 | 
+|------------------|------------|
+| prostate_central | 	0.8590	 | 
+| prostate_fedavg  |   0.8324   | 
+| prostate_fedprox |   0.8131   | 
+| prostate_ditto   | 	0.8474	 |
 
-FedAvg: 0.8324
 
-FedProx: 0.8131
-
-Ditto: 0.8474 (average Dice among all 6 personalized models evaluated on their own testing data weighted by testing data size)
 
