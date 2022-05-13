@@ -22,7 +22,6 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
@@ -65,11 +64,9 @@ class _ReviewerFilter(_JobFilter):
 
     def filter_job(self, meta: dict):
         approvals = meta.get(JobMetaKey.APPROVALS)
-        if approvals and self.reviewer_name in approvals:
-            # already reviewed
-            return True
-        else:
+        if not approvals or self.reviewer_name not in approvals:
             self.result.append(job_from_meta(meta))
+        return True
 
 
 # TODO:: use try block around storage calls
