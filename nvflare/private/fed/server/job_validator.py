@@ -13,8 +13,9 @@
 # limitations under the License.
 import collections
 import json
+import logging
 from io import BytesIO
-from typing import Set, Tuple
+from typing import Optional, Set, Tuple
 from zipfile import ZipFile
 
 from nvflare.apis.fl_context import FLContext
@@ -22,6 +23,7 @@ from nvflare.apis.job_def import JobMetaKey
 
 SERVER_CONFIG = "config_fed_server.json"
 CLIENT_CONFIG = "config_fed_client.json"
+META = "meta.json"
 
 
 class JobValidator:
@@ -44,80 +46,130 @@ class JobValidator:
         meta = {}
         try:
             with ZipFile(BytesIO(job_data), "r") as zf:
-                meta_file = job_name + "/meta.json"
-                meta_data = zf.read(meta_file)
-                meta = json.loads(meta_data)
-                if JobMetaKey.JOB_FOLDER_NAME not in meta:
-                    meta[JobMetaKey.JOB_FOLDER_NAME.value] = job_name
-
-                self._validate_deployment(meta, zf)
-
-                # Validating resource_spec
-                resource_spec = meta.get(JobMetaKey.RESOURCE_SPEC.value)
-                if resource_spec and not isinstance(resource_spec, dict):
-                    raise ValueError(f"Invalid resource_spec for job {job_name}")
+                meta = self._validate_meta(job_name, zf)
+                site_list = self._validate_deploy_map(job_name, meta, zf)
+                clients = self._get_all_clients(site_list)
+                self._validate_min_clients(job_name, meta, clients)
+                self._validate_resource(job_name, meta)
+                self._validate_mandatory_clients(job_name, meta, clients)
 
         except ValueError as e:
             return False, str(e), meta
 
         return True, "", meta
 
-    def _validate_deployment(self, meta: dict, zip_file: ZipFile) -> None:
+    def _validate_meta(self, job_name: str, zf: ZipFile) -> Optional[dict]:
+        meta_file = f"{job_name}/{META}"
+        logging.debug(f"validate file {meta_file} exists for job {job_name}")
+        meta = None
 
-        job_name = meta.get(JobMetaKey.JOB_FOLDER_NAME)
-        deploy_map = meta.get(JobMetaKey.DEPLOY_MAP)
-        if not deploy_map:
-            raise ValueError(f"deploy_map is missing in meta.json for job {job_name}")
+        if meta_file in zf.namelist():
+            meta_data = zf.read(meta_file)
+            meta = json.loads(meta_data)
+        return meta
 
-        # Validating mandatory clients are deployed
-        mandatory_clients = meta.get(JobMetaKey.MANDATORY_CLIENTS)
-        if mandatory_clients:
-            mandatory_set = set(mandatory_clients)
-            all_clients = self._get_all_clients(meta)
-            if all_clients and not mandatory_set.issubset(all_clients):
-                diff = mandatory_set - all_clients
-                raise ValueError(f"Mandatory clients {diff} are not in the deployment for job {job_name}")
+    def _validate_deploy_map(self, job_name: str, meta: dict, zip_file: ZipFile) -> Optional[list]:
+        site_list = None
+        if not meta:
+            return site_list
 
-        # Validating all apps exists
-        site_list = []
-        for app, deployment in deploy_map.items():
-            zip_folder = job_name + "/" + app + "/config/"
-            if not self._entry_exists(zip_file, zip_folder):
-                raise ValueError(f"App {app} in deploy_map doesn't exist for job {job_name}")
+        deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
+        if deploy_map is not None:
+            site_list = []
+            for app, deployment in deploy_map.items():
+                zip_folder = job_name + "/" + app + "/config/"
+                if not self._entry_exists(zip_file, zip_folder):
+                    print("zip_folder", zip_folder)
+                    for x in zip_file.namelist():
+                        print(x)
+                    raise ValueError(f"App {app} in deploy_map doesn't exist for job {job_name}")
+                if deployment:
+                    site_list.extend(deployment)
 
-            if deployment:
-                site_list.extend(deployment)
+                    if "server" in deployment and not self._entry_exists(zip_file, zip_folder + SERVER_CONFIG):
+                        raise ValueError(f"App {app} is will be deployed to server but server config is missing")
 
-                if "server" in deployment and not self._entry_exists(zip_file, zip_folder + SERVER_CONFIG):
-                    raise ValueError(f"App {app} is deployed to server but server config is missing")
+                    if [client for client in deployment if client != "server"] and not self._entry_exists(
+                        zip_file, zip_folder + CLIENT_CONFIG
+                    ):
+                        raise ValueError(f"App {app} will be deployed to client but client config is missing")
 
-                if [client for client in deployment if client != "server"] and not self._entry_exists(
-                    zip_file, zip_folder + CLIENT_CONFIG
-                ):
-                    raise ValueError(f"App {app} is deployed to client but client config is missing")
+            # Make sure an app is not deployed to multiple clients
+            if site_list:
+                duplicates = [site for site, count in collections.Counter(site_list).items() if count > 1]
+                if duplicates:
+                    raise ValueError(f"Multiple apps to be deployed to following sites {duplicates} for job {job_name}")
 
-        # Make sure an app is not deployed to multiple clients
-        if site_list:
-            duplicates = [site for site, count in collections.Counter(site_list).items() if count > 1]
-            if duplicates:
-                raise ValueError(f"Multiple apps to be deployed to following sites {duplicates} for job {job_name}")
-
-            min_clients = meta.get(JobMetaKey.MIN_CLIENTS)
-            client_set = set([site for site in site_list if site != "server"])
-            if min_clients and len(client_set) < min_clients:
-                raise ValueError(f"min_clients {min_clients} not met in the deployment for job {job_name}")
+        return site_list
 
     @staticmethod
-    def _get_all_clients(meta: dict) -> Set[str]:
+    def convert_value_to_int(v) -> int:
+        if isinstance(v, int):
+            return v
+        else:
+            try:
+                v = int(v)
+                return v
+            except ValueError as e:
+                raise ValueError(f"invalid data type for {v},can't not convert to Int", e)
+            except TypeError as e:
+                raise ValueError(f"invalid data type for {v},can't not convert to Int", e)
 
-        all_clients = set()
-        deploy_map = meta.get(JobMetaKey.DEPLOY_MAP)
-        if deploy_map:
-            for k, v in deploy_map.items():
-                all_clients.update(v)
-        all_clients.discard("server")
+    def _validate_min_clients(self, job_name: str, meta: dict, clients: Optional[set]) -> None:
+        logging.info(f"validate min_clients for job {job_name}")
+        if meta and clients:
+            import sys
 
-        return all_clients
+            min_clients = meta.get(JobMetaKey.MIN_CLIENTS)
+            if min_clients is not None:
+                min_clients = self.convert_value_to_int(min_clients)
+                if isinstance(min_clients, int):
+                    if min_clients <= 0:
+                        raise ValueError(f"min_clients {min_clients} must be positive for job {job_name}")
+                    elif min_clients > sys.maxsize:
+                        raise ValueError(f"min_clients {min_clients} must be less than sys.maxsize for job {job_name}")
+                    elif len(clients) < min_clients:
+                        raise ValueError(
+                            f"min {min_clients} clients required for job {job_name}, found {len(clients)}."
+                        )
+
+    @staticmethod
+    def _validate_mandatory_clients(job_name: str, meta: dict, clients: Optional[set]) -> None:
+        logging.info(f" validate mandatory_clients for job {job_name}")
+
+        if meta and clients:
+            # Validating mandatory clients are deployed
+            mandatory_clients = meta.get(JobMetaKey.MANDATORY_CLIENTS)
+            if mandatory_clients:
+                mandatory_set = set(mandatory_clients)
+                if clients and not mandatory_set.issubset(clients):
+                    diff = mandatory_set - clients
+                    raise ValueError(f"Mandatory clients {diff} are not in the deployment for job {job_name}")
+
+    @staticmethod
+    def _validate_resource(job_name: str, meta: dict) -> None:
+        logging.info(f" validate resource for job {job_name}")
+
+        if meta:
+            resource_spec = meta.get(JobMetaKey.RESOURCE_SPEC.value)
+            if resource_spec and not isinstance(resource_spec, dict):
+                raise ValueError(f"Invalid resource_spec for job {job_name}")
+
+            if not resource_spec:
+                logging.debug("empty resource spec provided")
+
+            if resource_spec:
+                for k in resource_spec:
+                    if resource_spec[k] and not isinstance(resource_spec[k], dict):
+                        raise ValueError(f"value for key {k} in resource spec is expecting a dictionary")
+
+    @staticmethod
+    def _get_all_clients(site_list: Optional[list]) -> Optional[Set[str]]:
+        client_set = None
+        if site_list is not None:
+            client_set = set([site for site in site_list if site != "server"])
+
+        return client_set
 
     @staticmethod
     def _entry_exists(zip_file: ZipFile, path: str) -> bool:
