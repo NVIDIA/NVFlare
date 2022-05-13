@@ -16,12 +16,9 @@ import io
 import os
 from zipfile import ZipFile
 
-from nvflare.apis.study_manager_spec import Study
-
 META_NAME = "meta.json"
 # A format string for the dummy meta.json
 META_DATA = """{{
-  "study_name": "{}",
   "name": "{}",
   "resource_spec": {{
   }},
@@ -179,7 +176,7 @@ def convert_legacy_zip(zip_data: bytes) -> bytes:
 
         writer = io.BytesIO()
         with ZipFile(writer, "w") as out_zip:
-            out_zip.writestr(meta_path, META_DATA.format(Study.DEFAULT_STUDY_NAME, folder_name, folder_name))
+            out_zip.writestr(meta_path, META_DATA.format(folder_name, folder_name))
             # Push everything else to a sub folder with the same name:
             # hello-pt/README.md -> hello-pt/hello-pt/README.md
             for info in info_list:
