@@ -15,7 +15,7 @@ Job
 In NVIDIA FLARE 2.1.0, to be able to run multiple experiments in parallel, the system needs to be able to make decisions
 as to when to run which experiments.
 
-To be able to do this, the system now has to know everything about the experiment: which study it belongs to, which app(s)
+To be able to do this, the system now has to know everything about the experiment: which app(s)
 go to which clients or server, what are the resource requirements for this experiment, etc. The total definition of such
 needed information is called a Job.
 
@@ -110,46 +110,6 @@ folder with meta.json.
 There is only one server, and only one app can be deployed to it for the Job, so "server" can appear only once in
 the ``deploy_map``.
 
-Study
-=====
-In NVIDIA FLARE 2.0 and before, there was no explicit distinction between the definition of "study" vs. "project". From 2.1.0,
-"study" and "project" are no longer the same thing: "project" defines the NVIDIA FLARE system as a whole (provisioned FL clients, security
-credentials, etc.); and "study" defines a particular way of using the system.
-
-Any number of studies can be defined and conducted on the same NVIDIA FLARE system. Each study can use different clients
-and be done by different sets of researchers (admin users). You can even specify the minimum number of FL clients
-required, and which if any of them are mandatory.
-
-A study definition contains the following information:
-
-    - Name: the unique name of the study
-    - Description: describes the study
-    - Contact: contact information of this study
-    - Clients: clients that participate in this study
-    - Admin Users: users that participate in this study
-    - Start and End time of the study
-
-Study Creation
-==============
-NVIDIA FLARE 2.1.0 could be set up and kept running for a long time. During this time, multiple Studies could be conducted.
-
-NVIDIA FLARE 2.1.0 provides a Study Creation tool that creates a signed study file based on user-provided study configuration.
-
-Admin Commands are also provided to load the study file into the Study Storage, and to show details of studies.
-
-Study-less Jobs
-===============
-Even though the use of Study is very useful when NVIDIA FLARE is used as part of a platform that keeps running for a long time, it
-could be an unnecessary burden for other use cases.
-
-NVIDIA FLARE 2.1.0 supports study-less jobs - you do not need to specify the "study_name" and can leave it empty in the job
-definition.
-
-If there is no study for the definition of participating sites:
-
-    - All sites are participating sites
-    - All admin users are eligible for the job
-
 Resource-less Jobs
 ==================
 Similarly, for simple FL jobs or in POC mode, resources are not a concern. In this case, the resource spec can be
@@ -160,8 +120,7 @@ Resource-Based Job Automation
 =============================
 Each job specifies resource requirements (the resource_spec in the meta.json), which is expressed as a Python dictionary: the key/value pairs can specify any arbitrary requirement;
 
-There is a Job Scheduler on the Server, which decides whether a job is runnable. In this version, we treat every job
-submitted (meta.json) as verified, all the clients in the resource_spec are in this study. It asks these clients
+There is a Job Scheduler on the Server, which decides whether a job is runnable. It asks these clients
 whether they can run the job, given the resource requirements (note: the job could have different requirements for
 different clients).
 
