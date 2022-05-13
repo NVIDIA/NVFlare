@@ -1,6 +1,5 @@
 {
   "name": "sag",
-  "study_name": "",
   "resource_spec": {
     "site-a": {
       "gpu": 1

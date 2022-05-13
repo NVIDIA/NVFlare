@@ -12,51 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import time
 from typing import Dict, Tuple, Optional, List
 
-from nvflare.fuel.hci import zip_utils
-
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContextManager, FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.study_manager_spec import StudyManagerSpec, Study
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.hci import zip_utils
 from nvflare.private.fed.server.job_validator import JobValidator
 from nvflare.widgets.widget import Widget
-
-YEAR_IN_SECONDS = 60 * 60 * 24 * 365
-
-current_time = time.time()
-participants = ["site-a", "site-b", "site-c"]
-
-regular_study = Study("regular", "Regular study", "nvflare@example.com", participants, ["admin@example.com"],
-                      current_time - YEAR_IN_SECONDS, current_time + YEAR_IN_SECONDS)
-future_study = Study("future", "Future study", "nvflare@example.com", [], [],
-                     current_time + YEAR_IN_SECONDS, current_time + 2 * YEAR_IN_SECONDS)
-past_study = Study("past", "Past study", "nvflare@example.com", [], [],
-                   0.0, current_time - YEAR_IN_SECONDS)
-
-
-class MockStudyManager(StudyManagerSpec):
-
-    def __init__(self):
-        self.studies = [regular_study, future_study, past_study]
-
-    def add_study(self, study: Study, fl_ctx: FLContext) -> Tuple[Optional[Study], str]:
-        pass
-
-    def list_studies(self, fl_ctx: FLContext) -> List[str]:
-        return [study.name for study in self.studies]
-
-    def list_active_studies(self, fl_ctx: FLContext) -> List[str]:
-        pass
-
-    def get_study(self, name: str, fl_ctx: FLContext) -> Study:
-        return next((study for study in self.studies if study.name == name), None)
 
 
 class MockServerEngine(ServerEngineSpec):
@@ -89,8 +55,7 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
     def get_component(self, component_id: str) -> object:
-        if component_id == SystemComponents.STUDY_MANAGER:
-            return MockStudyManager()
+        pass
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         pass
@@ -135,20 +100,8 @@ class TestJobValidator:
     def test_valid_job(self):
         self._assert_valid("valid_job")
 
-    def test_valid_study(self):
-        self._assert_valid("valid_study")
-
-    def test_non_participating(self):
-        self._assert_invalid("non_participating")
-
     def test_not_enough_clients(self):
         self._assert_invalid("not_enough_clients")
-
-    def test_future_study(self):
-        self._assert_invalid("future_study")
-
-    def test_past_study(self):
-        self._assert_invalid("past_study")
 
     def test_duplicate_server(self):
         self._assert_invalid("duplicate_server")
