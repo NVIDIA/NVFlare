@@ -142,7 +142,7 @@ class CommandUtil(object):
         if not run_number.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
             conn.append_error("syntax error: run_number must be run_XXX")
             return False, None
-        destination = run_number[4:]
+        destination = run_number[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
         conn.set_prop(self.RUN_NUMBER, destination)
 
         return self._authorize_actions(conn, args[2:], [Action.TRAIN])
