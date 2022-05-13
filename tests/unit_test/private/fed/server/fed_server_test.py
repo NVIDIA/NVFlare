@@ -39,5 +39,5 @@ class TestFederatedServer:
 
             request = mock.Mock(token="token", jobs=["extra_job"])
             context = MagicMock()
-            expected = fed_msg.FederatedSummary(comment="Abort jobs: extra_job")
+            expected = fed_msg.FederatedSummary(abort_jobs=["extra_job"])
             assert server.Heartbeat(request, context) == expected

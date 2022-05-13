@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import logging
 import socket
 import time
@@ -408,7 +408,13 @@ class Communicator:
                         run_numbers = engine.get_all_run_numbers()
                         del message.jobs[:]
                         message.jobs.extend(run_numbers)
-                        stub.Heartbeat(message)
+                        response = stub.Heartbeat(message)
+                        abort_runs = list(set(response.abort_jobs))
+                        if abort_runs:
+                            for job in abort_runs:
+                                engine.abort_app(job)
+                            display_runs = ",".join(abort_runs)
+                            self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
                         break
                     except grpc.RpcError as grpc_error:
                         self.logger.debug(grpc_error)

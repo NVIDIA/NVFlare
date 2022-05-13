@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import json
 import os
 import pickle
 import shutil
@@ -634,18 +635,20 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if self.admin_server:
                 self.admin_server.client_heartbeat(token)
 
-            job_list = ",".join(self._sync_client_jobs(request, client_name))
-            summary_info = fed_msg.FederatedSummary(comment=f"Abort jobs: {job_list}")
+            abort_runs = self._sync_client_jobs(request)
+            summary_info = fed_msg.FederatedSummary()
+            if abort_runs:
+                del summary_info.abort_jobs[:]
+                summary_info.abort_jobs.extend(abort_runs)
+                display_runs = ",".join(abort_runs)
+                self.logger.info(f"These jobs: {display_runs} are not running on the server. "
+                                 f"Ask client: {client_name} to abort these runs.")
             return summary_info
 
-    def _sync_client_jobs(self, request, client_name):
+    def _sync_client_jobs(self, request):
         client_jobs = request.jobs
         server_jobs = self.engine.run_processes.keys()
         jobs_need_abort = list(set(client_jobs).difference(server_jobs))
-        with self.engine.new_context() as fl_ctx:
-            job_runner = self.engine.job_runner
-            for run_number in jobs_need_abort:
-                job_runner.abort_client_run(self.engine, run_number, [client_name], fl_ctx)
         return jobs_need_abort
 
     def Retrieve(self, request, context):

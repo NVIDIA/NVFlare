@@ -78,6 +78,8 @@ message FederatedSummary {
     string token = 3;
     // The service session ID
     string ssid = 4;
+    // The jobs need to be aborted
+    repeated string abort_jobs = 5;
 }
 
 
