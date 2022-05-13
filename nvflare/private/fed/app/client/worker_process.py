@@ -87,6 +87,7 @@ def main():
             run_number = f.readline().strip()
             client_name = f.readline().strip()
             listen_port = f.readline().strip()
+            sp_target = f.readline().strip()
             print(
                 "token is: {} ssid is: {} run_number is: {} client_name: {} listen_port: {}".format(
                     token, ssid, run_number, client_name, listen_port
@@ -118,7 +119,7 @@ def main():
         add_logfile_handler(log_file)
 
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client(args)
+        federated_client = deployer.create_fed_client(args, sp_target)
         federated_client.status = ClientStatus.STARTING
 
         federated_client.token = token

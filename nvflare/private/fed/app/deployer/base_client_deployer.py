@@ -49,12 +49,16 @@ class BaseClientDeployer:
     def set_model_manager(self, model_manager):
         self.model_manager = model_manager
 
-    def create_fed_client(self, args):
+    def create_fed_client(self, args, sp_target=None):
         # if self.host:
         #     for item in self.server_config:
         #         target = item["service"].get("target", None)
         #         item["service"]["target"] = self.host + ":" + target.split(":")[1]
 
+        if sp_target:
+            for item in self.server_config:
+                service = item["service"]
+                service["target"] = sp_target
         servers = [{t["name"]: t["service"]} for t in self.server_config]
         retry_timeout = 30
         if "retry_timeout" in self.client_config:
