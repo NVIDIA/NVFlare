@@ -634,8 +634,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if self.admin_server:
                 self.admin_server.client_heartbeat(token)
 
-            display_jobs = ",".join(self._sync_client_jobs(request, client_name))
-            summary_info = fed_msg.FederatedSummary(comment=f"Abort jobs: {display_jobs}")
+            job_list = ",".join(self._sync_client_jobs(request, client_name))
+            summary_info = fed_msg.FederatedSummary(comment=f"Abort jobs: {job_list}")
             return summary_info
 
     def _sync_client_jobs(self, request, client_name):
