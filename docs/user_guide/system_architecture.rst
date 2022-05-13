@@ -115,7 +115,7 @@ NVIDIA FLARE provides a default implementation of the Job Scheduler that does re
 
 Storage
 -------
-Storage is used in Study Storage, Job Storage, and Job Execution State Storage. See the specific sections for more details.
+Storage is used in Job Storage and Job Execution State Storage. See the specific sections for more details.
 
 :class:`Storage Spec<nvflare.apis.storage.StorageSpec>`
 
@@ -123,30 +123,6 @@ NVIDIA FLARE provides two simple storage implementations:
 
     - :class:`File System Storage<nvflare.app_common.storages.filesystem_storage.FilesystemStorage>`
     - :class:`AWS S3 Storage<nvflare.app_common.storages.s3_storage.S3Storage>`
-
-Study Manager
--------------
-The Study Manager config specifies the Python object that manages the retrieval of Study Definition objects stored in the Study Storage.
-
-The system reserved component id, study_manager, is used to denote the Study Manager in the project.yml file.
-
-This component is specified as one item in the components.server section.
-
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
-
-:class:`Study Manager Spec<nvflare.apis.study_manager_spec.StudyManagerSpec>`
-
-NVIDIA FLARE provides a simple implementation:
-
-    - :class:`Study Manager<nvflare.apis.impl.study_manager.StudyManager>`
-
-Study Storage
-^^^^^^^^^^^^^
-The Study definition is stored in a persistent store. The Study Storage config specifies the Python object that manages the access to the store.
-
-This component is specified as one item in the components.server section.
-
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
 
 Resource Manager
 -----------------

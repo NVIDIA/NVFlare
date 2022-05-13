@@ -64,25 +64,25 @@ they can add API calls to Open Provision API to generate required outputs.
 
 Provisioner
 -----------
-This is the container class that owns all instances of Study, Workspace, Provision Context, Builders and Participants,
+This is the container class that owns all instances of Project, Workspace, Provision Context, Builders and Participants,
 as shown in the above diagram.  A typical usage of this class is like the following::
 
     provisioner = Provisioner(workspace_full_path, builders)
 
-    provisioner.provision(study)
+    provisioner.provision(project)
 
-Study
------
-The Study class keeps information about participants.  Therefore, information of any participant can be retrieved from
-the Study instance::
+Project
+-------
+The Project class keeps information about participants.  Therefore, information of any participant can be retrieved from
+the Project instance::
 
-    class Study(object):
+    class Project(object):
        def __init__(self, name: str, description: str, participants: List[Participant]):
            self.name = name
            all_names = list()
            for p in participants:
                if p.name in all_names:
-                   raise ValueError(f"Unable to add a duplicate name {p.name} into this study.")
+                   raise ValueError(f"Unable to add a duplicate name {p.name} into this project.")
                else:
                    all_names.append(p.name)
            self.description = description
@@ -112,7 +112,7 @@ stores additional information::
            self.subject = name
            self.props = kwargs
 
-The name of each participant must be unique.  This is enforced in Study's __init__ method.  The type
+The name of each participant must be unique.  This is enforced in Project's __init__ method.  The type
 defines the behavior of this participant when it is alive in the NVIDIA FLARE system.  For example, type = 'server' defines
 that the participant acts as a server.  Three types are commonly used for a typical NVIDIA FLARE system: server, client, and
 admin.  However, developers can freely add other types when needed, such as 'gateway,' 'proxy,' or 'database.'  The
@@ -124,7 +124,7 @@ Builder
 The builders in the above diagram are provided as a convenient way to generate commonly used zip files for a typical
 NVIDIA FLARE system.  Developers are encouraged to add / modify or even remove those builders to fit their own requirements.
 
-Each builder is responsible for taking the information from study, its own __init__ arguments, and provisioner to
+Each builder is responsible for taking the information from project, its own __init__ arguments, and provisioner to
 generate data.  For example, the HEBuilder is responsible for generating tenseal context files for server and client,
 but not admin.  Additionally, the context for servers does not include either public key or secret key while the
 context for clients include both.  Its __init__ arguments consist of poly_modules_degree, coeff_mod_bit_sizes,
@@ -151,7 +151,7 @@ Every builder has to subclass the Builder class and override one or more of thes
        def initialize(self, ctx: dict):
            pass
 
-       def build(self, study: Study, ctx: dict):
+       def build(self, project: Project, ctx: dict):
            pass
 
        def finalize(self, ctx: dict):
@@ -201,8 +201,8 @@ As this requires adding one file to every admin participant, the developer can w
            self.db_server = db_server
            self.db_port = db_port
 
-       def build(self, study, ctx):
-           for admin in study.get_participants_by_type("admin", first_only=False):
+       def build(self, project, ctx):
+           for admin in project.get_participants_by_type("admin", first_only=False):
                dest_dir = self.get_kit_dir(admin, ctx)
                with open(os.path.join(dest_dir, "database.conf"), 'wt') as f:
                    f.write("[database]\n")
@@ -227,7 +227,7 @@ follows (after pip install requests)::
        def __init__(self, url):
            self.url = url
 
-       def build(self, study: Study, ctx: dict):
+       def build(self, project: Project, ctx: dict):
            wip_dir = self.get_wip_dir(ctx)
            dirs = [name for name in os.listdir(wip_dir) if os.path.isdir(os.path.join(wip_dir, name))]
            for dir in dirs:
@@ -274,8 +274,8 @@ or in API style::
 A new builder to write 'gateway.conf' can be implemented as follows (for reference)::
 
     class GWConfigBuilder(Builder):
-      def build(self, study, ctx):
-          for gw in study.get_participants_by_type("gateway", first_only=False):
+      def build(self, project, ctx):
+          for gw in project.get_participants_by_type("gateway", first_only=False):
               dest_dir = self.get_kit_dir(gw, ctx)
               with open(os.path.join(dest_dir, "gateway.conf"), 'wt') as f:
                   port = gw.props.get("port")
