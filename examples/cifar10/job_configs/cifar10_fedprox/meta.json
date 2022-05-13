@@ -1,5 +1,4 @@
 {
-  "study_name": "",
   "name": "cifar10_fedprox",
   "resource_spec": {
     "site-1": {
