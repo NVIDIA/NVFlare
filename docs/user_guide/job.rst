@@ -23,13 +23,25 @@ Many underlying assumptions about the operation of the system changed, with the 
 system manage the rest, instead of before when the admin uploaded apps, set the run number, deployed, then started the app
 at the server and client sites.
 
-Jobs now contain all of the apps and the information of which apps to deploy to which sites as the "deploy_map" inside
-a meta.json that should be included with a job to be submitted.
+Jobs now contain all of the :ref:`apps<application>` and the information of which apps to deploy to which sites as the
+:ref:`deploy_map<deploy_map>` inside a meta.json that should be included with a job to be submitted::
+
+    JOB_FOLDER:
+        - meta.json
+        - APP_FOLDER_FOR_SERVER    (required to have config/config_fed_server.json)
+        - APP_FOLDER_FOR_CLIENT1   (required to have config/config_fed_client.json)
+        - APP_FOLDER_FOR_CLIENT2   (required to have config/config_fed_client.json)
+        - APP_FOLDER_FOR_CLIENT... (required to have config/config_fed_client.json)
+
+.. note::
+
+   For backward compatibility with previous apps, a single app may be submitted as a job, and a meta.json will
+   automatically be created for it with the app being deployed to all participants. As such, apps can have both
+   config_fed_server.json and config_fed_client.json and can be deployed to multiple participants.
 
 Here is an example for meta.json::
 
     {
-      "study": "test-study",
       "name": "try_algo1",
       "resource_spec": {
         "client1": {
@@ -62,12 +74,11 @@ Here is an example for meta.json::
 
 Pay attention to the following:
 
-    - Study: the study that the job belongs to
-    - Name: user provided name
-    - Resources: resource required to perform this job at each site
-    - Deploy: what apps go to which sites
-    - Min Clients Required for this job
-    - Mandatory clients required for this job
+    - name: user provided name for the job
+    - resource_spec: resources required to perform this job at each site
+    - deploy_map: what apps go to which sites (see :ref:`deploy_map`)
+    - min_clients: minimum clients required for this job
+    - mandatory_clients: mandatory clients required for this job
 
 The system also keeps additional information about the job such as:
 
@@ -82,6 +93,22 @@ For a job to be runnable, the system must have sufficient resources: all relevan
 support the job’s specified resource requirements. Since resource is a generic concept - anything could be regarded
 as a resource - NVIDIA FLARE 2.1.0 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
 framework for resource definition and interpretation.
+
+.. _deploy_map:
+
+Deploy Map
+==========
+The ``deploy_map`` is a map of which apps in the job being uploaded will be deployed to which FL client sites. Back in
+NVIDIA FLARE before 2.1.0, the admin command "deploy_app" was used to manually perform app deployment with the option
+to specify which sites to deploy to. Because the JobRunner now automatically picks up and handles the deployment and
+running of apps, it needs information about which sites each app should be deployed to, and it gets it from the
+``deploy_map`` section of meta.json.
+
+Each app specified in the ``deploy_map`` must be included in the job being uploaded as an app folder directly in the job
+folder with meta.json.
+
+There is only one server, and only one app can be deployed to it for the Job, so "server" can appear only once in
+the ``deploy_map``.
 
 Study
 =====

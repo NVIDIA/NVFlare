@@ -76,7 +76,7 @@ Implementing the Validator
 The validator is an Executor that is called for validating the models received from the server during the :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`
 workflow. These models could be from other clients or models generated on server.
 
-.. literalinclude:: ../../examples/hello-numpy-cross-val/custom/np_validator.py
+.. literalinclude:: ../../nvflare/app_common/np/np_validator.py
    :language: python
    :lines: 15-
    :lineno-start: 15

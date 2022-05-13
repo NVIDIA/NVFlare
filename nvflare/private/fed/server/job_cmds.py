@@ -45,13 +45,13 @@ class JobCommandModule(TrainingCommandModule):
                     usage="list_jobs [-n name_prefix] [-d] [job_id_prefix]",
                     handler_func=self.list_jobs,
                 ),
-                CommandSpec(
-                    name="delete_job",
-                    description="delete a job",
-                    usage="delete_job job_id",
-                    handler_func=self.delete_job,
-                    authz_func=self.authorize_job,
-                ),
+                # CommandSpec(
+                #     name="delete_job",
+                #     description="delete a job",
+                #     usage="delete_job job_id",
+                #     handler_func=self.delete_job,
+                #     authz_func=self.authorize_job,
+                # ),
                 CommandSpec(
                     name="abort_job",
                     description="abort a job if it is running or dispatched",
