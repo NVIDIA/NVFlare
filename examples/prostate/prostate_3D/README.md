@@ -53,7 +53,7 @@ First, we add the image directory root to `config_train.json` files for generati
 ```
 for alg in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do
-  sed -i "s|DATASET_ROOT|${PWD}/..|g" configs/${alg}/config/config_train.json
+  sed -i "s|DATASET_ROOT|${PWD}/../data_preparation|g" configs/${alg}/config/config_train.json
 done
 ```
 ### 2.2 Start the FL system and submit jobs
