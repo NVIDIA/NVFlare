@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # add current folder to PYTHONPATH
 export PYTHONPATH="${PYTHONPATH}:${PWD}"
-export PYTHONPATH="${PYTHONPATH}:/media/ziyuexu/Research/Experiment/NVFlare/NVFlare_Special"
-
 echo "PYTHONPATH is ${PYTHONPATH}"
 
 # customized settings
@@ -28,7 +26,7 @@ n_gpus=$(nvidia-smi --list-gpus | wc -l)
 echo "There are ${n_gpus} GPUs."
 # start server
 echo "STARTING SERVER"
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=
 bash "${workspace}/server/startup/start.sh" ${servername} &
 sleep 10
 

@@ -35,24 +35,25 @@ We only cover POC mode in this example. To run it with Secure mode, please refer
 > The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
 
-### Multi-tasking
+### GPU resource and Multi-tasking
 In this example, we assume two local GPUs with at least 12GB of memory are available. 
 
-As we use the POC workspace, adjust the default values in `workspace_prostate/client_${dataset}/startup/fed_client.json` 
-and `workspace_server/server/startup/fed_server.json` in your experimental environment.  
+As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
 
-In the secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
+To enable multi-tasking, here we adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (defualt value 1). Please adjust this properly accodrding to resource available and task demand. 
+
+(Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
 
 For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/job.html).
 
 ## 2. Run automated experiments
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
 ### 2.1 Prepare local configs
-First, we add the current directory path to `config_train.json` files for generating the absolute path to dataset and datalist.  
+First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
 ```
 for alg in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do
-  sed -i "s|PWD|${PWD}|g" configs/${alg}/config/config_train.json
+  sed -i "s|DATASET_ROOT|${PWD}/..|g" configs/${alg}/config/config_train.json
 done
 ```
 ### 2.2 Start the FL system and submit jobs

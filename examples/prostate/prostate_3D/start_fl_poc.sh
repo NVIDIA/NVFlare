@@ -12,12 +12,12 @@ site_pre="client_"
 servername="localhost"
 admin_username="admin"
 
-# get client IDs, a string, e.g. "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
+# get client IDs, a string, e.g. "All" or "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
 client_ids=$1
 
 if test -z "${client_ids}"
 then
-      echo "Usage: ./start_fl_poc.sh [client_ids], e.g. ./start_fl_poc.sh \"I2CVB MSD\""
+      echo "Usage: ./start_fl_poc.sh [client_ids], e.g. ./start_fl_poc.sh \"All\""
       exit 1
 fi
 
@@ -26,7 +26,7 @@ n_gpus=$(nvidia-smi --list-gpus | wc -l)
 echo "There are ${n_gpus} GPUs."
 # start server
 echo "STARTING SERVER"
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=
 bash "${workspace}/server/startup/start.sh" ${servername} &
 sleep 10
 

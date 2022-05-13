@@ -19,14 +19,12 @@ def custom_client_datalist_json_path(datalist_json_path: str, client_id: str) ->
     """
     Customize datalist_json_path for each client
     Args:
-         datalist_json_path: default datalist_json_path
+         datalist_json_path: root path containing all jsons
          client_id: e.g., site-2
     """
     # Customize datalist_json_path for each client
-    # - client_id: e.g. site-5
-    head, tail = os.path.split(datalist_json_path)
-    datalist_json_path = os.path.join(
-        head,
+    datalist_json_path_client = os.path.join(
+        datalist_json_path,
         client_id + ".json",
     )
-    return datalist_json_path
+    return datalist_json_path_client
