@@ -26,7 +26,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ClientStatusKey
+from nvflare.private.defs import ClientStatusKey, EngineConstant
 from nvflare.private.fed.utils.fed_utils import deploy_app
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
@@ -160,13 +160,20 @@ class ClientEngine(ClientEngineInternalSpec):
         return self.client.client_name
 
     def _write_token_file(self, run_number, open_port):
-        token_file = os.path.join(self.args.workspace, "client_token.txt")
+        token_file = os.path.join(self.args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         if os.path.exists(token_file):
             os.remove(token_file)
         with open(token_file, "wt") as f:
             f.write(
-                "%s\n%s\n%s\n%s\n%s\n"
-                % (self.client.token, self.client.ssid, run_number, self.client.client_name, open_port)
+                "%s\n%s\n%s\n%s\n%s\n%s\n"
+                % (
+                    self.client.token,
+                    self.client.ssid,
+                    run_number,
+                    self.client.client_name,
+                    open_port,
+                    list(self.client.servers.values())[0]["target"],
+                )
             )
 
     def remove_custom_path(self):
