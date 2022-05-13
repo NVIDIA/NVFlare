@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import json
+import logging
 import os
 import pickle
 import shutil
@@ -641,8 +641,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 del summary_info.abort_jobs[:]
                 summary_info.abort_jobs.extend(abort_runs)
                 display_runs = ",".join(abort_runs)
-                self.logger.info(f"These jobs: {display_runs} are not running on the server. "
-                                 f"Ask client: {client_name} to abort these runs.")
+                self.logger.info(
+                    f"These jobs: {display_runs} are not running on the server. "
+                    f"Ask client: {client_name} to abort these runs."
+                )
             return summary_info
 
     def _sync_client_jobs(self, request):
