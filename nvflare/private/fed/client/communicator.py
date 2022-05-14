@@ -25,7 +25,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.private.defs import SpecialTaskName
-from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
 
 
@@ -391,7 +391,7 @@ class Communicator:
                     time.sleep(3)
         return server_message
 
-    def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngine):
+    def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngineInternalSpec):
         message = fed_msg.Token()
         message.token = token
         message.ssid = ssid
