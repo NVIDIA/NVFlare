@@ -409,7 +409,7 @@ class AdminController:
                 if args[0] == "server":
                     if len(args) == 2:
                         # if server id is provided
-                        server_id = args[1]
+                        server_id = int(args[1])
                     else:
                         server_id = site_launcher.get_active_server_id(self.admin_api.port)
                     site_launcher.stop_server(server_id)
