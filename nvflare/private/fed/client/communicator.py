@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import logging
 import socket
 import time
@@ -26,6 +25,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.private.defs import SpecialTaskName
+from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
 
 
@@ -391,7 +391,7 @@ class Communicator:
                     time.sleep(3)
         return server_message
 
-    def send_heartbeat(self, servers, task_name, token, ssid, client_name):
+    def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngine):
         message = fed_msg.Token()
         message.token = token
         message.ssid = ssid
@@ -405,7 +405,16 @@ class Communicator:
                 while retry > 0:
                     try:
                         self.logger.debug(f"Send {task_name} heartbeat {token}")
-                        stub.Heartbeat(message)
+                        run_numbers = engine.get_all_run_numbers()
+                        del message.jobs[:]
+                        message.jobs.extend(run_numbers)
+                        response = stub.Heartbeat(message)
+                        abort_runs = list(set(response.abort_jobs))
+                        if abort_runs:
+                            for job in abort_runs:
+                                engine.abort_app(job)
+                            display_runs = ",".join(abort_runs)
+                            self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
                         break
                     except grpc.RpcError as grpc_error:
                         self.logger.debug(grpc_error)

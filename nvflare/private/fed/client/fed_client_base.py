@@ -14,6 +14,7 @@
 
 import logging
 import threading
+import time
 from functools import partial
 from multiprocessing.dummy import Pool as ThreadPool
 from typing import List, Optional
@@ -241,7 +242,11 @@ class FederatedClientBase:
     def send_heartbeat(self, project_name):
         try:
             if self.token:
-                self.communicator.send_heartbeat(self.servers, project_name, self.token, self.ssid, self.client_name)
+                while not self.engine:
+                    time.sleep(1.0)
+                self.communicator.send_heartbeat(
+                    self.servers, project_name, self.token, self.ssid, self.client_name, self.engine
+                )
         except FLCommunicationError as e:
             self.communicator.heartbeat_done = True
 

@@ -78,6 +78,8 @@ message FederatedSummary {
     string token = 3;
     // The service session ID
     string ssid = 4;
+    // The jobs need to be aborted
+    repeated string abort_jobs = 5;
 }
 
 
@@ -137,6 +139,8 @@ message Token {
     string client_name = 2;
     // The service session ID
     string ssid = 3;
+    // The running jobs
+    repeated string jobs = 4;
 }
 
 // The client's Aux communication message

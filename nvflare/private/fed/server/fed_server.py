@@ -634,8 +634,23 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if self.admin_server:
                 self.admin_server.client_heartbeat(token)
 
+            abort_runs = self._sync_client_jobs(request)
             summary_info = fed_msg.FederatedSummary()
+            if abort_runs:
+                del summary_info.abort_jobs[:]
+                summary_info.abort_jobs.extend(abort_runs)
+                display_runs = ",".join(abort_runs)
+                self.logger.info(
+                    f"These jobs: {display_runs} are not running on the server. "
+                    f"Ask client: {client_name} to abort these runs."
+                )
             return summary_info
+
+    def _sync_client_jobs(self, request):
+        client_jobs = request.jobs
+        server_jobs = self.engine.run_processes.keys()
+        jobs_need_abort = list(set(client_jobs).difference(server_jobs))
+        return jobs_need_abort
 
     def Retrieve(self, request, context):
         client_name = request.client_name

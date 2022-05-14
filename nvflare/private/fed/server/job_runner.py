@@ -151,19 +151,34 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         run_process = engine.run_processes.get(run_number)
         if run_process:
-            admin_server = engine.server.admin_server
-
             client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
-            message = Message(topic=TrainingTopic.ABORT, body="")
-            message.set_header(RequestHeader.RUN_NUM, str(run_number))
-            self.log_debug(fl_ctx, f"Send stop command to the site for run:{run_number}")
-            replies = self._send_to_clients(admin_server, client_sites, engine, message)
+
+            replies = self.abort_client_run(engine, run_number, client_sites, fl_ctx)
             if not replies:
                 self.log_error(fl_ctx, f"Failed to send abort command to clients for run_{run_number}")
 
             err = engine.abort_app_on_server(run_number)
             if err:
                 self.log_error(fl_ctx, f"Failed to abort the server for run_.{run_number}")
+
+    def abort_client_run(self, engine, run_number, client_sites, fl_ctx):
+        """Send the abort run command to the clients
+
+        Args:
+            engine: Server Engine
+            run_number: run_number
+            client_sites: Clients to be aborted
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+        admin_server = engine.server.admin_server
+        message = Message(topic=TrainingTopic.ABORT, body="")
+        message.set_header(RequestHeader.RUN_NUM, str(run_number))
+        self.log_debug(fl_ctx, f"Send stop command to the site for run:{run_number}")
+        replies = self._send_to_clients(admin_server, client_sites, engine, message)
+        return replies
 
     def _delete_run(self, run_number, sites: dict, fl_ctx: FLContext):
         """Delete the run workspace
