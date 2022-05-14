@@ -139,36 +139,29 @@ class SiteLauncher:
         # Create upload directory
         os.makedirs(os.path.join(src_server_dir, "transfer"), exist_ok=True)
 
-        if n == 1:
-            self.start_server()
-        else:
-            for i in range(n):
-                server_id = i
-                server_name = self.poc_directory.server_dir_name + f"_{server_id}"
-
-                # Copy and create new directory
-                server_dir_name = os.path.join(self.poc_directory.poc_dir, server_name)
-                shutil.copytree(src_server_dir, server_dir_name)
-
-                # replace fed_server.json ports
-                fed_server_path = os.path.join(server_dir_name, "startup", "fed_server.json")
-                with open(fed_server_path, "r") as f:
-                    fed_server_json = f.read()
-
-                fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", f"8{i}03")
-
-                with open(fed_server_path, "w") as f:
-                    f.write(fed_server_json)
-
-                self.start_server(server_id)
-                time.sleep(5)
-
-    def start_server(self, server_id=None):
-        if server_id is None:
-            server_name = self.poc_directory.server_dir_name
-            server_id = 0
-        else:
+        for i in range(n):
+            server_id = i
             server_name = self.poc_directory.server_dir_name + f"_{server_id}"
+
+            # Copy and create new directory
+            server_dir_name = os.path.join(self.poc_directory.poc_dir, server_name)
+            shutil.copytree(src_server_dir, server_dir_name)
+
+            # replace fed_server.json ports
+            fed_server_path = os.path.join(server_dir_name, "startup", "fed_server.json")
+            with open(fed_server_path, "r") as f:
+                fed_server_json = f.read()
+
+            fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", f"8{i}03")
+
+            with open(fed_server_path, "w") as f:
+                f.write(fed_server_json)
+
+            self.start_server(server_id)
+            time.sleep(5)
+
+    def start_server(self, server_id: int):
+        server_name = self.poc_directory.server_dir_name + f"_{server_id}"
         server_dir_name = os.path.join(self.poc_directory.poc_dir, server_name)
         log_path = os.path.join(server_dir_name, "log.txt")
 

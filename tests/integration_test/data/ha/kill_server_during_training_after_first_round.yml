@@ -1,12 +1,26 @@
-description: "upload a job, kill the server during training after first round, restart it should pick up the work"
+description: "upload a job, kill the server during training after SAG first round, restart it should pick up the work"
 events: [
-    {
-        "trigger": {"workflow": 0, "round_number": 1, "task": "train"},
-        "actions": [
-            "kill server",
-            "sleep 10",
-            "restart server",
-        ],
-        "result_state": "unchanged",  # "unchanged" is same as trigger state
+  {
+    "trigger": {
+      "workflows": {
+        "ScatterAndGather": {
+          "phase": "train",
+          "current_round": 1
+        }
+      }
     },
+    "actions": [
+      "kill server",
+      "sleep 10",
+      "start server",
+    ],
+    "result_state": {
+      "workflows": {
+        "ScatterAndGather": {
+          "phase": "train",
+          "current_round": 1
+        }
+      }
+    }
+  },
 ]

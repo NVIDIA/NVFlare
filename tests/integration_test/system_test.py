@@ -17,7 +17,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -236,6 +235,3 @@ class TestSystem:
                 failure = True
         print(f"Final result: {not failure}")
         print("==============================================================")
-
-        if failure:
-            sys.exit(1)
