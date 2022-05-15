@@ -77,7 +77,7 @@ NVIDIA FLARE Server & Application
 Model Persistor
 ^^^^^^^^^^^^^^^^^
 
-.. literalinclude:: ../../nvflare/app_common/np/np_model_persistor.py
+.. literalinclude:: ../../examples/hello-numpy-sag/custom/np_model_persistor.py
    :language: python
    :linenos:
    :caption: np_model_persistor.py
