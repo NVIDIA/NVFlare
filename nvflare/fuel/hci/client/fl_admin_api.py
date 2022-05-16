@@ -561,6 +561,15 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
+    def shutdown_system(self) -> FLAdminAPIResponse:
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("shutdown_system")
+        if success:
+            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply.get("details")}, reply)
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
     def get_available_apps_to_upload(self):
         dir_list = []
         for item in os.listdir(self.upload_dir):
