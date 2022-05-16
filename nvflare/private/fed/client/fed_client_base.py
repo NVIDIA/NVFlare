@@ -122,6 +122,10 @@ class FederatedClientBase:
         return self.overseer_agent
 
     def overseer_callback(self, overseer_agent):
+        if overseer_agent.is_shutdown():
+            self.engine.shutdown()
+            return
+
         sp = overseer_agent.get_primary_sp()
         self.set_primary_sp(sp)
 

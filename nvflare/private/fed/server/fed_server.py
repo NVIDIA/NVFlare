@@ -776,6 +776,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         return self.overseer_agent
 
     def overseer_callback(self, overseer_agent):
+        if overseer_agent.is_shutdown():
+            self.engine.shutdown_server()
+            return
+
         sp = overseer_agent.get_primary_sp()
         # print(sp)
         with self.engine.new_context() as fl_ctx:
