@@ -335,11 +335,8 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def abort_app_on_server(self, run_number: str) -> str:
-        status = self.engine_info.status
-        if status == MachineStatus.STOPPED:
+        if run_number not in self.run_processes.keys():
             return "Server app has not started."
-        if status == MachineStatus.STARTING:
-            return "Server app is starting, please wait for started before abort."
 
         self.logger.info("Abort the server app run.")
 

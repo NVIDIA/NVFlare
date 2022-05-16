@@ -440,6 +440,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 return task
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx):
+        shareable = None
         try:
             with self.engine.lock:
                 run_number = shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
