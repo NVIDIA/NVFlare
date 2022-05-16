@@ -58,6 +58,10 @@ class DummyOverseerAgent(OverseerAgent):
             "system": "ready",
         }
 
+    def is_shutdown(self) -> bool:
+        """Return whether the agent receives a shutdown request."""
+        return False
+
     def get_primary_sp(self) -> SP:
         """Return current primary service provider. The PSP is static in the dummy agent."""
         return self._psp

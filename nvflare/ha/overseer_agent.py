@@ -106,6 +106,10 @@ class HttpOverseerAgent(OverseerAgent):
         self._asked_to_exit = True
         self._report_and_query.join()
 
+    def is_shutdown(self) -> bool:
+        """Return whether the agent receives a shutdown request."""
+        return self._overseer_info.get("system") == "shutdown"
+
     def get_primary_sp(self) -> SP:
         """Return current primary service provider.
 
