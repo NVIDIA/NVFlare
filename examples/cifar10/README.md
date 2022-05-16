@@ -72,8 +72,8 @@ In this example, we assume two local GPUs with at least 12GB of memory are avail
 Hence, in the secure project configuration [./workspaces/secure_project.yml](./workspaces/secure_project.yml), 
 we set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
 
-For the POC workspace, adjust the default values in `nvflare/poc/client/startup/fed_client.json` 
-and `nvflare/poc/server/startup/fed_server.json` in your NVFlare installation. 
+For the POC workspace, adjust the default values in `./workspaces/poc_workspace/site-*/startup/fed_client.json` 
+and `./workspaces/poc_workspace/server/startup/fed_server.json`. 
 
 For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/job.html).
 
