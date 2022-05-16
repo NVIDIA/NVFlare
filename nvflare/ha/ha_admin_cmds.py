@@ -89,6 +89,18 @@ class HACommandModule(CommandModule):
             }
 
     def shutdown_system(self, args, api):
+        try:
+            status = api.check_status("server").get("details").get("server_engine_status")
+            if status != "stopped":
+                return {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": "Error: There are still jobs running. Please let them finish or abort_job before attempting shutdown.",
+                }
+        except Exception as e:
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Error getting server status: {}".format(e),
+            }
         print("Shutting down the system...")
         resp = api.overseer_agent.set_state("shutdown")
         if json.loads(resp.text).get("Error"):
