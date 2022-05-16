@@ -386,11 +386,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        err = engine.abort_app_on_clients(clients)
-        if err:
-            conn.append_error(err)
-            return ""
-
         run_number = conn.get_prop(self.RUN_NUMBER)
         # run_info = engine.get_app_run_info()
         message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="")
