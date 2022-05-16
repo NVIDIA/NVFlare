@@ -12,20 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
+import os
 
-import nibabel as nib
 
-parser = argparse.ArgumentParser("Threshold label image to a binary one")
-parser.add_argument("--input_path", help="Input label image path", type=str)
-parser.add_argument("--output_path", help="Output binary image path", type=str)
-parser.add_argument("--threshold", help="threshold", type=int, default=0)
-args = parser.parse_args()
-
-img = nib.load(args.input_path)
-img_np = img.get_fdata()
-img_affine = img.affine
-img_np[img_np > args.threshold] = 1
-
-nft_img = nib.Nifti1Image(img_np, img_affine)
-nib.save(nft_img, args.output_path)
+def custom_client_datalist_json_path(datalist_json_path: str, client_id: str) -> str:
+    """
+    Customize datalist_json_path for each client
+    Args:
+         datalist_json_path: root path containing all jsons
+         client_id: e.g., site-2
+    """
+    # Customize datalist_json_path for each client
+    datalist_json_path_client = os.path.join(
+        datalist_json_path,
+        client_id + ".json",
+    )
+    return datalist_json_path_client

@@ -1,9 +1,7 @@
-nvflare
+nvflare>=2.1
 torch
 torchvision
 tensorboard
 monai
 tqdm
 nibabel
-dicom2nifti
-pynrrd

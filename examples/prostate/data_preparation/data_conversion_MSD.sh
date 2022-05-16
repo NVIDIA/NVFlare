@@ -4,7 +4,6 @@ mkdir ${target_folder}/Image
 mkdir ${target_folder}/Mask
 
 source_folder=./Raw/MSD/Task05_Prostate
-
 find ${source_folder}/imagesTr -mindepth 1 -maxdepth 1 -type f | while read case; do
   case=$(basename "${case}")
   case="${case%.*.*}"

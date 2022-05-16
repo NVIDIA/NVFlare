@@ -14,21 +14,19 @@
 
 import argparse
 
-import nibabel as nib
-import nrrd
 import numpy as np
+import SimpleITK as sitk
 
-parser = argparse.ArgumentParser("Convert nrrd label to nifti with reference image file for affine")
-parser.add_argument("--input_path", help="Input nrrd path", type=str)
-parser.add_argument("--reference_path", help="Reference image path", type=str)
+parser = argparse.ArgumentParser("Convert mhd file to nifti")
+parser.add_argument("--input_path", help="Input mhd path", type=str)
 parser.add_argument("--output_path", help="Output nifti path", type=str)
 args = parser.parse_args()
 
-img = nib.load(args.reference_path)
-img_affine = img.affine
+reader = sitk.ImageFileReader()
+reader.SetImageIO("MetaImageIO")
+reader.SetFileName(args.input_path)
+image = reader.Execute()
 
-nrrd = nrrd.read(args.input_path)
-data = np.flip(nrrd[0], axis=1)
-
-nft_img = nib.Nifti1Image(data, img_affine)
-nib.save(nft_img, args.output_path)
+writer = sitk.ImageFileWriter()
+writer.SetFileName(args.output_path)
+writer.Execute(image)
