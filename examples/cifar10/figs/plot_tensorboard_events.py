@@ -61,7 +61,7 @@ def find_run_number(workdir, fl_app_name="cifar10_fedavg", alpha=None):
     for fl_app_file in fl_app_files:
         with open(fl_app_file, "r") as f:
             _fl_app_name = f.read()
-        if fl_app_name in _fl_app_name:  # alpha will be matched based on value in config file
+        if fl_app_name == _fl_app_name:  # alpha will be matched based on value in config file
             run_number = os.path.basename(os.path.dirname(fl_app_file))
             if alpha is not None:
                 config_fed_server_file = glob.glob(
