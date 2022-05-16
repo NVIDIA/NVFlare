@@ -35,8 +35,8 @@ def main():
     parser = argparse.ArgumentParser(description="Model Testing")
     parser.add_argument("--model_path", type=str)
     parser.add_argument("--cache_rate", default=1.0, type=float)
-    parser.add_argument("--dataset_base_dir", default="../data_preparation/dataset_2D", type=str)
-    parser.add_argument("--datalist_json_path", default="../data_preparation/datalist_2D/client_All.json", type=str)
+    parser.add_argument("--dataset_base_dir", default="../data_preparation/dataset", type=str)
+    parser.add_argument("--datalist_json_path", default="../data_preparation/datalist/client_All.json", type=str)
     args = parser.parse_args()
 
     # Set basic settings and paths
@@ -52,7 +52,7 @@ def main():
     test_list = load_decathlon_datalist(
         data_list_file_path=datalist_json_path,
         is_segmentation=True,
-        data_list_key="testing",
+        data_list_key="validation",
         base_dir=dataset_base_dir,
     )
     print(f"Testing Size: {len(test_list)}")

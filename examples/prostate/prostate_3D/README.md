@@ -79,6 +79,7 @@ bash ./submit_job.sh [config]
 `[config]` is the experiment job that will be submitted for the FL training, in this example, this includes `prostate_central`, `prostate_fedavg`, `prostate_fedprox`, and `prostate_ditto`.  
 
 Note that in order to make it working under most system resource conditions, the current script used regular `Dataset` for data loading in `pt/learners/prostate_learner.py`, which could be slow. If resource permits, it will make the training much faster by replacing it with `CacheDataset`. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
+For reference, with `"cache_dataset": 1.0` setting (cache all data), the centralized training (200 round, 10 epoch per round) takes around 46 hours on a 12GB NVIDIA TITAN Xp GPU. 
 
 ### 2.3 Centralized training
 To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
@@ -113,11 +114,29 @@ In this example, for Central/FedAvg/FedProx, only the global model gets evaluate
 
 Let's summarize the result of the experiments run above. We compare the validation scores of 
 the global model for Central/FedAvg/FedProx, and personalized models for Ditto. In this example, each client computes their validation scores using their own
-validation set, and the centralized model computes the validation score using the combined validation set. Please note that due to the limited size of data set, the validation curve can have significant variations across runs.
+validation set, and the centralized model computes the validation score using the combined validation set. Please note that due to the limited size of data set, the results can have significant variations across runs.
 
 We provide a script for plotting the tensorboard records, running
 ```
 python3 ./result_stat/plot_tensorboard_events.py
 ```
-The TensorBoard curves for validation Dice for the 150 epochs (150 rounds, 1 local epochs per round) during training are shown below:
+The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 2000 epochs (200 rounds, 10 local epochs per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
+
+### Testing score
+The testing score is computed based on the best global model for Central/FedAvg/FedProx, and the six best personalized models for Ditto.
+We provide a script for performing validation on testing data split, please add the correct paths and job_ids, and run
+
+```
+bash ./result_stat/testing_models_3d.sh
+```
+Note that for Ditto, the score is the average Dice among all 4 personalized models evaluated on their own testing data weighted by testing data size.
+
+The Dice results for the above run are:
+
+| Config	          | 	Val Dice	 | 
+|------------------|------------|
+| prostate_central | 	0.8283	   | 
+| prostate_fedavg  | 0.6868     | 
+| prostate_fedprox | 0.6135     | 
+| prostate_ditto   | 	0.7528	   |

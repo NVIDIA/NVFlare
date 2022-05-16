@@ -131,7 +131,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
             strides=(2, 2, 2, 2),
             num_res_units=2,
         ).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9)
         self.criterion = DiceLoss(sigmoid=True)
 
         if self.fedproxloss_mu > 0:
@@ -191,27 +191,33 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
                 cache_rate=cache_rate,
                 num_workers=1,
             )
+            self.valid_dataset = CacheDataset(
+                data=valid_list,
+                transform=self.transform_valid,
+                cache_rate=cache_rate,
+                num_workers=1,
+            )
         else:
             self.train_dataset = Dataset(
                 data=train_list,
                 transform=self.transform_train,
             )
-        self.valid_dataset = Dataset(
-            data=valid_list,
-            transform=self.transform_valid,
-        )
+            self.valid_dataset = Dataset(
+                data=valid_list,
+                transform=self.transform_valid,
+            )
 
         self.train_loader = DataLoader(
             self.train_dataset,
             batch_size=1,
             shuffle=True,
-            num_workers=0,
+            num_workers=1,
         )
         self.valid_loader = DataLoader(
             self.valid_dataset,
             batch_size=1,
             shuffle=False,
-            num_workers=0,
+            num_workers=1,
         )
 
         # Set inferer and evaluation metric

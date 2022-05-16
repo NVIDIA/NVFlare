@@ -119,7 +119,7 @@ We provide a script for plotting the tensorboard records, running
 ```
 python3 ./result_stat/plot_tensorboard_events.py
 ```
-The TensorBoard curves for validation Dice for the 150 epochs (150 rounds, 1 local epochs per round) during training are shown below:
+The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 150 epochs (150 rounds, 1 local epochs per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
 ### Testing score
@@ -139,6 +139,3 @@ The Dice results for the above run are:
 | prostate_fedavg  |   0.8324   | 
 | prostate_fedprox |   0.8131   | 
 | prostate_ditto   | 	0.8474	 |
-
-
-

@@ -20,8 +20,8 @@ import seaborn as sns
 import tensorflow as tf
 
 # poc workspace
-client_results_root = "../prostate_3D/workspace_prostate"
-server_results_root = "../prostate_3D/workspace_prostate/server"
+client_results_root = "/media/ziyuexu/Research/Experiment/NVFlare/Github_ditto_Run/prostate_3D/workspace_prostate_dgx/workspace_prostate"
+server_results_root = "/media/ziyuexu/Research/Experiment/NVFlare/Github_ditto_Run/prostate_3D/workspace_prostate_dgx/workspace_prostate/server"
 
 # 4 or 6 sites
 sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx"]
@@ -82,7 +82,7 @@ def add_eventdata(data, config, filepath, tag="val_metric_global_model"):
     for e in event_data[tag]:
         # print(e)
         data["Config"].append(config)
-        data["Round"].append(e[0])
+        data["Epoch"].append(e[0])
         metric.append(e[1])
 
     metric = smooth(metric, weight)
@@ -98,11 +98,11 @@ def main():
     i = 1
     # add event files
 
-    data = {"Config": [], "Round": [], "Dice": []}
+    data = {"Config": [], "Epoch": [], "Dice": []}
 
     for site in sites_fl:
         # clear data for each site
-        data = {"Config": [], "Round": [], "Dice": []}
+        data = {"Config": [], "Epoch": [], "Dice": []}
         for config, exp in experiments.items():
             run_number = find_run_number(workdir=server_results_root, fl_app_name=config)
             print(f"Found run {run_number} for {config}")
@@ -119,8 +119,8 @@ def main():
 
         ax = plt.subplot(2, int(num_site / 2), i)
         ax.set_title(site)
-        sns.lineplot(x="Round", y="Dice", hue="Config", data=data)
-        ax.set_xlim([0, 150])
+        sns.lineplot(x="Epoch", y="Dice", hue="Config", data=data)
+        #ax.set_xlim([0, 1000])
         i = i + 1
     plt.subplots_adjust(hspace=0.3)
     plt.show()

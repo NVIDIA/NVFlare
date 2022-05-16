@@ -75,7 +75,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
             strides=(2, 2, 2, 2),
             num_res_units=2,
         ).to(self.device)
-        ditto_optimizer = optim.Adam(ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"])
+        ditto_optimizer = optim.SGD(ditto_model.parameters(), lr=self.config_info["ditto_learning_rate"], momentum=0.9)
         self.ditto_helper = SupervisedPTDittoHelper(
             criterion=DiceLoss(sigmoid=True),
             model=ditto_model,
