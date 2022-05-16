@@ -2,7 +2,18 @@ description: "upload a job, kill the server during sending models to clients, re
 events: [
   {
     "trigger": "sent task assignment to client",
-    "actions": ["kill server", "sleep 10", "start server"],
-    "result_state": {"round_number": 0},
+    "actions": [
+      "kill server",
+      "sleep 10",
+      "start server"
+    ],
+    "result_state": {
+      "workflows": {
+        "ScatterAndGather": {
+          "phase": "train",
+          "current_round": 0
+        }
+      }
+    },
   },
 ]
