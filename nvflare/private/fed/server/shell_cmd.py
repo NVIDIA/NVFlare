@@ -29,6 +29,7 @@ from nvflare.fuel.hci.shell_cmd_val import (
     ShellCommandValidator,
     TailValidator,
 )
+from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import ClientReply, new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
@@ -113,6 +114,11 @@ class _CommandExecutor(object):
 
         if not isinstance(reply, ClientReply):
             raise TypeError("reply must be ClientReply but got {}".format(type(reply)))
+        if reply.reply is None:
+            conn.append_error("no reply from client - timed out")
+            return
+        if not isinstance(reply.reply, Message):
+            raise TypeError("reply in ClientReply must be Message but got {}".format(type(reply.reply)))
         conn.append_string(reply.reply.body)
 
     def get_usage(self):
