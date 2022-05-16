@@ -80,7 +80,7 @@ def get_all_file_paths(directory):
     return file_paths
 
 
-def _zip_directory(root_dir: str, folder_name: str, writer):
+def _zip_directory(root_dir: str, folder_name: str, writer: io.BytesIO):
     """Create a zip archive file for the specified directory.
 
     Args:
@@ -106,18 +106,7 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
             z.write(full_path, arcname=rel_path)
 
 
-def zip_directory_to_file(root_dir: str, folder_name: str, output_file_name: str):
-    """Create a zip archive file for the specified directory.
-
-    Args:
-        root_dir: root path that contains the folder to be zipped
-        folder_name: path to the folder to be zipped, relative to root_dir
-        output_file_name: name of the output file
-    """
-    _zip_directory(root_dir, folder_name, output_file_name)
-
-
-def zip_directory_to_bytes(root_dir: str, folder_name: str):
+def zip_directory_to_bytes(root_dir: str, folder_name: str) -> bytes:
     bio = io.BytesIO()
     _zip_directory(root_dir, folder_name, bio)
     return bio.getvalue()
