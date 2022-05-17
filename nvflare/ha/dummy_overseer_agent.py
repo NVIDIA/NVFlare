@@ -27,10 +27,7 @@ class DummyOverseerAgent(OverseerAgent):
     SSID = "ebc6125d-0a56-4688-9b08-355fe9e4d61a"
 
     def __init__(self, sp_end_point, heartbeat_interval=5):
-        self.sp_end_point = sp_end_point
-
-        name, fl_port, admin_port = self.sp_end_point.split(":")
-        self._psp = SP(name, fl_port, admin_port, DummyOverseerAgent.SSID, True)
+        self._base_init(sp_end_point)
 
         self._report_and_query = threading.Thread(target=self._rnq_worker, args=())
         self._flag = threading.Event()
@@ -39,11 +36,8 @@ class DummyOverseerAgent(OverseerAgent):
         self._conditional_cb = False
         self._heartbeat_interval = heartbeat_interval
 
-    def initialize(self, fl_ctx: FLContext):
-        sp_end_point = fl_ctx.get_prop(FLContextKey.SP_END_POINT)
-        if sp_end_point:
-            self.sp_end_point = sp_end_point
-
+    def _base_init(self, sp_end_point):
+        self.sp_end_point = sp_end_point
         name, fl_port, admin_port = self.sp_end_point.split(":")
         self._psp = SP(name, fl_port, admin_port, DummyOverseerAgent.SSID, True)
         psp_dict = {
@@ -57,6 +51,11 @@ class DummyOverseerAgent(OverseerAgent):
             "sp_list": [psp_dict],
             "system": "ready",
         }
+
+    def initialize(self, fl_ctx: FLContext):
+        sp_end_point = fl_ctx.get_prop(FLContextKey.SP_END_POINT)
+        if sp_end_point:
+            self._base_init(sp_end_point)
 
     def is_shutdown(self) -> bool:
         """Return whether the agent receives a shutdown request."""
