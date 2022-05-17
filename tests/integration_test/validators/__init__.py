@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from abc import ABC, abstractmethod
-
-
-class AppResultValidator(ABC):
-    @abstractmethod
-    def validate_results(self, server_data, client_data, run_data) -> bool:
-        pass
+from .cross_val_result_validator import (
+    CrossValResultValidator,
+    CrossValSingleClientResultValidator,
+    GlobalModelEvalValidator,
+)
+from .np_model_validator import NumpyModelValidator
+from .np_sag_result_validator import NumpySAGResultValidator
+from .pt_model_validator import PTModelValidator
+from .tb_result_validator import TBResultValidator
+from .tf_model_validator import TFModelValidator

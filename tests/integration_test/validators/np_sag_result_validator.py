@@ -14,29 +14,43 @@
 
 import os
 
-from nvflare.apis.fl_constant import WorkspaceConstants
-from nvflare.app_common.app_constant import DefaultCheckpointFileName
+import numpy as np
 
 from .job_result_validator import FinishJobResultValidator
 
 
-def _check_pt_model_exist(server_data, run_data):
+def _print_info(msg: str):
+    print(f"_check_np_sag_results: {msg}")
+
+
+def _check_np_sag_results(server_data, run_data, expected_result: np.array):
     server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
 
-    server_models_dir = os.path.join(server_run_dir, WorkspaceConstants.APP_PREFIX + "server")
-    if not os.path.exists(server_models_dir):
-        print(f"_check_pt_model_exist: models dir {server_models_dir} doesn't exist.")
+    models_dir = os.path.join(server_run_dir, "models")
+    if not os.path.exists(models_dir):
+        _print_info(f"models dir {models_dir} doesn't exist.")
         return False
 
-    model_path = os.path.join(server_models_dir, DefaultCheckpointFileName.GLOBAL_MODEL)
+    model_path = os.path.join(models_dir, "server.npy")
     if not os.path.isfile(model_path):
-        print(f"_check_pt_model_exist: model_path {model_path} doesn't exist.")
+        _print_info(f"model_path {model_path} doesn't exist.")
+        return False
+
+    try:
+        data = np.load(model_path)
+        _print_info(f"data loaded: {data}.")
+        np.testing.assert_equal(data, expected_result)
+    except Exception as e:
+        _print_info(f"exception happens: {e.__str__()}")
         return False
 
     return True
 
 
-class PTModelValidator(FinishJobResultValidator):
+class NumpySAGResultValidator(FinishJobResultValidator):
+    def __init__(self, expected_result):
+        self.expected_result = np.array(expected_result)
+
     def validate_results(self, server_data, client_data, run_data) -> bool:
         super().validate_results(server_data, client_data, run_data)
-        return _check_pt_model_exist(server_data, run_data)
+        return _check_np_sag_results(server_data, run_data, self.expected_result)

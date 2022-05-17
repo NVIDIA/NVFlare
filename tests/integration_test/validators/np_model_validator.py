@@ -16,41 +16,37 @@ import os
 
 import numpy as np
 
-from .app_result_validator import AppResultValidator
+from .job_result_validator import FinishJobResultValidator
 
 
-def check_sag_results(server_data, run_data):
-    server_run_dir = os.path.join(server_data["server_path"], run_data["job_id"])
-    intended_model = np.array(
-        [[4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
-        dtype="float32",
-    )
+def _print_info(msg: str):
+    print(f"_check_np_model_exist: {msg}")
 
-    if not os.path.exists(server_run_dir):
-        print(f"check_sag_results: server run dir {server_run_dir} doesn't exist.")
-        return False
+
+def _check_np_model_exist(server_data, run_data):
+    server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
 
     models_dir = os.path.join(server_run_dir, "models")
     if not os.path.exists(models_dir):
-        print(f"check_sag_results: models dir {models_dir} doesn't exist.")
+        _print_info(f"models dir {models_dir} doesn't exist.")
         return False
 
     model_path = os.path.join(models_dir, "server.npy")
     if not os.path.isfile(model_path):
-        print(f"check_sag_results: model_path {model_path} doesn't exist.")
+        _print_info(f"model_path {model_path} doesn't exist.")
         return False
 
     try:
         data = np.load(model_path)
-        print(f"check_sag_result: Data loaded: {data}.")
-        np.testing.assert_equal(data, intended_model)
+        _print_info(f"data loaded: {data}.")
     except Exception as e:
-        print(f"Exception in validating ScatterAndGather model: {e.__str__()}")
+        _print_info(f"exception happens: {e.__str__()}")
         return False
 
     return True
 
 
-class SAGResultValidator(AppResultValidator):
+class NumpyModelValidator(FinishJobResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        return check_sag_results(server_data, run_data)
+        super().validate_results(server_data, client_data, run_data)
+        return _check_np_model_exist(server_data, run_data)

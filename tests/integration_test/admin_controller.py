@@ -16,7 +16,9 @@ import logging
 import os
 import re
 import time
+from typing import Dict
 
+from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
@@ -51,7 +53,37 @@ def process_logs(logs, run_state):
     return run_state != prev_run_state, run_state
 
 
-def process_stats(stats, run_state):
+def _parse_job_run_statuses(list_jobs_string: str) -> Dict[str, str]:
+    """Parse the list_jobs string to return job run status."""
+    job_statuses = {}
+    # first three is table start and header row, last one is table end
+    rows = list_jobs_string.splitlines()[3:-1]
+    for r in rows:
+        segments = [s.strip() for s in r.split("|")]
+        job_statuses[segments[1]] = segments[3]
+    return job_statuses
+
+
+def _parse_workflow_states(stats_message: dict):
+    workflow_states = {}
+    if not stats_message:
+        return workflow_states
+    for k, v in stats_message.items():
+        # each controller inherit from nvflare/apis/impl/controller has tasks
+        if v.get("tasks"):
+            workflow_states[k] = v.copy()
+            workflow_states[k].pop("tasks")
+    return workflow_states
+
+
+def _print_state(state: dict, length: int = 30):
+    print("\n" + "-" * length)
+    for k, v in state.items():
+        print(f"{k}: {v}")
+    print("-" * length + "\n", flush=True)
+
+
+def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
     # extract run_state from stats
     # {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     #        'details': {
@@ -64,39 +96,65 @@ def process_stats(stats, run_state):
     #               'CrossSiteModelEval':
     #                   {'tasks': {}},
     #               'ServerRunner': {
-    #                   'run_number': 1,
+    #                   'run_number': XXX,
     #                   'status': 'started',
     #                   'workflow': 'scatter_and_gather'
     #                }
     #            }
     #       },
-    # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [{'type': 'dict', 'data': {'ScatterAndGather': {'tasks': {'train': []}, 'phase': 'train', 'current_round': 0, 'num_rounds': 2}, 'CrossSiteModelEval': {'tasks': {}}, 'ServerRunner': {'run_number': 1, 'status': 'started', 'workflow': 'scatter_and_gather'}}}], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
-    wfs = {}
+    # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [{'type': 'dict', 'data': {'ScatterAndGather': {'tasks': {'train': []}, 'phase': 'train', 'current_round': 0, 'num_rounds': 2}, 'CrossSiteModelEval': {'tasks': {}}, 'ServerRunner': {'run_number': XXX, 'status': 'started', 'workflow': 'scatter_and_gather'}}}], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
     prev_run_state = run_state.copy()
-    print(f"run_state {prev_run_state}", flush=True)
-    print(f"stats {stats}", flush=True)
-    if stats and "status" in stats and "details" in stats and stats["status"] == APIStatus.SUCCESS:
-        if "message" in stats["details"]:
-            wfs = stats["details"]["message"]
-            if wfs:
-                run_state["workflow"], run_state["task"], run_state["round_number"] = None, None, None
-            for item in wfs:
-                if wfs[item].get("tasks"):
-                    run_state["workflow"] = item
-                    run_state["task"] = list(wfs[item].get("tasks").keys())[0]
-                    if "current_round" in wfs[item]:
-                        run_state["round_number"] = wfs[item]["current_round"]
-                # if wfs[item].get("workflow"):
-                #     workflow = wfs[item].get("workflow")
 
-    if stats["status"] == APIStatus.SUCCESS:
-        run_state["run_finished"] = "ServerRunner" not in wfs.keys()
-    else:
-        run_state["run_finished"] = False
+    # parse stats
+    if (
+        stats
+        and "status" in stats
+        and stats["status"] == APIStatus.SUCCESS
+        and "details" in stats
+        and "message" in stats["details"]
+    ):
+        run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"])
 
-    wfs = [wf for wf in list(wfs.items()) if "tasks" in wf[1]]
+    # parse job status
+    run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
 
-    return run_state != prev_run_state, wfs, run_state
+    print("Prev state:")
+    _print_state(state=prev_run_state)
+    print(f"STATS: {stats}", flush=True)
+    print("Current state:")
+    _print_state(state=run_state)
+
+    return run_state != prev_run_state, run_state
+
+
+def _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a: dict, dict_b: dict):
+    if not dict_a and not dict_b:
+        return True
+    if dict_a and not dict_b:
+        return False
+    for k in dict_a:
+        if isinstance(dict_a[k], dict):
+            if not _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(dict_a[k], dict_b[k]):
+                return False
+        elif dict_b.get(k) != dict_a[k]:
+            return False
+    return True
+
+
+def _check_run_state(state, expected_state):
+    for k, v in expected_state.items():
+        print(f"ASSERT Expected State {k}: {v} is part of Current State {k}: {state[k]}")
+        if isinstance(v, dict):
+            assert _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(v, state[k])
+        else:
+            assert state[k] == v
+    print("\n")
+
+
+def _check_event_trigger(event_trigger: dict, run_state: dict):
+    """check if a run state trigger an event trigger."""
+    event_triggered = _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(event_trigger, run_state)
+    return event_triggered
 
 
 class AdminController:
@@ -246,54 +304,52 @@ class AdminController:
         logs = self.admin_api.cat_target(target, file=job_log_file)["details"]["message"].splitlines()
         return logs
 
+    def _get_job_run_statuses(self):
+        list_jobs_result = self.admin_api.list_jobs()
+        if list_jobs_result["status"] == APIStatus.SUCCESS:
+            list_jobs_string = list_jobs_result["details"]["message"]
+            job_run_statuses = _parse_job_run_statuses(list_jobs_string)
+            return job_run_statuses
+        else:
+            return {self.job_id: "List Job command failed"}
+
     def run_event_sequence(self, site_launcher, event_sequence):
-        run_state = {"workflow": None, "task": None, "round_number": None, "run_finished": None}
+        run_state = {"run_finished": None, "workflows": None}
 
         last_read_line = 0
         event_idx = 0
         ha_events = event_sequence["events"]
         event_test_status = [False for _ in range(len(ha_events))]  # whether event has been successfully triggered
 
-        i = 0
         training_done = False
         while not training_done:
-            i += 1
-
             server_logs = self._get_job_log(target=TargetType.SERVER)
             server_logs = server_logs[last_read_line:]
             last_read_line += len(server_logs)
             server_logs_string = "\n".join(server_logs)
 
-            stats = self._get_stats(TargetType.SERVER)
+            print("\n")
+            print(f"Job name: {self.last_job_name}")
+            print(f"HA test: {event_sequence['description']}")
 
             # update run_state
-            changed, wfs, run_state = process_stats(stats, run_state)
-
-            if changed or i % (10 / self.poll_period) == 0:
-                i = 0
-                print("STATS: ", stats)
-                self.print_state(event_sequence["description"], run_state)
+            job_run_statuses = self._get_job_run_statuses()
+            print(f"job run status: {job_run_statuses}")
+            stats = self._get_stats(TargetType.SERVER)
+            changed, run_state = _update_run_state(
+                stats=stats, run_state=run_state, job_run_status=job_run_statuses[self.job_id]
+            )
 
             # check if event is triggered -> then execute the corresponding actions
             if event_idx < len(ha_events) and not event_test_status[event_idx]:
                 event_trigger = ha_events[event_idx]["trigger"]
-                event_triggered = True
+                event_triggered = False
 
                 if isinstance(event_trigger, dict):
-                    for k, v in event_trigger.items():
-                        if k == "workflow":
-                            print(run_state)
-                            print(wfs)
-                            if run_state[k] != wfs[v][0]:
-                                event_triggered = False
-                                break
-                        else:
-                            if run_state[k] != v:
-                                event_triggered = False
-                                break
+                    event_triggered = _check_event_trigger(event_trigger, run_state)
                 elif isinstance(event_trigger, str):
-                    if event_trigger not in server_logs_string:
-                        event_triggered = False
+                    if event_trigger in server_logs_string:
+                        event_triggered = True
                 else:
                     raise RuntimeError(f"event_trigger type {type(event_trigger)} is not supported.")
 
@@ -304,45 +360,39 @@ class AdminController:
                     continue
 
             response = self.admin_api.check_status(target_type=TargetType.SERVER)
-            if response and "status" in response and response["status"] != APIStatus.SUCCESS:
-                print("NO ACTIVE SERVER!")
+            if response and "status" in response:
+                if response["status"] != APIStatus.SUCCESS:
+                    print(f"Check server status failed: {response}.")
+                else:
+                    if "details" not in response:
+                        print(f"Check server status missing details: {response}.")
+                    else:
+                        # compare run_state to expected result_state from the test case
+                        if event_idx < len(ha_events) and event_test_status[event_idx]:
+                            result_state = ha_events[event_idx]["result_state"]
+                            # if result_state == "unchanged":
+                            #     result_state = ha_events[event_idx]["trigger"]
+                            if any(list(run_state.values())):
+                                _check_run_state(state=run_state, expected_state=result_state)
+                                event_idx += 1
 
-            elif (
-                response and "status" in response and "details" in response and response["status"] == APIStatus.SUCCESS
-            ):
-
-                # compare run_state to expected result_state from the test case
-                if (
-                    event_idx < len(ha_events)
-                    and event_test_status[event_idx]
-                    and response["status"] == APIStatus.SUCCESS
-                ):
-                    result_state = ha_events[event_idx]["result_state"]
-                    if any(list(run_state.values())):
-                        if result_state == "unchanged":
-                            result_state = ha_events[event_idx]["trigger"]
-                        for k, v in result_state.items():
-                            if k == "workflow":
-                                print(f"ASSERT Current {k}: {run_state[k]} == Expected {k}: {wfs[v][0]}")
-                                assert run_state[k] == wfs[v][0]
+                        # check if run is stopped
+                        if (
+                            FLDetailKey.SERVER_ENGINE_STATUS in response["details"]
+                            and response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped"
+                        ):
+                            response = self.admin_api.check_status(target_type=TargetType.CLIENT)
+                            if response["status"] != APIStatus.SUCCESS:
+                                print(f"CHECK client status failed: {response}")
+                            if "details" not in response:
+                                print(f"Check client status missing details: {response}.")
                             else:
-                                print(f"ASSERT Current {k}: {run_state[k]} == Expected {k}: {v}")
-                                assert run_state[k] == v
-                        print("\n")
-                        event_idx += 1
-
-                # check if run is stopped
-                if (
-                    FLDetailKey.SERVER_ENGINE_STATUS in response["details"]
-                    and response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped"
-                ):
-                    response = self.admin_api.check_status(target_type=TargetType.CLIENT)
-                    if response["status"] != APIStatus.SUCCESS:
-                        print(f"CHECK status failed: {response}")
-                    for row in response["details"]["client_statuses"]:
-                        if row[3] != "stopped":
-                            continue
-                    training_done = True
+                                for row in response["details"]["client_statuses"]:
+                                    if row[3] != "stopped":
+                                        continue
+                                # check if job is completed
+                                if job_run_statuses[self.job_id] == RunStatus.FINISHED_COMPLETED.value:
+                                    training_done = True
             time.sleep(self.poll_period)
 
         assert all(event_test_status), "Test failed: not all test events were triggered"
@@ -360,45 +410,48 @@ class AdminController:
 
             elif command == "kill":
                 if args[0] == "server":
-                    active_server_id = site_launcher.get_active_server_id(self.admin_api.port)
-                    site_launcher.stop_server(active_server_id)
+                    if len(args) == 2:
+                        # if server id is provided
+                        server_id = int(args[1])
+                    else:
+                        server_id = site_launcher.get_active_server_id(self.admin_api.port)
+                    site_launcher.stop_server(server_id)
                 elif args[0] == "overseer":
                     site_launcher.stop_overseer()
                 elif args[0] == "client":  # TODO fix client kill & restart during run
                     if len(args) == 2:
-                        client_id = int(args[1])
+                        # if client id is provided
+                        client_ids = [int(args[1])]
                     else:
-                        client_id = list(site_launcher.client_properties.keys())[0]
-                    self.admin_api.remove_client([site_launcher.client_properties[client_id]["name"]])
-                    site_launcher.stop_client(client_id)
+                        # close all clients
+                        client_ids = list(site_launcher.client_properties.keys())
+                    for cid in client_ids:
+                        self.admin_api.remove_client([site_launcher.client_properties[cid]["name"]])
+                        site_launcher.stop_client(cid)
 
-            elif command == "restart":
+            elif command == "start":
                 if args[0] == "server":
                     if len(args) == 2:
-                        server_id = int(args[1])
+                        # if server id is provided
+                        server_ids = [int(args[1])]
                     else:
-                        print(site_launcher.server_properties)
-                        server_id = list(site_launcher.server_properties.keys())[0]
-                    site_launcher.start_server()
+                        # start all servers
+                        server_ids = list(site_launcher.server_properties.keys())
+                    for sid in server_ids:
+                        site_launcher.start_server(sid)
                 elif args[0] == "overseer":
                     site_launcher.start_overseer()
                 elif args[0] == "client":  # TODO fix client kill & restart during run
                     if len(args) == 2:
-                        client_id = int(args[1])
+                        # if client id is provided
+                        client_ids = [int(args[1])]
                     else:
-                        client_id = list(site_launcher.client_properties.keys())[0]
-                    site_launcher.start_client(client_id)
+                        # start all clients
+                        client_ids = list(site_launcher.client_properties.keys())
+                    for cid in client_ids:
+                        site_launcher.start_client(cid)
             else:
                 raise RuntimeError(f"Command {command} is not supported.")
-
-    def print_state(self, test_description: str, state: dict):
-        print("\n")
-        print(f"Job name: {self.last_job_name}")
-        print(f"HA test: {test_description}")
-        print("-" * 30)
-        for k, v in state.items():
-            print(f"{k}: {v}")
-        print("-" * 30 + "\n")
 
     def finalize(self):
         if self.job_id:

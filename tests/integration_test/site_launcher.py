@@ -21,20 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
-import traceback
-
-
-def process_logs(log_path, pid):
-    try:
-        with open(log_path, "ab") as file:
-            for line in pid.stdout:  # b'\n'-separated lines
-                sys.stdout.buffer.write(line)  # pass bytes as is
-                file.write(line)
-                file.flush()
-
-    except BaseException as e:
-        traceback.print_exc()
-        print(f"Exception in process_logs for file {log_path}: {e.__str__()}")
+from typing import Dict
 
 
 class POCDirectory:
@@ -84,6 +71,21 @@ class POCDirectory:
         return os.path.join(self.poc_dir, self.server_dir_name)
 
 
+class SiteProperties:
+    def __init__(self, name: str, root_dir: str, process):
+        if process is None:
+            raise ValueError("process can't be None in SiteProperties.")
+        self.name = name
+        self.root_dir = root_dir
+        self.process = process
+
+
+class ServerProperties(SiteProperties):
+    def __init__(self, name: str, root_dir: str, process, port: str):
+        super().__init__(name=name, root_dir=root_dir, process=process)
+        self.port = port
+
+
 def _kill_process(process, name: str):
     os.killpg(process.pid, signal.SIGTERM)
     subprocess.call(["kill", str(process.pid)])
@@ -104,8 +106,8 @@ class SiteLauncher:
         self.original_poc_directory = poc_directory
 
         self.overseer_properties = {}
-        self.server_properties = {}
-        self.client_properties = {}
+        self.server_properties: Dict[int, ServerProperties] = {}
+        self.client_properties: Dict[int, SiteProperties] = {}
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -139,44 +141,30 @@ class SiteLauncher:
         # Create upload directory
         os.makedirs(os.path.join(src_server_dir, "transfer"), exist_ok=True)
 
-        if n == 1:
-            self.start_server()
-        else:
-            for i in range(n):
-                server_id = i
-                server_name = self.poc_directory.server_dir_name + f"_{server_id}"
-
-                # Copy and create new directory
-                server_dir_name = os.path.join(self.poc_directory.poc_dir, server_name)
-                shutil.copytree(src_server_dir, server_dir_name)
-
-                # replace fed_server.json ports
-                fed_server_path = os.path.join(server_dir_name, "startup", "fed_server.json")
-                with open(fed_server_path, "r") as f:
-                    fed_server_json = f.read()
-
-                fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", f"8{i}03")
-
-                with open(fed_server_path, "w") as f:
-                    f.write(fed_server_json)
-
-                self.start_server(server_id)
-                time.sleep(5)
-
-    def start_server(self, server_id=None):
-        if server_id is None:
-            server_name = self.poc_directory.server_dir_name
-            server_id = 0
-        else:
+        for i in range(n):
+            server_id = i
             server_name = self.poc_directory.server_dir_name + f"_{server_id}"
-        server_dir_name = os.path.join(self.poc_directory.poc_dir, server_name)
-        log_path = os.path.join(server_dir_name, "log.txt")
 
-        self.server_properties[server_id] = {}
-        self.server_properties[server_id]["path"] = server_dir_name
-        self.server_properties[server_id]["name"] = server_name
-        self.server_properties[server_id]["port"] = "8003"
-        self.server_properties[server_id]["log_path"] = log_path
+            # Copy and create new directory
+            server_dir_name = os.path.join(self.poc_directory.poc_dir, server_name)
+            shutil.copytree(src_server_dir, server_dir_name)
+
+            # replace fed_server.json ports
+            fed_server_path = os.path.join(server_dir_name, "startup", "fed_server.json")
+            with open(fed_server_path, "r") as f:
+                fed_server_json = f.read()
+
+            fed_server_json = fed_server_json.replace("8002", f"8{i}02").replace("8003", f"8{i}03")
+
+            with open(fed_server_path, "w") as f:
+                f.write(fed_server_json)
+
+            self.start_server(server_id)
+            time.sleep(5)
+
+    def start_server(self, server_id: int):
+        server_name = self.poc_directory.server_dir_name + f"_{server_id}"
+        server_dir_name = os.path.join(self.poc_directory.poc_dir, server_name)
 
         command = (
             f"{sys.executable} -m nvflare.private.fed.app.server.server_train"
@@ -189,8 +177,10 @@ class SiteLauncher:
             preexec_fn=os.setsid,
             env=new_env,
         )
-        self.server_properties[server_id]["process"] = process
 
+        self.server_properties[server_id] = ServerProperties(
+            name=server_name, root_dir=server_dir_name, process=process, port=f"8{server_id}03"
+        )
         print(f"Launched server ({server_id}) using {command}. process_id: {process.pid}")
 
     def start_clients(self, n=2):
@@ -211,16 +201,10 @@ class SiteLauncher:
 
             self.start_client(client_id)
 
-    def start_client(self, client_id):
+    def start_client(self, client_id: int):
         client_name = f"site-{client_id}"
         client_dir_name = os.path.join(self.poc_directory.poc_dir, client_name)
-        log_path = os.path.join(client_dir_name, "log.txt")
         new_env = os.environ.copy()
-
-        self.client_properties[client_id] = {}
-        self.client_properties[client_id]["path"] = client_dir_name
-        self.client_properties[client_id]["name"] = client_name
-        self.client_properties[client_id]["log_path"] = log_path
 
         # Launch the new client
         client_startup_dir = os.path.join(client_dir_name)
@@ -235,46 +219,23 @@ class SiteLauncher:
             preexec_fn=os.setsid,
             env=new_env,
         )
-        self.client_properties[client_id]["process"] = process
 
+        self.client_properties[client_id] = SiteProperties(name=client_name, root_dir=client_dir_name, process=process)
         print(f"Launched client {client_id} process using {command}. process_id: {process.pid}")
 
     def get_active_server_id(self, port):
         active_server_id = -1
         for i in range(len(self.server_properties)):
-            if (
-                self.server_properties[i]
-                and "port" in self.server_properties[i]
-                and self.server_properties[i]["port"] == str(port)
-            ):
+            if self.server_properties.get(i) and self.server_properties[i].port == str(port):
                 active_server_id = i
         return active_server_id
 
-    def get_server_data(self, server_id=0):
-        server_prop = self.server_properties[server_id]
-        if "log_file" in server_prop:
-            server_prop["log_file"].flush()
+    def get_server_prop(self, server_id: int) -> ServerProperties:
+        server_prop = self.server_properties.get(server_id)
+        if not server_prop:
+            raise RuntimeError(f"Missing server properties for server: {server_id}")
 
-        server_data = {}
-        if server_prop:
-            server_data = {
-                "server_path": server_prop["path"],
-                "server_process": server_prop["process"],
-                "server_name": server_prop["name"],
-                "root_dir": self.poc_directory.poc_dir,
-                "log_path": server_prop["log_path"],
-            }
-
-        return server_data
-
-    def get_client_data(self):
-        client_data = {
-            "client_paths": [self.client_properties[x]["path"] for x in self.client_properties],
-            "client_names": [self.client_properties[x]["name"] for x in self.client_properties],
-            "client_processes": [self.client_properties[x]["process"] for x in self.client_properties],
-        }
-
-        return client_data
+        return server_prop
 
     def stop_overseer(self):
         try:
@@ -289,11 +250,13 @@ class SiteLauncher:
             self.overseer_properties.clear()
 
     def stop_server(self, server_id):
-        server_prop = self.server_properties[server_id]
+        if server_id not in self.server_properties:
+            raise RuntimeError(f"Server {server_id} not in server_properties.")
+        server_prop: ServerProperties = self.server_properties[server_id]
         try:
             # Kill the process
-            if "process" in server_prop and server_prop["process"]:
-                _kill_process(server_prop["process"], "server")
+            if server_prop.process:
+                _kill_process(server_prop.process, "server")
             else:
                 print("No server process.")
         except Exception as e:
@@ -301,15 +264,15 @@ class SiteLauncher:
 
     def stop_client(self, client_id) -> bool:
         if client_id not in self.client_properties:
-            print(f"Client {client_id} not present in client processes.")
-            return False
-        if not self.client_properties[client_id]["process"]:
+            raise RuntimeError(f"Client {client_id} not in client_properties.")
+        client_prop: SiteProperties = self.client_properties[client_id]
+        if not client_prop.process:
             print(f"Client {client_id} process is None.")
             self.client_properties.pop(client_id)
             return False
 
         try:
-            _kill_process(self.client_properties[client_id]["process"], f"client: {client_id}")
+            _kill_process(client_prop.process, f"client: {client_id}")
         except Exception as e:
             print(f"Exception in stopping client {client_id}: {e.__str__()}")
             return False
@@ -317,12 +280,12 @@ class SiteLauncher:
         return True
 
     def stop_all_clients(self):
-        for client_id in self.client_properties.keys():
+        for client_id in self.client_properties:
             self.stop_client(client_id)
         self.client_properties.clear()
 
     def stop_all_servers(self):
-        for server_id in self.server_properties.keys():
+        for server_id in self.server_properties:
             self.stop_server(server_id)
         self.server_properties.clear()
 

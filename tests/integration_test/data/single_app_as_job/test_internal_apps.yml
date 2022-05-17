@@ -7,38 +7,46 @@ cleanup: True
 tests:
   - app_name: global_model_eval
     validators:
-      - tests.integration_test.validators.global_model_eval_validator.GlobalModelEvalValidator
-      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+      - path: tests.integration_test.validators.GlobalModelEvalValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - app_name: pt
     validators:
-      - tests.integration_test.validators.pt_model_validator.PTModelValidator
+      - path: tests.integration_test.validators.PTModelValidator
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
     teardown:
       - rm -rf /tmp/nvflare/cifar10_data
   - app_name: cross_val_one_client
     validators:
-      - tests.integration_test.validators.cross_val_result_validator.CrossValSingleClientResultValidator
-      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+      - path: tests.integration_test.validators.CrossValSingleClientResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - app_name: cross_val
     validators:
-      - tests.integration_test.validators.cross_val_result_validator.CrossValResultValidator
-      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
-  - app_name: sag
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: np_sag
     validators:
-      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
-  - app_name: sag_weights_diff
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: np_sag_weights_diff
     validators:
-      - tests.integration_test.validators.sag_result_validator.SAGResultValidator
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - app_name: filters
     validators:
-      - tests.integration_test.validators.filters_result_validator.FiltersResultValidator
+      - path: tests.integration_test.validators.NumpyModelValidator
   - app_name: tb_streaming
     validators:
-      - tests.integration_test.validators.tb_result_validator.TBResultValidator
+      - path: tests.integration_test.validators.TBResultValidator
   - app_name: tf
     validators:
-      - tests.integration_test.validators.tf_model_validator.TFModelValidator
+      - path: tests.integration_test.validators.TFModelValidator
   - app_name: cyclic
     validators:
-      - tests.integration_test.validators.tf_model_validator.TFModelValidator
+      - path: tests.integration_test.validators.TFModelValidator

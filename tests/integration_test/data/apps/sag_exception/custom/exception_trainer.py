@@ -19,33 +19,18 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.app_constant import AppConstants
 
 
-class NPTrainer(Executor):
+class ExceptionTrainer(Executor):
     def __init__(
         self,
-        delta=1,
         sleep_time=0,
-        train_task_name=AppConstants.TASK_TRAIN,
-        submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
-        model_name="best_numpy.npy",
-        model_dir="model",
     ):
         # Init functions of components should be very minimal. Init
         # is called when json is read. A big init will cause json loading to halt
         # for long time.
         super().__init__()
-
-        if not isinstance(delta, int):
-            raise TypeError("")
-
-        self._delta = delta
-        self._model_name = model_name
-        self._model_dir = model_dir
         self._sleep_time = sleep_time
-        self._train_task_name = train_task_name
-        self._submit_model_task_name = submit_model_task_name
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         # if event_type == EventType.START_RUN:

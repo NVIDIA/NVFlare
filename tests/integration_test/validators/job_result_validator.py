@@ -13,29 +13,29 @@
 # limitations under the License.
 
 import os
+from abc import ABC, abstractmethod
+from typing import List
 
-from .job_result_validator import FinishJobResultValidator
-
-TB_PATH = "tb_events"
+from tests.integration_test.site_launcher import ServerProperties, SiteProperties
 
 
-class TBResultValidator(FinishJobResultValidator):
+class JobResultValidator(ABC):
+    @abstractmethod
+    def validate_results(self, server_data: ServerProperties, client_data: List[SiteProperties], run_data) -> bool:
+        pass
+
+
+class FinishJobResultValidator(JobResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        super().validate_results(server_data, client_data, run_data)
+        # check run folder exist
         server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
-        server_tb_root_dir = os.path.join(server_run_dir, TB_PATH)
 
-        if not os.path.exists(server_tb_root_dir):
-            print(f"{self.__class__.__name__}: server_tb_root_dir {server_tb_root_dir} doesn't exist.")
+        if not os.path.exists(server_run_dir):
+            print(f"{self.__class__.__name__}: server run dir {server_run_dir} doesn't exist.")
             return False
 
         for client_prop in client_data:
             client_run_dir = os.path.join(client_prop.root_dir, run_data["job_id"])
-            client_side_client_tb_dir = os.path.join(client_run_dir, TB_PATH, client_prop.name)
-            if not os.path.exists(client_side_client_tb_dir):
-                print(
-                    f"{self.__class__.__name__}: client_side_client_tb_dir {client_side_client_tb_dir} doesn't exist."
-                )
+            if not os.path.exists(client_run_dir):
+                print(f"{self.__class__.__name__}: client run dir {client_run_dir} doesn't exist.")
                 return False
-
-        return True

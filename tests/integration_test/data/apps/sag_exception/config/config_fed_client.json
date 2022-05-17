@@ -7,7 +7,7 @@
         "train"
       ],
       "executor": {
-        "path": "np_trainer.NPTrainer",
+        "path": "exception_trainer.ExceptionTrainer",
         "args": {}
       }
     }

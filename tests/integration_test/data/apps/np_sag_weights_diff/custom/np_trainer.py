@@ -94,7 +94,7 @@ class NPTrainer(BaseNPTrainer):
 
         self.log_info(
             fl_ctx,
-            f"Model after training: {weights}",
+            f"Model after training: {new_weights}",
         )
 
         # Checking abort signal again.

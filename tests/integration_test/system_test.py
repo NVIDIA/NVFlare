@@ -17,7 +17,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -122,7 +121,7 @@ def setup_and_teardown(request):
             _ = generate_job_dir_for_single_app_job(
                 app_name=x["app_name"],
                 app_root_folder=test_config["apps_root_dir"],
-                clients=[x["name"] for x in site_launcher.client_properties.values()],
+                clients=[x.name for x in site_launcher.client_properties.values()],
                 destination=jobs_root_dir,
                 app_as_job=True,
             )
@@ -193,23 +192,25 @@ class TestSystem:
             else:
                 admin_controller.wait_for_job_done()
 
-            server_data = site_launcher.get_server_data()
-            client_data = site_launcher.get_client_data()
-            run_data = admin_controller.get_run_data()
-
             # Get the job validator
             if validators:
                 validate_result = True
-                for validator_module in validators:
+                for validator in validators:
+                    validator_module = validator["path"]
+                    validator_args = validator.get("args", {})
                     # Create validator instance
                     module_name, class_name = get_module_class_from_full_path(validator_module)
                     job_validator_cls = getattr(importlib.import_module(module_name), class_name)
-                    job_validator = job_validator_cls()
+                    job_validator = job_validator_cls(**validator_args)
 
-                    print(server_data)
+                    active_server_prop = site_launcher.get_server_prop(
+                        server_id=site_launcher.get_active_server_id(admin_controller.admin_api.port)
+                    )
+                    print(active_server_prop)
+                    run_data = admin_controller.get_run_data()
                     job_validate_res = job_validator.validate_results(
-                        server_data=server_data,
-                        client_data=client_data,
+                        server_data=active_server_prop,
+                        client_data=list(site_launcher.client_properties.values()),
                         run_data=run_data,
                     )
                     print(
@@ -237,5 +238,4 @@ class TestSystem:
         print(f"Final result: {not failure}")
         print("==============================================================")
 
-        if failure:
-            sys.exit(1)
+        assert not failure
