@@ -12,17 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import mock
+
+from unittest.mock import MagicMock, Mock, patch
 
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
-from mock import MagicMock
 from nvflare.private.fed.server.fed_server import FederatedServer
 
 
 class TestFederatedServer:
-
     def test_heart_beat_abort_jobs(self):
-        with mock.patch("nvflare.private.fed.server.fed_server.ServerEngine") as mock_engine:
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine") as mock_engine:
             server = FederatedServer(
                 project_name="project_name",
                 min_num_clients=1,
@@ -37,7 +36,7 @@ class TestFederatedServer:
                 overseer_agent=MagicMock(),
             )
 
-            request = mock.Mock(token="token", jobs=["extra_job"])
+            request = Mock(token="token", jobs=["extra_job"])
             context = MagicMock()
             expected = fed_msg.FederatedSummary(abort_jobs=["extra_job"])
             assert server.Heartbeat(request, context) == expected
