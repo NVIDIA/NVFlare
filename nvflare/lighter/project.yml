@@ -71,7 +71,7 @@ builders:
         args:
           storage:
             path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
-          location: /tmp/snapshot.data
+          location: /tmp/nvflare/snapshot-storage
 
       components:
         server:
@@ -82,7 +82,7 @@ builders:
           - id: job_manager    # This id is reserved by system.  Do not change it.
             path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
             args:
-              uri_root: /tmp/jobs-storage
+              uri_root: /tmp/nvflare/jobs-storage
               job_store_id: job_store
           - id: job_store
             path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage

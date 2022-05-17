@@ -36,7 +36,7 @@
         "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
         "args": {}
       },
-      "location": "/tmp/snapshot-storage"
+      "location": "/tmp/nvflare/snapshot-storage"
     }
   },
   "overseer_agent": {
@@ -63,7 +63,7 @@
       "id": "job_manager",
       "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
       "args": {
-        "uri_root": "/tmp/jobs-storage",
+        "uri_root": "/tmp/nvflare/jobs-storage",
         "job_store_id": "job_store"
       }
     },
