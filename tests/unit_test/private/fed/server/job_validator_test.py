@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_context import FLContextManager, FLContext
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
@@ -26,14 +26,9 @@ from nvflare.widgets.widget import Widget
 
 
 class MockServerEngine(ServerEngineSpec):
-
     def __init__(self):
         self.fl_ctx_mgr = FLContextManager(
-            engine=self,
-            identity_name="__mock_engine",
-            run_num="unit-test-run",
-            public_stickers={},
-            private_stickers={}
+            engine=self, identity_name="__mock_engine", run_num="unit-test-run", public_stickers={}, private_stickers={}
         )
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
@@ -78,8 +73,9 @@ class MockServerEngine(ServerEngineSpec):
     def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
         pass
 
-    def cancel_client_resources(self, resource_check_results: Dict[str, Tuple[bool, str]],
-                                resource_reqs: Dict[str, dict]):
+    def cancel_client_resources(
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+    ):
         pass
 
     def get_client_name_from_token(self, token: str) -> str:
@@ -87,7 +83,6 @@ class MockServerEngine(ServerEngineSpec):
 
 
 class TestJobValidator:
-
     @classmethod
     def setup_class(cls):
         cls.engine = MockServerEngine()

@@ -49,7 +49,8 @@ def random_meta():
 ROOT_DIR = os.path.abspath(os.sep)
 
 
-@pytest.fixture(name="storage", params=["FilesystemStorage", "S3Storage"])
+# TODO:: Add S3Storage test
+@pytest.fixture(name="storage", params=["FilesystemStorage"])
 def setup_and_teardown(request):
     print(f"setup {request.param}")
     if request.param == "FilesystemStorage":
