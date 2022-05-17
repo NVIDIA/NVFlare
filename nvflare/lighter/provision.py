@@ -88,6 +88,13 @@ def main():
         participants.append(Participant(**p))
     project = Project(name=project_name, description=project_description, participants=participants)
 
+    n_servers = len(project.get_participants_by_type("server", first_only=False))
+    if n_servers > 2:
+        print(
+            f"Configuration error: Expect 2 or 1 server to be provisioned.  {project_full_path} contains {n_servers} servers."
+        )
+        return
+
     builders = list()
     for b in project_dict.get("builders"):
         path = b.get("path")
