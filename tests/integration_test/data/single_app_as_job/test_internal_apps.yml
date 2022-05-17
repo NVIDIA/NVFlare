@@ -40,8 +40,7 @@ tests:
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - app_name: filters
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+      - path: tests.integration_test.validators.NumpyModelValidator
   - app_name: tb_streaming
     validators:
       - path: tests.integration_test.validators.TBResultValidator

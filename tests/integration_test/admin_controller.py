@@ -383,13 +383,16 @@ class AdminController:
                         ):
                             response = self.admin_api.check_status(target_type=TargetType.CLIENT)
                             if response["status"] != APIStatus.SUCCESS:
-                                print(f"CHECK status failed: {response}")
-                            for row in response["details"]["client_statuses"]:
-                                if row[3] != "stopped":
-                                    continue
-                            # check if job is completed
-                            if job_run_statuses[self.job_id] == RunStatus.FINISHED_COMPLETED.value:
-                                training_done = True
+                                print(f"CHECK client status failed: {response}")
+                            if "details" not in response:
+                                print(f"Check client status missing details: {response}.")
+                            else:
+                                for row in response["details"]["client_statuses"]:
+                                    if row[3] != "stopped":
+                                        continue
+                                # check if job is completed
+                                if job_run_statuses[self.job_id] == RunStatus.FINISHED_COMPLETED.value:
+                                    training_done = True
             time.sleep(self.poll_period)
 
         assert all(event_test_status), "Test failed: not all test events were triggered"

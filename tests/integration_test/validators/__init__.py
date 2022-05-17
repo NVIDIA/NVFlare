@@ -17,6 +17,7 @@ from .cross_val_result_validator import (
     CrossValSingleClientResultValidator,
     GlobalModelEvalValidator,
 )
+from .np_model_validator import NumpyModelValidator
 from .np_sag_result_validator import NumpySAGResultValidator
 from .pt_model_validator import PTModelValidator
 from .tb_result_validator import TBResultValidator

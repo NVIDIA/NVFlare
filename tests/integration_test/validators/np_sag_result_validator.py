@@ -20,10 +20,10 @@ from .job_result_validator import FinishJobResultValidator
 
 
 def _print_info(msg: str):
-    print(f"check_np_sag_results: {msg}")
+    print(f"_check_np_sag_results: {msg}")
 
 
-def check_np_sag_results(server_data, run_data, expected_result: np.array):
+def _check_np_sag_results(server_data, run_data, expected_result: np.array):
     server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
 
     models_dir = os.path.join(server_run_dir, "models")
@@ -53,4 +53,4 @@ class NumpySAGResultValidator(FinishJobResultValidator):
 
     def validate_results(self, server_data, client_data, run_data) -> bool:
         super().validate_results(server_data, client_data, run_data)
-        return check_np_sag_results(server_data, run_data, self.expected_result)
+        return _check_np_sag_results(server_data, run_data, self.expected_result)
