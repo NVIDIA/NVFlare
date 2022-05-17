@@ -17,16 +17,11 @@ import pickle
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 
-from .app_result_validator import AppResultValidator
+from .job_result_validator import FinishJobResultValidator
 
 
-def check_tf_results(server_data, client_data, run_data):
-    server_run_dir = os.path.join(server_data["server_path"], run_data["job_id"])
-
-    if not os.path.exists(server_run_dir):
-        print(f"check_tf_results: server run dir {server_run_dir} doesn't exist.")
-        return False
-
+def check_tf_results(server_data, run_data):
+    server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
     server_models_dir = os.path.join(server_run_dir, WorkspaceConstants.APP_PREFIX + "server")
     if not os.path.exists(server_models_dir):
         print(f"check_tf_results: models dir {server_models_dir} doesn't exist.")
@@ -49,6 +44,7 @@ def check_tf_results(server_data, client_data, run_data):
     return True
 
 
-class TFModelValidator(AppResultValidator):
+class TFModelValidator(FinishJobResultValidator):
     def validate_results(self, server_data, client_data, run_data) -> bool:
-        return check_tf_results(server_data, client_data, run_data)
+        super().validate_results(server_data, client_data, run_data)
+        return check_tf_results(server_data, run_data)
