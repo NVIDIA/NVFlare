@@ -82,7 +82,6 @@ setup(
         "tenseal==0.3.0",
         "gunicorn",
         "flask",
-        "minio==7.1.6",
     ],
     entry_points={
         "console_scripts": [
