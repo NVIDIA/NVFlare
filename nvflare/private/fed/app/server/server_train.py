@@ -36,7 +36,7 @@ from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 def main():
     if sys.version_info >= (3, 9):
-        raise RuntimeError("Python 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
+        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
     if sys.version_info < (3, 7):
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
     parser = argparse.ArgumentParser()
