@@ -20,10 +20,10 @@ import seaborn as sns
 import tensorflow as tf
 
 # poc workspace
-client_results_root = "/media/ziyuexu/Research/Experiment/NVFlare/Github_ditto_Run/prostate_3D/workspace_prostate_dgx/workspace_prostate"
-server_results_root = "/media/ziyuexu/Research/Experiment/NVFlare/Github_ditto_Run/prostate_3D/workspace_prostate_dgx/workspace_prostate/server"
+client_results_root = "../prostate_3D/workspace_prostate"
+server_results_root = "../prostate_3D/workspace_prostate/server"
 
-# 4 or 6 sites
+# 4 (for 3D) or 6 (for 2D) sites 
 sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx"]
 # sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx", "Promise12", "PROSTATEx"]
 
