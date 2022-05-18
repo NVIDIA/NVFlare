@@ -86,8 +86,7 @@ def get_test_config(test_config_yaml: str):
     return test_config
 
 
-# test_configs = read_yaml("./test_cases.yml")
-test_configs = read_yaml("./tests/integration_test/test_cases.yml")
+test_configs = read_yaml("./test_cases.yml")
 
 
 @pytest.fixture(
