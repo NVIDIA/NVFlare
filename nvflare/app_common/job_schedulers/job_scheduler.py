@@ -19,7 +19,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job
+from nvflare.apis.job_def import Job, JobMetaKey
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 
@@ -155,6 +155,18 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         return True, sites_dispatch_info
 
+    def _exceed_max_jobs(self, fl_ctx: FLContext) -> bool:
+        exceed_limit = False
+        with self.lock:
+            if len(self.scheduled_jobs) >= self.max_jobs:
+                self.log_debug(
+                    fl_ctx,
+                    f"Skipping schedule job because scheduled_jobs ({len(self.scheduled_jobs)}) "
+                    f"is greater than max_jobs ({self.max_jobs})",
+                )
+                exceed_limit = True
+        return exceed_limit
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.JOB_STARTED:
             with self.lock:
@@ -170,13 +182,12 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def schedule_job(
         self, job_candidates: List[Job], fl_ctx: FLContext
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
-        if len(self.scheduled_jobs) >= self.max_jobs:
-            self.log_debug(
-                fl_ctx,
-                f"Skipping schedule job because scheduled_jobs ({len(self.scheduled_jobs)}) "
-                f"is greater than max_jobs ({self.max_jobs})",
-            )
+        self.log_debug(fl_ctx, f"Current scheduled_jobs is {self.scheduled_jobs}")
+        if self._exceed_max_jobs(fl_ctx=fl_ctx):
             return None, None
+
+        # sort by submitted time
+        job_candidates.sort(key=lambda j: j.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
 
         for job in job_candidates:
             ok, sites_dispatch_info = self._try_job(job, fl_ctx)
