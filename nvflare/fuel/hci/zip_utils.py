@@ -13,21 +13,25 @@
 # limitations under the License.
 
 import io
+import json
 import os
 from zipfile import ZipFile
 
+from nvflare.apis.job_def import JobMetaKey
+
 META_NAME = "meta.json"
 # A format string for the dummy meta.json
-META_DATA = """{{
-  "name": "{}",
-  "resource_spec": {{
-  }},
-  "deploy_map": {{
-      "{}": []
-  }},
-  "min_clients": 1
-}}
-"""
+
+
+def _get_default_meta(job_folder_name: str) -> str:
+    meta = f"""{{
+                 "{JobMetaKey.JOB_FOLDER_NAME.value}": "{job_folder_name}",
+                 "{JobMetaKey.RESOURCE_SPEC.value}": {{ }},
+                 "{JobMetaKey.DEPLOY_MAP}": {{ "{job_folder_name}": [] }},
+                 "{JobMetaKey.MIN_CLIENTS}": 1
+               }}
+            """
+    return meta
 
 
 def _path_join(base: str, *parts: str) -> str:
@@ -80,7 +84,7 @@ def get_all_file_paths(directory):
     return file_paths
 
 
-def _zip_directory(root_dir: str, folder_name: str, writer):
+def _zip_directory(root_dir: str, folder_name: str, writer: io.BytesIO):
     """Create a zip archive file for the specified directory.
 
     Args:
@@ -106,18 +110,7 @@ def _zip_directory(root_dir: str, folder_name: str, writer):
             z.write(full_path, arcname=rel_path)
 
 
-def zip_directory_to_file(root_dir: str, folder_name: str, output_file_name: str):
-    """Create a zip archive file for the specified directory.
-
-    Args:
-        root_dir: root path that contains the folder to be zipped
-        folder_name: path to the folder to be zipped, relative to root_dir
-        output_file_name: name of the output file
-    """
-    _zip_directory(root_dir, folder_name, output_file_name)
-
-
-def zip_directory_to_bytes(root_dir: str, folder_name: str):
+def zip_directory_to_bytes(root_dir: str, folder_name: str) -> bytes:
     bio = io.BytesIO()
     _zip_directory(root_dir, folder_name, bio)
     return bio.getvalue()
@@ -165,6 +158,7 @@ def convert_legacy_zip(zip_data: bytes) -> bytes:
         The converted zip data
     """
 
+    meta: Optional[dict] = None
     reader = io.BytesIO(zip_data)
     with ZipFile(reader, "r") as in_zip:
         info_list = in_zip.infolist()
@@ -172,18 +166,30 @@ def convert_legacy_zip(zip_data: bytes) -> bytes:
         meta_path = _path_join(folder_name, META_NAME)
         if next((info for info in info_list if info.filename == meta_path), None):
             # Already in job layout
-            return zip_data
+            meta_data = in_zip.read(meta_path)
+            meta = json.loads(meta_data)
+            if JobMetaKey.JOB_FOLDER_NAME.value not in meta:
+                meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
+            else:
+                return zip_data
 
         writer = io.BytesIO()
         with ZipFile(writer, "w") as out_zip:
-            out_zip.writestr(meta_path, META_DATA.format(folder_name, folder_name))
-            # Push everything else to a sub folder with the same name:
-            # hello-pt/README.md -> hello-pt/hello-pt/README.md
-            for info in info_list:
-                name = info.filename
-                content = in_zip.read(name)
-                path = folder_name + "/" + name
-                info.filename = path
-                out_zip.writestr(info, content)
+            if meta:
+                out_zip.writestr(meta_path, json.dumps(meta))
+                out_zip.comment = in_zip.comment  # preserve the comment
+                for item in in_zip.infolist():
+                    if item.filename != meta_path:
+                        out_zip.writestr(item, in_zip.read(item.filename))
+            else:
+                out_zip.writestr(meta_path, _get_default_meta(folder_name))
+                # Push everything else to a sub folder with the same name:
+                # hello-pt/README.md -> hello-pt/hello-pt/README.md
+                for info in info_list:
+                    name = info.filename
+                    content = in_zip.read(name)
+                    path = folder_name + "/" + name
+                    info.filename = path
+                    out_zip.writestr(info, content)
 
         return writer.getvalue()
