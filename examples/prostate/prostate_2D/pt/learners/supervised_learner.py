@@ -188,7 +188,7 @@ class SupervisedLearner(Learner):
             metric /= len(valid_loader)
             # tensorboard record id, add to record if provided
             if tb_id:
-                self.writer.add_scalar(tb_id, metric_score, record_epoch)
+                self.writer.add_scalar(tb_id, metric, record_epoch)
         return metric
 
     def train(
