@@ -3,29 +3,32 @@
 
   "executors": [
     {
-      "tasks": ["train", "submit_model"],
+      "tasks": [
+        "train", "validate"
+      ],
       "executor": {
-        "path": "pt.trainers.brats_trainer.BratsTrainer",
+        "id": "Executor",
+        "name": "LearnerExecutor",
         "args": {
-          "aggregation_epochs":1,
-          "train_config_filename": "config_train.json"
-        }
-      }
-    },
-    {
-      "tasks": ["validate"],
-      "executor": {
-        "path": "pt.validators.brats_validator.BratsValidator",
-        "args": {
-          "train_config_filename": "config_train.json"
+          "learner_id": "brats-learner"
         }
       }
     }
   ],
+
   "task_result_filters": [
   ],
   "task_data_filters": [
   ],
+
   "components": [
+    {
+      "id": "brats-learner",
+      "path": "pt.learners.supervised_monai_brats_learner.SupervisedMonaiBratsLearner",
+      "args": {
+        "train_config_filename": "config_train.json",
+        "aggregation_epochs": 1
+      }
+    }
   ]
 }
