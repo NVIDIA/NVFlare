@@ -398,30 +398,40 @@ class Communicator:
         message.client_name = client_name
 
         while not self.heartbeat_done:
-            with self.set_up_channel(servers[task_name]) as channel:
-                stub = fed_service.FederatedTrainingStub(channel)
-                # retry the heartbeat call for 10 minutes
-                retry = 2
-                while retry > 0:
-                    try:
-                        self.logger.debug(f"Send {task_name} heartbeat {token}")
-                        run_numbers = engine.get_all_run_numbers()
-                        del message.jobs[:]
-                        message.jobs.extend(run_numbers)
-                        response = stub.Heartbeat(message)
-                        abort_runs = list(set(response.abort_jobs))
-                        if abort_runs:
-                            for job in abort_runs:
-                                engine.abort_app(job)
-                            display_runs = ",".join(abort_runs)
-                            self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
-                        break
-                    except grpc.RpcError as grpc_error:
-                        self.logger.debug(grpc_error)
-                        retry -= 1
-                        time.sleep(5)
+            try:
+                with self.set_up_channel(servers[task_name]) as channel:
+                    stub = fed_service.FederatedTrainingStub(channel)
+                    # retry the heartbeat call for 10 minutes
+                    retry = 2
+                    while retry > 0:
+                        try:
+                            self.logger.debug(f"Send {task_name} heartbeat {token}")
+                            run_numbers = engine.get_all_run_numbers()
+                            del message.jobs[:]
+                            message.jobs.extend(run_numbers)
+                            response = stub.Heartbeat(message)
+                            self._clean_up_runs(engine, response)
+                            break
+                        except grpc.RpcError as grpc_error:
+                            self.logger.debug(grpc_error)
+                            retry -= 1
+                            time.sleep(5)
 
-                time.sleep(30)
+                    time.sleep(30)
+            except BaseException as e:
+                self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {str(e)}")
+                time.sleep(5)
+
+    def _clean_up_runs(self, engine, response):
+        abort_runs = list(set(response.abort_jobs))
+        display_runs = ",".join(abort_runs)
+        try:
+            if abort_runs:
+                for job in abort_runs:
+                    engine.abort_app(job)
+                self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
+        except:
+            self.logger.info(f"Failed to clean up the runs: {display_runs}")
 
     def grpc_error_handler(self, service, grpc_error, action, verbose=False):
         """Handling grpc exceptions.
