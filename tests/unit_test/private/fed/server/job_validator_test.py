@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
-from typing import Dict, List, Optional, Tuple
 import io
+import os
 import zipfile
+from typing import Dict, List, Optional, Tuple
 from zipfile import ZipFile
 
 from nvflare.apis.client import Client
@@ -24,7 +24,7 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci import zip_utils
-from nvflare.private.fed.server.job_validator import JobValidator, META
+from nvflare.private.fed.server.job_validator import META, JobValidator
 from nvflare.widgets.widget import Widget
 
 
@@ -93,7 +93,7 @@ class TestJobValidator:
         cls.validator = JobValidator(cls.fl_ctx)
 
     def test_valid_app(self):
-          self._assert_valid("valid_app_wo_meta")
+        self._assert_valid("valid_app_wo_meta")
 
     def test_valid_job(self):
         self._assert_valid("valid_job")
@@ -125,53 +125,53 @@ class TestJobValidator:
     def test_min_clients_value_range(self):
         job_name = "min_clients_value_range"
         # negative value
-        meta = '''
+        meta = """
             { "name": "sag", 
               "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
               "deploy_map": {"min_clients_value_range": ["server","site-a", "site-b"]},
               "min_clients" : -1
              }
-        '''
+        """
         self._assert_invalid(job_name, meta)
         # 0 value
-        meta = '''
+        meta = """
             { "name": "min_clients_value_range", 
               "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
               "deploy_map": {"min_clients_value_range": ["server","site-a", "site-b"]},
               "min_clients" : 0
              }
-        '''
+        """
         self._assert_invalid(job_name, meta)
 
         # sys.maxsize + 1 value
-        meta = '''
+        meta = """
             { "name": "min_clients_value_range", 
               "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
               "deploy_map": {"min_clients_value_range": ["server","site-a", "site-b"]},
               "min_clients" : 9223372036854775808
              }
-        '''
+        """
         self._assert_invalid(job_name, meta)
 
     def test_deploy_map_config_non_exists_app(self):
         job_name = "valid_job"
         # valid_job folder contains sag app, not hello-pt app
-        meta = '''
+        meta = """
             { 
               "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
               "deploy_map": {"hello-pt": ["server","site-a", "site-b"]}
              }
-        '''
+        """
         self._assert_invalid(job_name, meta)
 
     def test_meta_missing_job_folder_name(self):
         job_name = "valid_job"
-        meta = '''
+        meta = """
             { 
               "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
               "deploy_map": {"sag": ["server","site-a", "site-b"]}
              }
-        '''
+        """
         self._assert_valid(job_name, meta)
 
     def _assert_valid(self, job_name: str, meta: str = ""):
@@ -198,7 +198,7 @@ class TestJobValidator:
         return zip_utils.convert_legacy_zip(zip_data)
 
     @staticmethod
-    def _zip_directory_with_meta(root_dir: str, folder_name: str, meta:str, writer: io.BytesIO):
+    def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):
         dir_name = zip_utils._path_join(root_dir, folder_name)
         assert os.path.exists(dir_name), 'directory "{}" does not exist'.format(dir_name)
         assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
