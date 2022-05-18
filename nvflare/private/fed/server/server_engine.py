@@ -94,6 +94,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.server = server
         self.args = args
         self.run_processes = {}
+        self.execution_exception_run_number = []
         self.run_manager = None
         self.conf = None
         # TODO:: does this class need client manager?
@@ -254,7 +255,11 @@ class ServerEngine(ServerEngineInternalSpec):
                 time.sleep(1.0)
             except BaseException:
                 with self.lock:
-                    self.run_processes.pop(run_number)
+                    run_process_info = self.run_processes.pop(run_number)
+                    return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
+                    # if process exit but with Execution exception
+                    if return_code and return_code != 0:
+                        self.execution_exception_run_number.append(run_number)
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
@@ -294,8 +299,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
-        threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
-
         if not job_id:
             job_id = ""
         if not job_clients:
@@ -309,6 +312,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 RunProcessKey.JOB_ID: job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
+
+        threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
         return process
 
     def get_job_clients(self, client_sites):
@@ -409,7 +414,6 @@ class ServerEngine(ServerEngineInternalSpec):
     def _get_all_clients_from_inputs(self, inputs):
         clients = []
         invalid_inputs = []
-        all_clients = self.get_clients()
         for item in inputs:
             client = self.client_manager.clients.get(item)
             # if item in self.get_all_clients():
@@ -589,6 +593,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return results
 
     def get_command_conn(self, run_number):
+        # this function need to be called with self.lock
         port = self.run_processes.get(run_number, {}).get(RunProcessKey.LISTEN_PORT)
         command_conn = self.run_processes.get(run_number, {}).get(RunProcessKey.CONNECTION, None)
 
@@ -597,7 +602,6 @@ class ServerEngine(ServerEngineInternalSpec):
                 address = ("localhost", port)
                 command_conn = CommandClient(address, authkey="client process secret password".encode())
                 command_conn = ClientConnection(command_conn)
-
                 self.run_processes[run_number][RunProcessKey.CONNECTION] = command_conn
             except Exception:
                 pass

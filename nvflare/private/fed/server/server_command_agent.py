@@ -39,8 +39,6 @@ class ServerCommandAgent(object):
         self.thread.start()
         print(f"ServerCommandAgent listening on port: {self.listen_port}")
 
-        pass
-
     def listen_command(self, engine):
         try:
             address = ("localhost", self.listen_port)  # family is deduced to be 'AF_INET'
@@ -62,13 +60,13 @@ class ServerCommandAgent(object):
                                     conn.send(reply)
             except Exception as e:
                 # traceback.print_exc()
-                print(f"Process communication exception: {self.listen_port}.")
+                print(f"Process communication exception with listen port {self.listen_port}: {e}.")
             finally:
                 conn.close()
 
             listener.close()
         except Exception as e:
-            print(f"Could not create the listener for this process on port: {self.listen_port}.")
+            print(f"Could not create the listener for this process on port: {self.listen_port}: {e}.")
             pass
 
     def shutdown(self):

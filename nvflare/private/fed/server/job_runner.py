@@ -215,7 +215,10 @@ class JobRunner(FLComponent):
                     with self.lock:
                         job = self.running_jobs.get(run_number)
                         if job:
-                            job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
+                            if run_number in engine.execution_exception_run_number:
+                                job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+                            else:
+                                job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
                             del self.running_jobs[run_number]
                             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                             self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
