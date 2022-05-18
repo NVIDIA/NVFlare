@@ -19,7 +19,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job
+from nvflare.apis.job_def import Job, JobMetaKey
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 
@@ -170,13 +170,18 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def schedule_job(
         self, job_candidates: List[Job], fl_ctx: FLContext
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
-        if len(self.scheduled_jobs) >= self.max_jobs:
-            self.log_debug(
-                fl_ctx,
-                f"Skipping schedule job because scheduled_jobs ({len(self.scheduled_jobs)}) "
-                f"is greater than max_jobs ({self.max_jobs})",
-            )
-            return None, None
+        with self.lock:
+            self.log_debug(fl_ctx, f"Current scheduled_jobs is {self.scheduled_jobs}")
+            if len(self.scheduled_jobs) >= self.max_jobs:
+                self.log_debug(
+                    fl_ctx,
+                    f"Skipping schedule job because scheduled_jobs ({len(self.scheduled_jobs)}) "
+                    f"is greater than max_jobs ({self.max_jobs})",
+                )
+                return None, None
+
+        # sort by submitted time
+        job_candidates.sort(key=lambda j: j.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
 
         for job in job_candidates:
             ok, sites_dispatch_info = self._try_job(job, fl_ctx)
