@@ -37,7 +37,7 @@
     },
     {
       "id": "json_generator",
-      "path": "validation_json_generator.ValidationJsonGenerator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
       "args": {
       }
     }

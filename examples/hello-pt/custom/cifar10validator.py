@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,23 +13,22 @@
 # limitations under the License.
 
 import torch
+from simple_network import SimpleNetwork
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10
-from torchvision.transforms import Compose, ToTensor, Normalize
+from torchvision.transforms import Compose, Normalize, ToTensor
 
-from nvflare.apis.dxo import from_shareable, DataKind, DXO
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from simple_network import SimpleNetwork
 
 
 class Cifar10Validator(Executor):
-    
-    def __init__(self, validate_task_name=AppConstants.TASK_VALIDATION):
+    def __init__(self, data_path="~/data", validate_task_name=AppConstants.TASK_VALIDATION):
         super(Cifar10Validator, self).__init__()
 
         self._validate_task_name = validate_task_name
@@ -40,11 +39,13 @@ class Cifar10Validator(Executor):
         self.model.to(self.device)
 
         # Preparing the dataset for testing.
-        transforms = Compose([
-            ToTensor(),
-            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ])
-        self.test_data = CIFAR10(root='~/data', train=False, transform=transforms)
+        transforms = Compose(
+            [
+                ToTensor(),
+                Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ]
+        )
+        self.test_data = CIFAR10(root=data_path, train=False, transform=transforms)
         self.test_loader = DataLoader(self.test_data, batch_size=4, shuffle=False)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -71,10 +72,14 @@ class Cifar10Validator(Executor):
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
 
-                self.log_info(fl_ctx, f"Accuracy when validating {model_owner}'s model on"
-                                      f" {fl_ctx.get_identity_name()}"f's data: {val_accuracy}')
+                self.log_info(
+                    fl_ctx,
+                    f"Accuracy when validating {model_owner}'s model on"
+                    f" {fl_ctx.get_identity_name()}"
+                    f"s data: {val_accuracy}",
+                )
 
-                dxo = DXO(data_kind=DataKind.METRICS, data={'val_acc': val_accuracy})
+                dxo = DXO(data_kind=DataKind.METRICS, data={"val_acc": val_accuracy})
                 return dxo.to_shareable()
             except:
                 self.log_exception(fl_ctx, f"Exception in validating model from {model_owner}")
@@ -102,6 +107,6 @@ class Cifar10Validator(Executor):
                 correct += (pred_label == labels).sum().item()
                 total += images.size()[0]
 
-            metric = correct/float(total)
+            metric = correct / float(total)
 
         return metric

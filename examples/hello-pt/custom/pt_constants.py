@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 class PTConstants:
     PTServerName = "server"
     PTFileModelName = "FL_global_model.pt"
     PTLocalModelName = "local_model.pt"
 
     PTModelsDir = "models"
-    CrossValResultsJsonFilename = "cross_val_results.json"
