@@ -420,6 +420,7 @@ class Communicator:
                     time.sleep(30)
             except BaseException as e:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {str(e)}")
+                time.sleep(5)
 
     def _clean_up_runs(self, engine, response):
         abort_runs = list(set(response.abort_jobs))
