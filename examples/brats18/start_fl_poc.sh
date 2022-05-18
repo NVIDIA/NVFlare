@@ -5,14 +5,14 @@ echo "PYTHONPATH is ${PYTHONPATH}"
 
 # customized settings
 algorithms_dir="${PWD}/configs"
-workspace="${PWD}/workspace_prostate"
-site_pre="client_"
+workspace="${PWD}/workspace_brats"
+site_pre="site-"
 
 # run on localhost and default admin
 servername="localhost"
 admin_username="admin"
 
-# get client IDs, a string, e.g. "All" or "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
+# get client IDs, a string, e.g. "All" or "1 2"
 client_ids=$1
 
 if test -z "${client_ids}"

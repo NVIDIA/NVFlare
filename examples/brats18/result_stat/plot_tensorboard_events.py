@@ -20,19 +20,18 @@ import seaborn as sns
 import tensorflow as tf
 
 # poc workspace
-client_results_root = "/media/ziyuexu/Research/Experiment/NVFlare/Github_ditto_Run/prostate_3D/workspace_prostate_dgx/workspace_prostate"
-server_results_root = "/media/ziyuexu/Research/Experiment/NVFlare/Github_ditto_Run/prostate_3D/workspace_prostate_dgx/workspace_prostate/server"
+client_results_root = "../workspace_brats"
+server_results_root = "../workspace_brats/server"
 
-# 4 or 6 sites
-sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx"]
-# sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx", "Promise12", "PROSTATEx"]
+# 13 sites
+site_num = 13
+site_pre = "site-"
 
-# Central vs. FedAvg vs. FedProx vs. Ditto
+# Central vs. FedAvg vs. FedAvg_DP
 experiments = {
-    "prostate_central": {"tag": "val_metric_global_model", "site": "All"},
-    "prostate_fedavg": {"tag": "val_metric_global_model"},
-    "prostate_fedprox": {"tag": "val_metric_global_model"},
-    "prostate_ditto": {"tag": "val_metric_per_model"},
+    "brats_central": {"tag": "val_metric_global_model", "site": "All"},
+    "brats_fedavg_13": {"tag": "val_metric_global_model"},
+    "brats_fed_dp_13": {"tag": "val_metric_global_model"},
 }
 
 weight = 0.8
@@ -94,33 +93,30 @@ def add_eventdata(data, config, filepath, tag="val_metric_global_model"):
 
 def main():
     plt.figure()
-    num_site = len(sites_fl)
     i = 1
     # add event files
-
     data = {"Config": [], "Epoch": [], "Dice": []}
-
-    for site in sites_fl:
+    for site in range(site_num):
         # clear data for each site
+        site = site + 1
         data = {"Config": [], "Epoch": [], "Dice": []}
         for config, exp in experiments.items():
             run_number = find_run_number(workdir=server_results_root, fl_app_name=config)
             print(f"Found run {run_number} for {config}")
             spec_site = exp.get("site", None)
             if spec_site is not None:
-                record_path = os.path.join(client_results_root, "client_" + spec_site, run_number, "*", "events.*")
+                record_path = os.path.join(client_results_root, site_pre + spec_site, run_number, "*", "events.*")
             else:
-                record_path = os.path.join(client_results_root, "client_" + site, run_number, "*", "events.*")
+                record_path = os.path.join(client_results_root, site_pre + str(site), run_number, "*", "events.*")
             eventfile = glob.glob(record_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]
             print("adding", eventfile)
             add_eventdata(data, config, eventfile, tag=exp["tag"])
 
-        ax = plt.subplot(2, int(num_site / 2), i)
+        ax = plt.subplot(3, int(site_num / 3), i)
         ax.set_title(site)
         sns.lineplot(x="Epoch", y="Dice", hue="Config", data=data)
-        #ax.set_xlim([0, 1000])
         i = i + 1
     plt.subplots_adjust(hspace=0.3)
     plt.show()
