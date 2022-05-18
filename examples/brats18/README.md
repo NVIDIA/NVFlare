@@ -1,36 +1,16 @@
-# Federated Learning with Differential Privacy for BraTS18 segmentation
+# Federated Learning for Prostate Segmentation from Multi-source Data
 
-## Introduction to MONAI, BraTS and Differential Privacy
+## Introduction to MONAI, Prostate and Multi-source Data
 
 ### MONAI
-This example shows how to use NVFlare for medical image applications.
-It uses a python package [MONAI](https://github.com/Project-MONAI/MONAI),
-which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of PyTorch Ecosystem.
+This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) on medical image applications.
+It uses [MONAI](https://github.com/Project-MONAI/MONAI),
+which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 
-### BraTS
-The application shown in this example is volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs based on BraTS 2018 data.
-It uses a deep network model published by [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
+### Prostate
+This example illustrates both 2D (from axial slices) and 3D (from 3D volumes) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
-The model is trained to segment 3 nested subregions of primary brain tumors (gliomas): the "enhancing tumor" (ET), the "tumor core" (TC), the "whole tumor" (WT) based on 4 aligned input MRI scans (T1c, T1, T2, FLAIR). 
-
-![](https://developer.download.nvidia.com/assets/Clara/Images/clara_pt_brain_mri_segmentation_workflow.png)
-
-- The ET is described by areas that show hyper intensity in T1c when compared to T1, but also when compared to "healthy" white matter in T1c. 
-- The TC describes the bulk of the tumor, which is what is typically resected. The TC entails the ET, as well as the necrotic (fluid-filled) and the non-enhancing (solid) parts of the tumor. 
-- The WT describes the complete extent of the disease, as it entails the TC and the peritumoral edema (ED), which is typically depicted by hyper-intense signal in FLAIR.
-
-To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/sbia/brats2018/data.html) [2-6]. We will refer to the downloaded data as `dataset_base_dir`. It should have a subfolder `${dataset_base_dir}/training`.
-
-### Differential Privacy (DP)
-[Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
-This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a filter in `config_fed_client.json`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvidia.github.io/NVFlare/apidocs/nvflare.app_common.filters.html#nvflare.app_common.filters.svt_privacy.SVTPrivacy) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
-
-[Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] split BraTS18 dataset into 13 datasets for 13 clients.
-Each client requires at least a 12 GB GPU to run. Thus, we need 13 12 GB GPUs to reproduce the results shown [here](https://arxiv.org/abs/1910.00962) [7]
-
-In this readme, we will first go through the process of running 2 clients for users to try it when GPU resources are limited. 
-Then we will show the training results for 13 clients, which follows the same settings in the original [paper](https://arxiv.org/abs/1910.00962) [7].
-
+Please see details for FL execution within each folder.
 
 ## (Optional) 1. Set up a virtual environment
 ```
@@ -47,145 +27,209 @@ source ./virtualenv/set_env.sh
 ```
 install required packages for training
 ```
-pip install --upgrade pip
-pip install -r ./virtualenv/min-requirements.txt
+pip3 install --upgrade pip
+pip3 install -r ./virtualenv/min-requirements.txt
+```
+(optional) if you would like to plot the TensorBoard event files as shown below, please also install
+```
+pip install -r ./virtualenv/plot-requirements.txt
+```
+## 2. Multi-source Data Preparation
+To run this example, we are going to make use of three open prostate datasets which we split into four FL clients with comparable sizes. Each of them needs some special preprocessing steps. 
+
+Please go to the `./data_preparation` folder to perform the download, preprocessing, and data list generation. 
+
+```
+cd ./data_preparation
 ```
 
-## 2. Create your FL workspace 
+From now on, for this section, we assume the current directory (`PWD`) to be `./data_preparation`.  
+We will download the five datasets to `./Raw/$dataset_id/`, store the client-specif datasets to `./dataset/$client_id`, and use suggested tools for data format conversion, as specified by different datasets.
 
-### 2.1 POC ("proof of concept") workspace
-To run FL experiments in POC mode, create your local FL workspace the below command. 
-In the following experiments, we will be using 2 clients. Press y and enter when prompted. 
-The [create_poc_workpace.sh](./create_poc_workpace.sh) script follows this pattern:
 ```
-./create_poc_workpace.sh [n_clients]
-```
-For example, to create workspace for 2 clients:
-```
-./create_poc_workpace.sh 2
+mkdir Raw
+mkdir dataset
+for dataset in I2CVB MSD NCI_ISBI Promise12 PROSTATEx; do
+  mkdir Raw/${dataset}
+done
 ```
 
-### 2.2 (Optional) Secure FL workspace
-We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
+Note that for 2D example, we use all datasets, while for 3D example we use 4 of them to limit the GPU resource cost. 
 
-> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
-> with different amounts of clients.
-> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients. 
->
-> The **secure** workspace on the other hand is needed to run experiments that require encryption keys such as the 
-> homomorphic encryption (HE) one shown below. These startup kits allow secure deployment of FL in real-world scenarios 
-> using SSL certificated communication channels.
-
-
-## 3. Run automated experiments
-
-### 3.1 FedAvg with and without differential privacy
-
-#### 3.1.1 Test FedAvg with and without differential privacy on 2 clients and GPUs
-Next, FL training will start automatically. 
-
-The [run_poc.sh](./run_poc.sh) script follows this pattern:
+Various packages are needed for the candidate datasets, we will need the following:
+ ```
+pip3 install dicom2nifti
+pip3 install simpleitk
+pip3 install pynrrd
 ```
-./run_poc.sh [n_clients] [config] [run] [dataset_base_dir] [datalist_json_path]
-```
+Further, [dcmqi](https://github.com/qiicr/dcmqi) is used to convert DICOM segmentations to NIfTI format by using the [segimage2itkimage](https://qiicr.gitbook.io/dcmqi-guide/opening/cmd_tools/seg/segimage2itkimage#segimage2itkimage) function, download the binary to ./utils folder.
 
-`[run]` is the run number for nvflare experiment. You need to assign a unique `[run]` for each experiment.
-`[datalist_json_path]` is the path for datalist json files, chosen from the subfolders in `./datalists/brats/`.
+### 2.1 Downloading and preprocessing steps for each dataset: 
 
-For example, 
-to run brats FL without differential privacy:
+[**I2CVB**](https://i2cvb.github.io/): [data link](https://zenodo.org/record/162231#.YZvNc_HMJuG) 
+
+Download all files to `./Raw/I2CVB`. 
+I2CVB contains files ending with .aa, .ab, etc. These are parts of a .tar.gz file (split for sharing). To extract, run the following
+
 ```
-./run_poc.sh 2 brats18_fedavg 1 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
-```
-To run brats FL with differential privacy:
-```
-./run_poc.sh 2 brats18_fedavg_dp 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+cat ./Raw/I2CVB/ge-1-5t* > ./Raw/I2CVB/ge-1-5t.tar.gz
+tar xzvf ./Raw/I2CVB/ge-1-5t.tar.gz -C ./Raw/I2CVB/
+cat ./Raw/I2CVB/siemens-3t* > ./Raw/I2CVB/siemens-3t.tar.gz
+tar xzvf ./Raw/I2CVB/siemens-3t.tar.gz -C ./Raw/I2CVB/
 ```
 
-These scripts will start the FL server and `[n_clients]` clients automatically to run FL experiments on localhost. 
-Each client can be assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [run_poc.sh](./run_poc.sh). 
-Here we test it on 2 clients, each on one GPU with 12 GB memory.
+This will produce two folders, `./Raw/I2CVB/GE` with 21 cases and `./Raw/I2CVB/Siemens` with 19 cases. Multi-sequence images and multi-region masks are stored individually in DICOM format. We use `dicom2nifti` tool to perform data format conversion to NIfTI on T2 images and ground truth for the prostate region.
+Due to the small data size, we combined the two into one client. Note that there is one case (Patient_428260) with a missing slice from ground truth segmentation. Thus, we discarded this case.
 
-The commands above will use the data split in `./datalists/brats/brats_13clients` to simulate each client having different data distributions.
-The `[config]` argument controls which experiment to run. The respective folder under `[configs]` will be selected and 
-uploaded to the server for distribution to each client using the admin API with [run_fl.py](./run_fl.py). 
-The run will time out if not completed in 36 hours. You can adjust this within the `run()` call of the customized admin API script in [run_fl.py](./run_fl.py). 
-
-#### 3.1.2 Reproduce FedAvg with and without differential privacy on 13 clients and GPUs
-[Li et al. 2019](https://arxiv.org/abs/1910.00962) split BraTS18 dataset into [13 datasets](./datalists/brats/brats_13clients) for 13 clients.
-To reproduce [Li et al. 2019](https://arxiv.org/abs/1910.00962), we will run the following cmd:
 ```
-./create_poc_workpace.sh 13
-./run_poc.sh 13 brats18_fedavg 1 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
-./run_poc.sh 13 brats18_fedavg_dp 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+bash data_conversion_I2CVB.sh
+```  
+
+[**MSD**](http://medicaldecathlon.com/): [data link](https://drive.google.com/drive/folders/1HqEgzS8BV2c7xYNrZdEAnrHk7osJJ--2)
+
+Download "Task05_Prostate.tar" to `./Raw/MSD`, and extract with
+
 ```
-In [run_poc.sh](./run_poc.sh), the default server's IP address is `servername="localhost"`. It works when your server and clients run on the same machine. However, if you need to run server and clients on different machines, you would start the server first, then change `servername` to connect clients to the server's IP address. The IP address can be found by `echo "The server starts on IP address: $(hostname --all-ip-addresses)"` and is already in [run_poc.sh](./run_poc.sh).
-
-
-> **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
-  using `abort all`. If the admin API script is running, the FL system will automatically shut down using
-  the current setting defined in [run_fl.py](./run_fl.py). An automatic shutdown is useful here for development as code changes 
-> in your FL components will only be picked up on a restart of the FL system. 
-> For real-world deployments, the system should be kept running but the admin restart command can be used, 
-> see [here](https://nvidia.github.io/NVFlare/user_guide/admin_commands.html).
-
-> To log into the POC workspace admin console, use username "admin" and password "admin". 
-> For the secure workspace admin console, use username "admin@nvidia.com"
-
-After training, the final global and the global best model, as selected by `IntimeModelSelectionHandler` (in `config_fed_server.json`) will be used for evaluation at each client. The results can be shown with
-for example
-```
-cat ./workspaces/poc_workspace/server/run_2/cross_site_val/global_val.json
+tar xf ./Raw/MSD/Task05_Prostate.tar -C ./Raw/MSD
 ```
 
-### 3.2 Centralized training
+This will produce folder ./Raw/MSD/Task05_Prostate containing 32 training images with labels and 16 testing images without labels. Images in this dataset have two channels, and we select the first one, which is T2. Masks in this dataset have two values. We combine the two to get the mask of the prostate.
 
-To simulate a centralized training baseline, we run FL with 1 client using [all the training data](./datalists/brats/brats_1clients). 
 ```
-./run_poc.sh 1 brats18_central 3 /dataset/brats18/ ${PWD}/datalists/brats/brats_1clients
+bash data_conversion_MSD.sh
 ```
-You can visualize the training progress by running `tensorboard --logdir=[workspace]/.`
 
+[**NCI_ISBI**](https://wiki.cancerimagingarchive.net/display/Public/NCI-ISBI+2013+Challenge+-+Automated+Segmentation+of+Prostate+Structures): [data link](https://wiki.cancerimagingarchive.net/pages/viewpage.action?pageId=21267207)
 
+Download the first 3 .tcia files and download the actual DICOM image data with [NBIA Data Retriever](https://wiki.cancerimagingarchive.net/display/NBIA/Downloading+TCIA+Images), store them to `./Raw/NCI_ISBI/`. Then download the second 3 .zip files containing the NRRD ground truth segmentations and store them to `./Raw/NCI_ISBI/`. The downloaded folder structure will look like
+![](./figs/NCI_ISBI.png)
+The three `manifest-*` folders correspond to the TCIA download path to the three image datasets.  
+We extract the mask files and reorganize the image folders as  
 
-### 3.3 Running all examples
+```
+mkdir ./Raw/NCI_ISBI/Image
+mkdir ./Raw/NCI_ISBI/Mask
+unzip ./Raw/NCI_ISBI/NCI-ISBI\ 2013\ Prostate\ Challenge\ -\ Training.zip -d ./Raw/NCI_ISBI/Mask/
+unzip ./Raw/NCI_ISBI/NCI-ISBI\ 2013\ Prostate\ Challenge\ -\ Test.zip -d ./Raw/NCI_ISBI/Mask/
+unzip ./Raw/NCI_ISBI/NCI-ISBI\ 2013\ Prostate\ Challenge\ -\ Leaderboard.zip -d ./Raw/NCI_ISBI/Mask/
+mv ./Raw/NCI_ISBI/manifest*/Prostate-3T/*/ ./Raw/NCI_ISBI/Image
+mv ./Raw/NCI_ISBI/manifest*/PROSTATE-DIAGNOSIS/*/ ./Raw/NCI_ISBI/Image
+```
+There is one mask case needing renaming:
 
-You can use `./run_experiments.sh` to execute all above-mentioned experiments sequentially if preferred.
+```
+mv ./Raw/NCI_ISBI/Mask/Training/ProstateDx-01-0006_correctedLabels.nrrd ./Raw/NCI_ISBI/Mask/Training/ProstateDx-01-0006.nrrd
+```
+This dataset can be split into two clients, one for "Prostate-3T", and the other for "PROSTATE-DIAGNOSIS". Each has 30 training, 5 test, and 5 leaderboard image/label pairs. The images are T2 only, in DICOM format, and labels have two values in NRRD format. We convert DICOM/NRRD to NIfTI, and combine the two label values.  
+Note that there is one case (ProstateDx-01-0055.nii.gz) with image/label mismatch. Thus, we discarded this case.
 
-## 4. Results on 13 clients for FedAvg vs. FedAvg with DP vs. Central
+```
+bash data_conversion_NCI_ISBI.sh
+```
 
-### 4.1 Validation curve 
-Let's summarize the result of the experiments run above. First, we will compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the
-same BraTS validation set. 
+[**Promise12**](https://promise12.grand-challenge.org): [data link](https://promise12.grand-challenge.org/Download/)
 
-The TensorBoard curves for validation Dice scores of the global model for 600 training epochs:
+First, register and log into Grand-Challenge website, then download "Training data (Part 1)", "Training data (Part 2)", and "Training data (Part 3)", store them to `./Raw/Promise12/` 
+We then extract the files using 7z (unzip does not work for the files) as
 
-![All training curve](./figs/nvflare_brats18.png)
+```
+# install 7z in ubuntu as example
+sudo apt install p7zip-full
+7z e ./Raw/Promise12/TrainingData_Part1.zip -o./Raw/Promise12/Raw_Data/
+7z e ./Raw/Promise12/TrainingData_Part2.zip -o./Raw/Promise12/Raw_Data/
+7z e ./Raw/Promise12/TrainingData_Part3.zip -o./Raw/Promise12/Raw_Data/
+```
+We will have 200 files under `./Raw/Promise12/Raw_Data/` folder, 2 files (mhd+raw) for each image or mask, thus in total 50 cases. Conversion from mhd+raw to nifti needs SimpleITK
 
-### 4.2 Best model
-Next, we compare the best achieved models. One can see that FedAvg with DP can achieve a similar performance compared with FedAvg while adding privacy to the aggregation step.
+```
+bash data_conversion_Promise12.sh
+```
 
-| Config	| Val Overall Dice|  	Val TC Dice	|  	Val WT Dice	|  	Val ET Dice	| 
-| ----------- | ----------- |----------- |----------- |----------- |  
-| brats18_fedavg  	| 	0.84375	| 0.84313	| 0.89811	| 0.78647	| 
-| brats18_fedavg_dp | 	0.84871	| 0.85726	| 0.90016	| 0.78327	|
-| brats18_central 	| 	0.85442	| 	0.86723	| 0.90317	| 0.78958	| 
+[**PROSTATEx**](https://prostatex.grand-challenge.org/): [data link](https://wiki.cancerimagingarchive.net/pages/viewpage.action?pageId=70230177#70230177bcab02c187174a288dbcbf95d26179e8)
 
+Make two folders for image and mask
+```
+mkdir ./Raw/PROSTATEx/Image
+mkdir ./Raw/PROSTATEx/Mask
+```
+Download the two .tcia files for DICOM image/mask data with [NBIA Data Retriever](https://wiki.cancerimagingarchive.net/display/NBIA/Downloading+TCIA+Images), store them to `./Raw/PROSTATEx/Image` and `./Raw/PROSTATEx/Mask`. The downloaded folder structure will look like ![](./figs/PROSTATEx.png)
 
+```
+bash data_conversion_PROSTATEx.sh
+```
 
-## References
-[1] Myronenko A. 3D MRI brain tumor segmentation using autoencoder regularization. InInternational MICCAI Brainlesion Workshop 2018 Sep 16 (pp. 311-320). Springer, Cham.
+### 2.2 Convert to 2D slices
+For example illustrating the 2D segmentation, for convenience, we first extract and save the 2D slices and their corresponding masks by
 
-[2] B. H. Menze, A. Jakab, S. Bauer, J. Kalpathy-Cramer, K. Farahani, J. Kirby, et al. "The Multimodal Brain Tumor Image Segmentation Benchmark (BRATS)", IEEE Transactions on Medical Imaging 34(10), 1993-2024 (2015) DOI: 10.1109/TMI.2014.2377694
+```
+bash data_convert_3d_to_2d.sh 
+```
 
-[3] S. Bakas, H. Akbari, A. Sotiras, M. Bilello, M. Rozycki, J.S. Kirby, et al., "Advancing The Cancer Genome Atlas glioma MRI collections with expert segmentation labels and radiomic features", Nature Scientific Data, 4:170117 (2017) DOI: 10.1038/sdata.2017.117
+### 2.3 Create data lists
+Now we have all data we need for these two example under `./dataset` for 3D and `./dataset_2D` for 2D after data download and preprocessing above, we randomly generate a data split at case level (rather than 2D image slice level) for each dataset, training:validation:testing=0.5:0.25:0.25, and combine all JSON files for simulating centralized training while keeping each data split unchanged.
 
-[4] S. Bakas, M. Reyes, A. Jakab, S. Bauer, M. Rempfler, A. Crimi, et al., "Identifying the Best Machine Learning Algorithms for Brain Tumor Segmentation, Progression Assessment, and Overall Survival Prediction in the BRATS Challenge", arXiv preprint arXiv:1811.02629 (2018)
+```
+bash datalists_gen_2d.sh
+bash merge_all_jsons_2d.sh
+bash datalists_gen_3d.sh
+bash merge_all_jsons_3d.sh
+```
 
-[5] S. Bakas, H. Akbari, A. Sotiras, M. Bilello, M. Rozycki, J. Kirby, et al., "Segmentation Labels and Radiomic Features for the Pre-operative Scans of the TCGA-GBM collection", The Cancer Imaging Archive, 2017. DOI: 10.7937/K9/TCIA.2017.KLXWJJ1Q
+The resulting data lists will be stored in `./datalists` for 3D and `./datalists_2D` for 2D. Note that the ratio among training, validation, and testing can be adjusted.
 
-[6] S. Bakas, H. Akbari, A. Sotiras, M. Bilello, M. Rozycki, J. Kirby, et al., "Segmentation Labels and Radiomic Features for the Pre-operative Scans of the TCGA-LGG collection", The Cancer Imaging Archive, 2017. DOI: 10.7937/K9/TCIA.2017.GJQ7R0EF
+The expected output for 2D data split is:
+```
+Generate data split for ./dataset_2D/I2CVB, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_I2CVB.json
+Mode: folder
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+In total 762 samples, split at case level, 369 for training, 176 for validation, and 217 for testing
+Generate data split for ./dataset_2D/MSD, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_MSD.json
+Mode: folder
+In total 32 cases, 16 for training, 8 for validation, and 8 for testing
+In total 475 samples, split at case level, 221 for training, 120 for validation, and 134 for testing
+Generate data split for ./dataset_2D/NCI_ISBI_3T, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_NCI_ISBI_3T.json
+Mode: folder
+In total 40 cases, 20 for training, 10 for validation, and 10 for testing
+In total 555 samples, split at case level, 288 for training, 133 for validation, and 134 for testing
+Generate data split for ./dataset_2D/NCI_ISBI_Dx, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_NCI_ISBI_Dx.json
+Mode: folder
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+In total 483 samples, split at case level, 251 for training, 127 for validation, and 105 for testing
+Generate data split for ./dataset_2D/Promise12, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_Promise12.json
+Mode: folder
+In total 50 cases, 25 for training, 12 for validation, and 13 for testing
+In total 778 samples, split at case level, 378 for training, 181 for validation, and 219 for testing
+Generate data split for ./dataset_2D/PROSTATEx, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_PROSTATEx.json
+Mode: folder
+In total 98 cases, 49 for training, 24 for validation, and 25 for testing
+In total 1627 samples, split at case level, 829 for training, 409 for validation, and 389 for testing
+```
 
-[7] Li, W., Milletarì, F., Xu, D., Rieke, N., Hancox, J., Zhu, W., Baust, M., Cheng, Y., Ourselin, S., Cardoso, M.J. and Feng, A., 2019, October. Privacy-preserving federated brain tumour segmentation. In International workshop on machine learning in medical imaging (pp. 133-141). Springer, Cham.
+The expected output for 3D data split is:
+```
+Generate data split for ./dataset/I2CVB, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_I2CVB.json
+Mode: file
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+Generate data split for ./dataset/MSD, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_MSD.json
+Mode: file
+In total 32 cases, 16 for training, 8 for validation, and 8 for testing
+Generate data split for ./dataset/NCI_ISBI_3T, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_NCI_ISBI_3T.json
+Mode: file
+In total 40 cases, 20 for training, 10 for validation, and 10 for testing
+Generate data split for ./dataset/NCI_ISBI_Dx, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_NCI_ISBI_Dx.json
+Mode: file
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+```
 
-[8] Lyu, M., Su, D., & Li, N. (2016). Understanding the sparse vector technique for differential privacy. arXiv preprint arXiv:1603.01699.
+## 3. Federated Training for Prostate Tasks
+Please go to subfolders [./prostate_2D](./prostate_2D) and [./prostate_3D](./prostate_3D) for further instructions on federated training.
