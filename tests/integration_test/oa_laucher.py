@@ -1,8 +1,22 @@
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
-import shlex
 import subprocess
 import sys
 from threading import Thread
+import time
 
 from nvflare.ha.overseer_agent import HttpOverseerAgent
 
@@ -46,6 +60,7 @@ class OALauncher:
             )
             thread = Thread(target=agent.start, name=agent_id)
             thread.start()
+            time.sleep(10)
             self._agent_dict["server"][agent_id] = agent
             agent_id_list.append(agent_id)
         return agent_id_list
