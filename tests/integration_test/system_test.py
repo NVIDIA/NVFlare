@@ -169,21 +169,45 @@ class TestSystem:
         oa_launcher = OALauncher()
         try:
             oa_launcher.start_overseer()
-            time.sleep(10)
+            time.sleep(1)
             server_agent_list = oa_launcher.start_servers(2)
             client_agent_list = oa_launcher.start_clients(4)
             time.sleep(10)
-            overseer_info = oa_launcher.get_overseer_info(client_agent_list[0])
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server00"
             oa_launcher.pause_server(server_agent_list[0])
-            time.sleep(10)
+            time.sleep(15)
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server01"
             oa_launcher.resume_server(server_agent_list[0])
+            psp = oa_launcher.get_primary_sp(client_agent_list[0])
+            assert psp.name == "server01"
             time.sleep(10)
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server01"
+        finally:
+            oa_launcher.stop_clients()
+            oa_launcher.stop_servers()
+            oa_launcher.stop_overseer()
+
+    def test_overseer_client_down_and_up(self):
+        oa_launcher = OALauncher()
+        try:
+            oa_launcher.start_overseer()
+            time.sleep(10)
+            server_agent_list = oa_launcher.start_servers(1)
+            client_agent_list = oa_launcher.start_clients(1)
+            time.sleep(10)
+            psp = oa_launcher.get_primary_sp(client_agent_list[0])
+            assert psp.name == "server00"
+            oa_launcher.pause_client(client_agent_list[0])
+            time.sleep(10)
+            psp = oa_launcher.get_primary_sp(client_agent_list[0])
+            assert psp.name == "server00"
+            oa_launcher.resume_client(client_agent_list[0])
+            time.sleep(10)
+            psp = oa_launcher.get_primary_sp(client_agent_list[0])
+            assert psp.name == "server00"
         finally:
             oa_launcher.stop_clients()
             oa_launcher.stop_servers()

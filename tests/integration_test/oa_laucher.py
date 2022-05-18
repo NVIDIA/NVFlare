@@ -76,13 +76,25 @@ class OALauncher:
             agent_id_list.append(agent_id)
         return agent_id_list
 
-    def pause_server(self, agent_id):
+    def _pause(self, agent_id):
         agent = self._get_agent(agent_id)
         agent.pause()
 
-    def resume_server(self, agent_id):
+    def _resume(self, agent_id):
         agent = self._get_agent(agent_id)
         agent.resume()
+
+    def pause_server(self, agent_id):
+        self._pause(agent_id)
+
+    def resume_server(self, agent_id):
+        self._resume(agent_id)
+
+    def pause_client(self, agent_id):
+        self._pause(agent_id)
+
+    def resume_client(self, agent_id):
+        self._resume(agent_id)
 
     def get_primary_sp(self, agent_id):
         agent = self._get_agent(agent_id)
