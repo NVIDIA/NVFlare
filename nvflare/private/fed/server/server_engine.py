@@ -215,6 +215,22 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STARTED
             return ""
 
+    def _recv(self, conn, job_id, run_number):
+        try:
+            return conn.recv()
+        except BaseException as e:
+            self.logger.error(f"Received unexpected reply from Client for Job: {job_id}, run_number: {run_number}: {e}")
+            raise e
+
+    def _send(self, conn, data, job_id, run_number):
+        try:
+            return conn.send(data)
+        except BaseException as e:
+            self.logger.error(
+                f"Failed to deliver data {data} for Job: {job_id}, run_number: {run_number} to client(s): {e}"
+            )
+            raise e
+
     def _listen_command(self, listen_port, run_number):
         address = ("localhost", int(listen_port))
         listener = Listener(address, authkey="parent process secret password".encode())
@@ -225,13 +241,13 @@ class ServerEngine(ServerEngineInternalSpec):
             job_id = self.run_processes.get(run_number).get(RunProcessKey.JOB_ID)
             try:
                 if conn.poll(0.1):
-                    received_data = conn.recv()
+                    received_data = self._recv(conn, job_id, run_number)
                     command = received_data.get(ServerCommandKey.COMMAND)
                     data = received_data.get(ServerCommandKey.DATA)
 
                     if command == ServerCommandNames.GET_CLIENTS:
                         return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
-                        conn.send(return_data)
+                        self._send(conn, job_id, run_number, return_data)
                     elif command == ServerCommandNames.AUX_SEND:
                         targets = data.get("targets")
                         topic = data.get("topic")
@@ -241,9 +257,9 @@ class ServerEngine(ServerEngineInternalSpec):
                         replies = self.aux_send(
                             targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
                         )
-                        conn.send(replies)
-            except BaseException:
-                self.logger.warning("Failed to process the child process command.")
+                        self._send(conn, replies)
+            except BaseException as e:
+                self.logger.error(f"Failed to process the child process command:{e}")
 
     def wait_for_complete(self, run_number):
         while True:
