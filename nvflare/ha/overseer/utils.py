@@ -20,18 +20,8 @@ from datetime import datetime, timedelta
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.lighter.utils import load_yaml
 
-OVERSEER_STORE = os.environ.get("OVERSEER_STORE")
-
-if OVERSEER_STORE == "REDIS":
-    from .redis_store import get_all_sp, get_primary_sp, get_sp_by, update_sp
-elif OVERSEER_STORE == "SQL":
-    from .sql_store import get_all_sp, get_primary_sp, get_sp_by, update_sp
-elif OVERSEER_STORE == "MEM":
-    from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp
-else:
-    print("Using default STORE (MEM)")
-    from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
-
+print("Using default STORE (MEM)")
+from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
 system_state = "ready"
 
