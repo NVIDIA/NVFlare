@@ -12,7 +12,14 @@
       "id": "persistor",
       "path": "pt.persistors.pt_file_fedsm_model_persistor.PTFileFedSMModelPersistor",
       "args": {
-        "client_ids": "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx",
+        "client_ids": [
+          "client_I2CVB",
+          "client_MSD",
+          "client_NCI_ISBI_3T",
+          "client_NCI_ISBI_Dx",
+          "client_Promise12",
+          "client_PROSTATEx"
+        ],
         "model": {
           "path": "monai.networks.nets.unet.UNet",
           "args": {
@@ -67,12 +74,12 @@
       "path": "pt.workflows.scatter_and_gather_fedsm.ScatterAndGatherFedSM",
       "args": {
         "client_id_label_mapping": {
-          "I2CVB": 0,
-          "MSD": 1,
-          "NCI_ISBI_3T": 2,
-          "NCI_ISBI_Dx": 3,
-          "Promise12": 4,
-          "PROSTATEx": 5
+          "client_I2CVB": 0,
+          "client_MSD": 1,
+          "client_NCI_ISBI_3T": 2,
+          "client_NCI_ISBI_Dx": 3,
+          "client_Promise12": 4,
+          "client_PROSTATEx": 5
         },
         "min_clients": "{min_clients}",
         "num_rounds": "{num_rounds}",

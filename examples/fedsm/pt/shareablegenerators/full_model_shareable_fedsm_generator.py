@@ -20,7 +20,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
 
-class FullModelShareableGeneratorFedSM(ShareableGenerator):
+class FullModelShareableFedSMGenerator(ShareableGenerator):
     def learnable_to_shareable(self, model_learnable: ModelLearnable, fl_ctx: FLContext) -> Shareable:
         """Convert ModelLearnable to Shareable.
 

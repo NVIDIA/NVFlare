@@ -51,9 +51,9 @@ In the following experiments, we will be using 6 clients. Let's rename and make 
 
 ```
 mv poc workspace_prostate
-mv workspace_prostate/site-1 workspace_prostate/client_All
-for dataset in I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx; do
-  cp -r workspace_prostate/client_All workspace_prostate/client_${dataset}
+mv workspace_prostate/site-1 workspace_prostate/client_I2CVB
+for dataset in MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx; do
+  cp -r workspace_prostate/client_I2CVB workspace_prostate/client_${dataset}
 done
 ```
 
