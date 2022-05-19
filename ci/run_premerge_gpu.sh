@@ -19,10 +19,9 @@ set -ex
 
 ## Integration Tests
 pip install -r requirements-dev.txt
-testFolder="../tests/integration_test"
+testFolder="tests/integration_test"
 PYTHONPATH=$PWD
 rm -rf /tmp/snapshot-storage
-pwd
 ./${testFolder}/run_integration_tests.sh
 rm -rf /tmp/snapshot-storage
 
