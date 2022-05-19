@@ -66,6 +66,14 @@
       "id": "scatter_and_gather",
       "path": "pt.workflows.scatter_and_gather_fedsm.ScatterAndGatherFedSM",
       "args": {
+        "client_id_label_mapping": {
+          "I2CVB": 0,
+          "MSD": 1,
+          "NCI_ISBI_3T": 2,
+          "NCI_ISBI_Dx": 3,
+          "Promise12": 4,
+          "PROSTATEx": 5
+        },
         "min_clients": "{min_clients}",
         "num_rounds": "{num_rounds}",
         "start_round": 0,
