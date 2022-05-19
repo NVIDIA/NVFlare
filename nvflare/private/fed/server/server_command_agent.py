@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import pickle
 import threading
 from multiprocessing.connection import Listener
@@ -28,6 +29,7 @@ class ServerCommandAgent(object):
         Args:
             listen_port: port to listen the command
         """
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.listen_port = int(listen_port)
         self.thread = None
         self.asked_to_stop = False
@@ -37,9 +39,7 @@ class ServerCommandAgent(object):
     def start(self, engine):
         self.thread = threading.Thread(target=listen_command, args=[self, engine])
         self.thread.start()
-        print(f"ServerCommandAgent listening on port: {self.listen_port}")
-
-        pass
+        self.logger.info(f"ServerCommandAgent listening on port: {self.listen_port}")
 
     def listen_command(self, engine):
         try:
@@ -61,15 +61,17 @@ class ServerCommandAgent(object):
                                 if reply:
                                     conn.send(reply)
             except Exception as e:
-                # traceback.print_exc()
-                print(f"Process communication exception: {self.listen_port}.")
+                self.logger.exception(
+                    f"Process communication exception with listen port {self.listen_port}: {e}.", exc_info=True
+                )
             finally:
                 conn.close()
 
             listener.close()
         except Exception as e:
-            print(f"Could not create the listener for this process on port: {self.listen_port}.")
-            pass
+            self.logger.exception(
+                f"Could not create the listener for this process on port: {self.listen_port}: {e}.", exc_info=True
+            )
 
     def shutdown(self):
         self.asked_to_stop = True

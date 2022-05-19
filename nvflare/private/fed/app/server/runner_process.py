@@ -18,10 +18,11 @@ import argparse
 import logging
 import os
 
-from nvflare.apis.fl_constant import MachineStatus
+from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
@@ -34,13 +35,11 @@ def main():
     """FL Server program starting point."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-
     parser.add_argument(
         "--fed_server", "-s", type=str, help="an aggregation server specification json file", required=True
     )
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
-    parser.add_argument("--run_number", "-n", type=str, help="RUn_number", required=True)
-    # parser.add_argument("--snapshot", "-t", type=bool, help="snapshot", required=True)
+    parser.add_argument("--run_number", "-n", type=str, help="run number", required=True)
     parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
     parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
 
@@ -51,10 +50,12 @@ def main():
 
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
-        args.server_config = "config_fed_server.json"
+        args.server_config = AppFolderConstants.CONFIG_FED_SERVER
     else:
-        args.server_config = config_folder + "/config_fed_server.json"
-    args.env = "config/environment.json"
+        args.server_config = os.path.join(config_folder, AppFolderConstants.CONFIG_FED_SERVER)
+
+    # TODO:: remove env and train config since they are not core
+    args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.config_folder = config_folder
     logger = logging.getLogger()
     args.log_config = None
@@ -70,7 +71,7 @@ def main():
         conf = FLServerStarterConfiger(
             app_root=startup,
             server_config_file_name=args.fed_server,
-            log_config_file_name="log.config",
+            log_config_file_name=WorkspaceConstants.LOGGING_CONFIG,
             kv_list=args.set,
         )
         log_level = os.environ.get("FL_LOG_LEVEL", "")
@@ -105,13 +106,14 @@ def main():
 
             start_server_app(server, args, args.app_root, args.run_number, snapshot)
         finally:
-            command_agent.shutdown()
-            deployer.close()
+            if command_agent:
+                command_agent.shutdown()
+            if deployer:
+                deployer.close()
 
     except ConfigError as ex:
-        print("ConfigError:", str(ex))
-    finally:
-        pass
+        logging.getLogger().exception(f"ConfigError: {ex}", exc_info=True)
+        raise ex
 
 
 def start_server_app(server, args, app_root, run_number, snapshot):
@@ -133,7 +135,8 @@ def start_server_app(server, args, app_root, run_number, snapshot):
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
-        logging.getLogger().warning("FL server execution exception: " + str(e))
+        logging.getLogger().exception(f"FL server execution exception: {e}", exc_info=True)
+        raise e
     finally:
         server.status = ServerStatus.STOPPED
         server.engine.engine_info.status = MachineStatus.STOPPED
