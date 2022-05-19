@@ -13,15 +13,16 @@
 # limitations under the License.
 
 import torch
-import torchvision.datasets
-from net import SimpleNetwork
-from torchvision import transforms
+from simple_network import SimpleNetwork
+from torch.utils.data import DataLoader
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import Compose, Normalize, ToTensor
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 
@@ -34,44 +35,43 @@ class Cifar10Validator(Executor):
 
         # Setup the model
         self.model = SimpleNetwork()
-        self.transforms = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            ]
-        )
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.model.to(self.device)
 
         # Preparing the dataset for testing.
-        self.test_data = torchvision.datasets.CIFAR10(root=data_path, train=False, transform=self.transforms)
-        self.test_loader = torch.utils.data.DataLoader(self.test_data, batch_size=4, shuffle=False)
+        transforms = Compose(
+            [
+                ToTensor(),
+                Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ]
+        )
+        self.test_data = CIFAR10(root=data_path, train=False, transform=transforms)
+        self.test_loader = DataLoader(self.test_data, batch_size=4, shuffle=False)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        out_shareable = Shareable()
         if task_name == self._validate_task_name:
+            model_owner = "?"
             try:
-                dxo = from_shareable(shareable)
-
-                # Check if dxo is valid.
-                if not dxo:
-                    self.log_exception(fl_ctx, "DXO invalid")
-                    out_shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                    return out_shareable
+                try:
+                    dxo = from_shareable(shareable)
+                except:
+                    self.log_error(fl_ctx, "Error in extracting dxo from shareable.")
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Ensure data_kind is weights.
                 if not dxo.data_kind == DataKind.WEIGHTS:
                     self.log_exception(fl_ctx, f"DXO is of type {dxo.data_kind} but expected type WEIGHTS.")
-                    out_shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                    return out_shareable
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Extract weights and ensure they are tensor.
                 model_owner = shareable.get_header(AppConstants.MODEL_OWNER, "?")
-                weights = dxo.data
-                weights = {k: torch.as_tensor(v, device=self.device) for k, v in weights.items()}
+                weights = {k: torch.as_tensor(v, device=self.device) for k, v in dxo.data.items()}
 
                 # Get validation accuracy
-                val_accuracy = self.do_validation(weights)
+                val_accuracy = self.do_validation(weights, abort_signal)
+                if abort_signal.triggered:
+                    return make_reply(ReturnCode.TASK_ABORTED)
+
                 self.log_info(
                     fl_ctx,
                     f"Accuracy when validating {model_owner}'s model on"
@@ -83,13 +83,11 @@ class Cifar10Validator(Executor):
                 return dxo.to_shareable()
             except:
                 self.log_exception(fl_ctx, f"Exception in validating model from {model_owner}")
-                out_shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-                return out_shareable
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         else:
-            out_shareable.set_return_code(ReturnCode.TASK_UNKNOWN)
-            return out_shareable
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
-    def do_validation(self, weights):
+    def do_validation(self, weights, abort_signal):
         self.model.load_state_dict(weights)
 
         self.model.eval()
@@ -98,6 +96,9 @@ class Cifar10Validator(Executor):
         total = 0
         with torch.no_grad():
             for i, (images, labels) in enumerate(self.test_loader):
+                if abort_signal.triggered:
+                    return 0
+
                 images, labels = images.to(self.device), labels.to(self.device)
                 output = self.model(images)
 

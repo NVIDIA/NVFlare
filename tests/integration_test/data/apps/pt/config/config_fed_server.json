@@ -9,10 +9,10 @@
   "components": [
     {
       "id": "persistor",
-      "name": "PTFileModelPersistor",
+      "path": "nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "net.SimpleNetwork"
+          "path": "simple_network.SimpleNetwork"
         }
       }
     },
@@ -23,7 +23,7 @@
     },
     {
       "id": "aggregator",
-      "name": "InTimeAccumulateWeightedAggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
         "expected_data_kind": "WEIGHTS"
       }
@@ -40,7 +40,7 @@
     },
     {
       "id": "json_generator",
-      "name": "ValidationJsonGenerator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
       "args": {}
     }
   ],

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,19 +16,18 @@ import os
 from typing import List, Union
 
 import torch.cuda
+from pt_constants import PTConstants
+from simple_network import SimpleNetwork
 
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
-from pt_constants import PTConstants
-from simple_network import SimpleNetwork
 
 
 class PTModelLocator(ModelLocator):
-
-    def __init__(self, exclude_vars=None, model=None):
+    def __init__(self, exclude_vars=None):
         super(PTModelLocator, self).__init__()
 
         self.model = SimpleNetwork()
@@ -49,7 +48,7 @@ class PTModelLocator(ModelLocator):
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 data = torch.load(model_path, map_location=device)
 
-                # Setup the persistence manager.
+                # Set up the persistence manager.
                 if self.model:
                     default_train_conf = {"train": {"model": type(self.model).__name__}}
                 else:
@@ -61,8 +60,8 @@ class PTModelLocator(ModelLocator):
 
                 # Create dxo and return
                 return model_learnable_to_dxo(ml)
-            except:
-                self.log_error(fl_ctx, "Error in retrieving {model_name}.", fire_event=False)
+            except Exception as e:
+                self.log_error(fl_ctx, f"Error in retrieving {model_name}: {e}.", fire_event=False)
                 return None
         else:
             self.log_error(fl_ctx, f"PTModelLocator doesn't recognize name: {model_name}", fire_event=False)
