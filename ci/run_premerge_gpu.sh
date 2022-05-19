@@ -22,6 +22,8 @@ pip install -r requirements-dev.txt
 testFolder="tests/integration_test"
 PYTHONPATH=$PWD
 rm -rf /tmp/snapshot-storage
-./${testFolder}/run_integration_tests.sh
+pushd ${testFolder}
+./run_integration_tests.sh
+popd
 rm -rf /tmp/snapshot-storage
 
