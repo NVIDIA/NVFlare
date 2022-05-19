@@ -21,18 +21,25 @@ WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
 
 target="${@: -1}"
-echo "target=$target"
 if [[ "${target}" == -* ]] ;then
     target=""
 fi
 
 
 function install_deps {
-    echo "pip installing development dependencies"
-    python3 -m pip install -r requirements-dev.txt
+    if [[ ! -f /tmp/.flare_deps_installed ]]; then
+      echo "pip installing development dependencies"
+      python3 -m pip install -r requirements-dev.txt
+      echo "dependencies installed" > /tmp/.flare_deps_installed
+    fi;
 }
 
-function clean_py {
+function clean {
+    echo "remove flare_deps_installed flag"
+    if [[ -f /tmp/.flare_deps_installed ]]; then
+       rm -r /tmp/.flare_deps_installed
+    fi;
+
     echo "remove coverage history"
     python3 -m coverage erase
 
@@ -208,12 +215,19 @@ function help() {
     echo "    -u | --unit-tests             : unit tests"
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
+    echo "    -d | --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
 #   echo "    -i | --integration-tests      : integration tests"
     exit 1
 }
 
 coverage_report=false
 unit_test_report=false
+
+flare_deps_installed=false
+if [[ -f /tmp/.flare_deps_installed ]]; then
+  flare_deps_installed=true
+fi
+
 
 # parse arguments
 cmd=""
@@ -268,6 +282,10 @@ do
         cmd="$cmd_prefix"
         ;;
 
+      -d |--clean)
+         clean
+         exit
+         ;;
        -*)
           help
           exit
@@ -288,7 +306,6 @@ else
    cmd="$cmd $target"
 fi
 
-echo "cmd='$cmd'"
 install_deps
 eval $cmd
 echo "Done"
