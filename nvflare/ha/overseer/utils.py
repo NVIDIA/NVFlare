@@ -23,7 +23,6 @@ from nvflare.lighter.utils import load_yaml
 print("Using default STORE (MEM)")
 from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
-
 system_state = "ready"
 
 
