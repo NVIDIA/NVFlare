@@ -123,10 +123,11 @@ class FLAdminAPIRunner:
 
         # wait for admin to login
         _t_warning_start = time.time()
-        while self.api.login_result != "OK":
+        while not self.api.server_sess_active:
             time.sleep(0.5)
             if time.time() - _t_warning_start > 10:
-                print("Admin login is taking very long...")
+                print("Admin is taking a long time to log in to the server...")
+                print("Make sure the server is up and available, and all configurations are correct.")
                 _t_warning_start = time.time()
 
     def run(
