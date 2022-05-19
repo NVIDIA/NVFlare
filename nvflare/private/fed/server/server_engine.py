@@ -226,7 +226,7 @@ class ServerEngine(ServerEngineInternalSpec):
             return conn.send(data)
         except BaseException as e:
             self.logger.error(
-                f"Failed to deliver data {data} for Job: {job_id}, run_number: {run_number} to client(s): {e}"
+                f"Failed to deliver data {data}  to client(s) for Job: {job_id}, run_number: {run_number}: {e}"
             )
             raise e
 
