@@ -112,7 +112,7 @@ def main():
                 deployer.close()
 
     except ConfigError as ex:
-        logging.getLogger().warning(f"ConfigError: {ex}")
+        logging.getLogger().exception(f"ConfigError: {ex}", exc_info=True)
         raise ex
 
 
@@ -135,7 +135,7 @@ def start_server_app(server, args, app_root, run_number, snapshot):
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
-        logging.getLogger().warning(f"FL server execution exception: {e}")
+        logging.getLogger().exception(f"FL server execution exception: {e}", exc_info=True)
         raise e
     finally:
         server.status = ServerStatus.STOPPED
