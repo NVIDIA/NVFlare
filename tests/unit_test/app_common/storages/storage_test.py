@@ -17,14 +17,12 @@ import json
 import os
 import random
 import tempfile
-import uuid
 from collections import defaultdict
 from pathlib import Path
 
 import pytest
 
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
-from nvflare.app_common.storages.s3_storage import S3Storage
 
 
 def random_string(length):
@@ -56,15 +54,6 @@ def setup_and_teardown(request):
     if request.param == "FilesystemStorage":
         with tempfile.TemporaryDirectory() as tmp_dir:
             storage = FilesystemStorage(root_dir=os.path.join(tmp_dir, "filesystem-storage"))
-    elif request.param == "S3Storage":
-        bucket_id = str(uuid.uuid4())
-        storage = S3Storage(
-            endpoint=f"localhost:{int(os.environ.get('MINIO_SERVER_PORT')) - 1}",
-            access_key=os.environ.get("MINIO_ROOT_USER"),
-            secret_key=os.environ.get("MINIO_ROOT_PASSWORD"),
-            secure=False,
-            bucket_name=bucket_id,
-        )
     else:
         raise RuntimeError(f"Storage type {request.param} is not supported.")
     yield storage
