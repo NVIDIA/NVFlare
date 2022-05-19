@@ -10,7 +10,7 @@
         "id": "Executor",
         "name": "LearnerExecutor",
         "args": {
-          "learner_id": "prostate-learner"
+          "learner_id": "prostate-fedsm-learner"
         }
       }
     }
@@ -23,11 +23,12 @@
 
   "components": [
     {
-      "id": "prostate-learner",
-      "path": "pt.learners.supervised_monai_prostate_learner.SupervisedMonaiProstateLearner",
+      "id": "prostate-fedsm-learner",
+      "path": "pt.learners.supervised_monai_prostate_fedsm_learner.SupervisedMonaiProstateFedSMLearner",
       "args": {
         "train_config_filename": "config_train.json",
-        "aggregation_epochs": 1
+        "aggregation_epochs": 1,
+        "fedsm_select_epochs": 1
       }
     }
   ]

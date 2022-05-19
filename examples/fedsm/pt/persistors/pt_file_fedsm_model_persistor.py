@@ -33,7 +33,7 @@ from nvflare.app_common.model_desc import ModelDescriptor
 from pt.persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
 
 
-class PTFileModelFedSMPersistor(PTFileModelPersistor):
+class PTFileFedSMModelPersistor(PTFileModelPersistor):
     def __init__(
         self,
         client_ids,

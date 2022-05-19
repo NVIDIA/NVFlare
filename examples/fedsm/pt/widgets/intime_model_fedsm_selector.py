@@ -24,7 +24,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 
 
-class IntimeModelSelectionFedSMHandler(FLComponent):
+class IntimeModelFedSMSelector(FLComponent):
     def __init__(self, weigh_by_local_iter=False, aggregation_weights=None):
         """Handler to determine if the model is globally best.
         Note that only model_global and model_select participate in this selection process, while personalized models do not
