@@ -63,6 +63,7 @@ function clean {
 }
 
 function torch_validate {
+    echo "validate torch installation"
     python3 -c 'import torch; print(torch.__version__); print(torch.rand(5,3))'
 }
 
@@ -87,6 +88,7 @@ function report_status() {
 }
 
 function is_pip_installed() {
+  echo "check target installed by pip"
 	return $(python3 -c "import sys, pkgutil; sys.exit(0 if pkgutil.find_loader(sys.argv[1]) else 1)" $1)
 }
 
@@ -189,7 +191,6 @@ function fix_style_import() {
   isort_fix "${fix_target}"
 }
 
-
 ################################################################################
 export PYTHONPATH=${WORK_DIR}:$PYTHONPATH && echo "PYTHONPATH is ${PYTHONPATH}"
 
@@ -215,7 +216,8 @@ function help() {
     echo "    -u | --unit-tests             : unit tests"
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
-    echo "    -d | --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
+    echo "    -d | --dry-run                : dry run, print out command"
+    echo "         --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
 #   echo "    -i | --integration-tests      : integration tests"
     exit 1
 }
@@ -269,7 +271,7 @@ do
         ;;
 
       -u |--unit*)
-        cmd_prefix="python3 -m pytest --numprocesses=auto "
+        cmd_prefix="torch_validate; python3 -m pytest --numprocesses=auto "
 
         echo "coverage_report=" ${coverage_report}
         if [ "${coverage_report}" == true ]; then
@@ -282,7 +284,7 @@ do
         cmd="$cmd_prefix"
         ;;
 
-      -d |--clean)
+       --clean)
          clean
          exit
          ;;
