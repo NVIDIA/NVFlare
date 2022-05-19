@@ -20,7 +20,7 @@ set -ex
 ## Integration Tests
 pip install -r requirements-dev.txt
 testFolder="tests/integration_test"
-PYTHONPATH=$PWD
+export PYTHONPATH=$PWD
 rm -rf /tmp/snapshot-storage
 pushd ${testFolder}
 ./run_integration_tests.sh
