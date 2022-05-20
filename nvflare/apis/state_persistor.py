@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .fl_snapshot import FLSnapshot
+from .fl_snapshot import FLSnapshot, RunSnapshot
 
 
 class StatePersistor:
-    def save(self, snapshot: FLSnapshot) -> str:
+    def save(self, snapshot: RunSnapshot) -> str:
         """Call to save the snapshot of the FL state to storage.
 
         Args:
-            snapshot: FLSnapshot object
+            snapshot: RunSnapshot object
 
         Returns:
             Storage location.
@@ -32,7 +32,18 @@ class StatePersistor:
 
         Args:
 
-        Returns:
+        Returns: FLSnapshot
+
+        """
+        pass
+
+    def retrieve_run(self, run_number: str) -> RunSnapshot:
+        """Call to load the persisted RunSnapshot of a run_number from the persisted location.
+
+        Args:
+            run_number: run_number
+
+        Returns: RunSnapshot of the run_number
 
         """
         pass

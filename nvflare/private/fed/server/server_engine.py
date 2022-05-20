@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import fcntl
 import logging
 import multiprocessing
 import os
@@ -46,7 +45,7 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
+from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.common_utils import get_open_ports
@@ -176,6 +175,8 @@ class ServerEngine(ServerEngineInternalSpec):
             except BaseException:
                 # The parent process can not be reached. Terminate the child process.
                 break
+        # delay some time for the wrap up process before the child process self terminate.
+        time.sleep(30)
         os.killpg(os.getpgid(os.getpid()), 9)
 
     def delete_run_number(self, num):
@@ -614,26 +615,9 @@ class ServerEngine(ServerEngineInternalSpec):
         #    Make sure to include the current round number
         # 2. call persistence API to save the component states
 
-        lockfile = open(os.path.join(fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT), "snapshot.flock"), "w")
-        acquired_lock = False
-        while not acquired_lock:
-            try:
-                fcntl.flock(lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                acquired_lock = True
-            except IOError:
-                time.sleep(0.1)
-
         try:
-            fl_snapshot = self.snapshot_persistor.retrieve()
-            if fl_snapshot:
-                for run_number in list(fl_snapshot.run_snapshots.keys()):
-                    snapshot = fl_snapshot.get_snapshot(run_number)
-                    if snapshot.completed:
-                        fl_snapshot.remove_snapshot(run_number)
-            else:
-                fl_snapshot = FLSnapshot()
-
-            snapshot = RunSnapshot()
+            run_number = fl_ctx.get_run_number()
+            snapshot = RunSnapshot(run_number)
             for component_id, component in self.run_manager.components.items():
                 if isinstance(component, FLComponent):
                     snapshot.set_component_snapshot(
@@ -666,11 +650,9 @@ class ServerEngine(ServerEngineInternalSpec):
 
             snapshot.completed = completed
 
-            fl_snapshot.add_snapshot(fl_ctx.get_prop(FLContextKey.CURRENT_RUN), snapshot)
-            self.server.snapshot_location = self.snapshot_persistor.save(snapshot=fl_snapshot)
+            self.server.snapshot_location = self.snapshot_persistor.save(snapshot=snapshot)
         finally:
-            lockfile.close()
-        self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
+            self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():

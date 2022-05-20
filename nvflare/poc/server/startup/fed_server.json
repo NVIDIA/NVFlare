@@ -34,9 +34,11 @@
     "args": {
       "storage": {
         "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
-        "args": {}
+        "args": {
+          "root_dir": "/tmp/nvflare/snapshot-storage"
+        }
       },
-      "location": "/tmp/nvflare/snapshot-storage"
+      "location": "/"
     }
   },
   "overseer_agent": {
