@@ -25,6 +25,7 @@ from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 from nvflare.ha.overseer_agent import HttpOverseerAgent
+from tests.integration_test.test_fladminapi import run_admin_api_tests
 
 
 def process_logs(logs, run_state):
@@ -456,68 +457,7 @@ class AdminController:
 
             elif command == "test":
                 if args[0] == "admin_commands":
-                    print(("\n" + "*" * 120) * 20)
-                    print("\n" + "=" * 40)
-                    print("\nRunning through tests of admin commands:")
-                    print("\n" + "=" * 40)
-                    print("\nCommand: set_timeout")
-                    print(self.admin_api.set_timeout(11).get("details").get("message"))
-                    print("\nActive SP:")
-                    print(self.admin_api.get_active_sp().get("details"))
-                    print("\nList SP:")
-                    print(self.admin_api.list_sp().get("details"))
-                    print("\nCommand: get_available_apps_to_upload")
-                    print(self.admin_api.get_available_apps_to_upload())
-                    print("\nList Jobs:")
-                    list_jobs_return_message = self.admin_api.list_jobs().get("details").get("message")
-                    print(list_jobs_return_message)
-                    first_job = list_jobs_return_message.split()[14]
-                    print("\nCommand: ls server -a .")
-                    ls_return_message = self.admin_api.ls_target("server", "-a", ".").get("details").get("message")
-                    print(ls_return_message)
-                    print("\nJob {} is in the server root dir:".format(first_job))
-                    print(first_job in ls_return_message)
-                    print("\nAborting Job {}:".format(first_job))
-                    print("\n" + "=" * 50)
-                    print(self.admin_api.abort_job(first_job).get("details").get("message"))
-                    print("\n" + "=" * 50)
-                    # print("\nCloning Job {}:".format(first_job))
-                    # clone_job_return = self.admin_api.clone_job(first_job)
-                    # print(clone_job_return.get("details").get("message"))
-                    # second_job = clone_job_return.get("details").get("job_id")
-                    # print("\nSecond job_id is: {}".format(second_job))
-                    print("\nCommand: env server")
-                    print(self.admin_api.env_target("server").get("details"))
-                    print("\nCommand: pwd")
-                    print(self.admin_api.get_working_directory("server").get("details").get("message"))
-                    print("\nCommand: env site-1")
-                    print(self.admin_api.env_target("site-1").get("details"))
-                    print("\nCommand: tail_target_log server")
-                    tail_return_message = self.admin_api.tail_target_log("server").get("details").get("message")
-                    print(tail_return_message)
-                    print("\nFirst job matches end of tail:".format(first_job))
-                    print(tail_return_message[-36:] == first_job)
-                    print("\nCommand: grep_target server -n 'deployed to the server for run' log.txt")
-                    grep_return_message = (
-                        self.admin_api.grep_target("server", "-n", "Stop the job run", "log.txt")
-                        .get("details")
-                        .get("message")
-                    )
-                    print(grep_return_message)
-                    print("\nFirst job matches job_id in grep:".format(first_job))
-                    print(grep_return_message[-36:] == first_job)
-                    print("\nDeleting run for the first job {}:".format(first_job))
-                    print(self.admin_api.delete_run(first_job))
-                    print("\nCommand: ls server -a .")
-                    ls_return_message = self.admin_api.ls_target("server", "-a", ".").get("details").get("message")
-                    print(ls_return_message)
-                    print("\nJob {} is no longer in the server root dir:".format(first_job))
-                    print(first_job not in ls_return_message)
-                    # print("\nAborting Job {}:".format(second_job))
-                    print("\n" + "=" * 50)
-                    # print(self.admin_api.abort_job(second_job).get("details").get("message"))
-                    print("Finished with admin commands testing through FLAdminAPI.")
-                    print(("\n" + "*" * 120) * 20)
+                    run_admin_api_tests(self.admin_api)
             else:
                 raise RuntimeError(f"Command {command} is not supported.")
 
