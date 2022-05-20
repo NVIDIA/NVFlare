@@ -142,9 +142,6 @@ class FLContext(object):
     def get_peer_context(self):
         return self.get_prop(key=ReservedKey.PEER_CTX, default=None)
 
-    def set_run_number(self, run_number):
-        return self.set_prop(key=ReservedKey.RUN_NUM, value=int(run_number), private=False)
-
     def set_public_props(self, metadata: dict):
         # remove all public props
         self.props = {k: v for k, v in self.props.items() if self._is_private(v["mask"] or self._is_sticky(v["mask"]))}

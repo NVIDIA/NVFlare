@@ -155,11 +155,11 @@ class JobRunner(FLComponent):
 
             replies = self.abort_client_run(engine, run_number, client_sites, fl_ctx)
             if not replies:
-                self.log_error(fl_ctx, f"Failed to send abort command to clients for run_{run_number}")
+                self.log_error(fl_ctx, f"Failed to send abort command to clients for run: {run_number}")
 
             err = engine.abort_app_on_server(run_number)
             if err:
-                self.log_error(fl_ctx, f"Failed to abort the server for run_.{run_number}")
+                self.log_error(fl_ctx, f"Failed to abort the server for run: {run_number}")
 
     def abort_client_run(self, engine, run_number, client_sites, fl_ctx):
         """Send the abort run command to the clients
@@ -176,7 +176,7 @@ class JobRunner(FLComponent):
         admin_server = engine.server.admin_server
         message = Message(topic=TrainingTopic.ABORT, body="")
         message.set_header(RequestHeader.RUN_NUM, str(run_number))
-        self.log_debug(fl_ctx, f"Send stop command to the site for run:{run_number}")
+        self.log_debug(fl_ctx, f"Send abort command to the site for run: {run_number}")
         replies = self._send_to_clients(admin_server, client_sites, engine, message)
         return replies
 
@@ -215,7 +215,16 @@ class JobRunner(FLComponent):
                     with self.lock:
                         job = self.running_jobs.get(run_number)
                         if job:
-                            if run_number in engine.execution_exception_run_number:
+                            if run_number in engine.execution_exception_run_processes:
+                                run_process = engine.execution_exception_run_processes[run_number]
+                                # stop client run
+                                client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
+
+                                replies = self.abort_client_run(engine, run_number, client_sites, fl_ctx)
+                                if not replies:
+                                    self.log_error(
+                                        fl_ctx, f"Failed to send abort command to clients for run: {run_number}"
+                                    )
                                 job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
                             else:
                                 job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
