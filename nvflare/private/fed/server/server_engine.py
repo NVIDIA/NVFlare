@@ -176,6 +176,8 @@ class ServerEngine(ServerEngineInternalSpec):
             except BaseException:
                 # The parent process can not be reached. Terminate the child process.
                 break
+        # delay some time for the wrap up process before the child process self terminate.
+        time.sleep(30)
         os.killpg(os.getpgid(os.getpid()), 9)
 
     def delete_run_number(self, num):
