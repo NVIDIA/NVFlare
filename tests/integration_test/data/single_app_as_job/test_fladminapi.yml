@@ -1,0 +1,10 @@
+system_setup: ./data/system/ha_1_server_2_clients.yml
+apps_root_dir: ./data/apps
+single_app_as_job: True
+cleanup: True
+
+
+tests:
+  - app_name: np_sag
+    validators:
+    event_sequence_yaml: ./data/fladminapi/execute_fladminapi_commands.yml

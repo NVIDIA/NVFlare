@@ -25,6 +25,7 @@ from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 from nvflare.ha.overseer_agent import HttpOverseerAgent
+from tests.integration_test.test_fladminapi import run_admin_api_tests
 
 
 def process_logs(logs, run_state):
@@ -391,7 +392,10 @@ class AdminController:
                                     if row[3] != "stopped":
                                         continue
                                 # check if job is completed
-                                if job_run_statuses[self.job_id] == RunStatus.FINISHED_COMPLETED.value:
+                                if job_run_statuses[self.job_id] in (
+                                    RunStatus.FINISHED_COMPLETED.value,
+                                    RunStatus.FINISHED_ABORTED.value,
+                                ):
                                     training_done = True
             time.sleep(self.poll_period)
 
@@ -450,6 +454,10 @@ class AdminController:
                         client_ids = list(site_launcher.client_properties.keys())
                     for cid in client_ids:
                         site_launcher.start_client(cid)
+
+            elif command == "test":
+                if args[0] == "admin_commands":
+                    run_admin_api_tests(self.admin_api)
             else:
                 raise RuntimeError(f"Command {command} is not supported.")
 
