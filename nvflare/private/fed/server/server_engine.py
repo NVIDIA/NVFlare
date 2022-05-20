@@ -219,7 +219,7 @@ class ServerEngine(ServerEngineInternalSpec):
         try:
             return conn.recv()
         except BaseException as e:
-            self.logger.error(f"Received unexpected reply from Client for Job: {job_id}, run_number: {run_number}: {e}")
+            self.logger.error(f"Received unexpected reply from child process for Job: {job_id}, run_number: {run_number}: {e}")
             raise e
 
     def _send(self, conn, data, job_id, run_number):
@@ -227,7 +227,7 @@ class ServerEngine(ServerEngineInternalSpec):
             return conn.send(data)
         except BaseException as e:
             self.logger.error(
-                f"Failed to deliver data {data}  to client(s) for Job: {job_id}, run_number: {run_number}: {e}"
+                f"Failed to deliver data {data}  to child process for Job: {job_id}, run_number: {run_number}: {e}"
             )
             raise e
 
