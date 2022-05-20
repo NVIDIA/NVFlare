@@ -334,7 +334,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if not isinstance(run_number, str):
             raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.DELETE_RUN + str(run_number)
+            AdminCommandNames.DELETE_RUN + " " + str(run_number)
         )
         if reply_data_full_response:
             if "can not be deleted" in reply_data_full_response:
@@ -671,7 +671,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if options:
             options = self._validate_options_string(options)
             command = command + " " + options
-        command = command + " " + pattern + " " + file
+        command = command + ' "' + pattern + '" ' + file
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
         if reply_data_full_response:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response})
