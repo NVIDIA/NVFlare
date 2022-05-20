@@ -23,11 +23,9 @@ Log into the Admin client by entering `admin` for both the username and password
 Then, use these Admin commands to run the experiment:
 
 ```
-set_run_number 1
-upload_app hello-monai
-deploy_app hello-monai all
-start_app all
+submit_job hello-monai
 ```
+
 
 ### 4. Shut down the server/clients
 
