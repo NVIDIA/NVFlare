@@ -164,7 +164,7 @@ function pytype_check() {
     fi
 }
 
-function `mypy_check`() {
+function mypy_check() {
     echo "${separator}${blue}mypy${noColor}"
     python3 -m mypy --version
     python3 -m mypy "$1"
@@ -216,7 +216,7 @@ function help() {
     echo "    -u | --unit-tests             : unit tests"
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
-    echo "    -d | --dry-run                : dry run, print out command"
+    echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
 #   echo "    -i | --integration-tests      : integration tests"
     exit 1
@@ -224,7 +224,7 @@ function help() {
 
 coverage_report=false
 unit_test_report=false
-
+dry_run_flag=false
 flare_deps_installed=false
 if [[ -f /tmp/.flare_deps_installed ]]; then
   flare_deps_installed=true
@@ -282,12 +282,20 @@ do
           cmd_prefix="${cmd_prefix} --junitxml=unit_test.xml "
         fi
         cmd="$cmd_prefix"
+
+        if [[ -z $target ]]; then
+            target="tests/unit_test"
+        fi
+
         ;;
 
        --clean)
-         clean
-         exit
+         cmd="clean"
          ;;
+       -d|--dry-run)
+        dry_run_flag=true
+        ;;
+
        -*)
           help
           exit
@@ -302,12 +310,20 @@ if [[ -z $cmd ]]; then
         check_style_type_import nvflare tests;
         fix_style_import nvflare;
         fix_style_import tests ;
-        python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --junitxml=unit_test.xml tests/unit_test ;
+        python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --junitxml=unit_test.xml tests/unit_test;
        "
 else
    cmd="$cmd $target"
 fi
 
-install_deps
-eval $cmd
+echo "running command: "
+echo "                  install_deps "
+echo "                 " "$cmd"
+echo "                 "
+if [[ $dry_run_flag = "true" ]]; then
+    dry_run "$cmd"
+else
+    install_deps
+    eval "$cmd"
+fi
 echo "Done"
