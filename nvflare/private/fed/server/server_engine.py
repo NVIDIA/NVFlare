@@ -93,7 +93,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.server = server
         self.args = args
         self.run_processes = {}
-        self.execution_exception_run_number = []
+        self.execution_exception_run_processes = {}
         self.run_manager = None
         self.conf = None
         # TODO:: does this class need client manager?
@@ -260,7 +260,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
                     # if process exit but with Execution exception
                     if return_code and return_code != 0:
-                        self.execution_exception_run_number.append(run_number)
+                        self.execution_exception_run_processes[run_number] = run_process_info
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 

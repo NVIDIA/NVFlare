@@ -72,12 +72,11 @@ def main():
 
     print("starting the client .....")
 
-    deployer = None
-    command_agent = None
-
     startup = os.path.join(args.workspace, "startup")
     SecurityContentService.initialize(content_folder=startup)
 
+    deployer = None
+    command_agent = None
     federated_client = None
     try:
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
@@ -160,10 +159,6 @@ def main():
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 
-            # # Start the thread for responding the inquire
-            # federated_client.stop_listen = False
-            # thread = threading.Thread(target=listen_command, args=[federated_client, int(listen_port), client_runner])
-            # thread.start()
             # Start the command agent
             command_agent = CommandAgent(federated_client, int(listen_port), client_runner)
             command_agent.start(fl_ctx)
@@ -173,19 +168,15 @@ def main():
 
     except BaseException as e:
         traceback.print_exc()
-        print("FL client execution exception: " + str(e))
+        print(f"FL client execution exception: {e}")
+        raise e
     finally:
-        # if federated_client:
-        #     federated_client.stop_listen = True
-        #     thread.join()
         if command_agent:
             command_agent.shutdown()
         if deployer:
             deployer.close()
-        federated_client.close()
-        # address = ('localhost', 6000)
-        # conn_client = Client(address, authkey='client process secret password'.encode())
-        # conn_client.send('bye')
+        if federated_client:
+            federated_client.close()
 
 
 def remove_restart_file(args):
