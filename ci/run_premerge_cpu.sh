@@ -19,7 +19,7 @@ set -ex
 
 ## Unit Tests
 pip install -r requirements-dev.txt
-PYTHONPATH=$PWD
+export PYTHONPATH=$PWD
 ./runtest.sh
 
 ## Wheel Build
