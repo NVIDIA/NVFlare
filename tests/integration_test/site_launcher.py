@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Dict
+from typing import Dict, Optional
 
 
 class POCDirectory:
@@ -86,11 +86,12 @@ class ServerProperties(SiteProperties):
         self.port = port
 
 
-def _kill_process(process, name: str):
-    os.killpg(process.pid, signal.SIGTERM)
-    subprocess.call(["kill", str(process.pid)])
-    print(f"Sent SIGTERM to {name}.")
-    process.communicate()
+def _kill_process(site_prop: SiteProperties):
+    os.killpg(site_prop.process.pid, signal.SIGTERM)
+    subprocess.call(["kill", str(site_prop.process.pid)])
+    subprocess.call(["pkill", "-9", "-f", site_prop.name])
+    print(f"Kill {site_prop.name}.")
+    site_prop.process.communicate()
 
 
 class SiteLauncher:
@@ -105,7 +106,7 @@ class SiteLauncher:
 
         self.original_poc_directory = poc_directory
 
-        self.overseer_properties = {}
+        self.overseer_properties: Optional[SiteProperties] = None
         self.server_properties: Dict[int, ServerProperties] = {}
         self.client_properties: Dict[int, SiteProperties] = {}
 
@@ -117,7 +118,6 @@ class SiteLauncher:
 
     def start_overseer(self):
         overseer_dir = self.poc_directory.overseer_dir()
-        log_path = os.path.join(overseer_dir, "log.txt")
         new_env = os.environ.copy()
         command = f"{sys.executable} -m nvflare.ha.overseer.overseer"
 
@@ -131,9 +131,7 @@ class SiteLauncher:
         )
         print("Starting overseer ...")
 
-        self.overseer_properties["path"] = overseer_dir
-        self.overseer_properties["process"] = process
-        self.overseer_properties["log_path"] = log_path
+        self.overseer_properties = SiteProperties(name="overseer", root_dir=overseer_dir, process=process)
 
     def start_servers(self, n=1):
         src_server_dir = self.poc_directory.server_dir()
@@ -240,14 +238,14 @@ class SiteLauncher:
     def stop_overseer(self):
         try:
             # Kill the process
-            if "process" in self.overseer_properties and self.overseer_properties["process"]:
-                _kill_process(self.overseer_properties["process"], "overseer")
+            if self.overseer_properties:
+                _kill_process(self.overseer_properties)
             else:
                 print("No overseer process.")
         except Exception as e:
             print(f"Exception in stopping overseer: {e.__str__()}")
         finally:
-            self.overseer_properties.clear()
+            self.overseer_properties = None
 
     def stop_server(self, server_id):
         if server_id not in self.server_properties:
@@ -255,10 +253,7 @@ class SiteLauncher:
         server_prop: ServerProperties = self.server_properties[server_id]
         try:
             # Kill the process
-            if server_prop.process:
-                _kill_process(server_prop.process, "server")
-            else:
-                print("No server process.")
+            _kill_process(server_prop)
         except Exception as e:
             print(f"Exception in stopping server {server_id}: {e.__str__()}")
 
@@ -272,7 +267,7 @@ class SiteLauncher:
             return False
 
         try:
-            _kill_process(client_prop.process, f"client: {client_id}")
+            _kill_process(client_prop)
         except Exception as e:
             print(f"Exception in stopping client {client_id}: {e.__str__()}")
             return False
