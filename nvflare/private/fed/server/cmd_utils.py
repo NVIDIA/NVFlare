@@ -15,6 +15,7 @@
 from typing import List
 
 from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.security.security import Action, FLAuthzContext
@@ -146,6 +147,27 @@ class CommandUtil(object):
         conn.set_prop(self.RUN_NUMBER, destination)
 
         return self._authorize_actions(conn, args[2:], [Action.TRAIN])
+
+    def authorize_job_meta(self, conn: Connection, meta: dict, actions: List[str]):
+
+        deploy_map = meta.get("deploy_map")
+        if not deploy_map:
+            conn.append_error(f"deploy_map missing for job {meta.get(JobMetaKey.JOB_FOLDER_NAME)}")
+            return False, None
+
+        sites = set()
+        for app, site_list in deploy_map.items():
+            sites.update(site_list)
+
+        # Run-time might be a better spot for this
+        if not sites:
+            sites.add("server")
+            engine = conn.app_ctx
+            clients = engine.get_clients()
+            sites.update([client.name for client in clients])
+
+        authz_ctx = FLAuthzContext.new_authz_context(site_names=list(sites), actions=actions)
+        return True, authz_ctx
 
     def authorize_operate(self, conn: Connection, args: List[str]):
         return self._authorize_actions(conn, args[1:], [Action.OPERATE])
