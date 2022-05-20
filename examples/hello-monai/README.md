@@ -23,7 +23,7 @@ Log into the Admin client by entering `admin` for both the username and password
 Then, use these Admin commands to run the experiment:
 
 ```
-submit_job hello-pt
+submit_job hello-monai
 ```
 
 
