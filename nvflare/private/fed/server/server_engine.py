@@ -247,7 +247,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
                     if command == ServerCommandNames.GET_CLIENTS:
                         return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
-                        self._send(conn, job_id, run_number, return_data)
+                        self._send(conn, return_data, job_id, run_number)
                     elif command == ServerCommandNames.AUX_SEND:
                         targets = data.get("targets")
                         topic = data.get("topic")
@@ -257,7 +257,7 @@ class ServerEngine(ServerEngineInternalSpec):
                         replies = self.aux_send(
                             targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
                         )
-                        self._send(conn, replies)
+                        self._send(conn, replies, job_id, run_number)
             except BaseException as e:
                 self.logger.error(f"Failed to process the child process command:{e}")
 
