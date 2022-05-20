@@ -11,7 +11,7 @@ events: [
     },
     "actions": [
       "kill server",
-      "sleep 10",
+      "sleep 40",
       "start server",
     ],
     "result_state": {

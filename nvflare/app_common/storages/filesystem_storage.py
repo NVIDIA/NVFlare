@@ -23,8 +23,6 @@ from typing import List, Tuple
 from nvflare.apis.storage import StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 
-URI_ROOT = os.path.abspath(os.sep)
-
 
 def _write(path: str, content):
     tmp_path = path + "_" + str(uuid.uuid4())
@@ -62,17 +60,23 @@ def _object_exists(uri: str):
 
 @validate_class_methods_args
 class FilesystemStorage(StorageSpec):
-    def __init__(self, root_dir=URI_ROOT):
+    def __init__(self, root_dir=os.path.abspath(os.sep), uri_root="/"):
         """Init FileSystemStorage.
 
         Uses local filesystem to persist objects, with absolute paths as object URIs.
 
         Args:
-            root_dir: the absolute path serving as the root of the storage. All URIs are rooted at this root_dir.
+            root_dir: the absolute path on the filesystem to store things
+            uri_root: serving as the root of the storage. All URIs are rooted at this uri_root.
         """
         if not os.path.isabs(root_dir):
-            raise ValueError("root_dir {} must be an absolute path".format(root_dir))
+            raise ValueError(f"root_dir {root_dir} must be an absolute path.")
+        if os.path.exists(root_dir) and not os.path.isdir(root_dir):
+            raise ValueError(f"root_dir {root_dir} exists but is not a directory.")
+        if not os.path.exists(root_dir):
+            os.makedirs(root_dir, exist_ok=False)
         self.root_dir = root_dir
+        self.uri_root = uri_root
 
     def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool = False):
         """Creates an object.
@@ -93,16 +97,16 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(URI_ROOT))
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if _object_exists(full_uri) and not overwrite_existing:
             raise RuntimeError("object {} already exists and overwrite_existing is False".format(uri))
 
-        # path_parts = Path(uri).parts
-        # for i in range(1, len(path_parts)):
-        #     parent_path = str(Path(*path_parts[0:i]))
-        #     if _object_exists(os.path.join(self.root_dir, parent_path.lstrip(URI_ROOT))):
-        #         raise RuntimeError("cannot create object {} inside preexisting object {}".format(uri, parent_path))
+        path_parts = Path(uri).parts
+        for i in range(1, len(path_parts)):
+            parent_uri = str(Path(*path_parts[0:i]))
+            if _object_exists(os.path.join(self.root_dir, parent_uri.lstrip(self.uri_root))):
+                raise RuntimeError("cannot create object {} inside preexisting object {}".format(uri, parent_uri))
 
         if not _object_exists(full_uri) and os.path.isdir(full_uri) and os.listdir(full_uri):
             raise RuntimeError("cannot create object {} at nonempty directory".format(uri))
@@ -133,7 +137,7 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(URI_ROOT))
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
             raise RuntimeError("object {} does not exist".format(uri))
@@ -158,7 +162,7 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(URI_ROOT))
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
             raise RuntimeError("object {} does not exist".format(uri))
@@ -169,7 +173,7 @@ class FilesystemStorage(StorageSpec):
         """List all objects in the specified path.
 
         Args:
-            path: the path to the objects
+            path: the path uri to the objects
 
         Returns:
             list of URIs of objects
@@ -179,11 +183,9 @@ class FilesystemStorage(StorageSpec):
             RuntimeError: if path does not exist or is not a valid directory.
 
         """
-        full_dir_path = os.path.join(self.root_dir, path.lstrip(URI_ROOT))
-        if not os.path.exists(full_dir_path):
-            raise RuntimeError("path {} does not exist".format(path))
+        full_dir_path = os.path.join(self.root_dir, path.lstrip(self.uri_root))
         if not os.path.isdir(full_dir_path):
-            raise RuntimeError("path {} is not a valid directory".format(path))
+            raise RuntimeError(f"path {full_dir_path} is not a valid directory.")
 
         return [
             os.path.join(path, f) for f in os.listdir(full_dir_path) if _object_exists(os.path.join(full_dir_path, f))
@@ -203,7 +205,7 @@ class FilesystemStorage(StorageSpec):
             RuntimeError: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(URI_ROOT))
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
             raise RuntimeError("object {} does not exist".format(uri))
@@ -224,7 +226,7 @@ class FilesystemStorage(StorageSpec):
             RuntimeError: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(URI_ROOT))
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
             raise RuntimeError("object {} does not exist".format(uri))
@@ -245,7 +247,7 @@ class FilesystemStorage(StorageSpec):
             RuntimeError: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(URI_ROOT))
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
             raise RuntimeError("object {} does not exist".format(uri))
@@ -263,7 +265,7 @@ class FilesystemStorage(StorageSpec):
             RuntimeError: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(URI_ROOT))
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
             raise RuntimeError("object {} does not exist".format(uri))
