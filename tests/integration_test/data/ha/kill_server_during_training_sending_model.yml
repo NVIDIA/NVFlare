@@ -4,7 +4,7 @@ events: [
     "trigger": "sent task assignment to client",
     "actions": [
       "kill server",
-      "sleep 10",
+      "sleep 40",
       "start server"
     ],
     "result_state": {

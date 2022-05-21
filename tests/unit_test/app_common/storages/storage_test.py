@@ -218,22 +218,22 @@ class TestStorage:
 
         storage.delete_object(uri)
 
-    # @pytest.mark.parametrize(
-    #     "uri, overwrite_existing",
-    #     [("/test_dir/test_object", True), ("/test_dir/test_object", False)],
-    # )
-    # def test_create_inside_preexisting(self, storage, uri, overwrite_existing):
-    #     data = random_data()
-    #     meta = random_meta()
-    #     storage.create_object(uri, data, meta)
-    #
-    #     # cannot create object inside a pre-existing object
-    #     with pytest.raises(RuntimeError):
-    #         storage.create_object(
-    #             os.path.join(uri, random_path(3)), random_data(), random_meta(), overwrite_existing=overwrite_existing
-    #         )
-    #
-    #     storage.delete_object(uri)
+    @pytest.mark.parametrize(
+        "uri, overwrite_existing",
+        [("/test_dir/test_object", True), ("/test_dir/test_object", False)],
+    )
+    def test_create_inside_preexisting(self, storage, uri, overwrite_existing):
+        data = random_data()
+        meta = random_meta()
+        storage.create_object(uri, data, meta)
+
+        # cannot create object inside a pre-existing object
+        with pytest.raises(RuntimeError):
+            storage.create_object(
+                os.path.join(uri, random_path(3)), random_data(), random_meta(), overwrite_existing=overwrite_existing
+            )
+
+        storage.delete_object(uri)
 
     @pytest.mark.parametrize(
         "dirpath, num",

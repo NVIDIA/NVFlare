@@ -69,11 +69,12 @@ builders:
       snapshot_persistor:
         path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
         args:
-          location: /
+          uri_root: /
           storage:
             path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
             args:
               root_dir: /tmp/nvflare/snapshot-storage
+              uri_root: /
 
       components:
         server:

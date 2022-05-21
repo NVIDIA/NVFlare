@@ -20,7 +20,7 @@ class RunSnapshot:
             { component_id: component_state_dict }
     """
 
-    def __init__(self, run_number: str) -> None:
+    def __init__(self, run_number: str):
         super().__init__()
         self.component_states = {}
         self.completed = False
@@ -57,7 +57,7 @@ class FLSnapshot:
             { run_number: RunSnapshot }
     """
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.run_snapshots = {}
 

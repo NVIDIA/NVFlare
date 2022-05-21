@@ -35,7 +35,7 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
     print(ls_return_message)
     print("\nAssert Job {} is in the server root dir...".format(first_job))
-    assert(first_job in ls_return_message)
+    assert first_job in ls_return_message
 
     print("\nAborting Job {}:".format(first_job))
     print("\n" + "=" * 50)
@@ -56,23 +56,21 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     tail_return_message = admin_api.tail_target_log("server").get("details").get("message")
     print(tail_return_message)
     print("\nAssert first job matches end of tail...".format(first_job))
-    assert(tail_return_message[-36:] == first_job)
+    assert tail_return_message[-36:] == first_job
     print("\nCommand: grep_target server -n 'deployed to the server for run' log.txt")
     grep_return_message = (
-        admin_api.grep_target("server", "-n", "Stop the job run", "log.txt")
-        .get("details")
-        .get("message")
+        admin_api.grep_target("server", "-n", "Stop the job run", "log.txt").get("details").get("message")
     )
     print(grep_return_message)
     print("\nAssert first job matches job_id in grep...".format(first_job))
-    assert(grep_return_message[-36:] == first_job)
+    assert grep_return_message[-36:] == first_job
     print("\nDeleting run for the first job {}:".format(first_job))
     print(admin_api.delete_run(first_job))
     print("\nCommand: ls server -a .")
     ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
     print(ls_return_message)
     print("\nAssert Job {} is no longer in the server root dir...".format(first_job))
-    assert(first_job not in ls_return_message)
+    assert first_job not in ls_return_message
 
     # print("\nAborting Job {}:".format(second_job))
     print("\n" + "=" * 50)

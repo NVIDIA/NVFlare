@@ -4,7 +4,7 @@ events: [
         "trigger": {"run_finished": True},
         "actions": [
             "kill server",
-            "sleep 15",
+            "sleep 40",
             "start server",
             "sleep 15",
         ],
