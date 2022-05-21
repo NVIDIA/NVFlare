@@ -20,15 +20,18 @@ from nvflare.apis.job_def import Job, JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.authz import AuthorizationService
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.security.security import Action
 
+from .cmd_utils import CommandUtil
 from .training_cmds import TrainingCommandModule
 
 
-class JobCommandModule(TrainingCommandModule):
+class JobCommandModule(TrainingCommandModule, CommandUtil):
     """Command module with commands for job management."""
 
     def __init__(self):
@@ -109,12 +112,20 @@ class JobCommandModule(TrainingCommandModule):
                     conn.append_error("No jobs matching the searching criteria")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
+                # Can't use authz_func so do authorization one by one
+                authorized_jobs = [job for job in filtered_jobs if self._job_authorized(conn, job)]
+
+                authorized_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
 
                 if parsed_args.d:
-                    self._send_detail_list(conn, filtered_jobs)
+                    self._send_detail_list(conn, authorized_jobs)
                 else:
-                    self._send_summary_list(conn, filtered_jobs)
+                    self._send_summary_list(conn, authorized_jobs)
+
+                diff = set([job.job_id for job in filtered_jobs]) - set([job.job_id for job in authorized_jobs])
+                if diff:
+                    self.logger.debug(f"Following jobs are not authorized for listing: {diff}")
+                    conn.append_string("Some jobs are not listed due to permission restrictions")
             else:
                 conn.append_string("No jobs.")
         except Exception as e:
@@ -192,13 +203,33 @@ class JobCommandModule(TrainingCommandModule):
         for job in jobs:
             table.add_row(
                 [
-                    job.meta.get("job_id", ""),
-                    job.meta.get("name", ""),
-                    job.meta.get("status", ""),
-                    job.meta.get("submit_time_iso", ""),
+                    job.meta.get(JobMetaKey.JOB_ID, ""),
+                    job.meta.get(JobMetaKey.JOB_FOLDER_NAME, ""),
+                    job.meta.get(JobMetaKey.STATUS, ""),
+                    job.meta.get(JobMetaKey.SUBMIT_TIME_ISO, ""),
                 ]
             )
 
         writer = io.StringIO()
         table.write(writer)
         conn.append_string(writer.getvalue())
+
+    def _job_authorized(self, conn: Connection, job: Job) -> bool:
+
+        valid, authz_ctx = self.authorize_job_meta(conn, job.meta, [Action.VIEW])
+        if not valid:
+            return False
+
+        authz_ctx.user_name = conn.get_prop(ConnProps.USER_NAME, "")
+        conn.set_prop(ConnProps.AUTHZ_CTX, authz_ctx)
+        authorizer = AuthorizationService.get_authorizer()
+        authorized, err = authorizer.authorize(ctx=authz_ctx)
+        if err:
+            self.logger.debug("Authorization Error to view job {}: {}".format(job.job_id, err))
+            return False
+
+        if not authorized:
+            self.logger.debug(f"View action for job {job.job_id} is not authorized")
+            return False
+
+        return True

@@ -11,11 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
 import shutil
 import tempfile
 import traceback
+from io import BytesIO
 from typing import List
+from zipfile import ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.job_def import JobMetaKey
@@ -30,11 +33,16 @@ from nvflare.fuel.hci.base64_utils import (
 )
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.private.fed.server.cmd_utils import CommandUtil
 from nvflare.private.fed.server.job_validator import JobValidator
+from nvflare.security.security import Action
+
+META_FILE = "meta.json"
 
 
-class FileTransferModule(CommandModule):
+class FileTransferModule(CommandModule, CommandUtil):
     def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None):
         """Command module for file transfers.
 
@@ -105,6 +113,7 @@ class FileTransferModule(CommandModule):
                     description="Submit a job",
                     usage="submit_job job_folder",
                     handler_func=self.submit_job,
+                    authz_func=self._authorize_submission,
                     visible=False,
                 ),
                 CommandSpec(
@@ -254,8 +263,7 @@ class FileTransferModule(CommandModule):
     def submit_job(self, conn: Connection, args: List[str]):
 
         folder_name = args[1]
-        zip_b64str = args[2]
-        data_bytes = convert_legacy_zip(b64str_to_bytes(zip_b64str))
+        data_bytes = conn.get_prop(ConnProps.JOB_DATA)
         engine = conn.app_ctx
 
         try:
@@ -315,3 +323,18 @@ class FileTransferModule(CommandModule):
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))
         conn.append_string("Server Download Source: {}".format(self.download_dir))
+
+    def _authorize_submission(self, conn: Connection, args: List[str]):
+
+        folder_name = args[1]
+        zip_b64str = args[2]
+        data_bytes = convert_legacy_zip(b64str_to_bytes(zip_b64str))
+        conn.set_prop(ConnProps.JOB_DATA, data_bytes)
+
+        meta_file = f"{folder_name}/{META_FILE}"
+        with ZipFile(BytesIO(data_bytes), "r") as zf:
+            meta_data = zf.read(meta_file)
+            meta = json.loads(meta_data)
+        conn.set_prop(ConnProps.JOB_META, meta)
+
+        return self.authorize_job_meta(conn, meta, [Action.TRAIN])

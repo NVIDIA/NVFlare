@@ -22,3 +22,5 @@ class ConnProps(object):
     SESSION = "_session"
     CMD_ENTRY = "_cmdEntry"
     AUTHZ_CTX = "_authztx"
+    JOB_DATA = "_jobData"
+    JOB_META = "_jobMeta"
