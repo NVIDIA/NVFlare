@@ -78,6 +78,8 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
   $ python3 -m pip install nvflare
 
 
+.. _containerized_deployment:
+
 Containerized Deployment with Docker
 ------------------------------------
 Running NVIDIA FLARE in a Docker container is sometimes a convenient way to ensure a
@@ -119,15 +121,16 @@ docker container.
 When using secure provisioning, you can reference this docker container in the project.yml configuration to automatically generate scripts that can be used to start the container for each server or client.  This is specified in the StaticFileBuilder configuration as a docker_image: argument.
 
 .. code-block:: shell
-    
+
    docker_image: nvflare-monai:latest
 
 An example project.yml showing the StaticFileBuilder configuration can be found in the
 Provisioning documentation.
 
 
+.. _cloning_and_examples:
 
-Clone Repository and Examples
+Cloning the NVFlare Repository and Examples
 -----------------------------
 
 The next sections in the :ref:`quickstart` will guide you through the examples included in the repository. To clone the
