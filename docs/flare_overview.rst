@@ -45,6 +45,7 @@ FLARE should be easily embedded into your system.
 
 .. toctree::
    :maxdepth: 1
+   
    flare_overview/flare_unique_features
    flare_overview/flare_design_principles
    flare_overview/flare_system_architecture
