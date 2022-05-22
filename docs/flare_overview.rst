@@ -4,6 +4,8 @@
 NVIDIA FLARE Overview
 #####################
 
+
+
 FLARE is a Federated Runtime Environment
 ----------------------------------------
 At its core, FLARE provides a plugable runtime environment that supports federated computing.
@@ -32,20 +34,15 @@ with customized algorithms to fit your needs.
 
 FLARE is a SDK, not a platform
 ------------------------------
-We want to enable more people to levage Federated Learning, weather the user is
+We want to enable more people to adopt Federated Learning, whether the user is
 * a machine learning researcher -- interested in experimenting the latest FL algorithms, or
 * a data scientist -- interested in applying FL to a real world use case, or
 * a system integrator -- interested in building a platform to enable Federated Learning for others.
 
-For researcher, FLARE will provide an easy to use enviornment that quickly experiments different FL algorithms.
-For data scientist, we like to make it easy to take FL algorithms and deploy to the real world without much change.
-For system integrator, you should be easily replace most any components and customize to your needs,
-weather its communication, authentication, storage, workflow, deep learning framework.
-FLARE should be easily embedded into your system.
+For a researcher, FLARE provides an easy to use enviornment that allows rapid experimentation with different FL algorithms.
 
-.. toctree::
-   :maxdepth: 1
-   
-   flare_overview/flare_unique_features
-   flare_overview/flare_design_principles
-   flare_overview/flare_system_architecture
+For a data scientist, FLARE makes it easy to use common FL algorithms to build federated applications for real-
+world deployments.
+
+For system integrator, FLARE's modular architecture makes it easy to extend or replace components and customize to your needs.  Whether it's communication, authentication, storage, workflow, or DL/ML frameworks, FLARE should be easily embedded into your system.
+

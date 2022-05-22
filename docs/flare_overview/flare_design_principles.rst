@@ -2,42 +2,50 @@
 Design Principles
 =================
 
-* Keep it simple, less is more
-* design to specification
-* gear to real-world scenarios
-* keep system general-purpose
-* client system friendly
+* Keep it simple - less is more
+* Design to specification
+* Build for real-world scenarios
+* Keep the system general-purpose
+* Client system friendly
 
 **Less is more**
 
-we like to solve unique challenges, we do less, but enable others tp dp more.
-we can's solve whole worlds problem, but enable others to solve world's problem
+We strive to solve unique challenges by doing less while enabling others to do more.
+We can't solve whole worlds' problems, but by building an open platform we can enable
+others to solve world's problems.
 
-This design principle means we intentioned limit the scope of the implementation,
-but only implements the needed components. For given implementation we follow the specs and allows others to customize.
-
-
-**Design to specification**
-
-Every components, API design are spec-based, system can have alternative implementation following the spec.
-This allows pretty much every component to be customized.
-
-This also means that we are not opinionated with particular implementation, you are encourage to customize.
+This design principle means we intentionally limit the scope of the implementation,
+only building the necessary components. For a given implementation, we follow specifications
+in a way that allows others to easily customize and extend.
 
 
-**gear to real-world scenarios**
+**Design to Specification**
 
-handle real-world use cases where handle failure gracefully
-default implementation will provide the implementation that can solve real-world problem
+Every component and API is specification-based, so that alternative implementations can be
+constructed by following the spec.  This allows pretty much every component to be customized.
 
-
-**Keep system general-purpose**
-
-keep system general-purpose, enable different "federated" computing use cases.
-We carefully package the components into different layers, the lower-layers has no dependency for upper layers
-Specific use cases should not demands specific implementation of the underline system core.
+We strive to be unopinionated in reference implementations, encouraging developers and end-users
+to extend and customize to meet the needs of their specific workflows.
 
 
-**client system friendly**
+**Build for real-world scenarios**
 
-make FLARE works well in your system
+We build to handle real-world use cases where unexpected events or misbehaving code can be
+handled in a way that allows components or the system as a whole to fail gracefully.
+The reference implementations of the default components are designed to solve real-world
+problems in a straightforward way.
+
+
+**Keep the system general-purpose**
+
+We design ths system to be general purpose, to enable different "federated" computing use cases.
+We carefully package the components into different layers with minimal dependencies between layers.
+In this way, implementations for specific use cases should not demand modificastions to the
+underlying system core.
+
+
+**Client system friendly**
+
+We design the system so that it can run anywhere with minimal environmental dependencies.
+We also strive to build the system in a way that does not interfere with the deployment environment,
+allowing FLARE to be easily integrated into your own applications or platforms.
