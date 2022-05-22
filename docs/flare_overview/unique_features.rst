@@ -1,7 +1,7 @@
+.. _unique_features:
 
------------------------------
-NVIDIA FLARE UNIQUE FEATURES
------------------------------
+Unique Features
+===============
 
 What makes FLARE unique compared to other closed- or open-source frameworks for Federated Learning?
 

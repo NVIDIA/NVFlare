@@ -4,7 +4,12 @@
 NVIDIA FLARE Overview
 #####################
 
+.. toctree::
+   :maxdepth: 1
 
+   flare_overview/design_principles
+   flare_overview/system_architecture
+   flare_overview/unique_features
 
 FLARE is a Federated Runtime Environment
 ----------------------------------------

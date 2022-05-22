@@ -78,6 +78,55 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
   $ python3 -m pip install nvflare
 
 
+Containerized Deployment with Docker
+------------------------------------
+Running NVIDIA FLARE in a Docker container is sometimes a convenient way to ensure a
+uniform OS and software environment across client and server systems.  This can be used
+as an alternative to the bare-metal Python virtual environment described above and will
+use a similar installation to simplify transitioning between the environments.
+
+A simple Dockerfile is used to capture the base requirements and dependencies.  In
+this case, we’re building an environment that will support PyTorch-based workflows,
+and in particular MONAI as presented in the hello-monai example. The base for this
+build is the NGC PyTorch container.  On this base image, we will install the
+necessary dependencies and clone the NVIDIA FLARE GitHub source code into
+the root workspace directory.
+
+.. code-block:: dockerfile
+
+   ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:22.02-py3
+   FROM ${PYTORCH_IMAGE}
+
+   RUN python3 -m pip install -U pip
+   RUN python3 -m pip install -U setuptools
+   RUN python3 -m pip install monai pytorch-ignite numpy itk-io pandas kaleido plotly tensorboard tqdm nibabel nvflare
+
+   WORKDIR /workspace/
+   RUN git clone https://github.com/NVIDIA/NVFlare.git
+
+We can then build the new container by running docker build in the directory containing
+this Dockerfile, for example tagging it nvflare-monai:
+
+.. code-block:: shell
+
+  docker build -t nvflare-monai .
+
+You will then have a docker image nvflare-monai:latest.  This can be used to run any of the
+client or server deployments.  In POC mode, you can do this by mounting the directory
+containing the server or client subdirectories and startup scripts when you run the
+docker container.
+
+When using secure provisioning, you can reference this docker container in the project.yml configuration to automatically generate scripts that can be used to start the container for each server or client.  This is specified in the StaticFileBuilder configuration as a docker_image: argument.
+
+.. code-block:: shell
+    
+   docker_image: nvflare-monai:latest
+
+An example project.yml showing the StaticFileBuilder configuration can be found in the
+Provisioning documentation.
+
+
+
 Clone Repository and Examples
 -----------------------------
 
