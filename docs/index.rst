@@ -33,35 +33,6 @@ introduce new concepts and change the way the system needs to be configured and 
    programming_guide
    best_practices
    faq
+   contributing
    API <apidocs/modules>
    appendix
-
-User Guide
-    * First Experience
-       * installation
-       * quickstart
-       * examples
-    * FL Researchers
-       * Federated Learning Algorithms
-       * Add your own FL algorithms
-    * Applied Data Scientists
-       * start your own case
-    * System integrators
-       * system components
-       * event handling
-       * communications
-       * plugable components
-       * deployment
-    * Data Privacy
-    * programming_guide
-       * code structure
-       * best_practices
-       * debugging
-
-Get Involved
-    * how to contribute to NVFLARE
-Talks and publications
-
-Real-world Use Cases
-
-appendix
