@@ -2,18 +2,21 @@
 NVIDIA FLARE
 ############
 
-NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible
-SDK that allows researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to
-a federated paradigm; and enables platform developers to build a secure, privacy preserving offering for a distributed
-multi-party collaboration.
 
-Federated learning allows for multiple clients each with their own data to collaborate together without
-having to share their actual data. This allows for different parties located any place in the world to use their local
-secure protected data to perform tasks coordinated by an FL server set up in the secure cloud to achieve better learning
-results.
+NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic,
+open-source, extensible SDK that allows researchers and data scientists to adaptexisting ML/DL
+workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables platform
+developers to build a secure, privacy preserving offering for a distributed multi-party
+collaboration.
 
-NVIDIA FLARE is built on a componentized architecture, which allows researchers to customize workflows to their
-liking and experiment with different ideas quickly.
+Federated learning allows multiple clients, each with their own data, to collaborate without
+sharing data.  Different parties or institutions located throughtout the world can perform a set of
+tasks on their own local data, coordinated by a secure, central Federated Learning server, to build
+a global model.  NVIDIA FLARE enables this collaborative workflow without ever needing to give
+external access to a participants' local data.
+
+NVIDIA FLARE is built on a componentized architecture that allows researchers to customize
+workflows to their liking and experiment with different ideas quickly.
 
 With NVIDIA FLARE 2.1.0, :ref:`High Availability (HA) <high_availability>` and :ref:`Multi-Job Execution <multi_job>`
 introduce new concepts and change the way the system needs to be configured and operated. See
@@ -23,7 +26,7 @@ introduce new concepts and change the way the system needs to be configured and 
    :maxdepth: 1
 
    highlights
-   installation
+   flare_overview
    quickstart
    example_applications
    user_guide
@@ -32,3 +35,33 @@ introduce new concepts and change the way the system needs to be configured and 
    faq
    API <apidocs/modules>
    appendix
+
+User Guide
+    * First Experience
+       * installation
+       * quickstart
+       * examples
+    * FL Researchers
+       * Federated Learning Algorithms
+       * Add your own FL algorithms
+    * Applied Data Scientists
+       * start your own case
+    * System integrators
+       * system components
+       * event handling
+       * communications
+       * plugable components
+       * deployment
+    * Data Privacy
+    * programming_guide
+       * code structure
+       * best_practices
+       * debugging
+
+Get Involved
+    * how to contribute to NVFLARE
+Talks and publications
+
+Real-world Use Cases
+
+appendix
