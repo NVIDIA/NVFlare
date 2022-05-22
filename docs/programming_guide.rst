@@ -1,8 +1,8 @@
 .. _programming_guide:
 
-#####################################################
-Programming Guide - Developing Apps with NVIDIA FLARE
-#####################################################
+#################
+Programming Guide
+#################
 
 The NVIDIA FLARE Controller and Worker APIs are used to implement the task-based interaction defined in an :ref:`user_guide/application:NVIDIA FLARE Application`.
 In the application, the server configuration defines the components to be used in the controller workflow.
