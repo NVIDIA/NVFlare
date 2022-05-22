@@ -1,25 +1,7 @@
--  `Introduction <#introduction>`__
--  `The contribution process <#the-contribution-process>`__
+.. _contributing:
 
-   -  `Preparing pull requests <#preparing-pull-requests>`__
-
-      1. `Checking the coding style <#checking-the-coding-style>`__
-      2. `Unit testing <#unit-testing>`__
-      3. `Building the documentation <#building-the-documentation>`__
-      4. `Automatic code formatting <#automatic-code-formatting>`__
-      5. `Signing your work <#signing-your-work>`__
-      6. `Utility functions <#utility-functions>`__
-      7. `Backwards compatibility <#backwards-compatibility>`__
-
-   -  `Submitting pull requests <#submitting-pull-requests>`__
-
--  `The code reviewing process (for the
-   maintainers) <#the-code-reviewing-process>`__
-
-   -  `Reviewing pull requests <#reviewing-pull-requests>`__
-
-Introduction
-------------
+Contributing
+============
 
 Welcome to NVIDIA FLARE! We’re excited you’re here and want to
 contribute. This documentation is intended for individuals and
