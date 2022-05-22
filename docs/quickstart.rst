@@ -81,7 +81,8 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
 .. _containerized_deployment:
 
 Containerized Deployment with Docker
-------------------------------------
+====================================
+
 Running NVIDIA FLARE in a Docker container is sometimes a convenient way to ensure a
 uniform OS and software environment across client and server systems.  This can be used
 as an alternative to the bare-metal Python virtual environment described above and will
