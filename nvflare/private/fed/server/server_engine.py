@@ -242,8 +242,8 @@ class ServerEngine(ServerEngineInternalSpec):
                             targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
                         )
                         conn.send(replies)
-            except BaseException:
-                self.logger.warning("Failed to process the child process command.")
+            except BaseException as e:
+                self.logger.warning(f"Failed to process the child process command: {e}", exc_info=True)
 
     def wait_for_complete(self, run_number):
         while True:
