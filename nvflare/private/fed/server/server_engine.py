@@ -651,8 +651,12 @@ class ServerEngine(ServerEngineInternalSpec):
             snapshot.completed = completed
 
             self.server.snapshot_location = self.snapshot_persistor.save(snapshot=snapshot)
-        finally:
-            self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
+            if not completed:
+                self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
+            else:
+                self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
+        except BaseException as e:
+            self.logger.error(f"Failed to persist the components. {str(e)}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
