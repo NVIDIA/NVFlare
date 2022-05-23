@@ -43,11 +43,13 @@ class StorageStatePersistor(StatePersistor):
         """
         path = os.path.join(self.uri_root, snapshot.run_number)
         if snapshot.completed:
-            self.storage.delete_object(path)
+            full_uri = self.storage.delete_object(path)
         else:
-            self.storage.create_object(uri=path, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True)
+            full_uri = self.storage.create_object(
+                uri=path, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True
+            )
 
-        return self.uri_root
+        return full_uri
 
     def retrieve(self) -> FLSnapshot:
         """Call to load the persisted FL components snapshot from the persisted location.

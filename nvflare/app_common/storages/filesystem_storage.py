@@ -123,6 +123,8 @@ class FilesystemStorage(StorageSpec):
             raise e
         os.rename(tmp_data_path, data_path)
 
+        return full_uri
+
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta of the specified object.
 
@@ -271,3 +273,5 @@ class FilesystemStorage(StorageSpec):
             raise RuntimeError("object {} does not exist".format(uri))
 
         shutil.rmtree(full_uri)
+
+        return full_uri
