@@ -135,7 +135,7 @@ Cloning the NVFlare Repository and Examples
 -----------------------------
 
 The next sections in the :ref:`quickstart` will guide you through the examples included in the repository. To clone the
-repo and get the source code:
+repo and get the source code for the example applications, run:
 
 .. code-block:: shell
 
