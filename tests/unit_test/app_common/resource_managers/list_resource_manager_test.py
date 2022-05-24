@@ -140,7 +140,7 @@ class TestListResourceManager:
             )
         assert result == {"gpu": ["gpu_0"]}
 
-    def test_check_one_cancel_one_check_two_then_allocate_two(self):
+    def test_check_one_cancel_one_check_four_then_allocate_four(self):
         engine = MockEngine()
         list_resource_manager = ListResourceManager(resources={"gpu": [f"gpu_{i}" for i in range(4)]})
         resource_requirement1 = {"gpu": 1}
@@ -163,7 +163,7 @@ class TestListResourceManager:
             result = list_resource_manager.allocate_resources(
                 resource_requirement=resource_requirement2, token=token2, fl_ctx=fl_ctx
             )
-        assert result == {"gpu": ["gpu_1", "gpu_2", "gpu_3", "gpu_0"]}
+        assert result == {"gpu": ["gpu_0", "gpu_1", "gpu_2", "gpu_3"]}
 
     def test_check_and_timeout(self):
         timeout = 5
