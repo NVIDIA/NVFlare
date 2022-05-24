@@ -136,13 +136,8 @@ An :ref:`example project.yml <programming_guide/provisioning_system/_project_yml
 Cloning the NVFlare Repository and Examples
 -----------------------------
 
-<<<<<<< HEAD
-The next sections in the :ref:`quickstart` will guide you through the examples included in the repository. To clone the
-repo and get the source code for the example applications, run:
-=======
 The next sections in the :ref:`examples` will guide you through the examples included in the repository. To clone the
 repo and get the source code:
->>>>>>> dev-2.1-restructure
 
 .. code-block:: shell
 
