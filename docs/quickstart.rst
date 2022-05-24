@@ -327,4 +327,4 @@ Now you can verify that the job has been submitted and clients started with
   -------------------------------------------------------------------------
   Done [302546 usecs] 2022-05-24 13:09:27.815476
 
-Please see the `hello-pt-tb example README.md <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_ for additional details on the application.
+Please see the following section on the :ref:`examples/hello_pt_tb` example for additional details on the structure of the application and the configuration for streaming analytics.
