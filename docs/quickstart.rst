@@ -207,14 +207,15 @@ folder for the admin client):
 
 .. code-block:: shell
 
-  $ mkdir -p poc/admin/transfer
-  $ cp -rf NVFlare/examples/* poc/admin/transfer
+  mkdir -p poc/admin/transfer
+  cp -rf NVFlare/examples/* poc/admin/transfer
 
 This step has copied all the NVFlare examples into the admin client's transfer folder.  Once the server and clients are connected, the admin client can be used to deploy and run any of these applications.
 
 The hello-pt-tb application requires a few dependencies to be installed.  As in the installation section, we can install these in the Python virtual environment by running:
 
 .. code-block:: shell
+
   source nvflare-env/bin/activate
   python3 -m pip install torch torchvision tensorboard
 
@@ -230,8 +231,11 @@ Once you are ready to start the FL system, you can run the following commands to
 
 .. note::
   Each of the participants will run in a separate terminal (or screen/tmux session).  Each of these sessions reqiures the NVFlare Python environment, either built into a container as described above, or by running
+
   .. code-block:: shell
+
     source nvflare-env/bin/activate
+  
   as described in the :ref:`installation <installation>` section.
 
 FL systems usually have an overseer, server, and multiple clients. We first start the overseer:
@@ -288,6 +292,7 @@ After connecting the admin client in the previous section, you will see the admi
 Typing ? will show the list of available commands, for example checking the status of the server:
 
 .. code-block:: shell
+
   > check_status server
   Engine status: stopped
   -------------------------
@@ -304,12 +309,15 @@ Typing ? will show the list of available commands, for example checking the stat
   Done [1752 usecs] 2022-05-24 12:49:20.921073
 
 Here, we will simply submit the hello-pt-tb job for execution:
+
 .. code-block:: shell
+
   > submit_job hello-pt-tb
 
 Now you can verify that the job has been submitted and clients started with
 
 .. code-block:: shell
+  
   > check_status client
   -------------------------------------------------------------------------
   | CLIENT | APP_NAME    | RUN_NUMBER                           | STATUS  |
