@@ -90,7 +90,7 @@ use a similar installation to simplify transitioning between the environments.
 
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
 this case, we’re building an environment that will support PyTorch-based workflows,
-and in particular MONAI as presented in the `hello-monai <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai>`
+in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`
 example. The base for this build is the NGC PyTorch container.  On this base image,
 we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
 source code into the root workspace directory.
@@ -102,19 +102,19 @@ source code into the root workspace directory.
 
    RUN python3 -m pip install -U pip
    RUN python3 -m pip install -U setuptools
-   RUN python3 -m pip install monai pytorch-ignite numpy itk-io pandas kaleido plotly tensorboard tqdm nibabel nvflare
+   RUN python3 -m pip install torch torchvision tensorboard nvflare
 
    WORKDIR /workspace/
    RUN git clone https://github.com/NVIDIA/NVFlare.git
 
 We can then build the new container by running docker build in the directory containing
-this Dockerfile, for example tagging it nvflare-monai:
+this Dockerfile, for example tagging it nvflare-pt:
 
 .. code-block:: shell
 
-  docker build -t nvflare-monai .
+  docker build -t nvflare-pt .
 
-You will then have a docker image nvflare-monai:latest.  This can be used to run any of the
+You will then have a docker image nvflare-pt:latest.  This can be used to run any of the
 client or server deployments.  In POC mode, you can do this by mounting the directory
 containing the server or client subdirectories and startup scripts when you run the
 docker container.
@@ -125,7 +125,7 @@ This is specified in the StaticFileBuilder configuration as the docker_image: ar
 
 .. code-block:: shell
 
-   docker_image: nvflare-monai:latest
+   docker_image: nvflare-pt:latest
 
 An :ref:`example project.yml <programming_guide/provisioning_system/_project_yml>` showing the StaticFileBuilder configuration can be found in the
  Provisioning documentation.
@@ -195,8 +195,8 @@ that contains the set of example applications.
 Cloning the NVFlare Repository and Examples
 ===========================================
 
-The following :ref:`examples` provides details on the full set of examples included in the NVFlare repository. In this section,
-we will focus on the hello-monai example as a simple POC.  First, we need to clone the repo to get the source code
+The following :ref:`examples` section provides details on the full set of examples included in the NVFlare repository. In this section,
+we will focus on the hello-pt-tb example as a simple POC.  First, we need to clone the repo to get the source code
 including examples:
 .. code-block:: shell
 
@@ -212,11 +212,11 @@ folder for the admin client):
 
 This step has copied all the NVFlare examples into the admin client's transfer folder.  Once the server and clients are connected, the admin client can be used to deploy and run any of these applications.
 
-The hello-monai application requires the monai package and a few dependencies to be installed.  As in the installation section, we can install these in the Python virtual environment by running:
+The hello-pt-tb application requires a few dependencies to be installed.  As in the installation section, we can install these in the Python virtual environment by running:
 
 .. code-block:: shell
   source nvflare-env/bin/activate
-  python3 -m pip install monai pytorch-ignite tqdm
+  python3 -m pip install torch torchvision tensorboard
 
 If using the Dockerfile above to run in a container, these dependencies have already been installed.
 
@@ -303,9 +303,9 @@ Typing ? will show the list of available commands, for example checking the stat
   ----------------------------------------------------------------------------
   Done [1752 usecs] 2022-05-24 12:49:20.921073
 
-Here, we will simply submit the hello-monai job for execution:
+Here, we will simply submit the hello-pt-tb job for execution:
 .. code-block:: shell
-  > submit_job hello-monai
+  > submit_job hello-pt-tb
 
 Now you can verify that the job has been submitted and clients started with
 
@@ -314,7 +314,9 @@ Now you can verify that the job has been submitted and clients started with
   -------------------------------------------------------------------------
   | CLIENT | APP_NAME    | RUN_NUMBER                           | STATUS  |
   -------------------------------------------------------------------------
-  | site-1 | hello-monai | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |
-  | site-2 | hello-monai | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |
+  | site-1 | hello-pt-tb | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |
+  | site-2 | hello-pt-tb | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |
   -------------------------------------------------------------------------
   Done [302546 usecs] 2022-05-24 13:09:27.815476
+
+Please see the `hello-pt-tb example README.md <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>` for additional details on the application.
