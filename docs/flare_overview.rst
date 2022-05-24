@@ -40,9 +40,9 @@ with customized algorithms to fit your needs.
 FLARE is a SDK, not a platform
 ------------------------------
 We want to enable more people to adopt Federated Learning, whether the user is
-* a machine learning researcher -- interested in experimenting the latest FL algorithms, or
-* a data scientist -- interested in applying FL to a real world use case, or
-* a system integrator -- interested in building a platform to enable Federated Learning for others.
+  * a machine learning researcher -- interested in experimenting the latest FL algorithms, or
+  * a data scientist -- interested in applying FL to a real world use case, or
+  * a system integrator -- interested in building a platform to enable Federated Learning for others.
 
 For a researcher, FLARE provides an easy to use enviornment that allows rapid experimentation with different FL algorithms.
 

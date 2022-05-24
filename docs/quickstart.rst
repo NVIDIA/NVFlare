@@ -119,14 +119,16 @@ client or server deployments.  In POC mode, you can do this by mounting the dire
 containing the server or client subdirectories and startup scripts when you run the
 docker container.
 
-When using secure provisioning, you can reference this docker container in the project.yml configuration to automatically generate scripts that can be used to start the container for each server or client.  This is specified in the StaticFileBuilder configuration as a docker_image: argument.
+When using secure provisioning, you can reference this docker container in the project.yml configuration
+to automatically generate scripts that can be used to start the container for each server or client.
+This is specified in the StaticFileBuilder configuration as the docker_image: argument.
 
 .. code-block:: shell
 
    docker_image: nvflare-monai:latest
 
-An example project.yml showing the StaticFileBuilder configuration can be found in the
-Provisioning documentation.
+An :ref:`example project.yml <programming_guide/provisioning_system/_project_yml>` showing the StaticFileBuilder configuration can be found in the
+ Provisioning documentation.
 
 
 .. _cloning_and_examples:
@@ -134,8 +136,13 @@ Provisioning documentation.
 Cloning the NVFlare Repository and Examples
 -----------------------------
 
+<<<<<<< HEAD
 The next sections in the :ref:`quickstart` will guide you through the examples included in the repository. To clone the
 repo and get the source code for the example applications, run:
+=======
+The next sections in the :ref:`examples` will guide you through the examples included in the repository. To clone the
+repo and get the source code:
+>>>>>>> dev-2.1-restructure
 
 .. code-block:: shell
 
