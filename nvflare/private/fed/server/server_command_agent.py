@@ -43,34 +43,40 @@ class ServerCommandAgent(object):
 
     def listen_command(self, engine):
         try:
-            address = ("localhost", self.listen_port)  # family is deduced to be 'AF_INET'
+            address = ("localhost", self.listen_port)
             listener = Listener(address, authkey="client process secret password".encode())
             conn = listener.accept()
-
-            try:
-                while not self.asked_to_stop:
-                    if conn.poll(1.0):
-                        msg = conn.recv()
-                        msg = pickle.loads(msg)
-                        command_name = msg.get(ServerCommandKey.COMMAND)
-                        data = msg.get(ServerCommandKey.DATA)
-                        command = ServerCommands.get_command(command_name)
-                        if command:
-                            with engine.new_context() as new_fl_ctx:
-                                reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                                if reply:
-                                    conn.send(reply)
-            except Exception as e:
-                self.logger.exception(
-                    f"Process communication exception with listen port {self.listen_port}: {e}.", exc_info=True
-                )
-            finally:
-                conn.close()
-
-            listener.close()
         except Exception as e:
             self.logger.exception(
                 f"Could not create the listener for this process on port: {self.listen_port}: {e}.", exc_info=True
+            )
+            return
+
+        while not self.asked_to_stop:
+            try:
+                if conn.poll(1.0):
+                    msg = conn.recv()
+                    msg = pickle.loads(msg)
+                    command_name = msg.get(ServerCommandKey.COMMAND)
+                    data = msg.get(ServerCommandKey.DATA)
+                    command = ServerCommands.get_command(command_name)
+                    if command:
+                        with engine.new_context() as new_fl_ctx:
+                            reply = command.process(data=data, fl_ctx=new_fl_ctx)
+                            if reply:
+                                conn.send(reply)
+            except EOFError:
+                self.logger.info("listener communication terminated.")
+                break
+            except Exception as e:
+                self.logger.error(f"IPC Communication error on the port: {self.listen_port}: {e}.", exc_info=False)
+
+        try:
+            conn.close()
+            listener.close()
+        except Exception as e:
+            self.logger.exception(
+                f"Exception in the listener process closing on port: {self.listen_port}: {e}.", exc_info=True
             )
 
     def shutdown(self):
