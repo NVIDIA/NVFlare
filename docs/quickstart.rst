@@ -89,8 +89,8 @@ as an alternative to the bare-metal Python virtual environment described above a
 use a similar installation to simplify transitioning between the environments.
 
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
-this case, we’re building an environment that will support PyTorch-based workflows,
-in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`
+this case, we're building an environment that will support PyTorch-based workflows,
+in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_
 example. The base for this build is the NGC PyTorch container.  On this base image,
 we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
 source code into the root workspace directory.
@@ -279,8 +279,8 @@ the FL process.
    For anything more than the most basic proof of concept examples, it is recommended that you use a
    :ref:`secure provisioned setup <provisioned_setup>`.
 
-Deploying an example application with the admin client
-------------------------------------------------------
+Deploying an example application
+================================
 After connecting the admin client in the previous section, you will see the admin CLI's prompt:
 
 .. code-block:: shell
@@ -289,7 +289,7 @@ After connecting the admin client in the previous section, you will see the admi
   Type ? to list commands; type "? cmdName" to show usage of a command.
   >
 
-Typing ? will show the list of available commands, for example checking the status of the server:
+Typing ``?`` will show the list of available commands, for example checking the status of the server:
 
 .. code-block:: shell
 
@@ -317,7 +317,7 @@ Here, we will simply submit the hello-pt-tb job for execution:
 Now you can verify that the job has been submitted and clients started with
 
 .. code-block:: shell
-  
+
   > check_status client
   -------------------------------------------------------------------------
   | CLIENT | APP_NAME    | RUN_NUMBER                           | STATUS  |
@@ -327,4 +327,4 @@ Now you can verify that the job has been submitted and clients started with
   -------------------------------------------------------------------------
   Done [302546 usecs] 2022-05-24 13:09:27.815476
 
-Please see the `hello-pt-tb example README.md <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>` for additional details on the application.
+Please see the `hello-pt-tb example README.md <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_ for additional details on the application.
