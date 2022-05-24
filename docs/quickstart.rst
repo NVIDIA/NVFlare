@@ -90,10 +90,10 @@ use a similar installation to simplify transitioning between the environments.
 
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
 this case, we’re building an environment that will support PyTorch-based workflows,
-and in particular MONAI as presented in the hello-monai example. The base for this
-build is the NGC PyTorch container.  On this base image, we will install the
-necessary dependencies and clone the NVIDIA FLARE GitHub source code into
-the root workspace directory.
+and in particular MONAI as presented in the `hello-monai <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai>`
+example. The base for this build is the NGC PyTorch container.  On this base image,
+we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
+source code into the root workspace directory.
 
 .. code-block:: dockerfile
 
@@ -131,18 +131,6 @@ An :ref:`example project.yml <programming_guide/provisioning_system/_project_yml
  Provisioning documentation.
 
 
-.. _cloning_and_examples:
-
-Cloning the NVFlare Repository and Examples
------------------------------
-
-The next sections in the :ref:`examples` will guide you through the examples included in the repository. To clone the
-repo and get the source code:
-
-.. code-block:: shell
-
-  $ git clone https://github.com/NVIDIA/NVFlare.git
-
 .. _setting_up_poc:
 
 Setting Up the Application Environment in POC Mode
@@ -154,38 +142,106 @@ Setting Up the Application Environment in POC Mode
     where the server's ports are exposed. For actual deployment and even development, it is recommended to use a
     :ref:`secure provisioned setup <provisioned_setup>`.
 
-To get started with a proof of concept (POC) setup after :ref:`installation`, run this command to generates a poc folder
-with a server, two clients, and one admin:
+To get started with a proof of concept (POC) setup after :ref:`installation`, run this command to generate a poc folder
+with an overseer, server, two clients, and one admin client:
 
 .. code-block:: shell
 
     $ poc -n 2
 
-Copy necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (upload
-folder for the admin):
+The resulting poc folder will contain the following structure, with start.sh scripts for each of the participants.::
+
+  poc/
+    admin/
+        startup/
+            fed_admin_HA.json
+            fed_admin.json
+            fl_admin.sh
+    overseer/
+        startup/
+            start.sh
+    Readme.rst
+    server/
+        startup/
+            fed_server_HA.json
+            fed_server.json
+            log.config
+            start.sh
+            stop_fl.sh
+            sub_start.sh
+    site-1/
+        startup/
+            fed_client_HA.json
+            fed_client.json
+            log.config
+            start.sh
+            stop_fl.sh
+            sub_start.sh
+    site-2/
+        startup/
+            fed_client_HA.json
+            fed_client.json
+            log.config
+            start.sh
+            stop_fl.sh
+            sub_start.sh
+
+
+Before we use these scripts to connect the overseer, server, and clients, we will clone the NVFlare Repository
+that contains the set of example applications.
+
+.. _cloning_and_examples:
+
+Cloning the NVFlare Repository and Examples
+===========================================
+
+The following :ref:`examples` provides details on the full set of examples included in the NVFlare repository. In this section,
+we will focus on the hello-monai example as a simple POC.  First, we need to clone the repo to get the source code
+including examples:
+.. code-block:: shell
+
+  $ git clone https://github.com/NVIDIA/NVFlare.git
+
+We can then copy the necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (the transfer
+folder for the admin client):
 
 .. code-block:: shell
 
   $ mkdir -p poc/admin/transfer
   $ cp -rf NVFlare/examples/* poc/admin/transfer
 
+This step has copied all the NVFlare examples into the admin client's transfer folder.  Once the server and clients are connected, the admin client can be used to deploy and run any of these applications.
+
+The hello-monai application requires the monai package and a few dependencies to be installed.  As in the installation section, we can install these in the Python virtual environment by running:
+
+.. code-block:: shell
+  source nvflare-env/bin/activate
+  python3 -m pip install monai pytorch-ignite tqdm
+
+If using the Dockerfile above to run in a container, these dependencies have already been installed.
+
 .. _starting_poc:
 
 Starting the Application Environment in POC Mode
 ================================================
 
-Once you are ready to start the FL system, you can run the following commands to start all the different parties (it is
-recommended that you read into the specific :ref:`example apps <example_apps>` first, then start the FL
-system to follow along at the parts with admin commands for you to run the example app).
+Once you are ready to start the FL system, you can run the following commands to start all the participants
+(overseer, server, and clients).  Following that, we will use the admin client to deploy and run an example app.
 
-FL systems usually have an overseer, server, and multiple clients. We therefore have to start the overseer first:
+.. note::
+  Each of the participants will run in a separate terminal (or screen/tmux session).  Each of these sessions reqiures the NVFlare Python environment, either built into a container as described above, or by running
+  .. code-block:: shell
+    source nvflare-env/bin/activate
+  as described in the :ref:`installation <installation>` section.
+
+FL systems usually have an overseer, server, and multiple clients. We first start the overseer:
 
 .. code-block:: shell
 
     $ ./poc/overseer/startup/start.sh
 
-Once the overseer is running, you can start the server and clients in different terminals (make sure your terminals are
-using the environment with NVIDIA FLARE :ref:`installed <installation>`).
+Once the overseer is running, you can start the server and clients in different terminals (again, making sure your terminals are
+using the environment described in NVIDIA FLARE :ref:`installed <installation>`).
 
 Open a new terminal and start the server:
 
@@ -205,7 +261,7 @@ Open another terminal and start the second client:
 
     $ ./poc/site-2/startup/start.sh
 
-In one last terminal, start the admin:
+In one last terminal, start the admin client:
 
 .. code-block:: shell
 
@@ -218,3 +274,47 @@ the FL process.
 
    For anything more than the most basic proof of concept examples, it is recommended that you use a
    :ref:`secure provisioned setup <provisioned_setup>`.
+
+Deploying an example application with the admin client
+------------------------------------------------------
+After connecting the admin client in the previous section, you will see the admin CLI's prompt:
+
+.. code-block:: shell
+
+  login_result: OK
+  Type ? to list commands; type "? cmdName" to show usage of a command.
+  >
+
+Typing ? will show the list of available commands, for example checking the status of the server:
+
+.. code-block:: shell
+  > check_status server
+  Engine status: stopped
+  -------------------------
+  | RUN_NUMBER | APP NAME |
+  -------------------------
+  -------------------------
+  Registered clients: 2 
+  ----------------------------------------------------------------------------
+  | CLIENT | TOKEN                                | LAST CONNECT TIME        |
+  ----------------------------------------------------------------------------
+  | site-1 | dedb907c-11d1-4235-a232-0b40d84dcebe | Tue May 24 12:49:15 2022 |
+  | site-2 | 56b6ebc0-a414-40a8-aaf7-dc48a8d51440 | Tue May 24 12:48:57 2022 |
+  ----------------------------------------------------------------------------
+  Done [1752 usecs] 2022-05-24 12:49:20.921073
+
+Here, we will simply submit the hello-monai job for execution:
+.. code-block:: shell
+  > submit_job hello-monai
+
+Now you can verify that the job has been submitted and clients started with
+
+.. code-block:: shell
+  > check_status client
+  -------------------------------------------------------------------------
+  | CLIENT | APP_NAME    | RUN_NUMBER                           | STATUS  |
+  -------------------------------------------------------------------------
+  | site-1 | hello-monai | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |
+  | site-2 | hello-monai | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |
+  -------------------------------------------------------------------------
+  Done [302546 usecs] 2022-05-24 13:09:27.815476

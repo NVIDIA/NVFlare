@@ -16,6 +16,7 @@ What makes FLARE unique compared to other closed- or open-source frameworks for 
 
 * FLARE's Runtime Flexibility and Unique design
   FLARE is designed in several layers:
+  
   * The Flare-Core layer has no dependency on machine learning or deep learning frameworks.
   * The FLARE-FL layer is a collection of federated computing algorithms and applications on top of FLARE-Core.
   * All layers are specification-based, pluggable components that can be easily customized.

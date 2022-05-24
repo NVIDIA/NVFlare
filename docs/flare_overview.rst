@@ -26,6 +26,7 @@ FLARE is about Federated Learning
 ---------------------------------
 FLARE provides reference Federated Learning algorithms that reflect
 the state of the art (SOTA) for deep learning and machine learning.
+
   * Basic Federated Learning Algorithms (FedAvg, FedProx, FedOpt)
   * Federated Analysis
   * Deep Learning (CIFAR10, ...)
@@ -34,20 +35,19 @@ the state of the art (SOTA) for deep learning and machine learning.
   * Medical Applications (MONAI, ...)
   * Federated XGBoost (coming soon)
 
-With FLARE's pluggable component architecture, you can extend these reference implementations
-with customized algorithms to fit your needs.
+With FLARE's pluggable component architecture, you can extend these reference implementations with customized algorithms to fit your needs.
 
 FLARE is a SDK, not a platform
 ------------------------------
 We want to enable more people to adopt Federated Learning, whether the user is
+
   * a machine learning researcher -- interested in experimenting the latest FL algorithms, or
   * a data scientist -- interested in applying FL to a real world use case, or
   * a system integrator -- interested in building a platform to enable Federated Learning for others.
 
 For a researcher, FLARE provides an easy to use enviornment that allows rapid experimentation with different FL algorithms.
 
-For a data scientist, FLARE makes it easy to use common FL algorithms to build federated applications for real-
-world deployments.
+For a data scientist, FLARE makes it easy to use common FL algorithms to build federated applications for real-world deployments.
 
 For system integrator, FLARE's modular architecture makes it easy to extend or replace components and customize to your needs.  Whether it's communication, authentication, storage, workflow, or DL/ML frameworks, FLARE should be easily embedded into your system.
 
