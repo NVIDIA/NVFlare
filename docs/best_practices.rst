@@ -1,6 +1,6 @@
 .. _best_practices:
 
-App Programming Best Practices
+Programming Best Practices
 ==============================
 With familiarity in all the concepts in the :ref:`Programming Guide <programming_guide>`, here is a list of important
 considerations to make when designing and building your own NVIDIA FLARE applications.
