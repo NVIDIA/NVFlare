@@ -27,7 +27,7 @@ def _get_default_meta(job_folder_name: str) -> str:
     meta = f"""{{
                  "{JobMetaKey.JOB_FOLDER_NAME.value}": "{job_folder_name}",
                  "{JobMetaKey.RESOURCE_SPEC.value}": {{ }},
-                 "{JobMetaKey.DEPLOY_MAP}": {{ "{job_folder_name}": [] }},
+                 "{JobMetaKey.DEPLOY_MAP}": {{ "{job_folder_name}": ["@ALL"] }},
                  "{JobMetaKey.MIN_CLIENTS}": 1
                }}
             """
