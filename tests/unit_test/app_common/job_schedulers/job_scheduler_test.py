@@ -193,6 +193,13 @@ job4 = create_job(
     min_sites=3,
 )
 
+job5 = create_job(
+    job_id="job5",
+    resource_spec={},
+    deploy_map={"app9": [ALL_SITES], "app10": []},
+    min_sites=3,
+)
+
 
 TEST_CASES = [
     (
@@ -257,6 +264,22 @@ TEST_CASES = [
             "site1": DispatchInfo(app_name="app7", resource_requirements=create_resource(2, 4), token=None),
             "site2": DispatchInfo(app_name="app7", resource_requirements=create_resource(5, 4), token=None),
             "site4": DispatchInfo(app_name="app8", resource_requirements={}, token=None),
+        },
+    ),
+    (
+        [job5],
+        [Site(name=f"site{i}", resources=create_resource(16, 8)) for i in range(8)],
+        job5,
+        {
+            "server": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site0": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site1": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site2": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site3": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site4": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site5": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site6": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site7": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
         },
     ),
 ]

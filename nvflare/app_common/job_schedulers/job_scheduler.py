@@ -26,14 +26,6 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 SERVER_SITE_NAME = "server"
 
 
-def _check_special_deploy_map(deploy_map):
-    # deploy_map: {"app_name": ["ALL_SITES"]} will be treated as deploying to all online clients
-    all_keys = list(deploy_map.keys())
-    if len(all_keys) == 1 and len(deploy_map[all_keys[0]]) == 1 and deploy_map[all_keys[0]][0].upper() == ALL_SITES:
-        return True
-    return False
-
-
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def __init__(
         self,
@@ -90,21 +82,20 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not job.deploy_map:
             raise RuntimeError(f"Job ({job.job_id}) does not have deploy_map, can't be scheduled.")
 
-        if _check_special_deploy_map(deploy_map=job.deploy_map):
-            applicable_sites = online_site_names
-            all_keys = list(job.deploy_map.keys())
-            sites_to_app = {x: all_keys[0] for x in applicable_sites}
-            sites_to_app[SERVER_SITE_NAME] = all_keys[0]
-        else:
-            applicable_sites = []
-            sites_to_app = {}
-            for app_name in job.deploy_map:
-                for site_name in job.deploy_map[app_name]:
-                    if site_name in online_site_names:
-                        applicable_sites.append(site_name)
-                        sites_to_app[site_name] = app_name
-                    elif site_name == SERVER_SITE_NAME:
-                        sites_to_app[SERVER_SITE_NAME] = app_name
+        applicable_sites = []
+        sites_to_app = {}
+        for app_name in job.deploy_map:
+            for site_name in job.deploy_map[app_name]:
+                if site_name.upper() == ALL_SITES:
+                    # deploy_map: {"app_name": ["ALL_SITES"]} will be treated as deploying to all online clients
+                    applicable_sites = online_site_names
+                    sites_to_app = {x: app_name for x in online_site_names}
+                    sites_to_app[SERVER_SITE_NAME] = app_name
+                elif site_name in online_site_names:
+                    applicable_sites.append(site_name)
+                    sites_to_app[site_name] = app_name
+                elif site_name == SERVER_SITE_NAME:
+                    sites_to_app[SERVER_SITE_NAME] = app_name
         self.log_debug(fl_ctx, f"Job {job.job_id} is checking against applicable sites: {applicable_sites}")
 
         required_sites = job.required_sites if job.required_sites else []
