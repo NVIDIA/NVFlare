@@ -55,7 +55,7 @@ class ClientRunner(FLComponent):
     def __init__(
         self,
         config: ClientRunnerConfig,
-        run_num: int,
+        run_num,
         engine: ClientEngineSpec,
         task_fetch_interval: int = 5,  # fetch task every 5 secs
     ):

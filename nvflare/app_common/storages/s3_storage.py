@@ -15,7 +15,6 @@
 import ast
 import io
 import os
-from pathlib import Path
 from typing import List, Tuple
 
 from minio import Minio
@@ -89,12 +88,6 @@ class S3Storage(StorageSpec):
         """
         if self._object_exists(uri) and not overwrite_existing:
             raise RuntimeError("object {} already exists and overwrite_existing is False".format(uri))
-
-        path_parts = Path(uri).parts
-        for i in range(2, len(path_parts)):
-            parent_path = str(Path(*path_parts[0:i]))
-            if self._object_exists(parent_path):
-                raise RuntimeError("cannot create object {} inside preexisting object {}".format(uri, parent_path))
 
         if not self._object_exists(uri):
             try:

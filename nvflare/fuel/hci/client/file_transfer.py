@@ -168,6 +168,7 @@ class FileTransferModule(CommandModule):
                     description="download one or more text files in the download_dir",
                     usage="download_text file_name ...",
                     handler_func=self.download_text_file,
+                    visible=False,
                 ),
                 CommandSpec(
                     name="upload_binary",
@@ -181,6 +182,7 @@ class FileTransferModule(CommandModule):
                     description="download one or more binary files in the download_dir",
                     usage="download_binary file_name ...",
                     handler_func=self.download_binary_file,
+                    visible=False,
                 ),
                 CommandSpec(
                     name="download_folder",

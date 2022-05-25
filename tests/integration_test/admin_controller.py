@@ -25,6 +25,7 @@ from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 from nvflare.ha.overseer_agent import HttpOverseerAgent
+from tests.integration_test.test_fladminapi import run_admin_api_tests
 
 
 def process_logs(logs, run_state):
@@ -158,7 +159,9 @@ def _check_event_trigger(event_trigger: dict, run_state: dict):
 
 
 class AdminController:
-    def __init__(self, jobs_root_dir, ha, poll_period=10):
+    ADMIN_USER_NAME = "admin"
+
+    def __init__(self, jobs_root_dir, ha, poll_period=1):
         """
         This class runs an app on a given server and clients.
         """
@@ -180,7 +183,7 @@ class AdminController:
             overseer_agent=overseer_agent,
             poc=True,
             debug=False,
-            user_name="admin",
+            user_name=AdminController.ADMIN_USER_NAME,
         )
 
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -391,7 +394,10 @@ class AdminController:
                                     if row[3] != "stopped":
                                         continue
                                 # check if job is completed
-                                if job_run_statuses[self.job_id] == RunStatus.FINISHED_COMPLETED.value:
+                                if job_run_statuses[self.job_id] in (
+                                    RunStatus.FINISHED_COMPLETED.value,
+                                    RunStatus.FINISHED_ABORTED.value,
+                                ):
                                     training_done = True
             time.sleep(self.poll_period)
 
@@ -415,6 +421,7 @@ class AdminController:
                         server_id = int(args[1])
                     else:
                         server_id = site_launcher.get_active_server_id(self.admin_api.port)
+                    self.admin_api.logout()
                     site_launcher.stop_server(server_id)
                 elif args[0] == "overseer":
                     site_launcher.stop_overseer()
@@ -439,6 +446,7 @@ class AdminController:
                         server_ids = list(site_launcher.server_properties.keys())
                     for sid in server_ids:
                         site_launcher.start_server(sid)
+                    self.admin_api.login(username=AdminController.ADMIN_USER_NAME)
                 elif args[0] == "overseer":
                     site_launcher.start_overseer()
                 elif args[0] == "client":  # TODO fix client kill & restart during run
@@ -450,6 +458,9 @@ class AdminController:
                         client_ids = list(site_launcher.client_properties.keys())
                     for cid in client_ids:
                         site_launcher.start_client(cid)
+            elif command == "test":
+                if args[0] == "admin_commands":
+                    run_admin_api_tests(self.admin_api)
             else:
                 raise RuntimeError(f"Command {command} is not supported.")
 

@@ -56,7 +56,7 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
         for k in resources:
             if not isinstance(resources[k], list):
                 raise TypeError(f"item in resources should be of type list, but got {type(resources[k])}.")
-            self.resources[k] = deque(list(dict.fromkeys(resources[k])))
+            self.resources[k] = deque(resources[k])
 
         self.expiration_period = expiration_period
         self.reserved_resources = {}
@@ -124,6 +124,9 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                         reserved_resource_units.append(self.resources[k].popleft())
                     reserved_resources[k] = reserved_resource_units
                 self.reserved_resources[token] = (reserved_resources, self.expiration_period)
+                self.log_debug(
+                    fl_ctx, f"reserving resources: {reserved_resources} for requirements {resource_requirement}."
+                )
         return check_result, token
 
     def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
@@ -132,7 +135,8 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                 reserved_resources, _ = self.reserved_resources.pop(token)
                 for k in reserved_resources:
                     for i in reserved_resources[k]:
-                        self.resources[k].append(i)
+                        self.resources[k].appendleft(i)
+                self.log_debug(fl_ctx, f"cancelling resources: {reserved_resources}.")
             else:
                 self.log_debug(fl_ctx, f"Token {token} is not related to any reserved resources.")
         return None
@@ -142,11 +146,13 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
         with self.lock:
             if token and token in self.reserved_resources:
                 result, _ = self.reserved_resources.pop(token)
+                self.log_debug(fl_ctx, f"allocating resources: {result} for requirements: {resource_requirement}.")
             else:
                 raise RuntimeError(f"allocate_resources: No reserved resources for token {token}.")
         return result
 
     def free_resources(self, resources: dict, token: str, fl_ctx: FLContext):
+        self.log_debug(fl_ctx, f"freeing resources: {resources}.")
         with self.lock:
             for k in resources:
                 for i in resources[k]:

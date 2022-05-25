@@ -1,4 +1,6 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#!/usr/bin/env bash
+#
+# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,16 +13,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
+set -ex
 
-class ConnProps(object):
-    """Constants for connection properties."""
+## Unit Tests
+pip install -r requirements-dev.txt
+export PYTHONPATH=$PWD
+./runtest.sh
 
-    EVENT_ID = "_eventId"
-    USER_NAME = "_userName"
-    TOKEN = "_sessionToken"
-    SESSION = "_session"
-    CMD_ENTRY = "_cmdEntry"
-    AUTHZ_CTX = "_authztx"
-    JOB_DATA = "_jobData"
-    JOB_META = "_jobMeta"
+## Wheel Build
+# TODO: move the steps to a script
+pip install -r requirements-dev.txt
+pip install build twine torch torchvision
+python3 -m build --wheel

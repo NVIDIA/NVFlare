@@ -69,7 +69,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
     def authorize_info_collection(self, conn: Connection, args: List[str]):
         if len(args) != 3:
-            conn.append_error("syntax error: missing run_number and target")
+            conn.append_error("syntax error: missing job_id and target")
             return False, None
 
         run_destination = args[1].lower()
@@ -96,7 +96,11 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
         run_info = engine.get_app_run_info(run_number)
         if not run_info:
-            conn.append_string("App is not running")
+            conn.append_string(
+                "Cannot find job: {}. Please make sure the first arg following the command is a valid job_id.".format(
+                    run_number
+                )
+            )
             return False, None
 
         # return True, FLAuthzContext.new_authz_context(

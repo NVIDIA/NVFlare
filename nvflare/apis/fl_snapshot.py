@@ -20,10 +20,11 @@ class RunSnapshot:
             { component_id: component_state_dict }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, run_number: str):
         super().__init__()
         self.component_states = {}
         self.completed = False
+        self.run_number = run_number
 
     def get_component_snapshot(self, component_id: str) -> dict:
         """Get a state snapshot of a particular FL component.
@@ -56,7 +57,7 @@ class FLSnapshot:
             { run_number: RunSnapshot }
     """
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.run_snapshots = {}
 

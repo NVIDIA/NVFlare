@@ -15,44 +15,81 @@
 import os
 import pickle
 
-from nvflare.apis.fl_snapshot import FLSnapshot
+from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
 from nvflare.apis.state_persistor import StatePersistor
 from nvflare.apis.storage import StorageSpec
 
 
 class StorageStatePersistor(StatePersistor):
-    def __init__(self, storage: StorageSpec, location: str):
-        self.storage = storage
-        self.location = location
+    def __init__(self, storage: StorageSpec, uri_root: str):
+        """Creates a StorageStatePersistor.
 
-        if not os.path.isabs(location):
-            raise ValueError("snapshot location must be absolute path.")
-
-    def save(self, snapshot: FLSnapshot) -> str:
-        """Call to save the snapshot of the FL state to storage.
         Args:
-            snapshot: FLSnapshot object
-        Returns: storage location
+            storage: StorageSpec object
+            uri_root: where to store the states.
         """
-        self.storage.create_object(uri=self.location, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True)
 
-        return self.location
+        self.storage = storage
+        self.uri_root = uri_root
+
+    def save(self, snapshot: RunSnapshot) -> str:
+        """Call to save the snapshot of the FL state to storage.
+
+        Args:
+            snapshot: RunSnapshot object
+
+        Returns:
+            storage location
+        """
+        path = os.path.join(self.uri_root, snapshot.run_number)
+        if snapshot.completed:
+            full_uri = self.storage.delete_object(path)
+        else:
+            full_uri = self.storage.create_object(
+                uri=path, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True
+            )
+
+        return full_uri
 
     def retrieve(self) -> FLSnapshot:
         """Call to load the persisted FL components snapshot from the persisted location.
-        Args:
-        Returns: retrieved Snapshot
-        """
-        retrieved_snapshot = None
-        try:
-            retrieved_snapshot = pickle.loads(self.storage.get_data(self.location))
-        finally:
-            return retrieved_snapshot
 
-    def delete(self, location: str):
-        """To delete the FL component snapshot.
-        Args:
-            location: persist location
         Returns:
+            retrieved Snapshot
         """
-        self.storage.delete_object(location)
+        all_items = self.storage.list_objects(self.uri_root)
+        fl_snapshot = FLSnapshot()
+        for item in all_items:
+            snapshot = pickle.loads(self.storage.get_data(item))
+            fl_snapshot.add_snapshot(snapshot.run_number, snapshot)
+        return fl_snapshot
+
+    def retrieve_run(self, run_number: str) -> RunSnapshot:
+        """Call to load the persisted RunSnapshot of a run_number from the persisted location.
+
+        Args:
+            run_number: run_number
+
+        Returns:
+            RunSnapshot of the run_number
+
+        """
+        path = os.path.join(self.uri_root, run_number)
+        snapshot = pickle.loads(self.storage.get_data(uri=path))
+        return snapshot
+
+    def delete(self):
+        """Deletes the FL snapshot."""
+
+        all_items = self.storage.list_objects(self.uri_root)
+        for item in all_items:
+            self.storage.delete_object(item)
+
+    def delete_run(self, run_number: str):
+        """Deletes the RunSnapshot of a run_number.
+
+        Args:
+            run_number: run_number
+        """
+        path = os.path.join(self.uri_root, run_number)
+        self.storage.delete_object(path)
