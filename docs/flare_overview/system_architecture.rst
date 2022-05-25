@@ -6,7 +6,7 @@ High Level Design and Architecture
 At a high level, the FLARE architecture consists of two layers, Flare-core and Flare-FL.  Flare-core contains the base FLARE runtime, and Flare-FL builds on the base runtime with algorithms and workflows that can be used to build FLARE applications.
 
 .. image:: ./resources/high_level_arch.png
-    :height: 300px
+    :height: 600px
 
 FLARE-core can be further divided into fed-core and fed-custom.
 

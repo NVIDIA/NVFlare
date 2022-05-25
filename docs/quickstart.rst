@@ -230,13 +230,15 @@ Once you are ready to start the FL system, you can run the following commands to
 (overseer, server, and clients).  Following that, we will use the admin client to deploy and run an example app.
 
 .. note::
-  Each of the participants will run in a separate terminal (or screen/tmux session).  Each of these sessions reqiures the NVFlare Python environment, either built into a container as described above, or by running
+  Each of the participants will run in a separate terminal or in a terminal multiplexer like screen or tmux.  Each of these sessions reqiures the NVFlare Python environment, either built into a container as described above, or by running
 
   .. code-block:: shell
 
     source nvflare-env/bin/activate
   
   as described in the :ref:`installation <installation>` section.
+
+  If running containerized, you can use a terminal multiplexer like screen or tmux if availble.  Another option is creating multiple interactive shells by running ``docker exec`` into the running container.
 
 FL systems usually have an overseer, server, and multiple clients. We first start the overseer:
 
