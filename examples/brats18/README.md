@@ -19,7 +19,7 @@ The model is trained to segment 3 nested subregions of primary brain tumors (gli
 - The TC describes the bulk of the tumor, which is what is typically resected. The TC entails the ET, as well as the necrotic (fluid-filled) and the non-enhancing (solid) parts of the tumor. 
 - The WT describes the complete extent of the disease, as it entails the TC and the peritumoral edema (ED), which is typically depicted by hyper-intense signal in FLAIR.
 
-To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/sbia/brats2018/data.html) [2-6]. Please download the data to (./dataset_brats18/dataset)[./dataset_brats18/dataset]. It should result in a subfolder `./dataset_brats18/dataset/training`.
+To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/sbia/brats2018/data.html) [2-6]. Please download the data to (./dataset_brats18/dataset)[./dataset_brats18/dataset]. It should result in a sub-folder `./dataset_brats18/dataset/training`.
 The experiments will use the data split in (./dataset_brats18/datalist)[./dataset_brats18/datalist] to simulate each client having different data distributions.
 
 ### Differential Privacy (DP)
@@ -59,7 +59,7 @@ pip install -r ./virtualenv/plot-requirements.txt
 
 ### 2.1 POC ("proof of concept") workspace
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
-The [create_poc_workpace.sh](./create_poc_workpace.sh) script follows this pattern:
+The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
 ```
 ./create_poc_workpace.sh [n_clients]
 ```
@@ -83,7 +83,7 @@ In this example, we assume two local GPUs with at least 12GB of memory are avail
 
 As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
 
-To enable multi-tasking, here we adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (defualt value 1). Please adjust this properly accodrding to resource available and task demand. 
+To enable multitasking, here we adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value 1). Please adjust this properly according to resource available and task demand. 
 
 (Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
 
@@ -92,7 +92,7 @@ For details, please refer to the [documentation](https://nvflare.readthedocs.io/
 ## 3. Run automated experiments
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
 ### 3.1 Prepare local configs
-First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/dataset_brats18`, it can be any arbitary path where the data locates.  
+First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/dataset_brats18`, it can be any arbitrary path where the data locates.  
 ```
 for alg in brats_central brats_fedavg_2 brats_fedavg_dp_2 brats_fedavg_13 brats_fedavg_dp_13
 do
@@ -113,7 +113,7 @@ bash start_fl_poc.sh "1 2"
 ```
 This script will start the FL server and clients automatically to run FL experiments on localhost. 
 Each client will be alternately assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [start_fl_poc.sh](./start_fl_poc.sh). 
-In this example, we run each clients on a single GPU: two clients on 2 GPUs with 12 GB memory.
+In this example, we run each client on a single GPU: two clients on 2 GPUs with 12 GB memory.
 
 Then FL training will be run with an automatic script utilizing the FLAdminAPI functionality.    
 The [submit_job.sh](./submit_job.sh) script follows the pattern:

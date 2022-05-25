@@ -11,5 +11,6 @@ fi
 # There should be $n_clients site-N folders.
 python3 -m nvflare.lighter.poc -n "${n_clients}"
 
+mv poc ${workspace}
 # copy additional one for centralized training
 cp -r ${workspace}/site-1 ${workspace}/site-All
