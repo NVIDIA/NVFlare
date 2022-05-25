@@ -47,29 +47,6 @@ class CommandAgent(object):
         )
         self.thread.start()
 
-    def listen_command(self, fl_ctx):
-        try:
-            address = ("localhost", self.listen_port)
-            listener = Listener(address, authkey="client process secret password".encode())
-            conn = listener.accept()
-            self.logger.info(f"Created the listener on port: {self.listen_port}")
-        except Exception as e:
-            self.logger.exception(
-                f"Could not create the listener for this process on port: {self.listen_port}: {e}.", exc_info=True
-            )
-            return
-
-        engine = fl_ctx.get_engine()
-        self.execute_command(conn, engine)
-
-        try:
-            conn.close()
-            listener.close()
-        except Exception as e:
-            self.logger.exception(
-                f"Exception in the listener process closing on port: {self.listen_port}: {e}.", exc_info=True
-            )
-
     def execute_command(self, conn, engine):
         while not self.asked_to_stop:
             try:
