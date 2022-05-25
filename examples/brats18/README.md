@@ -123,7 +123,7 @@ bash ./submit_job.sh [config]
 `[config]` is the experiment job that will be submitted for the FL training, in this example, this includes `brats_central`, `brats_fedavg_2`, `brats_fedavg_dp_2`, `brats_fedavg_13`, and `brats_fedavg_dp_13`.  
 
 Note that in order to make it working under most system resource conditions, the current config set `"cache_dataset": 0.0`, which could be slow. If resource permits, it will make the training much faster by caching the dataset. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
-For reference, with `"cache_dataset": 0.5` setting (cache half the data), the centralized training (600 round, 1 epoch per round) takes around XXX hours on a 12GB NVIDIA TITAN Xp GPU. 
+For reference, with `"cache_dataset": 0.5` setting (cache half the data), the centralized training for 100 round, 1 epoch per round takes around 24.5 hours on a 12GB NVIDIA TITAN Xp GPU. 
 
 ### 3.3 Centralized training
 To simulate a centralized training baseline, we run FL with 1 client using all the training data. 

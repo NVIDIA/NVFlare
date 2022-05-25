@@ -1,14 +1,15 @@
-workspace_path="../prostate_3D/workspace_prostate"
-dataset_path="../data_preparation/dataset"
-datalist_path="../data_preparation/datalist"
+workspace_path="../workspace_brats"
+dataset_path="../dataset_brats18/dataset"
+datalist_path="../dataset_brats18/datalist"
+
+job_id_cen="b6c7e274-67f9-402e-8fcd-f54f3cea40a9"
+job_id_avg="9b05aa10-c79f-444c-b6b0-2ad7a3538e79"
+job_id_avg_dp="c98bdbaf-fdf6-4786-b905-b6a1ba7e398c"
+
 echo "Centralized"
-python3 prostate_3d_test_only.py --model_path "${workspace_path}/server/${job_id_cen}/app_server/best_FL_global_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/client_All.json"
+python3 brats_3d_test_only.py --model_path "${workspace_path}/server/${job_id_cen}/app_server/best_FL_global_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/site-All.json"
 echo "FedAvg"
-python3 prostate_3d_test_only.py --model_path "${workspace_path}/server/${job_id_avg}/app_server/best_FL_global_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/client_All.json"
-echo "FedProx"
-python3 prostate_3d_test_only.py --model_path "${workspace_path}/server/${job_id_prox}/app_server/best_FL_global_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/client_All.json"
-echo "Ditto"
-site_IDs="I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
-for site in ${site_IDs}; do
-  python3 prostate_3d_test_only.py --model_path "${workspace_path}/client_${site}/${job_id_dit}/app_client_${site}/best_personalized_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/client_${site}.json"
-done
+python3 brats_3d_test_only.py --model_path "${workspace_path}/server/${job_id_avg}/app_server/best_FL_global_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/site-All.json"
+echo "FedAvgDP"
+python3 brats_3d_test_only.py --model_path "${workspace_path}/server/${job_id_avg_dp}/app_server/best_FL_global_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/site-All.json"
+

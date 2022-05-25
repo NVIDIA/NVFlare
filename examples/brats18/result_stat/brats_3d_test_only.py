@@ -14,19 +14,19 @@
 
 import argparse
 
+import numpy as np
 import torch
 from monai.data import DataLoader, Dataset, load_decathlon_datalist
 from monai.inferers import SlidingWindowInferer
 from monai.metrics import DiceMetric
-from monai.networks.nets import UNet
+from monai.networks.nets.segresnet import SegResNet
 from monai.transforms import (
     Activations,
     AsDiscrete,
     Compose,
+    ConvertToMultiChannelBasedOnBratsClassesd,
     DivisiblePadd,
     EnsureChannelFirstd,
-    EnsureType,
-    EnsureTyped,
     LoadImaged,
     NormalizeIntensityd,
     Orientationd,
@@ -37,17 +37,15 @@ from monai.transforms import (
 def main():
     parser = argparse.ArgumentParser(description="Model Testing")
     parser.add_argument("--model_path", type=str)
-    parser.add_argument("--cache_rate", default=1.0, type=float)
-    parser.add_argument("--dataset_base_dir", default="../data_preparation/dataset", type=str)
-    parser.add_argument("--datalist_json_path", default="../data_preparation/datalist/client_All.json", type=str)
+    parser.add_argument("--dataset_base_dir", default="../dataset_brats18/dataset", type=str)
+    parser.add_argument("--datalist_json_path", default="../dataset_brats18/datalist/site-All.json", type=str)
     args = parser.parse_args()
 
     # Set basic settings and paths
     dataset_base_dir = args.dataset_base_dir
     datalist_json_path = args.datalist_json_path
     model_path = args.model_path
-    cache_rate = args.cache_rate
-    infer_roi_size = (224, 224, 32)
+    infer_roi_size = (240, 240, 160)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -61,38 +59,38 @@ def main():
     print(f"Testing Size: {len(test_list)}")
 
     # Network, optimizer, and loss
-    model = UNet(
-        dimensions=3,
-        in_channels=1,
-        out_channels=1,
-        channels=(16, 32, 64, 128, 256),
-        strides=(2, 2, 2, 2),
-        num_res_units=2,
+    model = SegResNet(
+        blocks_down=[1, 2, 2, 4],
+        blocks_up=[1, 1, 1],
+        init_filters=16,
+        in_channels=4,
+        out_channels=3,
+        dropout_prob=0.2,
     ).to(device)
     model_weights = torch.load(model_path)
     model_weights = model_weights["model"]
     model.load_state_dict(model_weights)
 
     # Inferer, evaluation metric
-    inferer = SlidingWindowInferer(roi_size=infer_roi_size, sw_batch_size=4, overlap=0.25)
-    valid_metric = DiceMetric(include_background=False, reduction="mean", get_not_nans=False)
+    inferer = SlidingWindowInferer(roi_size=infer_roi_size, sw_batch_size=1, overlap=0.5)
+    valid_metric = DiceMetric(include_background=True, reduction="mean")
 
     transform = Compose(
         [
             LoadImaged(keys=["image", "label"]),
-            EnsureChannelFirstd(keys=["image", "label"]),
+            EnsureChannelFirstd(keys="image"),
+            ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
             Spacingd(
                 keys=["image", "label"],
-                pixdim=(0.3, 0.3, 1.0),
+                pixdim=(1.0, 1.0, 1.0),
                 mode=("bilinear", "nearest"),
             ),
             DivisiblePadd(keys=["image", "label"], k=32),
             Orientationd(keys=["image", "label"], axcodes="RAS"),
             NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            EnsureTyped(keys=["image", "label"]),
         ]
     )
-    transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+    transform_post = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
     # Set dataset
     test_dataset = Dataset(data=test_list, transform=transform)
@@ -107,6 +105,13 @@ def main():
     model.eval()
     with torch.no_grad():
         metric = 0
+        metric_tc = 0
+        metric_wt = 0
+        metric_et = 0
+        ct = 0
+        ct_tc = 0
+        ct_wt = 0
+        ct_et = 0
         for i, batch_data in enumerate(test_loader):
             images = batch_data["image"].to(device)
             labels = batch_data["label"].to(device)
@@ -115,10 +120,30 @@ def main():
             outputs = transform_post(outputs)
             # Compute metric
             metric_score = valid_metric(y_pred=outputs, y=labels)
-            metric += metric_score.item()
+            if not np.isnan(metric_score[0][0].item()):
+                metric += metric_score[0][0].item()
+                ct += 1
+                metric_tc += metric_score[0][0].item()
+                ct_tc += 1
+            if not np.isnan(metric_score[0][1].item()):
+                metric += metric_score[0][1].item()
+                ct += 1
+                metric_wt += metric_score[0][1].item()
+                ct_wt += 1
+            if not np.isnan(metric_score[0][2].item()):
+                metric += metric_score[0][2].item()
+                ct += 1
+                metric_et += metric_score[0][2].item()
+                ct_et += 1
         # compute mean dice over whole validation set
-        metric /= len(test_loader)
-        print(f"Test Dice: {metric:.4f}")
+        metric_tc /= ct_tc
+        metric_wt /= ct_wt
+        metric_et /= ct_et
+        metric /= ct
+        print(f"Test Dice: {metric:.4f}, Valid count: {ct}")
+        print(f"Test Dice TC: {metric_tc:.4f}, Valid count: {ct_tc}")
+        print(f"Test Dice WT: {metric_wt:.4f}, Valid count: {ct_wt}")
+        print(f"Test Dice ET: {metric_et:.4f}, Valid count: {ct_et}")
 
 
 if __name__ == "__main__":

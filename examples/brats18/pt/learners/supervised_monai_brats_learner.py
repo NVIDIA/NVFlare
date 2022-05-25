@@ -18,7 +18,7 @@ import os
 import numpy as np
 import torch
 import torch.optim as optim
-from monai.data import CacheDataset, DataLoader, Dataset, load_decathlon_datalist, decollate_batch
+from monai.data import CacheDataset, DataLoader, Dataset, decollate_batch, load_decathlon_datalist
 from monai.inferers import SlidingWindowInferer
 from monai.losses import DiceLoss
 from monai.metrics import DiceMetric
@@ -42,12 +42,13 @@ from monai.transforms import (
 from pt.learners.supervised_learner import SupervisedLearner
 from pt.utils.custom_client_datalist_json_path import custom_client_datalist_json_path
 
-from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
+
 
 class SupervisedMonaiBratsLearner(SupervisedLearner):
     def __init__(

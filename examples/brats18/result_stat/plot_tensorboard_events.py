@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import glob
+import math
 import os
 
 import matplotlib.pyplot as plt
@@ -23,15 +24,15 @@ import tensorflow as tf
 client_results_root = "../workspace_brats"
 server_results_root = "../workspace_brats/server"
 
-# 13 sites
-site_num = 13
+# 13 sites used the same validation set, so only 1 site's record is needed
+site_num = 1
 site_pre = "site-"
 
 # Central vs. FedAvg vs. FedAvg_DP
 experiments = {
     "brats_central": {"tag": "val_metric_global_model", "site": "All"},
-    "brats_fedavg_13": {"tag": "val_metric_global_model"},
-    "brats_fed_dp_13": {"tag": "val_metric_global_model"},
+    "brats_fedavg": {"tag": "val_metric_global_model"},
+    "brats_fedavg_dp": {"tag": "val_metric_global_model"},
 }
 
 weight = 0.8
@@ -114,7 +115,7 @@ def main():
             print("adding", eventfile)
             add_eventdata(data, config, eventfile, tag=exp["tag"])
 
-        ax = plt.subplot(3, int(site_num / 3), i)
+        ax = plt.subplot(1, site_num, i)
         ax.set_title(site)
         sns.lineplot(x="Epoch", y="Dice", hue="Config", data=data)
         i = i + 1
