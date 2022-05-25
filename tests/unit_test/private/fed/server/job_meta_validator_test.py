@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import io
+import json
 import os
 import zipfile
 from typing import Dict, List, Optional, Tuple
 from zipfile import ZipFile
+
+import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -24,7 +27,7 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci import zip_utils
-from nvflare.private.fed.server.job_validator import META, JobValidator
+from nvflare.private.fed.server.job_meta_validator import META, JobMetaValidator
 from nvflare.widgets.widget import Widget
 
 
@@ -90,13 +93,19 @@ class TestJobValidator:
     def setup_class(cls):
         cls.engine = MockServerEngine()
         cls.fl_ctx = cls.engine.new_context()
-        cls.validator = JobValidator(cls.fl_ctx)
+        cls.validator = JobMetaValidator(cls.fl_ctx)
 
     def test_valid_app(self):
         self._assert_valid("valid_app_wo_meta")
 
     def test_valid_job(self):
         self._assert_valid("valid_job")
+
+    def test_valid_job_no_deployment(self):
+        self._assert_valid("valid_job_no_deployment")
+
+    def test_no_deployment(self):
+        self._assert_invalid("no_deployment")
 
     def test_not_enough_clients(self):
         self._assert_invalid("not_enough_clients")
@@ -174,6 +183,44 @@ class TestJobValidator:
         """
         self._assert_valid(job_name, meta)
 
+    # deploy_map test - valid cases
+    def test_deployment_all(self):
+        self._assert_valid_deployment("valid/all.json")
+
+    def test_deployment_all_idle(self):
+        self._assert_valid_deployment("valid/all_idle.json")
+
+    def test_deployment_idle_app(self):
+        self._assert_valid_deployment("valid/idle_app.json")
+
+    def test_deployment_one_app(self):
+        self._assert_valid_deployment("valid/one_app.json")
+
+    def test_deployment_two_apps(self):
+        self._assert_valid_deployment("valid/two_apps.json")
+
+    # deploy_map test - invalid cases
+    def test_deployment_all_other(self):
+        self._assert_invalid_deployment("invalid/all_other.json")
+
+    def test_deployment_dup_all(self):
+        self._assert_invalid_deployment("invalid/dup_all.json")
+
+    def test_deployment_dup_client(self):
+        self._assert_invalid_deployment("invalid/dup_client.json")
+
+    def test_deployment_dup_server(self):
+        self._assert_invalid_deployment("invalid/dup_server.json")
+
+    def test_deployment_empty_dict(self):
+        self._assert_invalid_deployment("invalid/empty_dict.json")
+
+    def test_deployment_no_deployment(self):
+        self._assert_invalid_deployment("invalid/no_deployment.json")
+
+    def test_deployment_no_deployment2(self):
+        self._assert_invalid_deployment("invalid/no_deployment_2.json")
+
     def _assert_valid(self, job_name: str, meta: str = ""):
         data = self._zip_job_with_meta(job_name, meta)
         valid, error, meta = self.validator.validate(job_name, data)
@@ -183,6 +230,18 @@ class TestJobValidator:
         data = self._zip_job_with_meta(job_name, meta)
         valid, error, meta = self.validator.validate(job_name, data)
         assert not valid, error
+
+    def _assert_valid_deployment(self, meta_file: str):
+        meta = self._load_meta(meta_file)
+        site_list = JobMetaValidator._validate_deploy_map("unit_test", meta)
+        assert site_list
+
+    def _assert_invalid_deployment(self, meta_file: str):
+        meta = self._load_meta(meta_file)
+        try:
+            JobMetaValidator._validate_deploy_map("unit_test", meta)
+        except Exception as e:
+            assert isinstance(e, ValueError), str(e)
 
     def _zip_job_with_meta(self, folder_name: str, meta: str) -> bytes:
         job_path = os.path.join(os.path.dirname(__file__), "../../../data/jobs")
@@ -196,6 +255,12 @@ class TestJobValidator:
         job_path = os.path.join(os.path.dirname(__file__), "../../../data/jobs")
         zip_data = zip_utils.zip_directory_to_bytes(job_path, job_name)
         return zip_utils.convert_legacy_zip(zip_data)
+
+    @staticmethod
+    def _load_meta(meta_file: str) -> dict:
+        meta_path = os.path.join(os.path.dirname(__file__), "../../../data/deployment", meta_file)
+        with open(meta_path) as f:
+            return json.load(f)
 
     @staticmethod
     def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):
