@@ -21,6 +21,7 @@ class GPUResourceConsumer(ResourceConsumerSpec):
     def __init__(self, gpu_resource_key="gpu"):
         super().__init__()
         self.gpu_resource_key = gpu_resource_key
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 
     def consume(self, resources: dict):
         gpu_numbers = []
