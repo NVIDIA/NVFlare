@@ -97,7 +97,7 @@ source code into the root workspace directory.
 
 .. code-block:: dockerfile
 
-   ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:22.02-py3
+   ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:22.04-py3
    FROM ${PYTORCH_IMAGE}
 
    RUN python3 -m pip install -U pip
