@@ -611,6 +611,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
 
                     fl_ctx.props.update(child_fl_ctx)
+                else:
+                    reply = make_reply(ReturnCode.ERROR)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
             reply = make_reply(ReturnCode.COMMUNICATION_ERROR)
