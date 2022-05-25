@@ -35,7 +35,7 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
 
     """
 
-    def __init__(self, resources: Dict[str, List], expiration_period: int = 600):
+    def __init__(self, resources: Dict[str, List], expiration_period: int = 30):
         """Constructor
 
         Args:
@@ -64,6 +64,15 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
         self.stop_event = Event()
         self.cleanup_thread = Thread(target=self._check_expired)
 
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.SYSTEM_START:
+            self.cleanup_thread.start()
+        elif event_type == EventType.SYSTEM_END:
+            self.stop_event.set()
+            if self.cleanup_thread:
+                self.cleanup_thread.join()
+                self.cleanup_thread = None
+
     def _check_expired(self):
         while not self.stop_event.is_set():
             time.sleep(1)
@@ -81,36 +90,28 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                     for k in reserved_resources:
                         for i in reserved_resources[k]:
                             self.resources[k].append(i)
+                self.logger.debug(f"current resources: {self.resources}, reserved_resources {self.reserved_resources}.")
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.SYSTEM_START:
-            self.cleanup_thread.start()
-        elif event_type == EventType.SYSTEM_END:
-            self.stop_event.set()
-            if self.cleanup_thread:
-                self.cleanup_thread.join()
-                self.cleanup_thread = None
-
-    def _check_all_required_resource_available(self, resource_requirement: dict, fl_ctx: FLContext) -> bool:
+    def _check_all_required_resource_available(self, resource_requirement: dict) -> bool:
         check_result = True
         with self.lock:
             for k in resource_requirement:
                 if k in self.resources:
                     if len(self.resources[k]) < resource_requirement[k]:
                         check_result = False
-                        self.log_debug(fl_ctx, f"Resource {k} is not enough.")
+                        self.logger.debug(f"Resource {k} is not enough.")
                         break
                 else:
                     check_result = False
-                    self.log_debug(fl_ctx, f"Missing {k} in resources.")
+                    self.logger.debug(f"Missing {k} in resources.")
                     break
         return check_result
 
-    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
+    def check_resources(self, resource_requirement: dict) -> (bool, Optional[str]):
         if not isinstance(resource_requirement, dict):
             raise TypeError(f"resource_requirement should be of type dict, but got {type(resource_requirement)}.")
 
-        check_result = self._check_all_required_resource_available(resource_requirement, fl_ctx)
+        check_result = self._check_all_required_resource_available(resource_requirement)
         token = None
 
         # reserve resource only when check is True
@@ -124,36 +125,38 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                         reserved_resource_units.append(self.resources[k].popleft())
                     reserved_resources[k] = reserved_resource_units
                 self.reserved_resources[token] = (reserved_resources, self.expiration_period)
-                self.log_debug(
-                    fl_ctx, f"reserving resources: {reserved_resources} for requirements {resource_requirement}."
-                )
+                self.logger.debug(f"reserving resources: {reserved_resources} for requirements {resource_requirement}.")
+                self.logger.debug(f"current resources: {self.resources}, reserved_resources {self.reserved_resources}.")
         return check_result, token
 
-    def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
+    def cancel_resources(self, resource_requirement: dict, token: str):
         with self.lock:
             if token and token in self.reserved_resources:
                 reserved_resources, _ = self.reserved_resources.pop(token)
                 for k in reserved_resources:
                     for i in reserved_resources[k]:
                         self.resources[k].appendleft(i)
-                self.log_debug(fl_ctx, f"cancelling resources: {reserved_resources}.")
+                self.logger.debug(f"cancelling resources: {reserved_resources}.")
+                self.logger.debug(f"current resources: {self.resources}, reserved_resources {self.reserved_resources}.")
             else:
-                self.log_debug(fl_ctx, f"Token {token} is not related to any reserved resources.")
+                self.logger.debug(f"Token {token} is not related to any reserved resources.")
         return None
 
-    def allocate_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext) -> dict:
+    def allocate_resources(self, resource_requirement: dict, token: str) -> dict:
         result = {}
         with self.lock:
             if token and token in self.reserved_resources:
                 result, _ = self.reserved_resources.pop(token)
-                self.log_debug(fl_ctx, f"allocating resources: {result} for requirements: {resource_requirement}.")
+                self.logger.debug(f"allocating resources: {result} for requirements: {resource_requirement}.")
+                self.logger.debug(f"current resources: {self.resources}, reserved_resources {self.reserved_resources}.")
             else:
                 raise RuntimeError(f"allocate_resources: No reserved resources for token {token}.")
         return result
 
-    def free_resources(self, resources: dict, token: str, fl_ctx: FLContext):
-        self.log_debug(fl_ctx, f"freeing resources: {resources}.")
+    def free_resources(self, resources: dict, token: str):
         with self.lock:
+            self.logger.debug(f"freeing resources: {resources}.")
+            self.logger.debug(f"current resources: {self.resources}, reserved_resources {self.reserved_resources}.")
             for k in resources:
                 for i in resources[k]:
                     self.resources[k].append(i)

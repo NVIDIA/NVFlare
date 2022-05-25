@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import time
+from abc import ABC, abstractmethod
 
 from nvflare.widgets.widget import Widget
 
@@ -39,26 +40,33 @@ class TaskAssignment(object):
         self.receive_time = time.time()
 
 
-class ClientEngineSpec(object):
+class ClientEngineSpec(ABC):
+    @abstractmethod
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         pass
 
+    @abstractmethod
     def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
         pass
 
+    @abstractmethod
     def new_context(self) -> FLContext:
         # the engine must use FLContextManager to create a new context!
         pass
 
+    @abstractmethod
     def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
         pass
 
+    @abstractmethod
     def get_workspace(self) -> Workspace:
         pass
 
+    @abstractmethod
     def get_component(self, component_id: str) -> object:
         pass
 
+    @abstractmethod
     def get_all_components(self) -> dict:
         pass
 

@@ -19,6 +19,7 @@ import os
 import sys
 import time
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
@@ -86,11 +87,11 @@ def main():
         log_file = os.path.join(args.workspace, "log.txt")
         add_logfile_handler(log_file)
 
-        trainer = conf.base_deployer
+        deployer = conf.base_deployer
 
-        security_check(secure_train=trainer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
+        security_check(secure_train=deployer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
 
-        federated_client = trainer.create_fed_client(args)
+        federated_client = deployer.create_fed_client(args)
 
         while not federated_client.sp_established:
             print("Waiting for SP....")
@@ -108,22 +109,21 @@ def main():
 
         federated_client.start_heartbeat()
 
-        servers = [{t["name"]: t["service"]} for t in trainer.server_config]
-
+        servers = [{t["name"]: t["service"]} for t in deployer.server_config]
         admin_agent = create_admin_agent(
-            trainer.client_config,
-            trainer.client_name,
-            trainer.req_processors,
-            trainer.secure_train,
+            deployer.client_config,
+            deployer.client_name,
+            deployer.req_processors,
+            deployer.secure_train,
             sorted(servers)[0],
             federated_client,
             args,
-            trainer.multi_gpu,
+            deployer.multi_gpu,
             rank,
         )
         admin_agent.start()
 
-        trainer.close()
+        deployer.close()
 
     except ConfigError as ex:
         print("ConfigError:", str(ex))
@@ -232,6 +232,8 @@ def create_admin_agent(
     federated_client.set_client_engine(client_engine)
     for processor in req_processors:
         admin_agent.register_processor(processor)
+
+    client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
     return admin_agent
 

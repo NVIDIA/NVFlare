@@ -39,17 +39,15 @@ class CheckResourceProcessor(RequestProcessor):
             raise RuntimeError(
                 f"resource_manager should be of type ResourceManagerSpec, but got {type(resource_manager)}."
             )
-        with engine.new_context() as fl_ctx:
-            result = Shareable()
-            try:
-                resource_spec = pickle.loads(req.body)
-                check_result, token = resource_manager.check_resources(
-                    resource_requirement=resource_spec, fl_ctx=fl_ctx
-                )
-                result.set_header(ShareableHeader.CHECK_RESOURCE_RESULT, check_result)
-                result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
-            except Exception:
-                result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+
+        result = Shareable()
+        try:
+            resource_spec = pickle.loads(req.body)
+            check_result, token = resource_manager.check_resources(resource_requirement=resource_spec)
+            result.set_header(ShareableHeader.CHECK_RESOURCE_RESULT, check_result)
+            result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
+        except Exception:
+            result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
         if not result:
             result = "OK"
@@ -77,13 +75,10 @@ class StartJobProcessor(RequestProcessor):
             )
 
         try:
-            with engine.new_context() as fl_ctx:
-                resource_spec = pickle.loads(req.body)
-                run_number = req.get_header(RequestHeader.RUN_NUM)
-                token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
-                allocated_resources = resource_manager.allocate_resources(
-                    resource_requirement=resource_spec, token=token, fl_ctx=fl_ctx
-                )
+            resource_spec = pickle.loads(req.body)
+            run_number = req.get_header(RequestHeader.RUN_NUM)
+            token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+            allocated_resources = resource_manager.allocate_resources(resource_requirement=resource_spec, token=token)
             result = engine.start_app(
                 run_number,
                 allocated_resource=allocated_resources,
@@ -113,15 +108,14 @@ class CancelResourceProcessor(RequestProcessor):
             raise RuntimeError(
                 f"resource_manager should be of type ResourceManagerSpec, but got {type(resource_manager)}."
             )
-        with engine.new_context() as fl_ctx:
-            result = Shareable()
-            try:
-                # resource_spec = req.get_header(ShareableHeader.RESOURCE_SPEC)
-                resource_spec = pickle.loads(req.body)
-                token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
-                resource_manager.cancel_resources(resource_requirement=resource_spec, token=token, fl_ctx=fl_ctx)
-            except Exception:
-                result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+
+        result = Shareable()
+        try:
+            resource_spec = pickle.loads(req.body)
+            token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+            resource_manager.cancel_resources(resource_requirement=resource_spec, token=token)
+        except Exception:
+            result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
         if not result:
             result = "OK"

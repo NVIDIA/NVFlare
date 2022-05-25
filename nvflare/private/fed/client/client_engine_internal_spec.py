@@ -12,15 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.client_engine_spec import ClientEngineSpec
+from abc import ABC, abstractmethod
+
+from nvflare.apis.client_engine_spec import ClientEngineSpec, TaskAssignment
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.workspace import Workspace
 
 
-class ClientEngineInternalSpec(ClientEngineSpec):
+class ClientEngineInternalSpec(ClientEngineSpec, ABC):
     """The ClientEngineInternalSpec defines the ClientEngine APIs running in the parent process."""
 
+    def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
+        pass
+
+    def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
+        pass
+
+    def get_workspace(self) -> Workspace:
+        pass
+
+    def get_all_components(self) -> dict:
+        pass
+
+    @abstractmethod
     def get_engine_status(self):
         pass
 
+    @abstractmethod
     def get_client_name(self) -> str:
         """Get the ClientEngine client_name.
 
@@ -29,6 +48,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
         """Deploy the app to specified run.
 
@@ -43,6 +63,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def start_app(
         self,
         run_number: str,
@@ -65,6 +86,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def abort_app(self, run_number: int) -> str:
         """Abort the app execution in current run.
 
@@ -73,6 +95,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def abort_task(self, run_number: int) -> str:
         """Abort the client current executing task.
 
@@ -81,6 +104,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def delete_run(self, run_num: int) -> str:
         """Delete the specified run.
 
@@ -92,6 +116,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def shutdown(self) -> str:
         """Shutdown the FL client.
 
@@ -100,6 +125,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def restart(self) -> str:
         """Restart the FL client.
 
@@ -108,6 +134,7 @@ class ClientEngineInternalSpec(ClientEngineSpec):
         """
         pass
 
+    @abstractmethod
     def get_all_run_numbers(self) -> []:
         """Get all the client run_number.
 

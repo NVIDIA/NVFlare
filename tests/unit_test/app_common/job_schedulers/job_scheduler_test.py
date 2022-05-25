@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -31,7 +32,7 @@ class DummyResourceManager(ResourceManagerSpec):
         self.name = name
         self.resources = resources
 
-    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
+    def check_resources(self, resource_requirement: dict) -> (bool, Optional[str]):
         print(f"{self.name}: checking resources with requirements {resource_requirement}")
         for k in resource_requirement:
             if k in self.resources:
@@ -39,10 +40,10 @@ class DummyResourceManager(ResourceManagerSpec):
                     return False, None
         return True, None
 
-    def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
+    def cancel_resources(self, resource_requirement: dict, token: str):
         print(f"{self.name}: cancelling resources {resource_requirement}")
 
-    def allocate_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext) -> dict:
+    def allocate_resources(self, resource_requirement: dict, token: str) -> dict:
         print(f"{self.name}: allocating resources {resource_requirement}")
         result = {}
         for k in resource_requirement:
@@ -51,7 +52,7 @@ class DummyResourceManager(ResourceManagerSpec):
                 result[k] = resource_requirement[k]
         return result
 
-    def free_resources(self, resources: dict, token: str, fl_ctx: FLContext):
+    def free_resources(self, resources: dict, token: str):
         print(f"{self.name}: freeing resources {resources}")
         for k in resources:
             self.resources[k] += resources[k]
@@ -118,9 +119,8 @@ class MockServerEngine(ServerEngineSpec):
 
     def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
         result = {}
-        with self.new_context() as fl_ctx:
-            for site_name, requirements in resource_reqs.items():
-                result[site_name] = self.clients[site_name].resource_manager.check_resources(requirements, fl_ctx)
+        for site_name, requirements in resource_reqs.items():
+            result[site_name] = self.clients[site_name].resource_manager.check_resources(requirements)
         return result
 
     def get_client_name_from_token(self, token):
@@ -129,13 +129,12 @@ class MockServerEngine(ServerEngineSpec):
     def cancel_client_resources(
         self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
     ):
-        with self.new_context() as fl_ctx:
-            for site_name, result in resource_check_results.items():
-                check_result, token = result
-                if check_result and token:
-                    self.clients[site_name].resource_manager.cancel_resources(
-                        resource_requirement=resource_reqs[site_name], token=token, fl_ctx=fl_ctx
-                    )
+        for site_name, result in resource_check_results.items():
+            check_result, token = result
+            if check_result and token:
+                self.clients[site_name].resource_manager.cancel_resources(
+                    resource_requirement=resource_reqs[site_name], token=token
+                )
 
 
 def create_servers(server_num, sites: List[Site]):
@@ -380,7 +379,8 @@ class TestDefaultJobScheduler:
                     submitted_jobs.remove(job)
                     results.append(job)
                     for site_name, dispatch_info in dispatch_infos.items():
-                        sites[site_name].resource_manager.allocate_resources(
-                            dispatch_info.resource_requirements, token=dispatch_info.token, fl_ctx=fl_ctx
-                        )
+                        if site_name != "server":
+                            sites[site_name].resource_manager.allocate_resources(
+                                dispatch_info.resource_requirements, token=dispatch_info.token
+                            )
         assert results == [jobs[0], jobs[1]]
