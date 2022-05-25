@@ -18,6 +18,7 @@ from multiprocessing.connection import Listener
 
 from nvflare.apis.fl_context import FLContext
 
+from ..utils.fed_utils import listen_command
 from .admin_commands import AdminCommands
 
 
@@ -40,11 +41,11 @@ class CommandAgent(object):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start(self, fl_ctx: FLContext):
-        # self.thread = threading.Thread(target=listen_command, args=[federated_client, int(listen_port), client_runner])
-        self.thread = threading.Thread(target=listen_command, args=[self, fl_ctx])
+        engine = fl_ctx.get_engine()
+        self.thread = threading.Thread(
+            target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
+        )
         self.thread.start()
-
-        pass
 
     def listen_command(self, fl_ctx):
         try:
@@ -58,6 +59,18 @@ class CommandAgent(object):
             )
             return
 
+        engine = fl_ctx.get_engine()
+        self.execute_command(conn, engine)
+
+        try:
+            conn.close()
+            listener.close()
+        except Exception as e:
+            self.logger.exception(
+                f"Exception in the listener process closing on port: {self.listen_port}: {e}.", exc_info=True
+            )
+
+    def execute_command(self, conn, engine):
         while not self.asked_to_stop:
             try:
                 if conn.poll(1.0):
@@ -66,7 +79,6 @@ class CommandAgent(object):
                     data = msg.get("data")
                     command = AdminCommands.get_command(command_name)
                     if command:
-                        engine = fl_ctx.get_engine()
                         with engine.new_context() as new_fl_ctx:
                             reply = command.process(data=data, fl_ctx=new_fl_ctx)
                             if reply:
@@ -78,20 +90,8 @@ class CommandAgent(object):
                 # traceback.print_exc()
                 self.logger.error(f"Process communication error: {self.listen_port}: {e}.", exc_info=False)
 
-        try:
-            conn.close()
-            listener.close()
-        except Exception as e:
-            self.logger.exception(
-                f"Exception in the listener process closing on port: {self.listen_port}: {e}.", exc_info=True
-            )
-
     def shutdown(self):
         self.asked_to_stop = True
 
         if self.thread and self.thread.is_alive():
             self.thread.join()
-
-
-def listen_command(agent: CommandAgent, fl_ctx: FLContext):
-    agent.listen_command(fl_ctx)
