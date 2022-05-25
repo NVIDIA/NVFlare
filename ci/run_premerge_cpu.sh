@@ -17,31 +17,25 @@
 
 set -ex
 
-function cleanup_pip_deps() {
-    echo "cleaning pip requirements"
-    pip freeze > _temp_pip_requirements.txt
-    pip uninstall -r _temp_pip_requirements.txt -y
-    rm _temp_pip_requirements.txt
+function pip_uninstall_deps() {
+    echo "pip uninstalling requirements: $1"
+    pip uninstall -r $1 -y
 }
 
-function install_pip_deps() {
-    echo "installing pip requirements"
-    pip install -r requirements-dev.txt
+function pip_install_deps() {
+    echo "pip installing requirements: $1"
+    pip install -r $1
     export PYTHONPATH=$PWD
 }
 
-# Cleanup pip environment first
-cleanup_pip_deps
-
 ## Unit Tests
-install_pip_deps
+pip_install_deps requirements-dev.txt
 ./runtest.sh
-cleanup_pip_deps
+pip_uninstall_deps requirements-dev.txt
 
 
 ## Wheel Build
-install_pip_deps
+pip_install_deps requirements-dev.txt
 pip install build twine torch torchvision
 python3 -m build --wheel
-cleanup_pip_deps
-
+pip_uninstall_deps requirements-dev.txt
