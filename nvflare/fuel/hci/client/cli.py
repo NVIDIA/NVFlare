@@ -194,18 +194,18 @@ class AdminClient(cmd.Cmd):
             self.write_string("Usage: {}\n".format(e.usage))
 
     def _show_commands(self, reg: CommandRegister):
-        table = Table(["Scope", "Command", "Description"])
+        table = Table(["Command", "Description"])
         for scope_name in sorted(reg.scopes):
             scope = reg.scopes[scope_name]
             for cmd_name in sorted(scope.entries):
                 e = scope.entries[cmd_name]
                 if e.visible:
-                    table.add_row([scope_name, cmd_name, e.desc])
+                    table.add_row([cmd_name, e.desc])
         self.write_table(table)
 
     def do_help(self, arg):
         if len(arg) <= 0:
-            self.write_string("Client Commands")
+            self.write_string("Client Initiated / Overseer Commands")
             self._show_commands(self.api.client_cmd_reg)
 
             self.write_string("\nServer Commands")
