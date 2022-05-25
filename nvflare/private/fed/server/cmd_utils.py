@@ -33,7 +33,7 @@ class CommandUtil(object):
     TARGET_TYPE_ALL = "all"
 
     SITE_SERVER = "server"
-
+    ALL_SITES = "@ALL"
     RUN_NUMBER = "run_number"
 
     def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
@@ -160,8 +160,8 @@ class CommandUtil(object):
             sites.update(site_list)
 
         # Run-time might be a better spot for this
-        if not sites:
-            sites.add("server")
+        if self.ALL_SITES.casefold() in (site.casefold() for site in sites):
+            sites.add(self.SITE_SERVER)
             engine = conn.app_ctx
             clients = engine.get_clients()
             sites.update([client.name for client in clients])

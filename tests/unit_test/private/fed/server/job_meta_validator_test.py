@@ -88,7 +88,7 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
 
-class TestJobValidator:
+class TestJobMetaValidator:
     @classmethod
     def setup_class(cls):
         cls.engine = MockServerEngine()
