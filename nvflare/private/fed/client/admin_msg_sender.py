@@ -169,3 +169,6 @@ class AdminMessageSender(Sender):
         else:
             channel = grpc.insecure_channel(**channel_dict)
         return channel
+
+    def close(self):
+        self.pool.close()

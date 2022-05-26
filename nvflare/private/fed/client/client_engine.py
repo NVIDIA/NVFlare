@@ -215,6 +215,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_executor.close()
         future = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
+        self.executor.shutdown()
         return "Shutdown the client..."
 
     def restart(self) -> str:
@@ -223,6 +224,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_executor.close()
         future = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
+        self.executor.shutdown()
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
