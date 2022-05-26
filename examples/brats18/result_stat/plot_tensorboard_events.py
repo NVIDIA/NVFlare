@@ -24,7 +24,7 @@ import tensorflow as tf
 client_results_root = "../workspace_brats"
 server_results_root = "../workspace_brats/server"
 
-# 13 sites used the same validation set, so only 1 site's record is needed
+# All sites used the same validation set, so only 1 site's record is needed
 site_num = 1
 site_pre = "site-"
 
