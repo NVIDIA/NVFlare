@@ -215,7 +215,8 @@ class BaseServer(ABC):
     def fl_shutdown(self):
         self.shutdown = True
         self.close()
-        self.executor.shutdown()
+        if self.executor:
+            self.executor.shutdown()
 
 
 class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):
