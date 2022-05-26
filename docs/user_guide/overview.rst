@@ -215,7 +215,7 @@ started successfully as described in the preceding section, `Federated learning 
 admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
 issue commands to operate the system so it can be run with a script.
 
-For a complete list of admin commands, see :ref:`admin_commands`.
+For a complete list of admin commands, see :ref:`operating_nvflare`.
 
 For examples of using the commands to operate a FL system, see the examples in the :ref:`quickstart` section.
 

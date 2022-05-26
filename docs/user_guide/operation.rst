@@ -61,6 +61,13 @@ commands shown as examples of how they may be run with a description.
     shutdown_system,``shutdown_system``,Shut down entire system by setting the system state to shutdown through the overseer
 
 
+.. note::
+
+   The commands ``promote_sp`` and ``shutdown_system`` both go to the Overseer and have a different mechanism of
+   authorization than the other commands sent to the FL server. The Overseer keeps track of a list of privileged users,
+   configured to be admin users with the role of "super". Only users owning certificates whose cn is in the privileged
+   user list can call these commands.
+
 .. tip::
 
    Outputs of any command can be redirected into a file by using the greater-than symbol ">", however there must be no

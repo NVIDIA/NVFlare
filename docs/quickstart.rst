@@ -5,7 +5,7 @@ Quickstart
 ##########
 
 This section provides a starting point for new users to start NVIDIA FLARE.
-Users can go through the :ref:`example_apps` and get familiar with how NVIDIA FLARE is designed,
+Users can go through the :ref:`example_applications` and get familiar with how NVIDIA FLARE is designed,
 operates and works.
 
 Each example introduces concepts about NVIDIA FLARE, while showcasing how some popular libraries and frameworks can

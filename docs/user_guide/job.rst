@@ -110,6 +110,11 @@ folder with meta.json.
 There is only one server, and only one app can be deployed to it for the Job, so "server" can appear only once in
 the ``deploy_map``.
 
+The ``deploy_map`` cannot be empty, and "@all" when specified as a site name carries a special meaning of all
+sites to deploy to. If "@all" is used, there should be no other apps being deployed to the sites. If an empty list of
+sites is specified for an app in the ``deploy_map``, then that app is to be deployed to no sites, and no validation is
+done other than checking that the folder exists.
+
 Resource-less Jobs
 ==================
 Similarly, for simple FL jobs or in POC mode, resources are not a concern. In this case, the resource spec can be
