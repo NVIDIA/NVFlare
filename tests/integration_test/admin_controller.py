@@ -25,7 +25,7 @@ from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 from nvflare.ha.dummy_overseer_agent import DummyOverseerAgent
 from nvflare.ha.overseer_agent import HttpOverseerAgent
-from tests.integration_test.test_fladminapi import run_admin_api_tests
+from tests.integration_test.utils import run_admin_api_tests
 
 
 def process_logs(logs, run_state):

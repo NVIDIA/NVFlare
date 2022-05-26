@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import collections
 import json
 import logging
@@ -19,12 +20,11 @@ from typing import Optional, Set, Tuple
 from zipfile import ZipFile
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 
 SERVER_CONFIG = "config_fed_server.json"
 CLIENT_CONFIG = "config_fed_client.json"
 META = "meta.json"
-ALL_SITES = "@ALL"
 MAX_CLIENTS = 1000000
 
 logger = logging.getLogger(__name__)
@@ -89,9 +89,9 @@ class JobMetaValidator:
             raise ValueError(f"No site is specified in deploy_map for job {job_name}")
 
         if ALL_SITES.casefold() in (site.casefold() for site in site_list):
-            # if @ALL is specified, no other site can be in the list
+            # if ALL_SITES is specified, no other site can be in the list
             if len(site_list) > 1:
-                raise ValueError(f"No other site can be specified if @ALL is used for job {job_name}")
+                raise ValueError(f"No other site can be specified if {ALL_SITES} is used for job {job_name}")
             else:
                 site_list = [ALL_SITES]
         else:

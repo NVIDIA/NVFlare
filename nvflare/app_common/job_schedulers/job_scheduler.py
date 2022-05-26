@@ -19,9 +19,11 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job, JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+
+SERVER_SITE_NAME = "server"
 
 
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
@@ -80,19 +82,20 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not job.deploy_map:
             raise RuntimeError(f"Job ({job.job_id}) does not have deploy_map, can't be scheduled.")
 
-        # deploy_map: {"app_name": []} will be treated as deploying to all online clients
-        all_deploy_map_keys = list(job.deploy_map.keys())
-        if len(all_deploy_map_keys) == 1 and len(job.deploy_map[all_deploy_map_keys[0]]) == 0:
-            applicable_sites = online_site_names
-            sites_to_app = {x: all_deploy_map_keys[0] for x in applicable_sites}
-        else:
-            applicable_sites = []
-            sites_to_app = {}
-            for app_name in job.deploy_map:
-                for site_name in job.deploy_map[app_name]:
-                    if site_name in online_site_names:
-                        applicable_sites.append(site_name)
-                        sites_to_app[site_name] = app_name
+        applicable_sites = []
+        sites_to_app = {}
+        for app_name in job.deploy_map:
+            for site_name in job.deploy_map[app_name]:
+                if site_name.upper() == ALL_SITES:
+                    # deploy_map: {"app_name": ["ALL_SITES"]} will be treated as deploying to all online clients
+                    applicable_sites = online_site_names
+                    sites_to_app = {x: app_name for x in online_site_names}
+                    sites_to_app[SERVER_SITE_NAME] = app_name
+                elif site_name in online_site_names:
+                    applicable_sites.append(site_name)
+                    sites_to_app[site_name] = app_name
+                elif site_name == SERVER_SITE_NAME:
+                    sites_to_app[SERVER_SITE_NAME] = app_name
         self.log_debug(fl_ctx, f"Job {job.job_id} is checking against applicable sites: {applicable_sites}")
 
         required_sites = job.required_sites if job.required_sites else []
@@ -152,6 +155,11 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return self._cancel_resources(
                 resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
             )
+
+        # add server dispatch info
+        sites_dispatch_info[SERVER_SITE_NAME] = DispatchInfo(
+            app_name=sites_to_app[SERVER_SITE_NAME], resource_requirements={}, token=None
+        )
 
         return True, sites_dispatch_info
 

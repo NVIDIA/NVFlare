@@ -17,7 +17,7 @@ import json
 import os
 from zipfile import ZipFile
 
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 
 META_NAME = "meta.json"
 # A format string for the dummy meta.json
@@ -27,7 +27,7 @@ def _get_default_meta(job_folder_name: str) -> str:
     meta = f"""{{
                  "{JobMetaKey.JOB_FOLDER_NAME.value}": "{job_folder_name}",
                  "{JobMetaKey.RESOURCE_SPEC.value}": {{ }},
-                 "{JobMetaKey.DEPLOY_MAP}": {{ "{job_folder_name}": ["@ALL"] }},
+                 "{JobMetaKey.DEPLOY_MAP}": {{ "{job_folder_name}": ["{ALL_SITES}"] }},
                  "{JobMetaKey.MIN_CLIENTS}": 1
                }}
             """
