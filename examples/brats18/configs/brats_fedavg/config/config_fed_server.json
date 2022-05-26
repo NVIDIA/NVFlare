@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "min_clients": 2,
+  "min_clients": 4,
   "num_rounds": 600,
   "server": {
     "heart_beat_timeout": 600

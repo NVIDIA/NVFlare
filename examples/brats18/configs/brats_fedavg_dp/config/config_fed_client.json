@@ -17,6 +17,20 @@
   ],
 
   "task_result_filters": [
+    {
+      "tasks": ["train"],
+      "filters":[
+          {
+          "path": "nvflare.app_common.filters.svt_privacy.SVTPrivacy",
+          "args": {
+            "fraction": 0.9,
+            "epsilon": 0.001,
+            "noise_var": 0.1,
+            "gamma": 1e-4
+          }
+        }
+      ]
+    }
   ],
   "task_data_filters": [
   ],
