@@ -11,14 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import io
 import json
 import os
 import zipfile
 from typing import Dict, List, Optional, Tuple
 from zipfile import ZipFile
-
-import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -91,9 +90,9 @@ class MockServerEngine(ServerEngineSpec):
 class TestJobMetaValidator:
     @classmethod
     def setup_class(cls):
-        cls.engine = MockServerEngine()
-        cls.fl_ctx = cls.engine.new_context()
-        cls.validator = JobMetaValidator(cls.fl_ctx)
+        engine = MockServerEngine()
+        fl_ctx = engine.new_context()
+        cls.validator = JobMetaValidator(fl_ctx)
 
     def test_valid_app(self):
         self._assert_valid("valid_app_wo_meta")

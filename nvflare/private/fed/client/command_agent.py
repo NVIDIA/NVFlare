@@ -14,7 +14,6 @@
 
 import logging
 import threading
-from multiprocessing.connection import Listener
 
 from nvflare.apis.fl_context import FLContext
 
