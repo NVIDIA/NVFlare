@@ -15,6 +15,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from .fl_context import FLContext
+
 
 class ResourceConsumerSpec(ABC):
     @abstractmethod
@@ -24,11 +26,12 @@ class ResourceConsumerSpec(ABC):
 
 class ResourceManagerSpec(ABC):
     @abstractmethod
-    def check_resources(self, resource_requirement: dict) -> (bool, Optional[str]):
+    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
         """Checks whether the specified resource requirement can be satisfied.
 
         Args:
             resource_requirement: a dict that specifies resource requirement
+            fl_ctx: the FLContext
 
         Returns:
             A tuple of (check_result, token).
@@ -39,12 +42,13 @@ class ResourceManagerSpec(ABC):
         pass
 
     @abstractmethod
-    def cancel_resources(self, resource_requirement: dict, token: str):
+    def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
         """Cancels reserved resources if any.
 
         Args:
             resource_requirement: a dict that specifies resource requirement
             token: a resource reservation token returned by check_resources
+            fl_ctx: the FLContext
 
         Note:
             If check_resource didn't return a token, then don't need to call this method
@@ -52,7 +56,7 @@ class ResourceManagerSpec(ABC):
         pass
 
     @abstractmethod
-    def allocate_resources(self, resource_requirement: dict, token: str) -> dict:
+    def allocate_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext) -> dict:
         """Allocates resources.
 
         Note:
@@ -61,6 +65,7 @@ class ResourceManagerSpec(ABC):
         Args:
             resource_requirement: a dict that specifies resource requirement
             token: a resource reservation token returned by check_resources
+            fl_ctx: the FLContext
 
         Returns:
             A dict of allocated resources
@@ -68,11 +73,12 @@ class ResourceManagerSpec(ABC):
         pass
 
     @abstractmethod
-    def free_resources(self, resources: dict, token: str):
+    def free_resources(self, resources: dict, token: str, fl_ctx: FLContext):
         """Frees resources.
 
         Args:
             resources: resources to be freed
             token: a resource reservation token returned by check_resources
+            fl_ctx: the FLContext
         """
         pass

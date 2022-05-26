@@ -368,7 +368,9 @@ class ProcessExecutor(ClientExecutor):
             self.logger.info(f"run ({run_number}): child worker process finished with execution code: {return_code}")
 
         if allocated_resource:
-            resource_manager.free_resources(resources=allocated_resource, token=token)
+            resource_manager.free_resources(
+                resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
+            )
 
         with self.lock:
             conn_client = self.get_conn_client(run_number)
