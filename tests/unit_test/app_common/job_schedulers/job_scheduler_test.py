@@ -18,7 +18,7 @@ import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.job_def import Job
+from nvflare.apis.job_def import ALL_SITES, Job
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
@@ -168,28 +168,35 @@ def create_jobs(num_jobs, prefix="job", **kwargs):
 job1 = create_job(
     job_id="job1",
     resource_spec={"site1": create_resource(1, 4), "site2": create_resource(1, 4), "site3": create_resource(2, 1)},
-    deploy_map={"app1": ["site1", "site2"], "app2": ["site3"]},
+    deploy_map={"app1": ["server", "site1", "site2"], "app2": ["site3"]},
     min_sites=3,
 )
 
 job2 = create_job(
     job_id="job2",
     resource_spec={"site1": create_resource(2, 4), "site2": create_resource(2, 4), "site3": create_resource(12, 4)},
-    deploy_map={"app3": ["site1", "site2"], "app4": ["site3"]},
+    deploy_map={"app3": ["server", "site1", "site2"], "app4": ["site3"]},
     min_sites=3,
 )
 
 job3 = create_job(
     job_id="job3",
     resource_spec={},
-    deploy_map={"app5": []},
+    deploy_map={"app5": [ALL_SITES]},
     min_sites=3,
 )
 
 job4 = create_job(
     job_id="job4",
     resource_spec={"site1": create_resource(2, 4), "site2": create_resource(5, 4), "site3": create_resource(12, 4)},
-    deploy_map={"app7": ["site1", "site2"], "app8": ["site3", "site4", "site5"]},
+    deploy_map={"app7": ["server", "site1", "site2"], "app8": ["site3", "site4", "site5"]},
+    min_sites=3,
+)
+
+job5 = create_job(
+    job_id="job5",
+    resource_spec={},
+    deploy_map={"app9": [ALL_SITES], "app10": []},
     min_sites=3,
 )
 
@@ -205,6 +212,7 @@ TEST_CASES = [
         ],
         job1,
         {
+            "server": DispatchInfo(app_name="app1", resource_requirements={}, token=None),
             "site1": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
             "site2": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
             "site3": DispatchInfo(app_name="app2", resource_requirements=create_resource(2, 1), token=None),
@@ -220,6 +228,7 @@ TEST_CASES = [
         ],
         job1,
         {
+            "server": DispatchInfo(app_name="app1", resource_requirements={}, token=None),
             "site1": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
             "site2": DispatchInfo(app_name="app1", resource_requirements=create_resource(1, 4), token=None),
             "site3": DispatchInfo(app_name="app2", resource_requirements=create_resource(2, 1), token=None),
@@ -229,7 +238,17 @@ TEST_CASES = [
         [job3],
         [Site(name=f"site{i}", resources=create_resource(16, 8)) for i in range(8)],
         job3,
-        {f"site{i}": DispatchInfo(app_name="app5", resource_requirements={}, token=None) for i in range(8)},
+        {
+            "server": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site0": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site1": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site2": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site3": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site4": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site5": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site6": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+            "site7": DispatchInfo(app_name="app5", resource_requirements={}, token=None),
+        },
     ),
     (
         [job4, job1],
@@ -241,9 +260,26 @@ TEST_CASES = [
         ],
         job4,
         {
+            "server": DispatchInfo(app_name="app7", resource_requirements={}, token=None),
             "site1": DispatchInfo(app_name="app7", resource_requirements=create_resource(2, 4), token=None),
             "site2": DispatchInfo(app_name="app7", resource_requirements=create_resource(5, 4), token=None),
             "site4": DispatchInfo(app_name="app8", resource_requirements={}, token=None),
+        },
+    ),
+    (
+        [job5],
+        [Site(name=f"site{i}", resources=create_resource(16, 8)) for i in range(8)],
+        job5,
+        {
+            "server": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site0": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site1": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site2": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site3": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site4": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site5": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site6": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
+            "site7": DispatchInfo(app_name="app9", resource_requirements={}, token=None),
         },
     ),
 ]
@@ -261,6 +297,18 @@ def setup_and_teardown(request):
 
 
 class TestDefaultJobScheduler:
+    def test_weird_deploy_map(self, setup_and_teardown):
+        servers, scheduler, num_sites = setup_and_teardown
+        candidate = create_job(
+            job_id="test_job",
+            resource_spec={},
+            deploy_map={"app5": []},
+            min_sites=1,
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+        assert job is None
+
     def test_missing_deploy_map(self, setup_and_teardown):
         servers, scheduler, num_sites = setup_and_teardown
         candidate = create_job(
@@ -280,7 +328,7 @@ class TestDefaultJobScheduler:
         candidate = create_job(
             job_id="job",
             resource_spec={},
-            deploy_map={"app5": []},
+            deploy_map={"app5": [ALL_SITES]},
             min_sites=num_sites + 1,
         )
         with servers[0].new_context() as fl_ctx:
@@ -292,7 +340,7 @@ class TestDefaultJobScheduler:
         candidate = create_job(
             job_id="job",
             resource_spec={},
-            deploy_map={"app5": []},
+            deploy_map={"app5": [ALL_SITES]},
             min_sites=1,
             required_sites=[f"site{num_sites}"],
         )
@@ -305,7 +353,7 @@ class TestDefaultJobScheduler:
         candidate = create_job(
             job_id="job",
             resource_spec={"site2": create_resource(2, 2)},
-            deploy_map={"app5": []},
+            deploy_map={"app5": [ALL_SITES]},
             min_sites=1,
             required_sites=["site2"],
         )
@@ -318,7 +366,7 @@ class TestDefaultJobScheduler:
         candidate = create_job(
             job_id="job",
             resource_spec={f"site{i}": create_resource(2, 2) for i in range(num_sites)},
-            deploy_map={"app5": []},
+            deploy_map={"app5": [ALL_SITES]},
             min_sites=2,
             required_sites=[],
         )
@@ -351,7 +399,7 @@ class TestDefaultJobScheduler:
             for i in range(num_sites)
         }
         first_job = create_jobs(
-            1,
+            num_jobs=1,
             prefix="weird_job",
             resource_spec={"site0": {"gpu": 1}},
             deploy_map={"app": ["server", "site0"]},
@@ -380,7 +428,8 @@ class TestDefaultJobScheduler:
                     submitted_jobs.remove(job)
                     results.append(job)
                     for site_name, dispatch_info in dispatch_infos.items():
-                        sites[site_name].resource_manager.allocate_resources(
-                            dispatch_info.resource_requirements, token=dispatch_info.token, fl_ctx=fl_ctx
-                        )
+                        if site_name != "server":
+                            sites[site_name].resource_manager.allocate_resources(
+                                dispatch_info.resource_requirements, token=dispatch_info.token, fl_ctx=fl_ctx
+                            )
         assert results == [jobs[0], jobs[1]]

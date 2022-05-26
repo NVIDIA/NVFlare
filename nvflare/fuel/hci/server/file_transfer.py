@@ -36,7 +36,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.private.fed.server.cmd_utils import CommandUtil
-from nvflare.private.fed.server.job_validator import JobValidator
+from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.security.security import Action
 
 META_FILE = "meta.json"
@@ -268,7 +268,7 @@ class FileTransferModule(CommandModule, CommandUtil):
 
         try:
             with engine.new_context() as fl_ctx:
-                job_validator = JobValidator(fl_ctx)
+                job_validator = JobMetaValidator(fl_ctx)
                 valid, error, meta = job_validator.validate(folder_name, data_bytes)
                 if not valid:
                     conn.append_error(error)

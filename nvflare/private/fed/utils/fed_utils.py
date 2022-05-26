@@ -16,6 +16,7 @@ import os
 import pickle
 import shutil
 from logging.handlers import RotatingFileHandler
+from multiprocessing.connection import Listener
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
@@ -73,3 +74,22 @@ def add_logfile_handler(log_file):
     file_handler.setLevel(main_handler.level)
     file_handler.setFormatter(main_handler.formatter)
     root_logger.addHandler(file_handler)
+
+
+def listen_command(listen_port, engine, execute_func, logger):
+    conn = None
+    listener = None
+    try:
+        address = ("localhost", listen_port)
+        listener = Listener(address, authkey="client process secret password".encode())
+        conn = listener.accept()
+
+        execute_func(conn, engine)
+
+    except Exception as e:
+        logger.exception(f"Could not create the listener for this process on port: {listen_port}: {e}.", exc_info=True)
+    finally:
+        if conn:
+            conn.close()
+        if listener:
+            listener.close()

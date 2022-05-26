@@ -1,8 +1,8 @@
-.. _example_apps:
+.. _example_applications:
 
-#############################
-Example Apps for NVIDIA FLARE
-#############################
+####################
+Example Applications
+####################
 NVIDIA FLARE has several examples to help you get started with federated learning and to explore certain features in
 `the examples directory <https://github.com/NVIDIA/NVFlare/tree/main/examples>`_.
 

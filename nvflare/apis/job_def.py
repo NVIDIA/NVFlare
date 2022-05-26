@@ -18,6 +18,9 @@ from typing import Dict, List, Optional
 from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 
+# this is treated as all online sites in job deploy_map
+ALL_SITES = "@ALL"
+
 
 class RunStatus(str, Enum):
 

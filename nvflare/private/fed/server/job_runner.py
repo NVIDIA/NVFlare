@@ -20,7 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job, RunStatus
+from nvflare.apis.job_def import ALL_SITES, Job, RunStatus
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.utils.fed_utils import deploy_app
@@ -65,7 +65,7 @@ class JobRunner(FLComponent):
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
 
-            if not participants:
+            if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                 participants = ["server"]
                 participants.extend([client.name for client in engine.get_clients()])
 
