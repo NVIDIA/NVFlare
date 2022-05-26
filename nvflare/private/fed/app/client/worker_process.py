@@ -17,7 +17,11 @@
 import argparse
 import os
 import sys
+import threading
+import time
 import traceback
+
+import psutil
 
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
@@ -33,8 +37,19 @@ from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
 
+def check_parent_alive(parent_pid, stop_event: threading.Event):
+    while True:
+        if stop_event.is_set():
+            break
+        if not psutil.pid_exists(parent_pid):
+            # if parent is not alive, kill its worker process
+            os.killpg(os.getpgid(os.getpid()), 9)
+            break
+        time.sleep(1)
+
+
 def main():
-    """Worker_process start program."""
+    """Worker process start program."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
@@ -49,6 +64,9 @@ def main():
 
     args = parser.parse_args()
     kv_list = parse_vars(args.set)
+
+    # get parent process id
+    parent_pid = os.getppid()
 
     args.train_config = os.path.join("config", "config_train.json")
     config_folder = kv_list.get("config_folder", "")
@@ -75,10 +93,16 @@ def main():
     startup = os.path.join(args.workspace, "startup")
     SecurityContentService.initialize(content_folder=startup)
 
+    thread = None
+    stop_event = threading.Event()
     deployer = None
     command_agent = None
     federated_client = None
     try:
+        # start parent process checking thread
+        thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+        thread.start()
+
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         with open(token_file, "r") as f:
             token = f.readline().strip()
@@ -171,12 +195,15 @@ def main():
         print(f"FL client execution exception: {e}")
         raise e
     finally:
+        stop_event.set()
         if command_agent:
             command_agent.shutdown()
         if deployer:
             deployer.close()
         if federated_client:
             federated_client.close()
+        if thread and thread.is_alive():
+            thread.join()
 
 
 def remove_restart_file(args):
