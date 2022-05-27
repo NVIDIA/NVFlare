@@ -34,12 +34,8 @@ def _check_log_results(server_data, run_data, expected_in_result, expected_not_i
         with open(log_txt) as f:
             server_log = f.read()
         if expected_in_result:
-            print("FIRST RESULT FOR RE:")
-            print(re.search(expected_in_result, server_log))
             assert re.search(expected_in_result, server_log)
         if expected_not_in_result:
-            print("SECOND RESULT FOR RE:")
-            print(re.search(expected_not_in_result, server_log))
             assert not re.search(expected_not_in_result, server_log)
     except Exception as e:
         _print_info(f"exception happens: {e.__str__()}")
