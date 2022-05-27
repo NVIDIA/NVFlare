@@ -33,7 +33,6 @@ def _check_log_results(server_data, run_data, expected_in_result, expected_not_i
     try:
         with open(log_txt) as f:
             server_log = f.read()
-        print("________________________________________________RE:")
         if expected_in_result:
             print("FIRST RESULT FOR RE:")
             print(re.search(expected_in_result, server_log))

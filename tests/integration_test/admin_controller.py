@@ -339,7 +339,6 @@ class AdminController:
             job_run_statuses = self._get_job_run_statuses()
             print(f"job run status: {job_run_statuses}")
             stats = self._get_stats(TargetType.SERVER)
-            # PRINTING HAPPENS HERE
             changed, run_state = _update_run_state(
                 stats=stats, run_state=run_state, job_run_status=job_run_statuses[self.job_id]
             )
