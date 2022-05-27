@@ -93,8 +93,6 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
             parsed_args = parser.parse_args(args[1:])
 
             engine = conn.app_ctx
-            if not isinstance(engine, ServerEngine):
-                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
             job_def_manager = engine.job_def_manager
             if not isinstance(job_def_manager, JobDefManagerSpec):
                 raise TypeError(
