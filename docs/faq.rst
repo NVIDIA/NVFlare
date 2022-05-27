@@ -368,5 +368,5 @@ Known issues
 #. After calling ``shutdown client`` for a client running multi GPUs, a process (sub_worker_process) may remain. The
    work around for this is to run ``abort client`` before the ``shutdown`` command.
 #. If a snapshot is in a corrupted state, the server may try to restore the job and get stuck. To resolve this, delete
-   the snapshot from the location configured in project.yml for the snapshot_persistor storage, and ``abort_job`` should
-   be able to stop the job on the server.
+   the snapshot from the location configured in project.yml for the snapshot_persistor storage (by default
+   ``/tmp/nvflare/jobs-storage``), and ``abort_job`` should be able to stop the job on the server.
