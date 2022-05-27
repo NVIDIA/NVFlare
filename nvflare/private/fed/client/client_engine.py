@@ -71,7 +71,7 @@ class ClientEngine(ClientEngineInternalSpec):
             raise ValueError("workers must >= 1")
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.fl_components = [x for x in self.client.components if isinstance(x, FLComponent)]
+        self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
@@ -160,7 +160,7 @@ class ClientEngine(ClientEngineInternalSpec):
             resource_manager,
         )
 
-        return "Start the client app..."
+        return ""
 
     def get_client_name(self):
         return self.client.client_name
@@ -201,7 +201,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.client_executor.abort_train(self.client, run_number)
 
-        return "Abort signal has been sent to the client App."
+        return ""
 
     def abort_task(self, run_number: str) -> str:
         status = self.client_executor.get_status(run_number)
@@ -213,7 +213,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.client_executor.abort_task(self.client, run_number)
 
-        return "Abort signal has been sent to the current task. "
+        return ""
 
     def shutdown(self) -> str:
         self.logger.info("Client shutdown...")
@@ -222,7 +222,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.fire_event(EventType.SYSTEM_END, self.new_context())
         _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
-        return "Shutdown the client..."
+        return ""
 
     def restart(self) -> str:
         self.logger.info("Client shutdown...")
@@ -231,7 +231,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.fire_event(EventType.SYSTEM_END, self.new_context())
         _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
-        return "Restart the client..."
+        return ""
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
         workspace = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
@@ -245,7 +245,7 @@ class ClientEngine(ClientEngineInternalSpec):
         run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
         if os.path.exists(run_number_folder):
             shutil.rmtree(run_number_folder)
-        return "Delete run folder: {}".format(run_number_folder)
+        return ""
 
     def get_current_run_info(self, run_number) -> ClientRunInfo:
         return self.client_executor.get_run_info(run_number)
