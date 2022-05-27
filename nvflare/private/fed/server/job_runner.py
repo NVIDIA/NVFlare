@@ -36,8 +36,8 @@ def _check_client_replies(replies, client_sites: List[str], command: str):
 
     error_msg = ""
     for r, client_name in zip(replies, client_sites):
-        if r.reply != "OK":
-            error_msg += f"{client_name}: {r}\n"
+        if r.reply.body != "OK":
+            error_msg += f"{client_name}: {r.reply.body}\n"
     if error_msg != "":
         raise RuntimeError(f"Failed to {command} to the following clients: \n{error_msg}")
     return True
