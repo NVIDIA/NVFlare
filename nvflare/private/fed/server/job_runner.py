@@ -247,8 +247,8 @@ class JobRunner(FLComponent):
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
                 if self.scheduler:
                     (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
-                    client_sites = {k: v for k, v in sites.items() if k != "server"}
                     if ready_job:
+                        client_sites = {k: v for k, v in sites.items() if k != "server"}
                         try:
                             self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
                             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
