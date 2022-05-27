@@ -50,7 +50,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
 
     @abstractmethod
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
-        """Deploy the app to specified run.
+        """Deploys the app to specified run.
 
         Args:
             app_name: FL_app name
@@ -58,8 +58,8 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
             client_name: name of the client
             app_data: zip data of the app
 
-        Returns: error if any
-
+        Returns:
+            A string message.
         """
         pass
 
@@ -72,7 +72,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         resource_consumer=None,
         resource_manager=None,
     ) -> str:
-        """Start the app for the specified run.
+        """Starts the app for the specified run.
 
         Args:
             run_number: run_number
@@ -81,17 +81,17 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
             resource_consumer: resource consumer
             resource_manager: resource manager
 
-        Returns: error if any
-
+        Returns:
+            A string message.
         """
         pass
 
     @abstractmethod
     def abort_app(self, run_number: int) -> str:
-        """Abort the app execution in current run.
+        """Aborts the app execution for the specified run.
 
-        Returns: error if any
-
+        Returns:
+            A string message.
         """
         pass
 
@@ -99,38 +99,38 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
     def abort_task(self, run_number: int) -> str:
         """Abort the client current executing task.
 
-        Returns: error if any
-
+        Returns:
+            A string message.
         """
         pass
 
     @abstractmethod
     def delete_run(self, run_num: int) -> str:
-        """Delete the specified run.
+        """Deletes the specified run.
 
         Args:
             run_num: run_number
 
-        Returns: error if any
-
+        Returns:
+            A string message.
         """
         pass
 
     @abstractmethod
     def shutdown(self) -> str:
-        """Shutdown the FL client.
+        """Shuts down the FL client.
 
-        Returns: error if any
-
+        Returns:
+            A string message.
         """
         pass
 
     @abstractmethod
     def restart(self) -> str:
-        """Restart the FL client.
+        """Restarts the FL client.
 
-        Returns: error if any
-
+        Returns:
+            A string message.
         """
         pass
 
