@@ -1,0 +1,12 @@
+system_setup: ./data/system/ha_2_servers_2_clients.yml
+apps_root_dir: ./data/apps
+single_app_as_job: True
+cleanup: True
+
+
+tests:
+  - app_name: np_sag
+    validators:
+      - path: tests.integration_test.validators.LogResultValidator
+        args: { expected_in_result: "Round 0 started" }
+    event_sequence_yaml: ./data/ha/kill_one_server_during_training_before_first_round.yml
