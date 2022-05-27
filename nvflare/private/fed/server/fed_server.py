@@ -108,6 +108,7 @@ class BaseServer(ABC):
         self.status = ServerStatus.NOT_STARTED
 
         self.abort_signal = None
+        self.executor = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -146,8 +147,9 @@ class BaseServer(ABC):
             compression = grpc.Compression.Gzip
 
         if not self.grpc_server:
+            self.executor = futures.ThreadPoolExecutor(max_workers=num_server_workers)
             self.grpc_server = grpc.server(
-                futures.ThreadPoolExecutor(max_workers=num_server_workers),
+                self.executor,
                 options=grpc_options,
                 compression=compression,
             )
@@ -213,6 +215,8 @@ class BaseServer(ABC):
     def fl_shutdown(self):
         self.shutdown = True
         self.close()
+        if self.executor:
+            self.executor.shutdown()
 
 
 class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):

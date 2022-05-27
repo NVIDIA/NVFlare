@@ -222,6 +222,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.fire_event(EventType.SYSTEM_END, self.new_context())
         _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
+        self.executor.shutdown()
         return "Shutdown the client..."
 
     def restart(self) -> str:
@@ -231,6 +232,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.fire_event(EventType.SYSTEM_END, self.new_context())
         _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
+        self.executor.shutdown()
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:

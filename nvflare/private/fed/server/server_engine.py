@@ -380,6 +380,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        while self.server.status != ServerStatus.SHUTDOWN:
+            time.sleep(1.0)
         return ""
 
     def restart_server(self) -> str:
@@ -391,6 +393,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        while self.server.status != ServerStatus.SHUTDOWN:
+            time.sleep(1.0)
         return ""
 
     def get_widget(self, widget_id: str) -> Widget:
@@ -778,7 +782,9 @@ def server_shutdown(server, touch_file):
     try:
         server.fl_shutdown()
         server.admin_server.stop()
+        time.sleep(3.0)
     finally:
+        server.status = ServerStatus.SHUTDOWN
         sys.exit(2)
 
 
