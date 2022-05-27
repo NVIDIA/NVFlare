@@ -28,7 +28,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ClientStatusKey, EngineConstant
+from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import deploy_app
 
@@ -71,7 +71,7 @@ class ClientEngine(ClientEngineInternalSpec):
             raise ValueError("workers must >= 1")
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.fl_components = [x for x in self.client.components if isinstance(x, FLComponent)]
+        self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
@@ -122,7 +122,7 @@ class ClientEngine(ClientEngineInternalSpec):
     ) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STARTED:
-            return "Client app already started."
+            return f"{ERROR_MSG_PREFIX}: Client app already started."
 
         app_root = os.path.join(
             self.args.workspace,
@@ -130,7 +130,7 @@ class ClientEngine(ClientEngineInternalSpec):
             WorkspaceConstants.APP_PREFIX + self.client.client_name,
         )
         if not os.path.exists(app_root):
-            return "Client app does not exist. Please deploy it before starting client."
+            return f"{ERROR_MSG_PREFIX}: Client app does not exist. Please deploy it before starting client."
 
         if self.client.enable_byoc:
             app_custom_folder = os.path.join(app_root, "custom")
@@ -191,13 +191,13 @@ class ClientEngine(ClientEngineInternalSpec):
     def abort_app(self, run_number: str) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STOPPED:
-            return "Client app already stopped."
+            return f"{ERROR_MSG_PREFIX}: Client app already stopped."
 
         if status == ClientStatus.NOT_STARTED:
-            return "Client app has not started."
+            return f"{ERROR_MSG_PREFIX}: Client app has not started."
 
         if status == ClientStatus.STARTING:
-            return "Client app is starting, please wait for client to have started before abort."
+            return f"{ERROR_MSG_PREFIX}: Client app is starting, please wait for client to have started before abort."
 
         self.client_executor.abort_train(self.client, run_number)
 
@@ -206,14 +206,14 @@ class ClientEngine(ClientEngineInternalSpec):
     def abort_task(self, run_number: str) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.NOT_STARTED:
-            return "Client app has not started."
+            return f"{ERROR_MSG_PREFIX}: Client app has not started."
 
         if status == ClientStatus.STARTING:
-            return "Client app is starting, please wait for started before abort_task."
+            return f"{ERROR_MSG_PREFIX}: Client app is starting, please wait for started before abort_task."
 
         self.client_executor.abort_task(self.client, run_number)
 
-        return "Abort signal has been sent to the current task. "
+        return "Abort signal has been sent to the current task."
 
     def shutdown(self) -> str:
         self.logger.info("Client shutdown...")
@@ -239,15 +239,15 @@ class ClientEngine(ClientEngineInternalSpec):
         workspace = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
 
         if deploy_app(app_name, client_name, workspace, app_data):
-            return ""
+            return f"Deployed app {app_name} to {client_name}"
         else:
-            return "Failed to deploy_app"
+            return f"{ERROR_MSG_PREFIX}: Failed to deploy_app"
 
     def delete_run(self, run_num: int) -> str:
         run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
         if os.path.exists(run_number_folder):
             shutil.rmtree(run_number_folder)
-        return "Delete run folder: {}".format(run_number_folder)
+        return f"Delete run folder: {run_number_folder}."
 
     def get_current_run_info(self, run_number) -> ClientRunInfo:
         return self.client_executor.get_run_info(run_number)

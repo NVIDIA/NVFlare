@@ -55,6 +55,7 @@ from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.fed.utils.fed_utils import check_client_replies
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -752,20 +753,14 @@ class ServerEngine(ServerEngineInternalSpec):
             request = Message(topic=TrainingTopic.START_JOB, body=pickle.dumps(resource_requirement))
             request.set_header(RequestHeader.RUN_NUM, run_number)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
-            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
             client = self.get_client_from_name(site)
             if client:
                 requests.update({client.token: request})
         replies = []
         if requests:
             replies = self._send_admin_requests(requests)
+        check_client_replies(replies=replies, client_sites=client_sites, command=f"start job ({run_number})")
         return replies
-
-        # admin_server = engine.server.admin_server
-        # message = Message(topic=TrainingTopic.START_JOB, body="")
-        # message.set_header(RequestHeader.RUN_NUM, run_number)
-        # replies = self._send_to_clients(admin_server, client_sites, engine, message)
-        # return replies
 
     def stop_all_jobs(self):
         fl_ctx = self.new_context()

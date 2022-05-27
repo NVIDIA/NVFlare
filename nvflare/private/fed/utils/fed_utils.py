@@ -17,10 +17,12 @@ import pickle
 import shutil
 from logging.handlers import RotatingFileHandler
 from multiprocessing.connection import Listener
+from typing import List
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.private.defs import ERROR_MSG_PREFIX
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 
@@ -93,3 +95,18 @@ def listen_command(listen_port, engine, execute_func, logger):
             conn.close()
         if listener:
             listener.close()
+
+
+def check_client_replies(replies, client_sites: List[str], command: str):
+    display_sites = ",".join(client_sites)
+    if not replies:
+        raise RuntimeError(f"Failed to {command} to the clients {display_sites}: no replies.")
+    if len(replies) != len(client_sites):
+        raise RuntimeError(f"Failed to {command} to the clients {display_sites}: not enough replies.")
+
+    error_msg = ""
+    for r, client_name in zip(replies, client_sites):
+        if ERROR_MSG_PREFIX in r.reply.body:
+            error_msg += f"{client_name}: {r.reply.body}\n"
+    if error_msg != "":
+        raise RuntimeError(f"Failed to {command} to the following clients: \n{error_msg}")

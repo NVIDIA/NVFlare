@@ -444,6 +444,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 return task
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx):
+        task_name = SpecialTaskName.END_RUN
+        task_id = ""
         shareable = None
         try:
             with self.engine.lock:
@@ -467,11 +469,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
 
                     fl_ctx.props.update(child_fl_ctx)
-        except BaseException:
-            self.logger.info("Could not connect to server runner process - asked client to end the run")
-            task_name = SpecialTaskName.END_RUN
-            task_id = ""
-            shareable = None
+        except BaseException as e:
+            self.logger.info(f"Could not connect to server runner process: {e} - asked client to end the run")
         return shareable, task_id, task_name
 
     def SubmitUpdate(self, request, context):
