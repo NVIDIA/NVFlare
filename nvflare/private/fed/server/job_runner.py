@@ -217,11 +217,14 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.RUN_NUM, str(run_number))
         self.log_debug(fl_ctx, f"Send delete_run command to the site for run:{run_number}")
         replies = _send_to_clients(admin_server, client_sites, engine, message)
-        _check_client_replies(replies=replies, client_sites=client_sites, command="send delete_run command")
+        try:
+            _check_client_replies(replies=replies, client_sites=client_sites, command="send delete_run command")
+        except RuntimeError as e:
+            self.log_error(fl_ctx, f"Failed to execute delete run ({run_number}) on the clients: {e}")
 
         err = engine.delete_run_number(run_number)
         if err:
-            self.log_error(fl_ctx, f"Failed to delete_run the server for run_.{run_number}")
+            self.log_error(fl_ctx, f"Failed to delete_run the server for run: {run_number}")
 
     def _job_complete_process(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
