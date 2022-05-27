@@ -22,7 +22,7 @@ import time
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
@@ -183,8 +183,8 @@ class ProcessExecutor(ClientExecutor):
         listen_port,
         allocated_resource,
         token,
-        resource_consumer,
-        resource_manager,
+        resource_consumer: ResourceConsumerSpec,
+        resource_manager: ResourceManagerSpec,
     ):
         if allocated_resource:
             resource_consumer.consume(allocated_resource)
@@ -306,14 +306,13 @@ class ProcessExecutor(ClientExecutor):
             if process_status == ClientStatus.STARTED:
                 try:
                     child_process = self.run_processes[run_number][RunProcessKey.CHILD_PROCESS]
-                    # kill the sub-process group directly
                     conn_client = self.get_conn_client(run_number)
                     if conn_client:
                         data = {"command": AdminCommandNames.ABORT, "data": {}}
                         conn_client.send(data)
                         self.logger.debug("abort sent")
 
-                    threading.Thread(target=self._terminate_process, args=[child_process]).start()
+                    threading.Thread(target=self._terminate_process, args=[child_process, run_number]).start()
                 except Exception as e:
                     self.logger.error(f"abort_train execution exception: {e}.", exc_info=True)
                 finally:
@@ -324,7 +323,7 @@ class ProcessExecutor(ClientExecutor):
 
         self.logger.info("Client training was terminated.")
 
-    def _terminate_process(self, child_process):
+    def _terminate_process(self, child_process, run_number):
         # wait for client to handle abort
         time.sleep(10.0)
         # kill the sub-process group directly
@@ -334,7 +333,7 @@ class ProcessExecutor(ClientExecutor):
         except Exception:
             pass
         child_process.terminate()
-        self.logger.debug("terminated")
+        self.logger.info(f"run ({run_number}): child worker process terminated")
 
     def abort_task(self, client, run_number):
         with self.lock:
@@ -360,16 +359,18 @@ class ProcessExecutor(ClientExecutor):
             if time.time() - start > 15:
                 break
 
-        self.logger.info("waiting for process to finish.")
+        self.logger.info(f"run ({run_number}): waiting for child worker process to finish.")
         with self.lock:
             child_process = self.run_processes.get(run_number, {}).get(RunProcessKey.CHILD_PROCESS)
         if child_process:
             child_process.wait()
             return_code = child_process.returncode
-            self.logger.info(f"process finished with execution code: {return_code}")
+            self.logger.info(f"run ({run_number}): child worker process finished with execution code: {return_code}")
 
         if allocated_resource:
-            resource_manager.free_resources(resources=allocated_resource, token=token, fl_ctx=FLContext())
+            resource_manager.free_resources(
+                resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
+            )
 
         with self.lock:
             conn_client = self.get_conn_client(run_number)

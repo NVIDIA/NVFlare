@@ -97,6 +97,12 @@ This component is specified as one item in the components.server section.
 
 This configuration is included in the fed_server.json of the Server’s Startup Kit.
 
+.. note::
+
+   The default storage is `FilesystemStorage<nvflare.app_common.storages.filesystem_storage.FilesystemStorage>` and is
+   configured to use paths available in the file system to persist data. Other implementations can be used instead that
+   may need to take other arguments or configurations.
+
 Job Scheduler
 -------------
 The Job scheduler is responsible for determining the next job to run. Job scheduler config specifies the Job scheduler Python object.

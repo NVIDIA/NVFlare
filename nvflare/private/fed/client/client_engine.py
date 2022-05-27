@@ -21,12 +21,15 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ClientStatusKey, EngineConstant
+from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import deploy_app
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
@@ -49,6 +52,7 @@ class ClientEngine(ClientEngineInternalSpec):
             rank: local process rank
             workers: number of workers
         """
+        super().__init__()
         self.client = client
         self.client_name = client_name
         self.sender = sender
@@ -63,19 +67,21 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.status = MachineStatus.STOPPED
 
-        assert workers >= 1, "workers must >= 1"
+        if workers < 1:
+            raise ValueError("workers must >= 1")
         self.executor = ThreadPoolExecutor(max_workers=workers)
-
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.fl_components = [x for x in self.client.components if isinstance(x, FLComponent)]
+
+    def fire_event(self, event_type: str, fl_ctx: FLContext):
+        fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
 
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent
 
     def do_validate(self, req: Message):
         self.logger.info("starting cross site validation.")
-        future = self.executor.submit(lambda p: _do_validate(*p), [self.sender, req])
-        # thread = threading.Thread(target=_do_validate, args=(self.sender, req))
-        # thread.start()
+        _ = self.executor.submit(lambda p: _do_validate(*p), [self.sender, req])
 
         return "validate process started."
 
@@ -213,7 +219,8 @@ class ClientEngine(ClientEngineInternalSpec):
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         self.client_executor.close()
-        future = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        self.fire_event(EventType.SYSTEM_END, self.new_context())
+        _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
         return "Shutdown the client..."
 
@@ -221,7 +228,8 @@ class ClientEngine(ClientEngineInternalSpec):
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         self.client_executor.close()
-        future = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        self.fire_event(EventType.SYSTEM_END, self.new_context())
+        _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
         return "Restart the client..."
 
@@ -264,21 +272,20 @@ def _do_validate(sender, message):
     pass
 
 
-def _shutdown_client(client, admin_agent, touch_file):
+def _shutdown_client(federated_client, admin_agent, touch_file):
     with open(touch_file, "a"):
         os.utime(touch_file, None)
 
     try:
         print("About to shutdown the client...")
-        client.communicator.heartbeat_done = True
+        federated_client.communicator.heartbeat_done = True
         time.sleep(3)
-        client.close()
+        federated_client.close()
 
-        if client.process:
-            client.process.terminate()
+        if federated_client.process:
+            federated_client.process.terminate()
 
         admin_agent.shutdown()
     except BaseException as e:
         traceback.print_exc()
-        print("FL client execution exception: " + str(e))
-        # client.status = ClientStatus.TRAINING_EXCEPTION
+        print("Failed to shutdown client: " + str(e))

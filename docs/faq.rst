@@ -181,17 +181,17 @@ Operational
 
 #. What is the difference between the Admin client and the FL client?
 
-    The :ref:`Admin client <admin_commands>` is used to control the state of the server's controller workflow and only interacts with the
+    The :ref:`Admin client <operating_nvflare>` is used to control the state of the server's controller workflow and only interacts with the
     server.  FL clients poll the server and perform tasks based on the state of the server.  The Admin client does not
     interact directly with FL client.
 
 #. Where does the Admin client run?
 
-    The :ref:`Admin client <admin_commands>` runs as a standalone process, typically on a researcher's workstation or laptop.
+    The :ref:`Admin client <operating_nvflare>` runs as a standalone process, typically on a researcher's workstation or laptop.
 
 #. What can you do with the Admin client?
 
-    The :ref:`Admin client <admin_commands>` is used to orchestrate the FL study, including starting and stopping server
+    The :ref:`Admin client <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping server
     and clients, deploying applications, and managing FL experiments.
 
 #. Why am I getting an error about my custom files not being found?
@@ -363,13 +363,10 @@ Overall training flow related questions
 Known issues
 ************
 
-#. If server dies and then is restarted, intentionally or unintentionally, all clients will have to be restarted.
 #. Running out of memory can happen at any time, especially if the server and clients are running on same machine.
    This can cause the server to die unexpectedly.
-#. Putting applications in the transfer folders without using the upload_app command or forgetting to delete the models
-   folder inside, a mysterious error may occur when running the deploy_app command because the application folder is too
-   large to be uploaded and that causes timeout.
-#. Please don't start a new training run or start a new app before the previous application is fully stopped. Users
-   can do ``abort client`` and ``abort server`` before ``start_app`` for the new run.
 #. After calling ``shutdown client`` for a client running multi GPUs, a process (sub_worker_process) may remain. The
    work around for this is to run ``abort client`` before the ``shutdown`` command.
+#. If a snapshot is in a corrupted state, the server may try to restore the job and get stuck. To resolve this, delete
+   the snapshot from the location configured in project.yml for the snapshot_persistor storage (by default
+   ``/tmp/nvflare/jobs-storage``), and ``abort_job`` should be able to stop the job on the server.

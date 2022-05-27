@@ -695,8 +695,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return stats
 
-    def _send_admin_requests(self, requests) -> List[ClientReply]:
-        return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
+    def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
+        return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
     def check_client_resources(self, resource_reqs) -> Dict[str, Tuple[bool, str]]:
         requests = {}
@@ -710,7 +710,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests)
+            replies = self._send_admin_requests(requests, 15)
         result = {}
         for r in replies:
             site_name = self.get_client_name_from_token(r.client_token)
@@ -734,7 +734,6 @@ class ServerEngine(ServerEngineInternalSpec):
                 resource_requirements = resource_reqs[site_name]
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
-                # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
                 client = self.get_client_from_name(site_name)
                 if client:
                     requests.update({client.token: request})
