@@ -51,11 +51,11 @@ pip install -r ./virtualenv/plot-requirements.txt
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
 The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
 ```
-./create_poc_workpace.sh [n_clients]
+./create_poc_workspace.sh.sh [n_clients]
 ```
 In the following experiments, we will be using 4 clients. 
 ```
-./create_poc_workpace.sh 4
+./create_poc_workspace.sh 4
 ```
 Press y and enter when prompted.
 ### 2.2 (Optional) Secure FL workspace
@@ -80,11 +80,12 @@ For details, please refer to the [documentation](https://nvflare.readthedocs.io/
 ## 3. Run automated experiments
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
 ### 3.1 Prepare local configs
-First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset. In the current folder structure, it will be `${PWD}/dataset_brats18`, it can be any arbitrary path where the data locates.  
+First, we add the image and datalist directory roots to `config_train.json` files for generating the absolute path to the dataset by replacing the `DATASET_ROOT` and  `DATALIST_ROOT` placeholders. In the current folder structure, it will be `${PWD}/dataset_brats18/dataset` for `DATASET_ROOT` and  `${PWD}/dataset_brats18/datalist` for `DATALIST_ROOT` but you can update the below `sed` commands if the data locates somewhere else.
 ```
 for alg in brats_central brats_fedavg brats_fedavg_dp
 do
-  sed -i "s|DATASET_ROOT|${PWD}/dataset_brats18|g" configs/${alg}/config/config_train.json
+  sed -i "s|DATASET_ROOT|${PWD}/dataset_brats18/dataset|g" configs/${alg}/config/config_train.json
+  sed -i "s|DATALIST_ROOT|${PWD}/dataset_brats18/datalist|g" configs/${alg}/config/config_train.json
 done
 ```
 ### 3.2 Start the FL system and submit jobs
