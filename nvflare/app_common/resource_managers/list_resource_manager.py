@@ -170,3 +170,10 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
             for k in resources:
                 for i in resources[k]:
                     self.resources[k].append(i)
+
+    def report_resources(self, fl_ctx):
+        with self.lock:
+            return {
+                "resources": {k: list(self.resources[k]) for k in self.resources},
+                "reserved_resources": self.reserved_resources,
+            }
