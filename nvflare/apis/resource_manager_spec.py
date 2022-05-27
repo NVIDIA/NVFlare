@@ -82,3 +82,8 @@ class ResourceManagerSpec(ABC):
             fl_ctx: the FLContext
         """
         pass
+
+    @abstractmethod
+    def report_resources(self, fl_ctx):
+        """Reports resources."""
+        pass

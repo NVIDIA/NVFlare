@@ -56,6 +56,9 @@ class DummyResourceManager(ResourceManagerSpec):
         for k in resources:
             self.resources[k] += resources[k]
 
+    def report_resources(self, fl_ctx):
+        return self.resources
+
 
 class Site:
     def __init__(self, name, resources, resource_manager=None):
