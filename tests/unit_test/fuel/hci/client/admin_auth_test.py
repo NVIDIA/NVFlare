@@ -17,7 +17,7 @@ import json
 import os
 import time
 import uuid
-from typing import List
+from typing import List, Optional
 from unittest.mock import MagicMock, Mock
 
 from nvflare.apis.fl_constant import WorkspaceConstants
@@ -30,12 +30,12 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.server.audit import CommandAudit
-from nvflare.fuel.hci.server.authz import AuthorizationService, AuthzFilter, AuthzCommandModule
+from nvflare.fuel.hci.server.authz import AuthorizationService, AuthzCommandModule, AuthzFilter
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.server.file_transfer import FileTransferModule
-from nvflare.fuel.hci.server.login import SimpleAuthenticator, LoginModule
-from nvflare.fuel.hci.server.sess import SessionManager, Session
-from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes, split_path
+from nvflare.fuel.hci.server.login import LoginModule, SimpleAuthenticator
+from nvflare.fuel.hci.server.sess import Session, SessionManager
+from nvflare.fuel.hci.zip_utils import split_path, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.app.default_app_validator import DefaultAppValidator
@@ -82,17 +82,31 @@ class MockSessionManager(SessionManager):
 class MockJobDefManager(SimpleJobDefManager):
     def __init__(self):
         super().__init__()
+        self.jobs = self._create_jobs()
 
     def _get_job_store(self, fl_ctx):
         return Mock(name="job_store")
 
+    def get_job(self, jid: str, fl_ctx: FLContext) -> Job:
+        return next(job for job in self.jobs if job.job_id == jid)
+
     def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
+        return self.jobs
+
+    def find_job_by_name(self, name: str) -> Optional[Job]:
+        return next(job for job in self.jobs if job.meta.get(JobMetaKey.JOB_FOLDER_NAME) == name)
+
+    @staticmethod
+    def _create_jobs():
         meta_files = glob.glob(auth_root + "/jobs/*/meta.json")
-        result = []
+        jobs = []
         for meta_file in meta_files:
             with open(meta_file) as f:
                 meta = json.load(f)
                 jid = str(uuid.uuid4())
+                folder = os.path.dirname(meta_file)
+                job_name = os.path.basename(folder)
+                meta[JobMetaKey.JOB_FOLDER_NAME] = job_name
                 meta[JobMetaKey.JOB_ID.value] = jid
                 meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
                 meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
@@ -106,15 +120,18 @@ class MockJobDefManager(SimpleJobDefManager):
                     meta=meta,
                 )
 
-                result.append(job)
+                jobs.append(job)
 
-        return result
+        return jobs
 
 
 class MockAdminServer:
+
+    job_def_manager = MockJobDefManager()
+
     def __init__(self, user_name: str):
         server_engine = MagicMock(name="server_engine")
-        server_engine.job_def_manager = MockJobDefManager()
+        server_engine.job_def_manager = MockAdminServer.job_def_manager
         cmd_reg = new_command_register_with_builtin_module(app_ctx=server_engine)
 
         authenticator = SimpleAuthenticator({})
@@ -191,6 +208,10 @@ class MockAdminServer:
             command += " " + args
         return self._do_command(command)
 
+    def abort_job(self, job_id: str) -> dict:
+        command = "abort_job " + job_id
+        return self._do_command(command)
+
     def _do_command(self, command: str):
         request = {"data": [{"type": "token", "data": "session-token"}, {"type": "command", "data": command}]}
         conn = MockConnection(request)
@@ -212,7 +233,7 @@ class TestAdminAuth:
         cls.admin_server_super.shutdown()
 
     def test_submit_job_self(self):
-        """Test TRAIN_SELF, users can only run jobs on its own sites"""
+        """Test TRAIN_SELF, users can only run jobs on their own sites"""
 
         response = TestAdminAuth.admin_server_a.submit_job("job_a")
         assert self._find_type(response, "success")
@@ -258,6 +279,39 @@ class TestAdminAuth:
         data = self._get_type(response, "string")
         count = data.count("SUBMITTED")
         assert count == 2, f"Not all jobs are listed: {count}"
+
+    def test_abort_job_self(self):
+        """Test TRAIN_SELF, users can only abort jobs on their own sites"""
+
+        job_a = MockAdminServer.job_def_manager.find_job_by_name("job_a")
+        response = TestAdminAuth.admin_server_a.abort_job(job_a.job_id)
+        assert self._find_type(response, "success")
+
+        job_b = MockAdminServer.job_def_manager.find_job_by_name("job_b")
+        response = TestAdminAuth.admin_server_b.abort_job(job_b.job_id)
+        assert self._find_type(response, "success")
+
+    def test_abort_job_other(self):
+        """Test negative TRAIN_SELF, users can not abort jobs on other's sites"""
+
+        job_b = MockAdminServer.job_def_manager.find_job_by_name("job_b")
+        response = TestAdminAuth.admin_server_a.abort_job(job_b.job_id)
+        assert AUTH_ERROR in self._get_type(response, "error")
+
+        job_a = MockAdminServer.job_def_manager.find_job_by_name("job_a")
+        response = TestAdminAuth.admin_server_b.abort_job(job_a.job_id)
+        assert AUTH_ERROR in self._get_type(response, "error")
+
+    def test_abort_job_super(self):
+        """Test TRAIN_ALL, superusers can abort jobs on all sites"""
+
+        job_a = MockAdminServer.job_def_manager.find_job_by_name("job_a")
+        response = TestAdminAuth.admin_server_super.abort_job(job_a.job_id)
+        assert self._find_type(response, "success")
+
+        job_b = MockAdminServer.job_def_manager.find_job_by_name("job_b")
+        response = TestAdminAuth.admin_server_super.abort_job(job_b.job_id)
+        assert self._find_type(response, "success")
 
     @staticmethod
     def _find_type(result: dict, data_type: str):
