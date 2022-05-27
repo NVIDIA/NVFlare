@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import pickle
 from typing import List
 
@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, TrainingTopic
+from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, SysCommandTopic, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.scheduler_constants import ShareableHeader
@@ -122,3 +122,19 @@ class CancelResourceProcessor(RequestProcessor):
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
         return Message(topic="reply_" + req.topic, body=pickle.dumps(result))
+
+
+class ReportResourcesProcessor(RequestProcessor):
+    def get_topics(self) -> [str]:
+        return [SysCommandTopic.REPORT_RESOURCES]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        engine = app_ctx
+        resource_manager = engine.get_component(SystemComponents.RESOURCE_MANAGER)
+        if not isinstance(resource_manager, ResourceManagerSpec):
+            raise RuntimeError(
+                f"resource_manager should be of type ResourceManagerSpec, but got {type(resource_manager)}."
+            )
+        resources = resource_manager.report_resources(engine.new_context())
+        message = Message(topic="reply_" + req.topic, body=json.dumps(resources))
+        return message
