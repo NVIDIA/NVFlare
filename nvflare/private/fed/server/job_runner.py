@@ -15,6 +15,7 @@
 import os.path
 import threading
 import time
+from typing import List
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -23,10 +24,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, RunStatus
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
-from nvflare.private.fed.utils.fed_utils import check_client_replies, deploy_app
+from nvflare.private.fed.server.admin import check_client_replies
+from nvflare.private.fed.utils.fed_utils import deploy_app
 
 
-def _send_to_clients(admin_server, client_sites, engine, message):
+def _send_to_clients(admin_server, client_sites: List[str], engine, message):
     clients, invalid_inputs = engine.validate_clients(client_sites)
     requests = {}
     for c in clients:
@@ -35,7 +37,7 @@ def _send_to_clients(admin_server, client_sites, engine, message):
     return replies
 
 
-def _deploy_clients(app_data, app_name, run_number, client_sites, engine):
+def _deploy_clients(app_data, app_name, run_number, client_sites: List[str], engine):
     # deploy app to all the client sites
     admin_server = engine.server.admin_server
     message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
@@ -161,7 +163,7 @@ class JobRunner(FLComponent):
             if err:
                 self.log_error(fl_ctx, f"Failed to abort the server for run: {run_number}")
 
-    def abort_client_run(self, engine, run_number, client_sites, fl_ctx):
+    def abort_client_run(self, engine, run_number, client_sites: List[str], fl_ctx):
         """Send the abort run command to the clients
 
         Args:
@@ -181,20 +183,16 @@ class JobRunner(FLComponent):
         check_client_replies(replies=replies, client_sites=client_sites, command="abort the run")
         return replies
 
-    def _delete_run(self, run_number, sites: dict, fl_ctx: FLContext):
-        """Delete the run workspace
+    def _delete_run(self, run_number, client_sites: List[str], fl_ctx: FLContext):
+        """Deletes the run workspace
 
         Args:
             run_number: run_number
-            sites: participating sites
+            client_sites: participating sites
             fl_ctx: FLContext
-
-        Returns:
-
         """
         engine = fl_ctx.get_engine()
 
-        client_sites = list(sites.keys())
         admin_server = engine.server.admin_server
         message = Message(topic=TrainingTopic.DELETE_RUN, body="")
         message.set_header(RequestHeader.RUN_NUM, str(run_number))
@@ -249,8 +247,8 @@ class JobRunner(FLComponent):
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
                 if self.scheduler:
                     (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
-
                     if ready_job:
+                        client_sites = {k: v for k, v in sites.items() if k != "server"}
                         try:
                             self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
                             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
@@ -259,7 +257,7 @@ class JobRunner(FLComponent):
                             self._start_run(
                                 run_number=run_number,
                                 job=ready_job,
-                                client_sites={k: v for k, v in sites.items() if k != "server"},
+                                client_sites=client_sites,
                                 fl_ctx=fl_ctx,
                             )
                             with self.lock:
@@ -268,7 +266,7 @@ class JobRunner(FLComponent):
                         except Exception as e:
                             run_number = fl_ctx.get_prop(FLContextKey.JOB_RUN_NUMBER)
                             if run_number:
-                                self._delete_run(run_number, sites, fl_ctx)
+                                self._delete_run(run_number, list(client_sites.keys()), fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
                             self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
