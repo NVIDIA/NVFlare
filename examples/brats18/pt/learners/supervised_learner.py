@@ -53,7 +53,6 @@ class SupervisedLearner(Learner):
         # the actual run has not started at this point
         self.aggregation_epochs = aggregation_epochs
         self.train_task_name = train_task_name
-        self.best_metric = 0.0
         # Epoch counter
         self.epoch_of_start_time = 0
         self.epoch_global = 0
