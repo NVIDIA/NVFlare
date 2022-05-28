@@ -79,9 +79,17 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
 
         job_id = args[1].lower()
         conn.set_prop(self.RUN_NUMBER, job_id)
-        args.append("server")  # for now, checking permissions against server
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
 
-        return self._authorize_actions(conn, args[2:], [Action.TRAIN])
+        with engine.new_context() as fl_ctx:
+            job = job_def_manager.get_job(job_id, fl_ctx)
+
+        if not job:
+            conn.append_error(f"Job with ID {job_id} doesn't exist")
+            return False, None
+
+        return self.authorize_job_meta(conn, job.meta, [Action.TRAIN])
 
     def list_jobs(self, conn: Connection, args: List[str]):
 
@@ -153,12 +161,11 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
 
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngine):
-            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+        job_runner = engine.job_runner
 
         try:
             run_number = conn.get_prop(self.RUN_NUMBER)
-            engine.job_runner.stop_run(run_number, engine.new_context())
+            job_runner.stop_run(run_number, engine.new_context())
             conn.append_string("Abort signal has been sent to the server app.")
             conn.append_success("")
         except Exception as e:
