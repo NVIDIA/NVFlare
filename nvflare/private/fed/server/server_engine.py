@@ -54,7 +54,6 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
-from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.widgets.info_collector import InfoCollector
@@ -759,7 +758,6 @@ class ServerEngine(ServerEngineInternalSpec):
         replies = []
         if requests:
             replies = self._send_admin_requests(requests)
-        check_client_replies(replies=replies, client_sites=client_sites, command=f"start job ({run_number})")
         return replies
 
     def stop_all_jobs(self):

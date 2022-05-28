@@ -30,21 +30,13 @@ from nvflare.private.fed.utils.fed_utils import deploy_app
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message):
     clients, invalid_inputs = engine.validate_clients(client_sites)
+    if invalid_inputs:
+        raise RuntimeError(f"invalid clients: {invalid_inputs}.")
     requests = {}
     for c in clients:
         requests.update({c.token: message})
     replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
     return replies
-
-
-def _deploy_clients(app_data, app_name, run_number, client_sites: List[str], engine):
-    # deploy app to all the client sites
-    admin_server = engine.server.admin_server
-    message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
-    message.set_header(RequestHeader.RUN_NUM, run_number)
-    message.set_header(RequestHeader.APP_NAME, app_name)
-    replies = _send_to_clients(admin_server, client_sites, engine, message)
-    check_client_replies(replies=replies, client_sites=client_sites, command="deploy the App")
 
 
 class JobRunner(FLComponent):
@@ -60,6 +52,17 @@ class JobRunner(FLComponent):
         if event_type == EventType.SYSTEM_START:
             engine = fl_ctx.get_engine()
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
+
+    def _deploy_clients(self, app_data, app_name, run_number, client_sites: List[str], fl_ctx):
+        engine = fl_ctx.get_engine()
+        # deploy app to all the client sites
+        admin_server = engine.server.admin_server
+        message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
+        message.set_header(RequestHeader.RUN_NUM, run_number)
+        message.set_header(RequestHeader.APP_NAME, app_name)
+        self.log_debug(fl_ctx, f"Send deploy command to the clients for run: {run_number}")
+        replies = _send_to_clients(admin_server, client_sites, engine, message)
+        return replies
 
     def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> str:
         """deploy the application to the list of participants
@@ -104,7 +107,8 @@ class JobRunner(FLComponent):
                         client_sites.append(p)
 
             if client_sites:
-                _deploy_clients(app_data, app_name, run_number, client_sites, engine)
+                replies = self._deploy_clients(app_data, app_name, run_number, client_sites, fl_ctx)
+                check_client_replies(replies=replies, client_sites=client_sites, command="deploy the App")
                 display_sites = ",".join(client_sites)
                 self.log_info(
                     fl_ctx,
@@ -133,9 +137,9 @@ class JobRunner(FLComponent):
             raise RuntimeError(f"Could not start the server App for Run: {run_number}.")
 
         replies = engine.start_client_job(run_number, client_sites)
-        display_sites = ",".join(list(client_sites.keys()))
-        if not replies:
-            raise RuntimeError(f"Failed to start the Run: {run_number} to the clients: {display_sites}")
+        client_sites_names = list(client_sites.keys())
+        check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({run_number})")
+        display_sites = ",".join(client_sites_names)
 
         self.log_info(fl_ctx, f"Started run: {run_number} for clients: {display_sites}")
         self.fire_event(EventType.JOB_STARTED, fl_ctx)
@@ -146,42 +150,35 @@ class JobRunner(FLComponent):
         Args:
             run_number: run_number to be stopped
             fl_ctx: FLContext
-
-        Returns:
-
         """
         engine = fl_ctx.get_engine()
         run_process = engine.run_processes.get(run_number)
         if run_process:
             client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
-
-            replies = self.abort_client_run(engine, run_number, client_sites, fl_ctx)
-            if not replies:
-                self.log_error(fl_ctx, f"Failed to send abort command to clients for run: {run_number}")
+            self.abort_client_run(run_number, client_sites, fl_ctx)
 
             err = engine.abort_app_on_server(run_number)
             if err:
                 self.log_error(fl_ctx, f"Failed to abort the server for run: {run_number}")
 
-    def abort_client_run(self, engine, run_number, client_sites: List[str], fl_ctx):
+    def abort_client_run(self, run_number, client_sites: List[str], fl_ctx):
         """Send the abort run command to the clients
 
         Args:
-            engine: Server Engine
             run_number: run_number
             client_sites: Clients to be aborted
             fl_ctx: FLContext
-
-        Returns:
-
         """
+        engine = fl_ctx.get_engine()
         admin_server = engine.server.admin_server
         message = Message(topic=TrainingTopic.ABORT, body="")
         message.set_header(RequestHeader.RUN_NUM, str(run_number))
-        self.log_debug(fl_ctx, f"Send abort command to the site for run: {run_number}")
-        replies = _send_to_clients(admin_server, client_sites, engine, message)
-        check_client_replies(replies=replies, client_sites=client_sites, command="abort the run")
-        return replies
+        self.log_debug(fl_ctx, f"Send abort command to the clients for run: {run_number}")
+        try:
+            replies = _send_to_clients(admin_server, client_sites, engine, message)
+            check_client_replies(replies=replies, client_sites=client_sites, command="abort the run")
+        except RuntimeError as e:
+            self.log_error(fl_ctx, f"Failed to abort run ({run_number}) on the clients: {e}")
 
     def _delete_run(self, run_number, client_sites: List[str], fl_ctx: FLContext):
         """Deletes the run workspace
@@ -196,9 +193,9 @@ class JobRunner(FLComponent):
         admin_server = engine.server.admin_server
         message = Message(topic=TrainingTopic.DELETE_RUN, body="")
         message.set_header(RequestHeader.RUN_NUM, str(run_number))
-        self.log_debug(fl_ctx, f"Send delete_run command to the site for run:{run_number}")
-        replies = _send_to_clients(admin_server, client_sites, engine, message)
+        self.log_debug(fl_ctx, f"Send delete_run command to the clients for run: {run_number}")
         try:
+            replies = _send_to_clients(admin_server, client_sites, engine, message)
             check_client_replies(replies=replies, client_sites=client_sites, command="send delete_run command")
         except RuntimeError as e:
             self.log_error(fl_ctx, f"Failed to execute delete run ({run_number}) on the clients: {e}")
@@ -217,15 +214,13 @@ class JobRunner(FLComponent):
                         job = self.running_jobs.get(run_number)
                         if job:
                             if run_number in engine.execution_exception_run_processes:
+                                self.log_info(fl_ctx, f"Try to abort run ({run_number}) on clients.")
                                 run_process = engine.execution_exception_run_processes[run_number]
+
                                 # stop client run
                                 client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
+                                self.abort_client_run(run_number, client_sites, fl_ctx)
 
-                                replies = self.abort_client_run(engine, run_number, client_sites, fl_ctx)
-                                if not replies:
-                                    self.log_error(
-                                        fl_ctx, f"Failed to send abort command to clients for run: {run_number}"
-                                    )
                                 job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
                             else:
                                 job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
@@ -293,7 +288,7 @@ class JobRunner(FLComponent):
             self._stop_run(run_number, fl_ctx)
             job = self.running_jobs.get(run_number)
             if job:
-                self.log_info(fl_ctx, f"Stop the job run:{run_number}")
+                self.log_info(fl_ctx, f"Stop the job run: {run_number}")
                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                 job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                 del self.running_jobs[run_number]
