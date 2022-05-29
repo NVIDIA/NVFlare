@@ -243,27 +243,27 @@ class JobRunner(FLComponent):
                 if self.scheduler:
                     (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
                     if ready_job:
-                        client_sites = {k: v for k, v in sites.items() if k != "server"}
-                        try:
-                            self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
-                            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
-                            run_number = self._deploy_job(ready_job, sites, fl_ctx)
-                            job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
-                            self._start_run(
-                                run_number=run_number,
-                                job=ready_job,
-                                client_sites=client_sites,
-                                fl_ctx=fl_ctx,
-                            )
-                            with self.lock:
+                        with self.lock:
+                            client_sites = {k: v for k, v in sites.items() if k != "server"}
+                            try:
+                                self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
+                                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
+                                run_number = self._deploy_job(ready_job, sites, fl_ctx)
+                                job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
+                                self._start_run(
+                                    run_number=run_number,
+                                    job=ready_job,
+                                    client_sites=client_sites,
+                                    fl_ctx=fl_ctx,
+                                )
                                 self.running_jobs[run_number] = ready_job
-                            job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
-                        except Exception as e:
-                            run_number = fl_ctx.get_prop(FLContextKey.JOB_RUN_NUMBER)
-                            if run_number:
-                                self._delete_run(run_number, list(client_sites.keys()), fl_ctx)
-                            job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
-                            self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
+                                job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
+                            except Exception as e:
+                                run_number = fl_ctx.get_prop(FLContextKey.JOB_RUN_NUMBER)
+                                if run_number:
+                                    self._delete_run(run_number, list(client_sites.keys()), fl_ctx)
+                                job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
+                                self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
                 time.sleep(1.0)
         else:
