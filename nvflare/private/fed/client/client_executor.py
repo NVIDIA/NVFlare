@@ -56,6 +56,7 @@ class ClientExecutor(object):
         token,
         resource_consumer,
         resource_manager,
+        target: str,
     ):
         """start_train method to start the FL client training.
 
@@ -70,6 +71,7 @@ class ClientExecutor(object):
             token: token from resource manager
             resource_consumer: resource consumer
             resource_manager: resource manager
+            target: SP target location
 
         """
         pass
@@ -185,6 +187,7 @@ class ProcessExecutor(ClientExecutor):
         token,
         resource_consumer: ResourceConsumerSpec,
         resource_manager: ResourceManagerSpec,
+        target: str,
     ):
         if allocated_resource:
             resource_consumer.consume(allocated_resource)
@@ -201,6 +204,18 @@ class ProcessExecutor(ClientExecutor):
             + args.workspace
             + " -w "
             + self.startup
+            + " -t "
+            + client.token
+            + " -d "
+            + client.ssid
+            + " -n "
+            + run_number
+            + " -c "
+            + client.client_name
+            + " -p "
+            + str(listen_port)
+            + " -g "
+            + target
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )

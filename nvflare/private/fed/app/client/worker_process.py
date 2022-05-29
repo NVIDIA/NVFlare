@@ -15,6 +15,7 @@
 """Provides a command line interface for a federated client trainer."""
 
 import argparse
+import logging
 import os
 import sys
 import threading
@@ -53,6 +54,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
+    parser.add_argument("--token", "-t", type=str, help="token", required=True)
+    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
+    parser.add_argument("--run_number", "-n", type=str, help="run_number", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
+    parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
 
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
@@ -103,25 +110,11 @@ def main():
         thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
         thread.start()
 
-        token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
-        with open(token_file, "r") as f:
-            token = f.readline().strip()
-            ssid = f.readline().strip()
-            run_number = f.readline().strip()
-            client_name = f.readline().strip()
-            listen_port = f.readline().strip()
-            sp_target = f.readline().strip()
-            print(
-                "token is: {} ssid is: {} run_number is: {} client_name: {} listen_port: {}".format(
-                    token, ssid, run_number, client_name, listen_port
-                )
-            )
-
         startup = args.startup
         app_root = os.path.join(
             args.workspace,
-            WorkspaceConstants.WORKSPACE_PREFIX + str(run_number),
-            WorkspaceConstants.APP_PREFIX + client_name,
+            WorkspaceConstants.WORKSPACE_PREFIX + str(args.run_number),
+            WorkspaceConstants.APP_PREFIX + args.client_name,
         )
 
         app_log_config = os.path.join(app_root, config_folder, "log.config")
@@ -138,18 +131,20 @@ def main():
         )
         conf.configure()
 
-        log_file = os.path.join(args.workspace, run_number, "log.txt")
+        log_file = os.path.join(args.workspace, args.run_number, "log.txt")
         add_logfile_handler(log_file)
+        logger = logging.getLogger("worker_process")
+        logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client(args, sp_target)
+        federated_client = deployer.create_fed_client(args, args.sp_target)
         federated_client.status = ClientStatus.STARTING
 
-        federated_client.token = token
-        federated_client.ssid = ssid
-        federated_client.client_name = client_name
-        federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
-        federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)
+        federated_client.token = args.token
+        federated_client.ssid = args.ssid
+        federated_client.client_name = args.client_name
+        federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
+        federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
         client_config_file_name = os.path.join(app_root, args.client_config)
@@ -158,10 +153,10 @@ def main():
         )
         conf.configure()
 
-        workspace = Workspace(args.workspace, client_name, config_folder)
+        workspace = Workspace(args.workspace, args.client_name, config_folder)
         run_manager = ClientRunManager(
-            client_name=client_name,
-            run_num=run_number,
+            client_name=args.client_name,
+            run_num=args.run_number,
             workspace=workspace,
             client=federated_client,
             components=conf.runner_config.components,
@@ -171,20 +166,20 @@ def main():
         federated_client.run_manager = run_manager
 
         with run_manager.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
-            fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)
+            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
+            fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
             fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
 
-            client_runner = ClientRunner(config=conf.runner_config, run_num=run_number, engine=run_manager)
+            client_runner = ClientRunner(config=conf.runner_config, run_num=args.run_number, engine=run_manager)
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 
             # Start the command agent
-            command_agent = CommandAgent(federated_client, int(listen_port), client_runner)
+            command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
             command_agent.start(fl_ctx)
 
         federated_client.status = ClientStatus.STARTED
