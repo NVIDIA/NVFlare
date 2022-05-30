@@ -145,9 +145,22 @@ python3 ./result_stat/plot_tensorboard_events.py
 The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 epochs (600 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/nvflare_brats18.png)
 
-### 4.2 DP parameter ablations
-Next, we compare different DP parameter settings' performance on the validation data. Parameters have different impacts over the performance and privacy.
-![All training curve](./figs/nvflare_brats18_dp.png)
+As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/config/config_fed_client.json). Different DP settings will have different impacts over the performance. 
+
+### 4.2 Validation score
+We also provide a script for performing standalone validation on the data split based on the best global model for Central/FedAvg/FedAvg_DP. 
+Please add the correct paths and job_ids, and run
+```
+cd ./result_stat
+bash testing_models_3d.sh
+```
+The accuracy metrics under each settings are:
+
+| Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
+| ----------- |------------------|---------------|---------------|---------------|  
+| brats18_central 	| 	0.8558	         | 	0.8648	      | 0.9070	       | 0.7894	       | 
+| brats18_fedavg  	| 	0.8573	         | 0.8687	       | 0.9088	       | 0.7879	       | 
+| brats18_fedavg_dp | 	0.8209	    | 0.8282	       | 0.8818	       | 0.7454	       |
 
 
 

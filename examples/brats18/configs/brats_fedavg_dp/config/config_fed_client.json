@@ -25,7 +25,7 @@
           "args": {
             "fraction": 0.9,
             "epsilon": 0.001,
-            "noise_var": 0.1,
+            "noise_var": 1.0,
             "gamma": 1e-4
           }
         }
