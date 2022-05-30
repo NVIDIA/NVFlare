@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,17 +47,22 @@ from monai.transforms import (
     Spacingd,
     ToTensord,
 )
+from monai_configer import MonaiConfiger
 
 
-class TrainConfiger:
+class PythonConfiger(MonaiConfiger):
     """
     This class is used to config the necessary components of train and evaluate engines
-    for MONAI trainer.
+    for MONAI trainer. All components are implemented with monai APIs directly.
     Please check the implementation of `SupervisedEvaluator` and `SupervisedTrainer`
     from `monai.engines` and determine which components can be used.
     Args:
         app_root: root folder path of config files.
+        dataset_root: root path that contains the dataset.
         wf_config_file_name: json file name of the workflow config file.
+        dataset_folder_name: name of the dataset folder.
+        max_epochs: number of epochs that trainer will run.
+
     """
 
     def __init__(
@@ -105,9 +110,7 @@ class TrainConfiger:
     def download_spleen_dataset(self, dataset_path: str):
         url = "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task09_Spleen.tar"
         tarfile_name = f"{dataset_path}.tar"
-        download_and_extract(
-            url=url, filepath=tarfile_name, output_dir=self.dataset_root
-        )
+        download_and_extract(url=url, filepath=tarfile_name, output_dir=self.dataset_root)
 
     def configure(self):
         self.set_device()
@@ -207,9 +210,7 @@ class TrainConfiger:
             ]
         )
 
-        val_ds = CacheDataset(
-            data=val_datalist, transform=val_transforms, cache_rate=0.0, num_workers=4
-        )
+        val_ds = CacheDataset(data=val_datalist, transform=val_transforms, cache_rate=1.0, num_workers=4)
         val_data_loader = DataLoader(
             val_ds,
             batch_size=1,
@@ -240,9 +241,7 @@ class TrainConfiger:
                 save_dict={"model": network},
                 save_key_metric=True,
             ),
-            TensorBoardStatsHandler(
-                log_dir=self.ckpt_dir, output_transform=lambda x: None
-            ),
+            TensorBoardStatsHandler(log_dir=self.ckpt_dir, output_transform=lambda x: None),
         ]
         self.eval_engine = SupervisedEvaluator(
             device=self.device,
@@ -261,17 +260,11 @@ class TrainConfiger:
 
         optimizer = Novograd(network.parameters(), self.learning_rate)
         loss_function = DiceCELoss(to_onehot_y=True, softmax=True, squared_pred=True, batch=True)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=5000, gamma=0.1
-        )
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5000, gamma=0.1)
         train_handlers = [
             LrScheduleHandler(lr_scheduler=lr_scheduler, print_lr=True),
-            ValidationHandler(
-                validator=self.eval_engine, interval=self.val_interval, epoch_level=True
-            ),
-            StatsHandler(
-                tag_name="train_loss", output_transform=from_engine("loss", first=True)
-            ),
+            ValidationHandler(validator=self.eval_engine, interval=self.val_interval, epoch_level=True),
+            StatsHandler(tag_name="train_loss", output_transform=from_engine("loss", first=True)),
             TensorBoardStatsHandler(
                 log_dir=self.ckpt_dir,
                 tag_name="train_loss",
