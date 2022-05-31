@@ -1,0 +1,48 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": [
+        "train", "validate"
+      ],
+      "executor": {
+        "id": "Executor",
+        "name": "LearnerExecutor",
+        "args": {
+          "learner_id": "brats-learner"
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [
+    {
+      "tasks": ["train"],
+      "filters":[
+          {
+          "path": "nvflare.app_common.filters.svt_privacy.SVTPrivacy",
+          "args": {
+            "fraction": 0.9,
+            "epsilon": 0.001,
+            "noise_var": 1.0,
+            "gamma": 1e-4
+          }
+        }
+      ]
+    }
+  ],
+  "task_data_filters": [
+  ],
+
+  "components": [
+    {
+      "id": "brats-learner",
+      "path": "pt.learners.supervised_monai_brats_learner.SupervisedMonaiBratsLearner",
+      "args": {
+        "train_config_filename": "config_train.json",
+        "aggregation_epochs": 1
+      }
+    }
+  ]
+}
