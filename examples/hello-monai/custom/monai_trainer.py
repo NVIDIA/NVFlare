@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@ from typing import Dict
 
 import numpy as np
 import torch
+from bundle_configer import BundleConfiger
+from python_configer import PythonConfiger
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -24,8 +27,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-
-from train_configer import TrainConfiger
 
 
 class MONAITrainer(Executor):
@@ -40,6 +41,8 @@ class MONAITrainer(Executor):
     def __init__(
         self,
         aggregation_epochs: int = 1,
+        configer_name: str = "PythonConfiger",
+        bundle_config_file: str = "config/bundle_configs/train.json",
         train_task_name=AppConstants.TASK_TRAIN,
     ):
         super().__init__()
@@ -48,6 +51,8 @@ class MONAITrainer(Executor):
         and the actual run has not started at this point.
         """
         self.aggregation_epochs = aggregation_epochs
+        self.configer_name = configer_name
+        self.bundle_config_file = bundle_config_file
         self._train_task_name = train_task_name
 
     def _initialize_trainer(self, fl_ctx: FLContext):
@@ -69,21 +74,34 @@ class MONAITrainer(Executor):
             fl_ctx,
             f"Client {self.client_name} initialized at \n {app_root} \n with args: {fl_args}",
         )
-        conf = TrainConfiger(
-            app_root=app_root,
-            dataset_root=dataset_root,
-            wf_config_file_name=fl_args.train_config,
-            max_epochs=self.aggregation_epochs,
-        )
+
+        if self.configer_name == "PythonConfiger":
+            conf = PythonConfiger(
+                app_root=app_root,
+                dataset_root=dataset_root,
+                wf_config_file_name=fl_args.train_config,
+                max_epochs=self.aggregation_epochs,
+            )
+        elif self.configer_name == "BundleConfiger":
+            conf = BundleConfiger(
+                app_root=app_root,
+                dataset_root=dataset_root,
+                config_file=self.bundle_config_file,
+                epochs=self.aggregation_epochs,
+            )
+        else:
+            raise NotImplementedError(
+                f"Only PythonConfiger and BundleConfiger are implemented, got {self.configer_name}"
+            )
+
         conf.configure()
 
         # train_engine, and eval_engine are MONAI engines that will be used for training and validation.
         # The corresponding training/validation settings, such as transforms, network and dataset
-        # are contained in `TrainConfiger`.
+        # are contained in the imported `MonaiConfiger` class.
         # The engine will be started when `.run()` is called, and when `.terminate()` is called,
         # it will be completely terminated after the current iteration is finished.
-        self.train_engine = conf.train_engine
-        self.eval_engine = conf.eval_engine
+        self.train_engine, self.eval_engine = conf.train_engine, conf.eval_engine
 
     def assign_current_model(self, model_weights: Dict[str, np.ndarray]):
         """
@@ -101,15 +119,9 @@ class MONAITrainer(Executor):
             if var_name in model_keys:
                 weights = model_weights[var_name]
                 try:
-                    local_var_dict[var_name] = torch.as_tensor(
-                        np.reshape(weights, local_var_dict[var_name].shape)
-                    )
+                    local_var_dict[var_name] = torch.as_tensor(np.reshape(weights, local_var_dict[var_name].shape))
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
 
         net.load_state_dict(local_var_dict)
 
@@ -125,11 +137,7 @@ class MONAITrainer(Executor):
             try:
                 local_model_dict[var_name] = local_state_dict[var_name].cpu().numpy()
             except Exception as e:
-                raise ValueError(
-                    "Convert weight from {} failed with error: {}".format(
-                        var_name, str(e)
-                    )
-                )
+                raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
 
         return local_model_dict
 
@@ -212,9 +220,7 @@ class MONAITrainer(Executor):
             dxo = from_shareable(shareable)
             # check if dxo is valid.
             if not isinstance(dxo, DXO):
-                self.log_exception(
-                    fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead."
-                )
+                self.log_exception(fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead.")
                 shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
                 return shareable
 
@@ -233,9 +239,7 @@ class MONAITrainer(Executor):
             self.achieved_meta = dxo.meta
 
             # set engine state max epochs.
-            self.train_engine.state.max_epochs = (
-                self.train_engine.state.epoch + self.aggregation_epochs
-            )
+            self.train_engine.state.max_epochs = self.train_engine.state.epoch + self.aggregation_epochs
             # get current iteration when a round starts
             iter_of_start_time = self.train_engine.state.iteration
 
