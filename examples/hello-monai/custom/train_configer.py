@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,22 +47,17 @@ from monai.transforms import (
     Spacingd,
     ToTensord,
 )
-from monai_configer import MonaiConfiger
 
 
-class PythonConfiger(MonaiConfiger):
+class TrainConfiger:
     """
     This class is used to config the necessary components of train and evaluate engines
-    for MONAI trainer. All components are implemented with monai APIs directly.
+    for MONAI trainer.
     Please check the implementation of `SupervisedEvaluator` and `SupervisedTrainer`
     from `monai.engines` and determine which components can be used.
     Args:
         app_root: root folder path of config files.
-        dataset_root: root path that contains the dataset.
         wf_config_file_name: json file name of the workflow config file.
-        dataset_folder_name: name of the dataset folder.
-        max_epochs: number of epochs that trainer will run.
-
     """
 
     def __init__(
@@ -213,7 +208,7 @@ class PythonConfiger(MonaiConfiger):
         )
 
         val_ds = CacheDataset(
-            data=val_datalist, transform=val_transforms, cache_rate=1.0, num_workers=4
+            data=val_datalist, transform=val_transforms, cache_rate=0.0, num_workers=4
         )
         val_data_loader = DataLoader(
             val_ds,
