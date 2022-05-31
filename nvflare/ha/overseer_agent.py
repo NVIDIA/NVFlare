@@ -102,6 +102,7 @@ class HttpOverseerAgent(OverseerAgent):
         self._flag.set()
 
     def end(self):
+        self._asked_to_stop_retrying = True
         self._flag.set()
         self._asked_to_exit = True
         self._report_and_query.join()
