@@ -4,7 +4,7 @@
     {
       "tasks": ["train"],
       "executor": {
-        "path": "monai_trainer.MONAITrainer",
+        "path": "monai_trainer.MONAIBundleTrainer",
         "args": {
           "aggregation_epochs": 10,
           "val_interval": 10,

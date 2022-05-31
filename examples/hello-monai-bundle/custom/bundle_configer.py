@@ -48,7 +48,6 @@ class BundleConfiger:
     ):
         bundle_path = os.path.join(app_root, bundle_path)
         parser = ConfigParser()
-        config_file = os.path.join(app_root, config_file)
         parser.read_config(f=os.path.join(bundle_path, "configs/train.json"))
         parser.read_meta(f=os.path.join(bundle_path, "configs/metadata.json"))
 
@@ -64,6 +63,7 @@ class BundleConfiger:
         # override some config items
         parser["bundle_root"] = app_root
         parser["dataset_dir"] = dataset_path
+        # number of training epochs for each round
         parser["train#trainer#max_epochs"] = max_epochs
         # the 0-th handler is ValidationHandler, which controls the interval.
         parser["train#handlers"][0]["interval"] = val_interval

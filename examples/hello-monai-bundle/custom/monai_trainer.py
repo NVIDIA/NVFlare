@@ -76,7 +76,7 @@ class MONAIBundleTrainer(Executor):
         conf = BundleConfiger(
             app_root=app_root,
             dataset_root=dataset_root,
-            bundle_path=bundle_path,
+            bundle_path=self.bundle_path,
             val_interval=self.val_interval,
             max_epochs=self.aggregation_epochs,
         )
