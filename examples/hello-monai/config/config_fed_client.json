@@ -6,8 +6,7 @@
       "executor": {
         "path": "monai_trainer.MONAITrainer",
         "args": {
-          "aggregation_epochs": 10,
-          "configer_name": "BundleConfiger"
+          "aggregation_epochs": 10
         }
       }
     }

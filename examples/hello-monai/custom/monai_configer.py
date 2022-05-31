@@ -19,7 +19,6 @@ class MonaiConfiger(ABC):
     """
     Base config class to support `MONAITrainer`.
     """
-
     @abstractmethod
     def configure(self):
         """

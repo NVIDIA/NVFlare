@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from typing import Optional, Sequence, Union
-
-from monai.apps.utils import download_and_extract
-from monai.bundle.config_parser import ConfigParser
 from monai_configer import MonaiConfiger
+from typing import Optional, Sequence, Union
+from monai.bundle.config_parser import ConfigParser
+import os
+from monai.apps.utils import download_and_extract
 
 
 class BundleConfiger(MonaiConfiger):
@@ -75,9 +74,12 @@ class BundleConfiger(MonaiConfiger):
     def download_spleen_dataset(self, dataset_path: str):
         url = "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task09_Spleen.tar"
         tarfile_name = f"{dataset_path}.tar"
-        download_and_extract(url=url, filepath=tarfile_name, output_dir=self.dataset_root)
+        download_and_extract(
+            url=url, filepath=tarfile_name, output_dir=self.dataset_root
+        )
 
     def configure(self):
         self.parser.parse()
         self.train_engine = self.parser.get_parsed_content("train#trainer")
         self.eval_engine = self.parser.get_parsed_content("validate#evaluator")
+
