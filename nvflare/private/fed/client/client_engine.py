@@ -122,7 +122,7 @@ class ClientEngine(ClientEngineInternalSpec):
     ) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STARTED:
-            return f"{ERROR_MSG_PREFIX}: Client app already started."
+            return "Client app already started."
 
         app_root = os.path.join(
             self.args.workspace,
@@ -191,13 +191,13 @@ class ClientEngine(ClientEngineInternalSpec):
     def abort_app(self, run_number: str) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.STOPPED:
-            return f"{ERROR_MSG_PREFIX}: Client app already stopped."
+            return "Client app already stopped."
 
         if status == ClientStatus.NOT_STARTED:
-            return f"{ERROR_MSG_PREFIX}: Client app has not started."
+            return "Client app has not started."
 
         if status == ClientStatus.STARTING:
-            return f"{ERROR_MSG_PREFIX}: Client app is starting, please wait for client to have started before abort."
+            return "Client app is starting, please wait for client to have started before abort."
 
         self.client_executor.abort_train(self.client, run_number)
 
@@ -206,10 +206,10 @@ class ClientEngine(ClientEngineInternalSpec):
     def abort_task(self, run_number: str) -> str:
         status = self.client_executor.get_status(run_number)
         if status == ClientStatus.NOT_STARTED:
-            return f"{ERROR_MSG_PREFIX}: Client app has not started."
+            return "Client app has not started."
 
         if status == ClientStatus.STARTING:
-            return f"{ERROR_MSG_PREFIX}: Client app is starting, please wait for started before abort_task."
+            return "Client app is starting, please wait for started before abort_task."
 
         self.client_executor.abort_task(self.client, run_number)
 
