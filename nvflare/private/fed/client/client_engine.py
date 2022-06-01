@@ -235,7 +235,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.executor.shutdown()
         return "Restart the client..."
 
-    def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
+    def deploy_app(self, app_name: str, run_num: str, client_name: str, app_data) -> str:
         workspace = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
 
         if deploy_app(app_name, client_name, workspace, app_data):
@@ -243,7 +243,7 @@ class ClientEngine(ClientEngineInternalSpec):
         else:
             return f"{ERROR_MSG_PREFIX}: Failed to deploy_app"
 
-    def delete_run(self, run_num: int) -> str:
+    def delete_run(self, run_num: str) -> str:
         run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
         if os.path.exists(run_number_folder):
             shutil.rmtree(run_number_folder)

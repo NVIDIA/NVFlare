@@ -49,7 +49,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def deploy_app(self, app_name: str, run_num: int, client_name: str, app_data) -> str:
+    def deploy_app(self, app_name: str, run_num: str, client_name: str, app_data) -> str:
         """Deploys the app to specified run.
 
         Args:
@@ -87,7 +87,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def abort_app(self, run_number: int) -> str:
+    def abort_app(self, run_number: str) -> str:
         """Aborts the app execution for the specified run.
 
         Returns:
@@ -96,7 +96,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def abort_task(self, run_number: int) -> str:
+    def abort_task(self, run_number: str) -> str:
         """Abort the client current executing task.
 
         Returns:
@@ -105,7 +105,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def delete_run(self, run_num: int) -> str:
+    def delete_run(self, run_num: str) -> str:
         """Deletes the specified run.
 
         Args:

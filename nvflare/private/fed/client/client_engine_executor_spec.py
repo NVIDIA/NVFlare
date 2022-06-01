@@ -98,7 +98,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
         """
 
     @abstractmethod
-    def abort_app(self, run_number: int, fl_ctx: FLContext):
+    def abort_app(self, run_number: str, fl_ctx: FLContext):
         """Abort the running FL App on the client.
 
         Args:
