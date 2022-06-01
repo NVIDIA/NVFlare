@@ -73,7 +73,7 @@ class JobRunner(FLComponent):
             fl_ctx: FLContext
 
         Returns:
-
+            run_number
         """
         fl_ctx.remove_prop(FLContextKey.JOB_RUN_NUMBER)
         engine = fl_ctx.get_engine()
@@ -98,7 +98,7 @@ class JobRunner(FLComponent):
                 if p == "server":
                     success = deploy_app(app_name=app_name, site_name="server", workspace=workspace, app_data=app_data)
                     self.log_info(
-                        fl_ctx, f"Application {app_name} deployed to the server for run:{run_number}", fire_event=False
+                        fl_ctx, f"Application {app_name} deployed to the server for run: {run_number}", fire_event=False
                     )
                     if not success:
                         raise RuntimeError(f"Failed to deploy the App: {app_name} to the server")
@@ -112,23 +112,20 @@ class JobRunner(FLComponent):
                 display_sites = ",".join(client_sites)
                 self.log_info(
                     fl_ctx,
-                    f"Application {app_name} deployed to the clients: {display_sites} for run:{run_number}",
+                    f"Application {app_name} deployed to the clients: {display_sites} for run: {run_number}",
                     fire_event=False,
                 )
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number
 
-    def _start_run(self, run_number, job: Job, client_sites: dict, fl_ctx: FLContext):
+    def _start_run(self, run_number: str, job: Job, client_sites: dict, fl_ctx: FLContext):
         """Start the application
 
         Args:
             run_number: run_number
             client_sites: participating sites
             fl_ctx: FLContext
-
-        Returns:
-
         """
         engine = fl_ctx.get_engine()
         job_clients = engine.get_job_clients(client_sites)
@@ -245,6 +242,7 @@ class JobRunner(FLComponent):
                     if ready_job:
                         with self.lock:
                             client_sites = {k: v for k, v in sites.items() if k != "server"}
+                            run_number = None
                             try:
                                 self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
                                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
@@ -259,10 +257,12 @@ class JobRunner(FLComponent):
                                 self.running_jobs[run_number] = ready_job
                                 job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                             except Exception as e:
-                                run_number = fl_ctx.get_prop(FLContextKey.JOB_RUN_NUMBER)
                                 if run_number:
-                                    self._delete_run(run_number, list(client_sites.keys()), fl_ctx)
+                                    if run_number in self.running_jobs:
+                                        del self.running_jobs[run_number]
+                                    self._stop_run(run_number, fl_ctx)
                                 job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
+                                self.fire_event(EventType.JOB_ABORTED, fl_ctx)
                                 self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
                 time.sleep(1.0)

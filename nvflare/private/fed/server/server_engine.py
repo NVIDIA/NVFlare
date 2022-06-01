@@ -757,7 +757,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests)
+            replies = self._send_admin_requests(requests, timeout_secs=20)
         return replies
 
     def stop_all_jobs(self):

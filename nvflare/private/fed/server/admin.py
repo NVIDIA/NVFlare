@@ -147,9 +147,7 @@ def check_client_replies(replies: List[ClientReply], client_sites: List[str], co
 
     error_msg = ""
     for r, client_name in zip(replies, client_sites):
-        if r.reply is None:
-            error_msg += f"\t{client_name}: reply is None\n"
-        elif ERROR_MSG_PREFIX in r.reply.body:
+        if r.reply and ERROR_MSG_PREFIX in r.reply.body:
             error_msg += f"\t{client_name}: {r.reply.body}\n"
     if error_msg != "":
         raise RuntimeError(f"Failed to {command} to the following clients: \n{error_msg}")
