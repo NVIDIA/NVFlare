@@ -77,9 +77,84 @@ for given workspace, we start all the needed service for POC mode,
 * admin
 
 In POC mode, we skip overseer service
+```
+nvflare poc -d /tmp/nvflare/poc --start
+```
+
+```
+start_poc at /tmp/nvflare/poc
+start: service: server, executing /tmp/nvflare/poc/server/startup/start.sh
+WORKSPACE set to /tmp/nvflare/poc/server/startup/..
+WORKSPACE set to /tmp/nvflare/poc/server/startup/..
+PYTHONPATH is /local/custom:/home/chester/projects/NVFlare:
+start: service: site-1, executing /tmp/nvflare/poc/site-1/startup/start.sh
+WORKSPACE set to /tmp/nvflare/poc/site-1/startup/..
+No sp_end_point is provided.  Default sp_end_point (localhost:8002:8003) is used
+Usage: start.sh <SP_END_POINT <CLIENT_NAME>>
+WORKSPACE set to /tmp/nvflare/poc/site-1/startup/..
+PYTHONPATH is /local/custom:/home/chester/projects/NVFlare:
+2022-05-31 17:00:04,046 - FederatedServer - INFO - starting insecure server at localhost:8002
+deployed FL server trainer.
+2022-05-31 17:00:04,048 - FederatedServer - INFO - Got the primary sp: localhost fl_port: 8002 SSID: ebc6125d-0a56-4688-9b08-355fe9e4d61a. Turning to hot.
+2022-05-31 17:00:04,097 - FedAdminServer - INFO - Starting Admin Server localhost on Port 8003
+2022-05-31 17:00:04,097 - root - INFO - Server started
+start: service: site-2, executing /tmp/nvflare/poc/site-2/startup/start.sh
+WORKSPACE set to /tmp/nvflare/poc/site-2/startup/..
+No sp_end_point is provided.  Default sp_end_point (localhost:8002:8003) is used
+Usage: start.sh <SP_END_POINT <CLIENT_NAME>>
+WORKSPACE set to /tmp/nvflare/poc/site-2/startup/..
+PYTHONPATH is /local/custom:/home/chester/projects/NVFlare:
+start: service: admin, executing /tmp/nvflare/poc/admin/startup/fl_admin.sh
+/tmp/nvflare/poc/admin/startup
+Waiting for SP....
+2022-05-31 17:00:07,845 - FederatedClient - INFO - Got the new primary SP: localhost:8002
+Waiting for token from successful login...
+Got primary SP localhost:8002:8003 from overseer. Host: localhost Admin_port: 8003 SSID: ebc6125d-0a56-4688-9b08-355fe9e4d61a
+login_result: OK token: cc58f69a-e13d-11ec-bd14-49212c0678f3
+2022-05-31 17:00:08,870 - ClientManager - INFO - Client: New client site-1@127.0.0.1 joined. Sent token: 8b532e8c-ef03-4813-b232-47bde8322158.  Total clients: 1
+2022-05-31 17:00:08,871 - FederatedClient - INFO - Successfully registered client:site-1 for project example_project. Token:8b532e8c-ef03-4813-b232-47bde8322158 SSID:ebc6125d-0a56-4688-9b08-355fe9e4d61a
+created /tmp/nvflare/poc/site-1/startup/../startup/comm/training/x
+created /tmp/nvflare/poc/site-1/startup/../startup/comm/training/y
+created /tmp/nvflare/poc/site-1/startup/../startup/comm/training/t
+Type ? to list commands; type "? cmdName" to show usage of a command.
+> Waiting for SP....
+2022-05-31 17:00:10,813 - FederatedClient - INFO - Got the new primary SP: localhost:8002
+2022-05-31 17:00:11,829 - ClientManager - INFO - Client: New client site-2@127.0.0.1 joined. Sent token: 3f41c212-316e-4ad6-a971-ba9bcfcffa36.  Total clients: 2
+2022-05-31 17:00:11,829 - FederatedClient - INFO - Successfully registered client:site-2 for project example_project. Token:3f41c212-316e-4ad6-a971-ba9bcfcffa36 SSID:ebc6125d-0a56-4688-9b08-355fe9e4d61a
+created /tmp/nvflare/poc/site-2/startup/../startup/comm/training/x
+created /tmp/nvflare/poc/site-2/startup/../startup/comm/training/y
+created /tmp/nvflare/poc/site-2/startup/../startup/comm/training/t
+
+
+```
+
+if the workspace is not a poc workspace, the command will exist
+
+```
+nvflare poc -d /tmp/nvflare/poc2 --start
+
+start_poc at /tmp/nvflare/poc2
+workspace /tmp/nvflare/poc2 is not ready, please use poc --prepare to prepare poc workspace
+
+```
+
 
 ## Stop
-for given workspace, stop all services if possible
+for given workspace, stop all services if possible. Notice there is no Admin shutdown script at the moment
+
+```
+nvflare poc -d /tmp/nvflare/poc --stop
+
+stop_poc at /tmp/nvflare/poc
+stop: service: server, executing /tmp/nvflare/poc/server/startup/stop_fl.sh
+Shutdown request created.  FL system will shutdown soon.
+stop: service: site-2, executing /tmp/nvflare/poc/site-2/startup/stop_fl.sh
+Shutdown request created.  FL system will shutdown soon.
+stop: service: site-1, executing /tmp/nvflare/poc/site-1/startup/stop_fl.sh
+Shutdown request created.  FL system will shutdown soon.
+
+```
+
 
 ## Clean
 for given POC workspace, remove all content. it will stop if it is not a POC directory

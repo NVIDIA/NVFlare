@@ -74,8 +74,13 @@ def prepare_poc(num_clients, poc_workspace):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--num_clients", type=int, default=1, help="number of client folders to create")
-    parser.add_argument("-d", "--poc_workspace", type=str, default=os.path.join(os.getcwd(), "poc"),
-                        help="number of client folders to create")
+    parser.add_argument(
+        "-d",
+        "--poc_workspace",
+        type=str,
+        default=os.path.join(os.getcwd(), "poc"),
+        help="number of client folders to create",
+    )
 
     args = parser.parse_args()
     prepare_poc(args.num_clients, args.poc_workspace)

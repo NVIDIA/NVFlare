@@ -1,7 +1,22 @@
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
-import sys
 import os
 import random
+import sys
+
 from nvflare.lighter.poc import prepare_poc as generate_poc
 
 
@@ -13,6 +28,7 @@ def prepare_poc(n_clients: int, poc_workspace: str):
 def sort_service_cmds(service_cmds: list) -> list:
     def sort_first(val):
         return val[0]
+
     order_services = []
     for service_name, cmd_path in service_cmds:
         if service_name == "server":
@@ -65,7 +81,7 @@ def start_poc(poc_workspace: str):
     if not is_poc_ready(poc_workspace):
         print(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
         sys.exit(2)
-    _run_poc("start", poc_workspace, excluded=['overseer'])
+    _run_poc("start", poc_workspace, excluded=["overseer"])
 
 
 def stop_poc(poc_workspace: str):
@@ -73,7 +89,7 @@ def stop_poc(poc_workspace: str):
     if not is_poc_ready(poc_workspace):
         print(f"invalid workspace {poc_workspace}")
         sys.exit(4)
-    _run_poc("stop", poc_workspace, excluded=['overseer'])
+    _run_poc("stop", poc_workspace, excluded=["overseer"])
 
 
 def _build_commands(cmd_type: str, poc_workspace: str, excluded: list):
@@ -91,10 +107,12 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list):
 def _run_poc(cmd_type: str, poc_workspace: str, excluded: list):
     service_commands = _build_commands(cmd_type, poc_workspace, excluded)
     import time
+
     for service_name, cmd_path in service_commands:
         print(f"{cmd_type}: service: {service_name}, executing {cmd_path}")
         import subprocess
-        if service_name == 'admin':
+
+        if service_name == "admin":
             subprocess.run([cmd_path])
         else:
             subprocess.Popen([cmd_path])
@@ -103,6 +121,7 @@ def _run_poc(cmd_type: str, poc_workspace: str, excluded: list):
 
 def clean_poc(poc_workspace: str):
     import shutil
+
     if is_poc_ready(poc_workspace):
         shutil.rmtree(poc_workspace, ignore_errors=True)
     else:
@@ -111,22 +130,28 @@ def clean_poc(poc_workspace: str):
 
 
 def def_poc_parser(sub_cmd, prog_name: str):
-    poc_parser = sub_cmd.add_parser('poc')
-    poc_parser.add_argument('-n', '--n_clients', type=int, nargs='?', default=2, help='number of sites or clients')
-    poc_parser.add_argument('-d', '--workspace', type=str, nargs='?', default=f"/tmp/{prog_name}/poc",
-                            help='poc workspace directory')
-    poc_parser.add_argument('--prepare', dest='prepare_poc', action='store_const', const=prepare_poc,
-                            help='prepare poc workspace')
-    poc_parser.add_argument('--start', dest='start_poc', action='store_const', const=start_poc, help='start poc')
-    poc_parser.add_argument('--stop', dest='stop_poc', action='store_const', const=stop_poc, help='stop poc')
-    poc_parser.add_argument('--clean', dest='clean_poc', action='store_const', const=clean_poc, help='cleanup poc workspace')
+    poc_parser = sub_cmd.add_parser("poc")
+    poc_parser.add_argument("-n", "--n_clients", type=int, nargs="?", default=2, help="number of sites or clients")
+    poc_parser.add_argument(
+        "-d", "--workspace", type=str, nargs="?", default=f"/tmp/{prog_name}/poc", help="poc workspace directory"
+    )
+    poc_parser.add_argument(
+        "--prepare", dest="prepare_poc", action="store_const", const=prepare_poc, help="prepare poc workspace"
+    )
+    poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
+    poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop poc")
+    poc_parser.add_argument(
+        "--clean", dest="clean_poc", action="store_const", const=clean_poc, help="cleanup poc workspace"
+    )
 
 
 def is_poc(cmd_args) -> bool:
-    return hasattr(cmd_args, 'start_poc') or \
-           hasattr(cmd_args, 'prepare_poc') or \
-           hasattr(cmd_args, 'stop_poc') or \
-           hasattr(cmd_args, 'clean_poc')
+    return (
+        hasattr(cmd_args, "start_poc")
+        or hasattr(cmd_args, "prepare_poc")
+        or hasattr(cmd_args, "stop_poc")
+        or hasattr(cmd_args, "clean_poc")
+    )
 
 
 def is_provision(cmd_args) -> bool:
@@ -154,12 +179,14 @@ def handle_provision_cmd(cmd_args):
 
 
 def def_provision_parser(sub_cmd, prog_name: str):
-    provision_parser = sub_cmd.add_parser('provision')
-    provision_parser.add_argument('-n', '--n_clients', type=int, nargs='?', default=2, help='number of sites or clients')
+    provision_parser = sub_cmd.add_parser("provision")
+    provision_parser.add_argument(
+        "-n", "--n_clients", type=int, nargs="?", default=2, help="number of sites or clients"
+    )
 
 
 def parse_args(prog_name: str):
-    _parser = argparse.ArgumentParser(description='nvflare parser')
+    _parser = argparse.ArgumentParser(description="nvflare parser")
     sub_cmd = _parser.add_subparsers(description="sub command parser")
     def_poc_parser(sub_cmd, prog_name)
     def_provision_parser(sub_cmd, prog_name)
