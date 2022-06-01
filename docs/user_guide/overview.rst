@@ -47,11 +47,23 @@ Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory 
 project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
 for your project).
 
-Then run the startup kit with (here we assume your project.yml is in current working directory)::
+Then run the provision command with (here we assume your project.yml is in current working directory)::
 
     provision -p project.yml
 
-A directory named "packages" containing each of the generated zip files is created where provision.py is run.
+The generated startup kits are created by default in a directory prefixed with "prod_" within a folder of the project
+name in the workspace folder created where provision.py is run.
+
+.. attention::
+
+   In order to change configurations, it may be necessary to alter nvflare/lighter/impl/master_template.yml before
+   running provision with your checked out version of the code (make sure PYTHONPATH points to the location of where you
+   checked out the NVFlare repository).
+
+   You cannot directly edit the contents of the startup kits because the contents of the generated startup kits are
+   signed by :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>` so the system will detect if any
+   of the files have been altered and may not run.
+
 The console displays a list of zip files and their passwords. We suggest you copy the console output
 and "packages" folder to a safe location. The passwords shown below are for demonstration purposes only::
 

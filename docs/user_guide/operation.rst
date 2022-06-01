@@ -34,6 +34,7 @@ commands shown as examples of how they may be run with a description.
     clone_job,``clone_job job_id``,Creates a copy of the specified job with a new job_id
     abort,``abort job_id client``,Aborts the job for the specified job_id for all clients. Individual client jobs can be aborted by specifying *clientname*.
     ,``abort job_id server``,Aborts the server job for the specified job_id.
+    abort_task,``abort_task job_id clientname``,Aborts the running task for the specified job ID and client.
     download_folder,``download_folder foldername``,Download folder from the server's file_download_dir (set to transfer by default)
     cat,``cat server startup/fed_server.json -ns``,Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)
     ,``cat clientname startup/docker.sh -bT``,Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)

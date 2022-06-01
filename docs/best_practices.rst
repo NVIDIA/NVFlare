@@ -293,7 +293,7 @@ Instead of directly using self.logger to log messages, always use the methods :m
 :meth:`self.log_info<log_info>`, :meth:`self.log_warning<log_warning>`, :meth:`self.log_error<log_error>` instead.
 These methods provide many benefits:
 
-    - All log messages are prefixed with some contextual information (e.g. run number, peer name, peer run number, etc.) that can help you understand the log messages more easily.
+    - All log messages are prefixed with some contextual information (e.g. job id / run number, peer name, peer run number, etc.) that can help you understand the log messages more easily.
     - Some log messages may be integrated with other system features. For example, error messages may be reported via admin commands, and/or streamed over to a centralized location.
 
 Be Sensitive to Data Privacy

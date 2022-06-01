@@ -8,7 +8,7 @@ Technically a Shareable object is implemented as a Python dict. This dict contai
 Headers
 ^^^^^^^
 A special item in the Shareable is "headers", which is a dict itself. The headers are used to carry meta information
-about the communication (e.g. peer identity name, peer's run number, cookies, return code, etc.). Headers are usually
+about the communication (e.g. peer identity name, peer's job id / run number, cookies, return code, etc.). Headers are usually
 added and processed by the framework.
 
 Content
