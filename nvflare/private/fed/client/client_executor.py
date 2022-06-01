@@ -317,6 +317,8 @@ class ProcessExecutor(ClientExecutor):
 
     def abort_train(self, client, run_number):
         with self.lock:
+            # When the HeartBeat cleanup process try to abort the train, the job maybe already terminated,
+            # Use retry to avoid print out the error stack trace.
             retry = 1
             while retry >= 0:
                 process_status = self.run_processes.get(run_number, {}).get(
