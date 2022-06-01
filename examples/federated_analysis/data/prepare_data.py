@@ -26,7 +26,7 @@ def create_datasets(root, subdirs, extension, shuffle, seed):
 
     data_lists = []
     for subdir in subdirs:
-        search_string = os.path.join(root, "**", subdir, "images/*" + extension)
+        search_string = os.path.join(root, "**", subdir, "images", "*" + extension)
         data_list = glob.glob(search_string, recursive=True)
 
         assert (
