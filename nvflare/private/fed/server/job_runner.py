@@ -258,8 +258,11 @@ class JobRunner(FLComponent):
                                 job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                             except Exception as e:
                                 if run_number:
+                                    if run_number in self.running_jobs:
+                                        del self.running_jobs[run_number]
                                     self._stop_run(run_number, fl_ctx)
                                 job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
+                                self.fire_event(EventType.JOB_ABORTED, fl_ctx)
                                 self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
 
                 time.sleep(1.0)
