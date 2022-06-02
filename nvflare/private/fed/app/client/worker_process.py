@@ -20,7 +20,6 @@ import os
 import sys
 import threading
 import time
-import traceback
 
 import psutil
 
@@ -105,36 +104,34 @@ def main():
     deployer = None
     command_agent = None
     federated_client = None
+
+    startup = args.startup
+    app_root = os.path.join(
+        args.workspace,
+        WorkspaceConstants.WORKSPACE_PREFIX + str(args.run_number),
+        WorkspaceConstants.APP_PREFIX + args.client_name,
+    )
+
+    logging_setup(app_root, args, config_folder, startup)
+
+    log_file = os.path.join(args.workspace, args.run_number, "log.txt")
+    add_logfile_handler(log_file)
+    logger = logging.getLogger("worker_process")
+    logger.info("Worker_process started.")
+
     try:
         # start parent process checking thread
         thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
         thread.start()
-
-        startup = args.startup
-        app_root = os.path.join(
-            args.workspace,
-            WorkspaceConstants.WORKSPACE_PREFIX + str(args.run_number),
-            WorkspaceConstants.APP_PREFIX + args.client_name,
-        )
-
-        app_log_config = os.path.join(app_root, config_folder, "log.config")
-        if os.path.exists(app_log_config):
-            args.log_config = app_log_config
-        else:
-            args.log_config = os.path.join(startup, "log.config")
 
         conf = FLClientStarterConfiger(
             app_root=startup,
             client_config_file_name=args.fed_client,
             log_config_file_name=args.log_config,
             kv_list=args.set,
+            logging_config=False,
         )
         conf.configure()
-
-        log_file = os.path.join(args.workspace, args.run_number, "log.txt")
-        add_logfile_handler(log_file)
-        logger = logging.getLogger("worker_process")
-        logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
         federated_client = deployer.create_fed_client(args, args.sp_target)
@@ -186,8 +183,7 @@ def main():
         client_runner.run(app_root, args)
 
     except BaseException as e:
-        traceback.print_exc()
-        print(f"FL client execution exception: {e}")
+        logger.error(f"FL client execution exception: {e}", exc_info=True)
         raise e
     finally:
         stop_event.set()
@@ -199,6 +195,16 @@ def main():
             federated_client.close()
         if thread and thread.is_alive():
             thread.join()
+
+
+def logging_setup(app_root, args, config_folder, startup):
+    app_log_config = os.path.join(app_root, config_folder, "log.config")
+    if os.path.exists(app_log_config):
+        args.log_config = app_log_config
+    else:
+        args.log_config = os.path.join(startup, "log.config")
+    log_config_file_path = os.path.join(app_root, args.log_config)
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
 def remove_restart_file(args):
