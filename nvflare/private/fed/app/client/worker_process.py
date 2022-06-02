@@ -112,14 +112,7 @@ def main():
         WorkspaceConstants.APP_PREFIX + args.client_name,
     )
 
-    app_log_config = os.path.join(app_root, config_folder, "log.config")
-    if os.path.exists(app_log_config):
-        args.log_config = app_log_config
-    else:
-        args.log_config = os.path.join(startup, "log.config")
-
-    log_config_file_path = os.path.join(app_root, args.log_config)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+    logging_setup(app_root, args, config_folder, startup)
 
     log_file = os.path.join(args.workspace, args.run_number, "log.txt")
     add_logfile_handler(log_file)
@@ -202,6 +195,16 @@ def main():
             federated_client.close()
         if thread and thread.is_alive():
             thread.join()
+
+
+def logging_setup(app_root, args, config_folder, startup):
+    app_log_config = os.path.join(app_root, config_folder, "log.config")
+    if os.path.exists(app_log_config):
+        args.log_config = app_log_config
+    else:
+        args.log_config = os.path.join(startup, "log.config")
+    log_config_file_path = os.path.join(app_root, args.log_config)
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
 def remove_restart_file(args):

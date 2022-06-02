@@ -62,8 +62,7 @@ def main():
     args.snapshot = kv_list.get("restore_snapshot")
 
     startup = os.path.join(args.workspace, "startup")
-    log_config_file_path = os.path.join(startup, WorkspaceConstants.LOGGING_CONFIG)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+    logging_setup(startup)
 
     log_file = os.path.join(args.workspace, args.run_number, "log.txt")
     add_logfile_handler(log_file)
@@ -118,6 +117,11 @@ def main():
     except ConfigError as ex:
         logger.exception(f"ConfigError: {ex}", exc_info=True)
         raise ex
+
+
+def logging_setup(startup):
+    log_config_file_path = os.path.join(startup, WorkspaceConstants.LOGGING_CONFIG)
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
 def start_server_app(server, args, app_root, run_number, snapshot, logger):
