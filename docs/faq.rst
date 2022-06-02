@@ -76,7 +76,7 @@ General
 
     :ref:`FLContext <fl_context>` is one of the key features of NVIDIA FLARE and is available to every method of all :ref:`FLComponent <fl_component>`
     types (Controller, Aggregator, Executor, Filter, Widget, ...). An FLContext object contains contextual information
-    of the FL environment: overall system settings (peer name, current run number, workspace location, etc.). FLContext
+    of the FL environment: overall system settings (peer name, job id / run number, workspace location, etc.). FLContext
     also contains an important object called Engine, through which you can access important services provided by the
     system (e.g. fire events, get all available client names, send aux messages, etc.).
 
@@ -363,6 +363,9 @@ Overall training flow related questions
 Known issues
 ************
 
+#. If the IP of the server changes, the admin client may not be able to connect anymore because the admin server remains
+   bound to the original host and port. A possible workaround is to restart the FL server manually, and then the host
+   will resolve to the updated IP for binding when restarting.
 #. Running out of memory can happen at any time, especially if the server and clients are running on same machine.
    This can cause the server to die unexpectedly.
 #. After calling ``shutdown client`` for a client running multi GPUs, a process (sub_worker_process) may remain. The

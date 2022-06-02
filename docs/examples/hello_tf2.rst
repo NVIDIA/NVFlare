@@ -247,8 +247,7 @@ run the following commands in the fl_admin to shutdown the system (while inputti
 
 In order to stop all processes, run ``./stop_fl.sh``.
 
-All artifacts from the FL run can be found in the server run folder you created with ``set_run_number``.  In this exercise,
-the folder is ``run_1``.
+All artifacts from the FL run can be found in the server folder for the job id.
 
 Congratulations!
 You've successfully built and run a federated learning system using TensorFlow 2.
