@@ -334,6 +334,7 @@ class ProcessExecutor(ClientExecutor):
                             self.logger.debug("abort sent")
 
                         threading.Thread(target=self._terminate_process, args=[child_process, run_number]).start()
+                        self.run_processes.pop(run_number)
                         break
                     except Exception as e:
                         if retry == 0:
@@ -345,7 +346,6 @@ class ProcessExecutor(ClientExecutor):
                     finally:
                         if conn_client:
                             conn_client.close()
-                        self.run_processes.pop(run_number)
                         self.cleanup()
                 else:
                     self.logger.info(f"run: {run_number} already terminated.")
