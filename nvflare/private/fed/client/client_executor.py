@@ -349,6 +349,7 @@ class ProcessExecutor(ClientExecutor):
                         self.cleanup()
                 else:
                     self.logger.info(f"run: {run_number} already terminated.")
+                    break
 
         self.logger.info("Client training was terminated.")
 
