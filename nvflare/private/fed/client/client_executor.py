@@ -317,24 +317,39 @@ class ProcessExecutor(ClientExecutor):
 
     def abort_train(self, client, run_number):
         with self.lock:
-            process_status = self.run_processes.get(run_number, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-            if process_status == ClientStatus.STARTED:
-                try:
-                    child_process = self.run_processes[run_number][RunProcessKey.CHILD_PROCESS]
-                    conn_client = self.get_conn_client(run_number)
-                    if conn_client:
-                        data = {"command": AdminCommandNames.ABORT, "data": {}}
-                        conn_client.send(data)
-                        self.logger.debug("abort sent")
+            # When the HeartBeat cleanup process try to abort the train, the job maybe already terminated,
+            # Use retry to avoid print out the error stack trace.
+            retry = 1
+            while retry >= 0:
+                process_status = self.run_processes.get(run_number, {}).get(
+                    RunProcessKey.STATUS, ClientStatus.NOT_STARTED
+                )
+                if process_status == ClientStatus.STARTED:
+                    try:
+                        child_process = self.run_processes[run_number][RunProcessKey.CHILD_PROCESS]
+                        conn_client = self.get_conn_client(run_number)
+                        if conn_client:
+                            data = {"command": AdminCommandNames.ABORT, "data": {}}
+                            conn_client.send(data)
+                            self.logger.debug("abort sent")
 
-                    threading.Thread(target=self._terminate_process, args=[child_process, run_number]).start()
-                except Exception as e:
-                    self.logger.error(f"abort_train execution exception: {e}.", exc_info=True)
-                finally:
-                    if conn_client:
-                        conn_client.close()
-                    self.run_processes.pop(run_number)
-                    self.cleanup()
+                        threading.Thread(target=self._terminate_process, args=[child_process, run_number]).start()
+                        self.run_processes.pop(run_number)
+                        break
+                    except Exception as e:
+                        if retry == 0:
+                            self.logger.error(
+                                f"abort_train execution exception: {e} for run: {run_number}.", exc_info=True
+                            )
+                        retry -= 1
+                        time.sleep(5.0)
+                    finally:
+                        if conn_client:
+                            conn_client.close()
+                        self.cleanup()
+                else:
+                    self.logger.info(f"run: {run_number} already terminated.")
+                    break
 
         self.logger.info("Client training was terminated.")
 
