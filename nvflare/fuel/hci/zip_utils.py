@@ -15,6 +15,7 @@
 import io
 import json
 import os
+from typing import Optional
 from zipfile import ZipFile
 
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
