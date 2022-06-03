@@ -1,3 +1,5 @@
+.. _hello_pt:
+
 Hello PyTorch
 =============
 

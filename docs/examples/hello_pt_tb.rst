@@ -1,3 +1,5 @@
+.. _hello_pt_tb:
+
 Hello PyTorch with TensorBoard
 ==============================
 

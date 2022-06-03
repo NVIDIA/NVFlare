@@ -1,3 +1,5 @@
+.. _hello_cross_val:
+
 Hello Cross-Site Validation
 ===========================
 

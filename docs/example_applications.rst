@@ -25,13 +25,16 @@ NVIDIA FLARE has several examples to help you get started with federated learnin
 
 The following quickstart guides walk you through some of these examples:
 
-  * :ref:`Hello Scatter and Gather<examples/hello_numpy>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
-  * :ref:`Hello Cross-Site Validation<examples/hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
-  * `Hello Cyclic Weight Transfer <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>`_ - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_
-  * :ref:`Hello PyTorch<examples/hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
-  * :ref:`Hello PyTorch with TensorBoard<examples/hello_pt_tb>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
-  * :ref:`Hello TensorFlow<examples/hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
-  * Advanced examples
+  * **Basic Examples**
+  
+    * :ref:`Hello Scatter and Gather <hello_numpy>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
+    * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
+    * `Hello Cyclic Weight Transfer <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>`_ - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_
+    * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
+    * :ref:`Hello PyTorch with TensorBoard <hello_pt_tb>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
+    * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
+
+  * **Advanced examples**
     
     * `Federated Analysis <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_analysis>`_ - Example of gathering local data summary statistics to compute global dataset statistics
     * `Federated Learning with CIFAR-10 <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_ - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training.

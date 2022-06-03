@@ -1,3 +1,5 @@
+.. _hello_tf2:
+
 Hello TensorFlow 2
 ==================
 
