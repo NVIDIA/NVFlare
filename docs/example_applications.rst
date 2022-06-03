@@ -27,7 +27,7 @@ The following quickstart guides walk you through some of these examples:
 
   * **Basic Examples**
   
-    * :ref:`Hello Scatter and Gather <hello_numpy>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
+    * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
     * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
     * `Hello Cyclic Weight Transfer <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>`_ - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_
     * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework

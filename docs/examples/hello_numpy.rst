@@ -1,3 +1,5 @@
+.. _hello_scatter_and_gather:
+
 Hello Scatter and Gather
 ========================
 

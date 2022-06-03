@@ -25,7 +25,7 @@ Training workflows
       example with a federated weighted average.
     - :ref:`Cyclic <cyclic>` is a reference implementation of a cyclic workflow, in which the central server issues a
       series of tasks to be scheduled for cyclic execution among a group of clients.  The client worker Executor passes
-      the Task’s Shareable result to the next client for further execution, and so on, until the final client returns
+      the Task's Shareable result to the next client for further execution, and so on, until the final client returns
       the final Shareable to the server.
 
 Evaluation workflows
