@@ -4,50 +4,89 @@
 NVIDIA FLARE Overview
 #####################
 
-.. toctree::
-   :maxdepth: 1
+**NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflow to a federated paradigm. 
 
-   flare_overview/design_principles
-   flare_overview/system_architecture
-   flare_overview/unique_features
+With Nvidia FLARE platform developers can build a secure, privacy preserving offering for a distributed multi-party collaboration. 
 
-FLARE is a Federated Runtime Environment
-----------------------------------------
-At its core, FLARE provides a plugable runtime environment that supports federated computing.
-The FLARE runtime supports client and server communication over gRPC.  The orchestration,
-control flow, aggregation logic on the server can be customized to support
-any collaborative computing workflow. Similarly, the client side compute logic can be constructed
-to support any federated workflow.  In the future, the communication protocol will be abstracted,
-so that any protocol can be used to facilitate the federated computing workflow. This flexible,
-customizable framework allows the end user to address any real-world workflow by adapting the environment to their specific needs.
+NVIDIA FLARE SDK is built for robust, production scale for real-world federated learning deployments. It includes: 
+
+  * A runtime environment enabling data scientists and researchers to easily carry out FL experiments in a real-world scenario. Nvidia FLARE supports multiple task execution, maximizing data scientist's productivity. 
+  
+  * System capabilities to stand up Federated learning with high availability infrastructure, eliminating FL server being a single point of failue. 
+  
+  * Built-in implementations of:
+
+    * Federated Training workflows (scatter-gather, Cyclic);  
+    * Federated Evaluation workflows (global model evaluation, cross site model evalidation);  
+    * Learning algorithms (FedAvg, FedOpt, FedProx) and  
+    * Privacy preserving algorithms (homomorphic encryption, differential privacy) 
+  * Extensible management tools for:
+
+    * Secure provisioning (SSL certificates), 
+    * Orchestration (Admin Console) | (Admin APIs) 
+    * Monitoring of Federated learning experiments. (Aux APIs; Tensorboard visualization) 
+  
+  * A rich set of programmable APIs allowing researchers to create new federated workflows, learning & privacy preserving algorithms. 
 
 
-FLARE is about Federated Learning
----------------------------------
-FLARE provides reference Federated Learning algorithms that reflect
-the state of the art (SOTA) for deep learning and machine learning.
+High-level System Architecture
+==============================
+As outlined above, NVIDIA FLARE includes components that allow researchers and developers to build and deploy end-to-end federated learning applications.  The high-level architecture is shown in the diagram below.  This includes the foundational components of the NVIDIA FLARE API and tools for Privacy Preservation and Secure Management of the platform.  On top of this foundation are the building blocks for federated learning applications, with a set of Federation Workflows and Learning Algorithms.
 
-  * Basic Federated Learning Algorithms (FedAvg, FedProx, FedOpt)
-  * Federated Analysis
-  * Deep Learning (CIFAR10, ...)
-  * Personalized Federated Learning (Ditto)
-  * Non-IID (Scaffold)
-  * Medical Applications (MONAI, ...)
-  * Federated XGBoost (coming soon)
+Alongside this central stack are tools that allow experimentation and proof-of-concept development with the FL Simulator (POC mode), along with a set of tools used to deploy and manage production workflows.
 
-With FLARE's pluggable component architecture, you can extend these reference implementations with customized algorithms to fit your needs.
+.. image:: resources/FL_stack.png
+    :height: 300px
 
-FLARE is a SDK, not a platform
-------------------------------
-We want to enable more people to adopt Federated Learning, whether the user is
 
-  * a machine learning researcher -- interested in experimenting the latest FL algorithms, or
-  * a data scientist -- interested in applying FL to a real world use case, or
-  * a system integrator -- interested in building a platform to enable Federated Learning for others.
 
-For a researcher, FLARE provides an easy to use enviornment that allows rapid experimentation with different FL algorithms.
+Design Principles
+=================
 
-For a data scientist, FLARE makes it easy to use common FL algorithms to build federated applications for real-world deployments.
+* Keep it simple - less is more
+* Design to specification
+* Build for real-world scenarios
+* Keep the system general-purpose
+* Client system friendly
 
-For system integrator, FLARE's modular architecture makes it easy to extend or replace components and customize to your needs.  Whether it's communication, authentication, storage, workflow, or DL/ML frameworks, FLARE should be easily embedded into your system.
+**Less is more**
 
+We strive to solve unique challenges by doing less while enabling others to do more.
+We can't solve whole worlds' problems, but by building an open platform we can enable
+others to solve world's problems.
+
+This design principle means we intentionally limit the scope of the implementation,
+only building the necessary components. For a given implementation, we follow specifications
+in a way that allows others to easily customize and extend.
+
+
+**Design to Specification**
+
+Every component and API is specification-based, so that alternative implementations can be
+constructed by following the spec.  This allows pretty much every component to be customized.
+
+We strive to be unopinionated in reference implementations, encouraging developers and end-users
+to extend and customize to meet the needs of their specific workflows.
+
+
+**Build for real-world scenarios**
+
+We build to handle real-world use cases where unexpected events or misbehaving code can be
+handled in a way that allows components or the system as a whole to fail gracefully.
+The reference implementations of the default components are designed to solve real-world
+problems in a straightforward way.
+
+
+**Keep the system general-purpose**
+
+We design ths system to be general purpose, to enable different "federated" computing use cases.
+We carefully package the components into different layers with minimal dependencies between layers.
+In this way, implementations for specific use cases should not demand modificastions to the
+underlying system core.
+
+
+**Client system friendly**
+
+We design the system so that it can run anywhere with minimal environmental dependencies.
+We also strive to build the system in a way that does not interfere with the deployment environment,
+allowing FLARE to be easily integrated into your own applications or platforms.

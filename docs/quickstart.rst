@@ -114,22 +114,10 @@ this Dockerfile, for example tagging it nvflare-pt:
 
   docker build -t nvflare-pt .
 
-You will then have a docker image nvflare-pt:latest.  This can be used to run any of the
-client or server deployments.  In POC mode, you can do this by mounting the directory
+You will then have a docker image nvflare-pt:latest.  This container can be used to run any of the
+client or server deployments.  In POC mode (described in the next section), you can do this by mounting the directory
 containing the server or client subdirectories and startup scripts when you run the
 docker container.
-
-When using secure provisioning, you can reference this docker container in the project.yml configuration
-to automatically generate scripts that can be used to start the container for each server or client.
-This is specified in the StaticFileBuilder configuration as the docker_image: argument.
-
-.. code-block:: shell
-
-   docker_image: nvflare-pt:latest
-
-An :ref:`example project.yml <programming_guide/provisioning_system/_project_yml>` showing the StaticFileBuilder configuration can be found in the
- Provisioning documentation.
-
 
 .. _setting_up_poc:
 
@@ -226,8 +214,7 @@ If using the Dockerfile above to run in a container, these dependencies have alr
 Starting the Application Environment in POC Mode
 ================================================
 
-Once you are ready to start the FL system, you can run the following commands to start all the participants
-(overseer, server, and clients).  Following that, we will use the admin client to deploy and run an example app.
+Once you are ready to start the FL system, you can run the following commands to start the server and client systems.  Following that, we will use the admin client to deploy and run an example app.
 
 .. note::
   Each of the participants will run in a separate terminal or in a terminal multiplexer like screen or tmux.  Each of these sessions reqiures the NVFlare Python environment, either built into a container as described above, or by running
@@ -240,16 +227,7 @@ Once you are ready to start the FL system, you can run the following commands to
 
   If running containerized, you can use a terminal multiplexer like screen or tmux if availble.  Another option is creating multiple interactive shells by running ``docker exec`` into the running container.
 
-FL systems usually have an overseer, server, and multiple clients. We first start the overseer:
-
-.. code-block:: shell
-
-    $ ./poc/overseer/startup/start.sh
-
-Once the overseer is running, you can start the server and clients in different terminals (again, making sure your terminals are
-using the environment described in NVIDIA FLARE :ref:`installed <installation>`).
-
-Open a new terminal and start the server:
+The first step is starting the FL server:
 
 .. code-block:: shell
 
@@ -291,7 +269,13 @@ After connecting the admin client in the previous section, you will see the admi
   Type ? to list commands; type "? cmdName" to show usage of a command.
   >
 
-Typing ``?`` will show the list of available commands, for example checking the status of the server:
+Typing ``?`` at the admin prompt will show the list of available commands.
+
+.. note::
+  
+  Some commands require a password.  In POC mode, the admin password is ``admin``.
+  
+As an example, we can check the status of the server:
 
 .. code-block:: shell
 
@@ -310,7 +294,7 @@ Typing ``?`` will show the list of available commands, for example checking the 
   ----------------------------------------------------------------------------
   Done [1752 usecs] 2022-05-24 12:49:20.921073
 
-Here, we will simply submit the hello-pt-tb job for execution:
+Now we can submit the hello-pt-tb job for execution:
 
 .. code-block:: shell
 

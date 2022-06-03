@@ -1,5 +1,7 @@
-Quickstart (PyTorch)
-====================
+.. _hello_pt:
+
+Hello PyTorch
+=============
 
 Before You Start
 ----------------

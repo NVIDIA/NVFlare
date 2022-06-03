@@ -1,5 +1,7 @@
-Quickstart (TensorFlow 2)
-===========================
+.. _hello_tf2:
+
+Hello TensorFlow 2
+==================
 
 Before You Start
 ----------------

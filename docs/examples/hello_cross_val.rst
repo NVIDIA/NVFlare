@@ -1,5 +1,7 @@
-Quickstart (Numpy - Cross Site Validation)
-==========================================
+.. _hello_cross_val:
+
+Hello Cross-Site Validation
+===========================
 
 Before You Start
 ----------------

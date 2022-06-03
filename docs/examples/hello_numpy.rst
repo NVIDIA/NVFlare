@@ -1,5 +1,7 @@
-Quickstart (Numpy)
-===================
+.. _hello_scatter_and_gather:
+
+Hello Scatter and Gather
+========================
 
 Before You Start
 ----------------
@@ -12,7 +14,7 @@ environment (the recommended environment) and how to install NVIDIA FLARE.
 Introduction
 -------------
 
-This tutorial is meant to solely demonstrate how the NVIDIA FLARE system works, without introducing any actual deep
+This tutorial is meant solely to demonstrate how the NVIDIA FLARE system works, without introducing any actual deep
 learning concepts. Through this exercise, you will learn how to use NVIDIA FLARE with numpy to perform basic
 computations across two clients with the included Scatter and Gather workflow, which broadcasts the training tasks then
 aggregates the results that come back. Due to the simplified weights, you will be able to clearly see and understand
@@ -28,7 +30,7 @@ The following steps compose one cycle of weight updates, called a **round**:
 For this exercise, we will be working with the ``hello-numpy-sag`` application in the examples folder.
 Custom FL applications can contain the folders:
 
- #. **custom**: contains the custom components (``np_trainer.py``, ``np_model_persistor.py``)
+ #. **custom**: contains any custom components (custom Python code)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
  #. **resources**: contains the logger config (``log.config``)
 
@@ -50,12 +52,11 @@ Now that you have all your dependencies installed, let's implement the federated
 NVIDIA FLARE Client
 -------------------
  
-In a file called ``np_trainer.py``, import nvflare and numpy.
-Now we will implement the ``execute`` function to enable the clients to perform
-a simple addition of a diff to represent one calculation of training a round.
+You will first notice that the ``hello-numpy-sag`` application does not contain a ``custom``` folder.  The code for the client and server components has been implemented in the `nvflare/app-common/np <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/np>`_ folder of the NVFlare code tree.  These files, for example the trainer in `np_trainer.py <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/np/np_trainer.py>`_ can be copied into a ``custom`` folder in the ``hello-numpy-sag`` application as ``custom_trainer.py`` and modified to perform additional tasks.  The config_fed_client.json configuration discussed below would then be modified to point to this custom code by providing the custom path.  For example, replacing ``nvflare.app_common.np.np_trainer.NPTrainer`` with ``custom_trainer.NPTrainer``.
 
-Find the full code of ``np_trainer.py`` at
-``examples/hello-numpy-sag/custom/np_trainer.py`` to follow along.
+In the ``np_trainer.py`` trainer, we first import nvflare and numpy.
+We then implement the ``execute`` function to enable the clients to perform
+a simple addition of a diff to represent one calculation of training a round.
 
 The server sends either the initial weights or any stored weights to each of the clients
 through the ``Shareable`` object passed into ``execute()``. Each client adds the
@@ -114,6 +115,8 @@ Note that the component with id ``persistor`` points to the custom ``NPModelPers
 
 Here, in ``executors``, the Trainer implementation ``NPTrainer`` is configured for the task "train".
 
+If you had implemented your own custom ``NPTrainer`` training routine, for example in ``hello-numpy-sag/custom/custom_trainer.py``, this config_fed_client.json configuration would be modified to point to this custom code by providing the custom path.  For example, replacing ``nvflare.app_common.np.np_trainer.NPTrainer`` with ``custom_trainer.NPTrainer``.
+
 
 Federated Numpy with Scatter and Gather Workflow!
 -------------------------------------------------
@@ -157,4 +160,4 @@ Congratulations!
 You've successfully built and run your first numpy federated learning system. 
 You now have a decent grasp of the main FL concepts, and are ready to start exploring how NVIDIA FLARE can be applied to many other tasks.
 
-The full `source code <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag>`_ for this exercise can be found in ``examples/hello-numpy-sag``.
+The full `configuration <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag>`_ for this exercise can be found in ``examples/hello-numpy-sag``, with the client and server components implemented in the `nvflare/app-common/np <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/np>`_ folder of the NVFlare code tree.
