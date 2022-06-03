@@ -1,5 +1,5 @@
-Quickstart (PyTorch with TensorBoard)
-=====================================
+Hello PyTorch with TensorBoard
+==============================
 
 Introduction
 -------------

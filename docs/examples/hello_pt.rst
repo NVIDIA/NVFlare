@@ -1,5 +1,5 @@
-Quickstart (PyTorch)
-====================
+Hello PyTorch
+=============
 
 Before You Start
 ----------------

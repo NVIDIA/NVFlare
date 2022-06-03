@@ -26,18 +26,26 @@ Then, use these Admin commands to run the experiment:
 submit_job hello-pt-tb
 ```
 
+After submitting the job, you will see the job ID in the admin client output, for example:
+
+```
+Submitted job: 9694041a-1999-4509-8ca8-ac1137cf94ae
+```
+
+This job ID will be used in the following section to access the server's TB files.
+
 ### 4. Tensorboard Streaming
 
 On the client side, the `AnalyticsSender` works as a TensorBoard SummaryWriter. Instead of writing to TB files, it actually generates NVFLARE events of type `analytix_log_stats`.
 The `ConvertToFedEvent` widget will turn the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`, which will be delivered to the server side.
 
 On the server side, the `TBAnalyticsReceiver` is configured to process `fed.analytix_log_stats` events, which writes received TB data into appropriate TB files on the server
-(defaults to `server/[run number]/tb_events`).
+(defaults to `server/[job ID]/tb_events`).
 
 To view training metrics that are being streamed to the server, run:
 
 ```
-tensorboard --logdir=poc/server/[run number]/tb_events
+tensorboard --logdir=poc/server/[job ID]/tb_events
 ```
 
 Note: if the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser. For example:
