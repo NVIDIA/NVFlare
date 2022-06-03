@@ -33,7 +33,7 @@ High-level System Architecture
 ==============================
 As outlined above, NVIDIA FLARE includes components that allow researchers and developers to build and deploy end-to-end federated learning applications.  The high-level architecture is shown in the diagram below.  This includes the foundational components of the NVIDIA FLARE API and tools for Privacy Preservation and Secure Management of the platform.  On top of this foundation are the building blocks for federated learning applications, with a set of Federation Workflows and Learning Algorithms.
 
-Alongside this central stack are tools that allow experimentation and proof-of-concept development with the FLARE POC mode and FL Simulator, along with a set of tools used to deploy and manage production workflows.
+Alongside this central stack are tools that allow experimentation and proof-of-concept development with the FL Simulator (POC mode), along with a set of tools used to deploy and manage production workflows.
 
 .. image:: resources/FL_stack.png
     :height: 300px
