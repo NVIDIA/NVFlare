@@ -15,6 +15,7 @@
 import argparse
 import json
 import os
+import uuid
 
 from nvflare.fuel.hci.client.fl_admin_api_runner import FLAdminAPIRunner, api_command_wrapper
 
@@ -66,7 +67,8 @@ def main():
         server_config = read_json(server_config_filename)
         meta_config = read_json(meta_config_filename)
         print(f"Set alpha to {args.alpha}")
-        job_name = f"{job_name}_alpha{args.alpha}"
+        token = str(uuid.uuid4())
+        job_name = f"{job_name}_alpha{args.alpha}_{token}"
         server_config["alpha"] = args.alpha
         meta_config["name"] = job_name
         split_dir = os.path.join(args.train_split_root, job_name)
