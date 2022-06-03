@@ -4,23 +4,28 @@
 NVIDIA FLARE Overview
 #####################
 
-**NVIDIA FLARE** (**N**vidia **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflow to a federated paradigm. 
+**NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflow to a federated paradigm. 
 
 With Nvidia FLARE platform developers can build a secure, privacy preserving offering for a distributed multi-party collaboration. 
 
 NVIDIA FLARE SDK is built for robust, production scale for real-world federated learning deployments. It includes: 
 
   * A runtime environment enabling data scientists and researchers to easily carry out FL experiments in a real-world scenario. Nvidia FLARE supports multiple task execution, maximizing data scientist's productivity. 
+  
   * System capabilities to stand up Federated learning with high availability infrastructure, eliminating FL server being a single point of failue. 
-  * Built-in implementations of  
+  
+  * Built-in implementations of:
+
     * Federated Training workflows (scatter-gather, Cyclic);  
     * Federated Evaluation workflows (global model evaluation, cross site model evalidation);  
     * Learning algorithms (FedAvg, FedOpt, FedProx) and  
     * Privacy preserving algorithms (homomorphic encryption, differential privacy) 
-  * Extensible management tools  for: 
+  * Extensible management tools for:
+
     * Secure provisioning (SSL certificates), 
     * Orchestration (Admin Console) | (Admin APIs) 
     * Monitoring of Federated learning experiments. (Aux APIs; Tensorboard visualization) 
+  
   * A rich set of programmable APIs allowing researchers to create new federated workflows, learning & privacy preserving algorithms. 
 
 
@@ -30,7 +35,7 @@ As outlined above, NVIDIA FLARE includes components that allow researchers and d
 
 Alongside this central stack are tools that allow experimentation and proof-of-concept development with the FLARE POC mode and FL Simulator, along with a set of tools used to deploy and manage production workflows.
 
-.. image:: resources/FL-stack.png
+.. image:: resources/FL_stack.png
     :height: 300px
 
 
