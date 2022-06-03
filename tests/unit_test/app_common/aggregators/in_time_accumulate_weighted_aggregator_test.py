@@ -128,7 +128,9 @@ class TestInTimeAccumulateWeightedAggregator:
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
         client_name = "client_0"
         iter_number = 1
-        fl_ctx_mgr = FLContextManager(engine=None, identity_name="", run_num=1, public_stickers={}, private_stickers={})
+        fl_ctx_mgr = FLContextManager(
+            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
+        )
         fl_ctx_mgr.identity_name = client_name
         weights = np.random.random(4)
 
@@ -194,7 +196,9 @@ class TestInTimeAccumulateWeightedAggregator:
     def test_aggregate(self, received, expected):
         aggregation_weights = {k: v["weight"] for k, v in received.items()}
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
-        fl_ctx_mgr = FLContextManager(engine=None, identity_name="", run_num=1, public_stickers={}, private_stickers={})
+        fl_ctx_mgr = FLContextManager(
+            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
+        )
         fl_ctx = FLContext()
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for k, v in received.items():
@@ -222,7 +226,9 @@ class TestInTimeAccumulateWeightedAggregator:
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
         weighted_sum = np.zeros(shape)
         sum_of_weights = 0
-        fl_ctx_mgr = FLContextManager(engine=None, identity_name="", run_num=1, public_stickers={}, private_stickers={})
+        fl_ctx_mgr = FLContextManager(
+            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
+        )
         fl_ctx = FLContext()
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for client_name in aggregation_weights:
@@ -262,7 +268,9 @@ class TestInTimeAccumulateWeightedAggregator:
         )
         weighted_sum = {dxo_name: np.zeros(shape) for dxo_name in dxo_names}
         sum_of_weights = {dxo_name: 0 for dxo_name in dxo_names}
-        fl_ctx_mgr = FLContextManager(engine=None, identity_name="", run_num=1, public_stickers={}, private_stickers={})
+        fl_ctx_mgr = FLContextManager(
+            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
+        )
         fl_ctx = FLContext()
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for client_name in client_names:

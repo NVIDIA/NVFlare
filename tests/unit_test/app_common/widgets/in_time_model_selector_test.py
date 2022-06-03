@@ -24,7 +24,7 @@ from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 
 
 class MockSimpleEngine:
-    def __init__(self, run_num=0):
+    def __init__(self, run_num="unit_test"):
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
             identity_name="__mock_simple_engine",
