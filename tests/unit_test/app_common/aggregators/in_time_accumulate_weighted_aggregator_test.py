@@ -20,7 +20,7 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey
-from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.app_constant import AppConstants
@@ -128,10 +128,6 @@ class TestInTimeAccumulateWeightedAggregator:
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
         client_name = "client_0"
         iter_number = 1
-        fl_ctx_mgr = FLContextManager(
-            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
-        )
-        fl_ctx_mgr.identity_name = client_name
         weights = np.random.random(4)
 
         fl_ctx = FLContext()
@@ -196,13 +192,9 @@ class TestInTimeAccumulateWeightedAggregator:
     def test_aggregate(self, received, expected):
         aggregation_weights = {k: v["weight"] for k, v in received.items()}
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
-        fl_ctx_mgr = FLContextManager(
-            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
-        )
         fl_ctx = FLContext()
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for k, v in received.items():
-            fl_ctx_mgr.identity_name = k
             dxo = DXO(
                 DataKind.WEIGHT_DIFF,
                 data=v["aggr_data"],
@@ -226,14 +218,10 @@ class TestInTimeAccumulateWeightedAggregator:
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
         weighted_sum = np.zeros(shape)
         sum_of_weights = 0
-        fl_ctx_mgr = FLContextManager(
-            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
-        )
         fl_ctx = FLContext()
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for client_name in aggregation_weights:
             iter_number = random.randint(1, 50)
-            fl_ctx_mgr.identity_name = client_name
             weights = np.random.random(shape)
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
@@ -268,14 +256,10 @@ class TestInTimeAccumulateWeightedAggregator:
         )
         weighted_sum = {dxo_name: np.zeros(shape) for dxo_name in dxo_names}
         sum_of_weights = {dxo_name: 0 for dxo_name in dxo_names}
-        fl_ctx_mgr = FLContextManager(
-            engine=None, identity_name="", run_num="unit_test", public_stickers={}, private_stickers={}
-        )
         fl_ctx = FLContext()
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for client_name in client_names:
             iter_number = random.randint(1, 50)
-            fl_ctx_mgr.identity_name = client_name
 
             dxo_collection_data = {}
             for dxo_name in dxo_names:
