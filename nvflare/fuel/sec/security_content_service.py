@@ -64,8 +64,8 @@ class SecurityContentManager(object):
         Args:
             file_under_verification: file to load and verify
 
-        Returns: Tuple of the file data and the LoadResult. File data may be None if the data cannot be loaded.
-
+        Returns:
+            A tuple of the file data and the LoadResult. File data may be None if the data cannot be loaded.
         """
         full_path = os.path.join(self.content_folder, file_under_verification)
         data = None
@@ -115,6 +115,9 @@ class SecurityContentService(object):
 
     @staticmethod
     def load_json(file_under_verification):
+        if not SecurityContentService.security_content_manager:
+            return None, LoadResult.NOT_MANAGED
+
         json_data = None
 
         data_bytes, result = SecurityContentService.security_content_manager.load_content(file_under_verification)
