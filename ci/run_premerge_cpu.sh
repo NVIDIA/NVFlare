@@ -29,30 +29,31 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-pip_uninstall_deps() {
-    echo "pip uninstalling requirements: $1"
-    pip uninstall -r $1 -y
+init_pipenv() {
+    echo "initializing pip environment: $1"
+    python3 -m pipenv install -r $1
+    export PYTHONPATH=$PWD
 }
 
-pip_install_deps() {
-    echo "pip installing requirements: $1"
-    pip install -r $1
-    export PYTHONPATH=$PWD
+remove_pipenv() {
+    echo "removing pip environment"
+    python3 -m pipenv --rm
+    rm Pipfile Pipfile.lock
 }
 
 unit_test() {
     echo "Run unit test..."
-    pip_install_deps requirements-dev.txt
-    ./runtest.sh
-    pip_uninstall_deps requirements-dev.txt
+    init_pipenv requirements-dev.txt
+    python3 -m pipenv run ./runtest.sh
+    remove_pipenv
 }
 
 wheel_build() {
     echo "Run wheel build..."
-    pip_install_deps requirements-dev.txt
-    pip install build twine torch torchvision
-    python3 -m build --wheel
-    pip_uninstall_deps requirements-dev.txt
+    init_pipenv requirements-dev.txt
+    pipenv install build twine torch torchvision
+    pipenv run python -m build --wheel
+    remove_pipenv
 }
 
 case $BUILD_TYPE in
