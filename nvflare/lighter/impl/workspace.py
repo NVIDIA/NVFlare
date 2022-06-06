@@ -98,6 +98,15 @@ class DistributionBuilder(Builder):
         self.zip_password = zip_password
 
     def build(self, project: Project, ctx: dict):
+        """Create a zip for each individual folder.
+        Note that if zip_password is True, the zip command will be used to encrypt zip files.  Users have to to
+        install this zip utility before provisioning.  In Ubuntu system, use this command to install zip utility:
+        sudo apt-get install zip
+
+        Args:
+            project (Project): project instance
+            ctx (dict): the provision context
+        """
         wip_dir = self.get_wip_dir(ctx)
         dirs = [name for name in os.listdir(wip_dir) if os.path.isdir(os.path.join(wip_dir, name))]
         for dir in dirs:
@@ -106,8 +115,12 @@ class DistributionBuilder(Builder):
                 pw = generate_password()
                 run_args = ["zip", "-rq", "-P", pw, dest_zip_file + ".zip", ".", "-i", "startup/*"]
                 os.chdir(dest_zip_file)
-                subprocess.run(run_args)
-                os.chdir(os.path.join(dest_zip_file, ".."))
-                print(f"Password {pw} on {dir}.zip")
+                try:
+                    subprocess.run(run_args)
+                    print(f"Password {pw} on {dir}.zip")
+                except FileNotFoundError as e:
+                    raise RuntimeError("Unable to zip folders with password.  Maybe the zip utility is not installed.")
+                finally:
+                    os.chdir(os.path.join(dest_zip_file, ".."))
             else:
                 shutil.make_archive(dest_zip_file, "zip", root_dir=os.path.join(wip_dir, dir), base_dir="startup")
