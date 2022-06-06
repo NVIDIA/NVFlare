@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import io
-import json
 import os
+import sys
 import zipfile
 from typing import Dict, List, Optional, Tuple
 from zipfile import ZipFile
+
+import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -28,6 +30,35 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci import zip_utils
 from nvflare.private.fed.server.job_meta_validator import META, JobMetaValidator
 from nvflare.widgets.widget import Widget
+
+
+def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):
+    dir_name = zip_utils._path_join(root_dir, folder_name)
+    assert os.path.exists(dir_name), 'directory "{}" does not exist'.format(dir_name)
+    assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
+
+    file_paths = zip_utils.get_all_file_paths(dir_name)
+    if folder_name:
+        prefix_len = len(zip_utils.split_path(dir_name)[0]) + 1
+    else:
+        prefix_len = len(dir_name) + 1
+
+    with ZipFile(writer, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        # writing each file one by one
+        for full_path in file_paths:
+            rel_path = full_path[prefix_len:]
+            if len(meta) > 0 and rel_path.endswith(META):
+                z.writestr(rel_path, meta)
+            else:
+                z.write(full_path, arcname=rel_path)
+
+
+def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
+    job_path = os.path.join(os.path.dirname(__file__), "../../../data/jobs")
+    bio = io.BytesIO()
+    _zip_directory_with_meta(job_path, folder_name, meta, bio)
+    zip_data = bio.getvalue()
+    return zip_utils.convert_legacy_zip(zip_data)
 
 
 class MockServerEngine(ServerEngineSpec):
@@ -87,6 +118,46 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
 
+META_WITH_VALID_DEPLOY_MAP = [
+    pytest.param({"deploy_map": {"app1": ["@ALL"]}}, id="all"),
+    pytest.param({"deploy_map": {"app1": ["@ALL"], "app2": []}}, id="all_idle"),
+    pytest.param({"deploy_map": {"app1": ["server", "site-1", "site-2"], "app2": []}}, id="idle_app"),
+    pytest.param({"deploy_map": {"app1": ["server", "site-1", "site-2"]}}, id="one_app"),
+    pytest.param({"deploy_map": {"app1": ["server", "site-1"], "app2": ["site-2"]}}, id="two_app"),
+]
+
+
+META_WITH_INVALID_DEPLOY_MAP = [
+    pytest.param({"deploy_map": {"app1": ["@ALL", "server"]}}, id="all_other"),
+    pytest.param({"deploy_map": {"app1": ["@ALL"], "app2": ["@all"]}}, id="dup_all"),
+    pytest.param({"deploy_map": {"app1": ["server", "site-1", "site-2"], "app2": ["site-2"]}}, id="dup_client"),
+    pytest.param({"deploy_map": {"app1": ["server", "site-1"], "app2": ["server", "site-2"]}}, id="dup_server"),
+    pytest.param({"deploy_map": {}}, id="empty_deploy_map"),
+    pytest.param({"deploy_map": {"app1": []}}, id="no_deployment"),
+    pytest.param({"deploy_map": {"app1": [], "app2": []}}, id="no_deployment_two_apps"),
+]
+
+
+VALID_JOBS = [
+    pytest.param("valid_job", id="valid_job"),
+    pytest.param("valid_job_deployment_all_idle", id="valid_job_deployment_all_idle"),
+    pytest.param("valid_app_as_job", id="valid_app_wo_meta"),
+]
+
+
+INVALID_JOBS = [
+    pytest.param("duplicate_clients", id="duplicate_clients"),
+    pytest.param("duplicate_server", id="duplicate_server"),
+    pytest.param("invalid_resource_spec_data_type", id="invalid_resource_spec_data_type"),
+    pytest.param("mandatory_not_met", id="mandatory_not_met"),
+    pytest.param("missing_app", id="missing_app"),
+    pytest.param("missing_client_config", id="missing_client_config"),
+    pytest.param("missing_server_config", id="missing_server_config"),
+    pytest.param("no_deployment", id="no_deployment"),
+    pytest.param("not_enough_clients", id="not_enough_clients"),
+]
+
+
 class TestJobMetaValidator:
     @classmethod
     def setup_class(cls):
@@ -94,70 +165,41 @@ class TestJobMetaValidator:
         fl_ctx = engine.new_context()
         cls.validator = JobMetaValidator(fl_ctx)
 
-    def test_valid_app(self):
-        self._assert_valid("valid_app_wo_meta")
+    @pytest.mark.parametrize("meta", META_WITH_VALID_DEPLOY_MAP)
+    def test_validate_valid_deploy_map(self, meta):
+        site_list = JobMetaValidator._validate_deploy_map("unit_test", meta)
+        assert site_list
 
-    def test_valid_job(self):
-        self._assert_valid("valid_job")
+    @pytest.mark.parametrize("meta", META_WITH_INVALID_DEPLOY_MAP)
+    def test_validate_invalid_deploy_map(self, meta):
+        with pytest.raises(ValueError):
+            JobMetaValidator._validate_deploy_map("unit_test", meta)
 
-    def test_valid_job_no_deployment(self):
-        self._assert_valid("valid_job_no_deployment")
+    @pytest.mark.parametrize("job_name", VALID_JOBS)
+    def test_validate_valid_jobs(self, job_name):
+        self._assert_valid(job_name)
 
-    def test_no_deployment(self):
-        self._assert_invalid("no_deployment")
+    @pytest.mark.parametrize("job_name", INVALID_JOBS)
+    def test_validate_invalid_jobs(self, job_name):
+        self._assert_invalid(job_name)
 
-    def test_not_enough_clients(self):
-        self._assert_invalid("not_enough_clients")
-
-    def test_duplicate_server(self):
-        self._assert_invalid("duplicate_server")
-
-    def test_duplicate_clients(self):
-        self._assert_invalid("duplicate_clients")
-
-    def test_mandatory_not_met(self):
-        self._assert_invalid("mandatory_not_met")
-
-    def test_missing_app(self):
-        self._assert_invalid("missing_app")
-
-    def test_missing_server_config(self):
-        self._assert_invalid("missing_server_config")
-
-    def test_missing_client_config(self):
-        self._assert_invalid("missing_client_config")
-
-    def test_invalid_resource_spec_data_type(self):
-        self._assert_invalid("invalid_resource_spec_data_type")
-
-    def test_min_clients_value_range(self):
+    @pytest.mark.parametrize(
+        "min_clients",
+        [
+            pytest.param(-1, id="negative value"),
+            pytest.param(0, id="zero value"),
+            pytest.param(sys.maxsize + 1, id="sys.maxsize + 1 value"),
+        ],
+    )
+    def test_invalid_min_clients_value_range(self, min_clients):
         job_name = "min_clients_value_range"
-        # negative value
-        meta = """
-            { "name": "sag", 
-              "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
-              "deploy_map": {"min_clients_value_range": ["server","site-a", "site-b"]},
-              "min_clients" : -1
-             }
-        """
-        self._assert_invalid(job_name, meta)
-        # 0 value
-        meta = """
-            { "name": "min_clients_value_range", 
-              "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
-              "deploy_map": {"min_clients_value_range": ["server","site-a", "site-b"]},
-              "min_clients" : 0
-             }
-        """
-        self._assert_invalid(job_name, meta)
-
-        # sys.maxsize + 1 value
-        meta = """
-            { "name": "min_clients_value_range", 
-              "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
-              "deploy_map": {"min_clients_value_range": ["server","site-a", "site-b"]},
-              "min_clients" : 9223372036854775808
-             }
+        meta = f"""
+        {{
+            "name": "sag", 
+            "resource_spec": {{ "site-a": {{"gpu": 1}}, "site-b": {{"gpu": 1}} }}, 
+            "deploy_map": {{"min_clients_value_range": ["server","site-a", "site-b"]}},
+            "min_clients" : {min_clients}
+        }}
         """
         self._assert_invalid(job_name, meta)
 
@@ -168,7 +210,7 @@ class TestJobMetaValidator:
             { 
               "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
               "deploy_map": {"hello-pt": ["server","site-a", "site-b"]}
-             }
+            }
         """
         self._assert_invalid(job_name, meta)
 
@@ -178,106 +220,18 @@ class TestJobMetaValidator:
             { 
               "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
               "deploy_map": {"sag": ["server","site-a", "site-b"]}
-             }
+            }
         """
         self._assert_valid(job_name, meta)
 
-    # deploy_map test - valid cases
-    def test_deployment_all(self):
-        self._assert_valid_deployment("valid/all.json")
-
-    def test_deployment_all_idle(self):
-        self._assert_valid_deployment("valid/all_idle.json")
-
-    def test_deployment_idle_app(self):
-        self._assert_valid_deployment("valid/idle_app.json")
-
-    def test_deployment_one_app(self):
-        self._assert_valid_deployment("valid/one_app.json")
-
-    def test_deployment_two_apps(self):
-        self._assert_valid_deployment("valid/two_apps.json")
-
-    # deploy_map test - invalid cases
-    def test_deployment_all_other(self):
-        self._assert_invalid_deployment("invalid/all_other.json")
-
-    def test_deployment_dup_all(self):
-        self._assert_invalid_deployment("invalid/dup_all.json")
-
-    def test_deployment_dup_client(self):
-        self._assert_invalid_deployment("invalid/dup_client.json")
-
-    def test_deployment_dup_server(self):
-        self._assert_invalid_deployment("invalid/dup_server.json")
-
-    def test_deployment_empty_dict(self):
-        self._assert_invalid_deployment("invalid/empty_dict.json")
-
-    def test_deployment_no_deployment(self):
-        self._assert_invalid_deployment("invalid/no_deployment.json")
-
-    def test_deployment_no_deployment2(self):
-        self._assert_invalid_deployment("invalid/no_deployment_2.json")
-
     def _assert_valid(self, job_name: str, meta: str = ""):
-        data = self._zip_job_with_meta(job_name, meta)
+        data = _zip_job_with_meta(job_name, meta)
         valid, error, meta = self.validator.validate(job_name, data)
-        assert valid, error
+        assert valid
+        assert error == ""
 
     def _assert_invalid(self, job_name: str, meta: str = ""):
-        data = self._zip_job_with_meta(job_name, meta)
+        data = _zip_job_with_meta(job_name, meta)
         valid, error, meta = self.validator.validate(job_name, data)
-        assert not valid, error
-
-    def _assert_valid_deployment(self, meta_file: str):
-        meta = self._load_meta(meta_file)
-        site_list = JobMetaValidator._validate_deploy_map("unit_test", meta)
-        assert site_list
-
-    def _assert_invalid_deployment(self, meta_file: str):
-        meta = self._load_meta(meta_file)
-        try:
-            JobMetaValidator._validate_deploy_map("unit_test", meta)
-        except Exception as e:
-            assert isinstance(e, ValueError), str(e)
-
-    def _zip_job_with_meta(self, folder_name: str, meta: str) -> bytes:
-        job_path = os.path.join(os.path.dirname(__file__), "../../../data/jobs")
-        bio = io.BytesIO()
-        self._zip_directory_with_meta(job_path, folder_name, meta, bio)
-        zip_data = bio.getvalue()
-        return zip_utils.convert_legacy_zip(zip_data)
-
-    @staticmethod
-    def _zip_job(job_name: str) -> bytes:
-        job_path = os.path.join(os.path.dirname(__file__), "../../../data/jobs")
-        zip_data = zip_utils.zip_directory_to_bytes(job_path, job_name)
-        return zip_utils.convert_legacy_zip(zip_data)
-
-    @staticmethod
-    def _load_meta(meta_file: str) -> dict:
-        meta_path = os.path.join(os.path.dirname(__file__), "../../../data/deployment", meta_file)
-        with open(meta_path) as f:
-            return json.load(f)
-
-    @staticmethod
-    def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):
-        dir_name = zip_utils._path_join(root_dir, folder_name)
-        assert os.path.exists(dir_name), 'directory "{}" does not exist'.format(dir_name)
-        assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
-
-        file_paths = zip_utils.get_all_file_paths(dir_name)
-        if folder_name:
-            prefix_len = len(zip_utils.split_path(dir_name)[0]) + 1
-        else:
-            prefix_len = len(dir_name) + 1
-
-        with ZipFile(writer, "w", compression=zipfile.ZIP_DEFLATED) as z:
-            # writing each file one by one
-            for full_path in file_paths:
-                rel_path = full_path[prefix_len:]
-                if len(meta) > 0 and rel_path.endswith(META):
-                    z.writestr(rel_path, meta)
-                else:
-                    z.write(full_path, arcname=rel_path)
+        assert not valid
+        assert error

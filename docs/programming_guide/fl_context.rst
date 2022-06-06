@@ -80,7 +80,8 @@ ClientEngineSpec for services they provide.
 
 Run Number (fl_ctx.get_run_number())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-FL application is always running within a RUN, which has a unique ID number.
+FL application is always running within a RUN, which has a unique ID number. From NVIDIA FLARE version 2.1.0, job ID is
+used as the run number, and it no longer has to be an integer.
 
 Identity Name (fl_ctx.get_identity_name())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -202,8 +203,7 @@ The following diagram shows the lifecycle of the FL context for each iteration.
 .. image:: ../resources/FL_Context.png
     :height: 600px
 
-In the Peer Context, following props from the Server are available:
-
+In the Peer Context, following props from the Server are available (job ID is used as the run number in version 2.1.0+):
     - Run Number: peer_ctx.get_run_number())
 
 Server Side FL Context
@@ -274,8 +274,9 @@ between communicating peers! This is done through what is called "peer context":
 What is in the peer context? It depends on what public props are in the FLContext before being sent to the peer. But in
 general, the following props are always available:
 
-    - Run Number (fl_ctx.get_run_number()). This is the ID number of the RUN on the peer site. Note that the peer's RUN
-      number may be different from the host site's RUN number in case the two sites get out of sync.
+    - Run Number (fl_ctx.get_run_number()). This is the ID number of the RUN on the peer site. Job ID is internally used
+      run number. Note that the peer's RUN number may be different from the host site's RUN number in case the two sites
+      get out of sync.
     - Identity Name (fl_ctx.get_identity_name()). This is the unique name of the peer site (client name or server name).
 
 Additional props are available from the peer context, depending on the communication scenarios.

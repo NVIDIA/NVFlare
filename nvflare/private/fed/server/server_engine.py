@@ -380,6 +380,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        while self.server.status != ServerStatus.SHUTDOWN:
+            time.sleep(1.0)
         return ""
 
     def restart_server(self) -> str:
@@ -391,6 +393,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        while self.server.status != ServerStatus.SHUTDOWN:
+            time.sleep(1.0)
         return ""
 
     def get_widget(self, widget_id: str) -> Widget:
@@ -695,8 +699,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return stats
 
-    def _send_admin_requests(self, requests) -> List[ClientReply]:
-        return self.server.admin_server.send_requests(requests, timeout_secs=self.server.admin_server.timeout)
+    def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
+        return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
     def check_client_resources(self, resource_reqs) -> Dict[str, Tuple[bool, str]]:
         requests = {}
@@ -710,7 +714,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests)
+            replies = self._send_admin_requests(requests, 15)
         result = {}
         for r in replies:
             site_name = self.get_client_name_from_token(r.client_token)
@@ -734,7 +738,6 @@ class ServerEngine(ServerEngineInternalSpec):
                 resource_requirements = resource_reqs[site_name]
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
-                # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
                 client = self.get_client_from_name(site_name)
                 if client:
                     requests.update({client.token: request})
@@ -749,20 +752,13 @@ class ServerEngine(ServerEngineInternalSpec):
             request = Message(topic=TrainingTopic.START_JOB, body=pickle.dumps(resource_requirement))
             request.set_header(RequestHeader.RUN_NUM, run_number)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
-            # request.set_header(ShareableHeader.RESOURCE_SPEC, resource_requirements)
             client = self.get_client_from_name(site)
             if client:
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests)
+            replies = self._send_admin_requests(requests, timeout_secs=20)
         return replies
-
-        # admin_server = engine.server.admin_server
-        # message = Message(topic=TrainingTopic.START_JOB, body="")
-        # message.set_header(RequestHeader.RUN_NUM, run_number)
-        # replies = self._send_to_clients(admin_server, client_sites, engine, message)
-        # return replies
 
     def stop_all_jobs(self):
         fl_ctx = self.new_context()
@@ -779,7 +775,9 @@ def server_shutdown(server, touch_file):
     try:
         server.fl_shutdown()
         server.admin_server.stop()
+        time.sleep(3.0)
     finally:
+        server.status = ServerStatus.SHUTDOWN
         sys.exit(2)
 
 

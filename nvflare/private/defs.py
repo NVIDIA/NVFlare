@@ -112,3 +112,6 @@ class SSLConstants:
     CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
     ROOT_CERT = "ssl_root_cert"
+
+
+ERROR_MSG_PREFIX = "NVFLARE_ERROR"

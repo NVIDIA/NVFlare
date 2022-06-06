@@ -1,5 +1,7 @@
-Quickstart (PyTorch with TensorBoard)
-=====================================
+.. _hello_pt_tb:
+
+Hello PyTorch with TensorBoard
+==============================
 
 Introduction
 -------------

@@ -35,17 +35,19 @@ Please refer to :ref:`user_guide/application:NVIDIA FLARE Application` for more 
 .. toctree::
    :maxdepth: 1
 
-   programming_guide/system_architecture
-   programming_guide/high_availability
-   programming_guide/provisioning_system
    programming_guide/controllers
    programming_guide/executor
    programming_guide/shareable
    programming_guide/data_exchange_object
-   programming_guide/filters
-   programming_guide/event_system
    programming_guide/fl_context
    programming_guide/fl_component
+   programming_guide/filters
+   programming_guide/event_system
+   programming_guide/provisioning_system
+   programming_guide/high_availability
+   programming_guide/system_architecture
+
+
 
 Code Structure
 ==============

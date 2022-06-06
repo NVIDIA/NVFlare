@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from datetime import datetime
 
 from flask import jsonify, request
@@ -29,6 +30,11 @@ from nvflare.ha.overseer.utils import (
 )
 
 privilege_dict = load_privilege()
+heartbeat_timeout = os.environ.get("NVFL_OVERSEER_HEARTBEAT_TIMEOUT", "10")
+try:
+    heartbeat_timeout = int(heartbeat_timeout)
+except BaseException:
+    heartbeat_timeout = 10
 
 
 @app.route("/api/v1/heartbeat", methods=["GET", "POST"])
@@ -40,7 +46,7 @@ def heartbeat():
         if project is None or role is None:
             return jsonify({"Error": "project and role must be provided"})
         now = datetime.utcnow()
-        update_sp_state(project, now)
+        update_sp_state(project, now, heartbeat_timeout=heartbeat_timeout)
         if role == "server":
             sp_end_point = req.get("sp_end_point")
             if sp_end_point is None:

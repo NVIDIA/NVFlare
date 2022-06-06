@@ -1,6 +1,0 @@
-{
-  "deploy_map": {
-    "app1": ["server", "site-1"],
-    "app2": ["site-2"]
-  }
-}

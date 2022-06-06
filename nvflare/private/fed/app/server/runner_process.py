@@ -61,11 +61,18 @@ def main():
     args.log_config = None
     args.snapshot = kv_list.get("restore_snapshot")
 
+    startup = os.path.join(args.workspace, "startup")
+    logging_setup(startup)
+
+    log_file = os.path.join(args.workspace, args.run_number, "log.txt")
+    add_logfile_handler(log_file)
+    logger = logging.getLogger("runner_process")
+    logger.info("Runner_process started.")
+
     command_agent = None
     try:
         os.chdir(args.workspace)
 
-        startup = os.path.join(args.workspace, "startup")
         SecurityContentService.initialize(content_folder=startup)
 
         conf = FLServerStarterConfiger(
@@ -73,6 +80,7 @@ def main():
             server_config_file_name=args.fed_server,
             log_config_file_name=WorkspaceConstants.LOGGING_CONFIG,
             kv_list=args.set,
+            logging_config=False,
         )
         log_level = os.environ.get("FL_LOG_LEVEL", "")
         numeric_level = getattr(logging, log_level.upper(), None)
@@ -84,9 +92,6 @@ def main():
             logger.error("loglevel error enabled")
             logger.critical("loglevel critical enabled")
         conf.configure()
-
-        log_file = os.path.join(args.workspace, args.run_number, "log.txt")
-        add_logfile_handler(log_file)
 
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
@@ -102,7 +107,7 @@ def main():
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve_run(args.run_number)
 
-            start_server_app(server, args, args.app_root, args.run_number, snapshot)
+            start_server_app(server, args, args.app_root, args.run_number, snapshot, logger)
         finally:
             if command_agent:
                 command_agent.shutdown()
@@ -110,11 +115,16 @@ def main():
                 deployer.close()
 
     except ConfigError as ex:
-        logging.getLogger().exception(f"ConfigError: {ex}", exc_info=True)
+        logger.exception(f"ConfigError: {ex}", exc_info=True)
         raise ex
 
 
-def start_server_app(server, args, app_root, run_number, snapshot):
+def logging_setup(startup):
+    log_config_file_path = os.path.join(startup, WorkspaceConstants.LOGGING_CONFIG)
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+
+
+def start_server_app(server, args, app_root, run_number, snapshot, logger):
 
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)
@@ -133,7 +143,7 @@ def start_server_app(server, args, app_root, run_number, snapshot):
 
         server.start_run(run_number, app_root, conf, args, snapshot)
     except BaseException as e:
-        logging.getLogger().exception(f"FL server execution exception: {e}", exc_info=True)
+        logger.exception(f"FL server execution exception: {e}", exc_info=True)
         raise e
     finally:
         server.status = ServerStatus.STOPPED

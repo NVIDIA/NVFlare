@@ -138,7 +138,7 @@ def main():
     workspace = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.WORKSPACE_OBJECT)
     run_manager = ClientRunManager(
         client_name=client_name,
-        run_num=int(run_number),
+        run_num=run_number,
         workspace=workspace,
         client=None,
         components=data[CommunicationMetaData.COMPONENTS],

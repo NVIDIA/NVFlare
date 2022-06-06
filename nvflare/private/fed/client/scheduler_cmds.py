@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.scheduler_constants import ShareableHeader
@@ -51,8 +51,6 @@ class CheckResourceProcessor(RequestProcessor):
             except Exception:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
-        if not result:
-            result = "OK"
         return Message(topic="reply_" + req.topic, body=pickle.dumps(result))
 
 
@@ -92,7 +90,7 @@ class StartJobProcessor(RequestProcessor):
                 resource_manager=resource_manager,
             )
         except Exception as e:
-            result = f"Execution exception: {e}."
+            result = f"{ERROR_MSG_PREFIX}: Execution exception: {e}."
 
         if not result:
             result = "OK"
@@ -123,6 +121,4 @@ class CancelResourceProcessor(RequestProcessor):
             except Exception:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
-        if not result:
-            result = "OK"
         return Message(topic="reply_" + req.topic, body=pickle.dumps(result))

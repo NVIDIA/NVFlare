@@ -50,14 +50,14 @@ class Workspace:
     def get_root_dir(self) -> str:
         return self.root_dir
 
-    def get_run_dir(self, run_num: int) -> str:
+    def get_run_dir(self, run_num: str) -> str:
         return os.path.join(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + str(run_num))
 
-    def get_app_dir(self, run_num: int) -> str:
+    def get_app_dir(self, run_num: str) -> str:
         return os.path.join(self.get_run_dir(run_num), WorkspaceConstants.APP_PREFIX + self.name)
 
-    def get_app_config_dir(self, run_num) -> str:
+    def get_app_config_dir(self, run_num: str) -> str:
         return os.path.join(self.get_app_dir(run_num), self.config_folder)
 
-    def get_app_custom_dir(self, run_num) -> str:
+    def get_app_custom_dir(self, run_num: str) -> str:
         return os.path.join(self.get_app_dir(run_num), "custom")
