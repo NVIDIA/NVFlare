@@ -268,7 +268,7 @@ class FileTransferModule(CommandModule, CommandUtil):
 
         try:
             with engine.new_context() as fl_ctx:
-                job_validator = JobMetaValidator(fl_ctx)
+                job_validator = JobMetaValidator()
                 valid, error, meta = job_validator.validate(folder_name, data_bytes)
                 if not valid:
                     conn.append_error(error)
