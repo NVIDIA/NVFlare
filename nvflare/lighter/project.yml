@@ -122,7 +122,3 @@ builders:
   #     scale_bits: 40
   #     scheme: CKKS
   - path: nvflare.lighter.impl.signature.SignatureBuilder
-  - path: nvflare.lighter.impl.workspace.DistributionBuilder
-    args:
-      zip_password: false
-

@@ -15,10 +15,8 @@
 import os
 import pathlib
 import shutil
-import subprocess
 
 from nvflare.lighter.spec import Builder, Project
-from nvflare.lighter.utils import generate_password
 
 
 class WorkspaceBuilder(Builder):
@@ -83,31 +81,3 @@ class WorkspaceBuilder(Builder):
             ctx.pop("wip_dir", None)
             print(f"Generated results can be found under {current_prod_dir}.  Builder's wip folder removed.")
             ctx["current_prod_dir"] = current_prod_dir
-
-
-class DistributionBuilder(Builder):
-    def __init__(self, zip_password=False):
-        """Build the zip files for each folder.
-
-        Creates the zip files containing the archives for each startup kit. It will add password protection if the
-        argument (zip_password) is true.
-
-        Args:
-            zip_password: if true, will create zipped packages with passwords
-        """
-        self.zip_password = zip_password
-
-    def build(self, project: Project, ctx: dict):
-        wip_dir = self.get_wip_dir(ctx)
-        dirs = [name for name in os.listdir(wip_dir) if os.path.isdir(os.path.join(wip_dir, name))]
-        for dir in dirs:
-            dest_zip_file = os.path.join(wip_dir, f"{dir}")
-            if self.zip_password:
-                pw = generate_password()
-                run_args = ["zip", "-rq", "-P", pw, dest_zip_file + ".zip", ".", "-i", "startup/*"]
-                os.chdir(dest_zip_file)
-                subprocess.run(run_args)
-                os.chdir(os.path.join(dest_zip_file, ".."))
-                print(f"Password {pw} on {dir}.zip")
-            else:
-                shutil.make_archive(dest_zip_file, "zip", root_dir=os.path.join(wip_dir, dir), base_dir="startup")
