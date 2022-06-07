@@ -147,8 +147,12 @@ class StaticFileBuilder(Builder):
             config["overseer_agent"] = overseer_agent
         if self.snapshot_persistor:
             config["snapshot_persistor"] = self.snapshot_persistor
-        if self.components:
-            config["components"] = self.components.get("server", [])
+        components = server.props.get("components", [])
+        config["components"] = list()
+        for comp in components:
+            temp_dict = {"id": comp}
+            temp_dict.update(components[comp])
+            config["components"].append(temp_dict)
         provisioned_client_list = list()
         for client in self.project.get_participants_by_type("client", first_only=False):
             provisioned_client_list.append(client.name)
@@ -220,8 +224,12 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
-        if self.components:
-            config["components"] = self.components.get("client", [])
+        components = client.props.get("components", [])
+        config["components"] = list()
+        for comp in components:
+            temp_dict = {"id": comp}
+            temp_dict.update(components[comp])
+            config["components"].append(temp_dict)
 
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:

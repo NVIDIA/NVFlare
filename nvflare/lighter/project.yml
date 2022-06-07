@@ -2,6 +2,30 @@ api_version: 3
 name: example_project
 description: NVIDIA FLARE sample project yaml file
 
+client_components: &cln_comps
+  resource_manager:    # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
+    args:
+      resources:
+        gpu: [0, 1, 2, 3]
+  resource_consumer:    # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
+    args:
+      gpu_resource_key: gpu
+  
+server_components: &svr_comps
+  job_scheduler:  # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
+    args:
+      max_jobs: 1
+  job_manager:    # This id is reserved by system.  Do not change it.
+    path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
+    args:
+      uri_root: /tmp/nvflare/jobs-storage
+      job_store_id: job_store
+  job_store:
+    path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+
 participants:
   # change overseer.example.com to the FQDN of the overseer
   - name: overseer.example.com
@@ -18,6 +42,8 @@ participants:
     admin_port: 8003
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
+    components:
+      <<: *svr_comps
   - name: example2.com
     type: server
     org: nvidia
@@ -25,14 +51,26 @@ participants:
     admin_port: 8003
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
+    components:
+      <<: *svr_comps
   - name: site-1
     type: client
     org: nvidia
     enable_byoc: true
+    components:
+      <<: *cln_comps
   - name: site-2
     type: client
     org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
+      # You can also override one component with a different one
+      resource_manager:    # This id is reserved by system.  Do not change it.
+        path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
+        args:
+          resources:
+            gpu: [0, 1]
   - name: admin@nvidia.com
     type: admin
     org: nvidia
@@ -75,30 +113,6 @@ builders:
             args:
               root_dir: /tmp/nvflare/snapshot-storage
               uri_root: /
-
-      components:
-        server:
-          - id: job_scheduler  # This id is reserved by system.  Do not change it.
-            path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
-            args:
-              max_jobs: 1
-          - id: job_manager    # This id is reserved by system.  Do not change it.
-            path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
-            args:
-              uri_root: /tmp/nvflare/jobs-storage
-              job_store_id: job_store
-          - id: job_store
-            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
-        client:
-          - id: resource_manager    # This id is reserved by system.  Do not change it.
-            path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
-            args:
-              resources:
-                gpu: [0, 1, 2, 3]
-          - id: resource_consumer    # This id is reserved by system.  Do not change it.
-            path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
-            args:
-              gpu_resource_key: gpu
 
   - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
     args:
