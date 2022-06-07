@@ -72,7 +72,7 @@ To do this, you need to log into the NVFlare admin console.
 3. Start the admin console: `./workspaces/poc_workspace/admin/startup/fl_admin.sh`
 4. Inside the console, submit the job: `submit_job [PWD]/configs/fed_analysis` (replace `[PWD]` with your current path) 
 
-For a complete list of avialble admin console commands, see [here](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/admin_commands.html).
+For a complete list of avialble admin console commands, see [here](https://nvflare.readthedocs.io/en/2.1.0/user_guide/admin_commands.html).
 
 ### 3.2 List the submitted job
 
@@ -105,7 +105,7 @@ For example, the gathered local and global histograms will look like this.
 ![Example local and global histograms](./histograms_example.svg)
 
 ## 5. Get results using the admin client  
-In real-world FL scenarios, the researcher might not have direct access to the server machine. Hence, the researcher can use the admin client console to control the experimentation (see [here](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/admin_commands.html) for details).
+In real-world FL scenarios, the researcher might not have direct access to the server machine. Hence, the researcher can use the admin client console to control the experimentation (see [here](https://nvflare.readthedocs.io/en/2.1.0/user_guide/admin_commands.html) for details).
 
 After completing the federated analysis run, you can check the histogram files have been created by running `ls server [RUN_ID]`:
 ```
