@@ -20,7 +20,7 @@
     },
     {
       "id": "aggregator",
-      "path": "nvflare.app_common.aggregators.accumulate_model_aggregator.AccumulateWeightedAggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
         "expected_data_kind": "WEIGHTS"
       }
