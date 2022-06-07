@@ -147,7 +147,7 @@ class StaticFileBuilder(Builder):
             config["overseer_agent"] = overseer_agent
         if self.snapshot_persistor:
             config["snapshot_persistor"] = self.snapshot_persistor
-        components = server.props.get("components")
+        components = server.props.get("components", [])
         config["components"] = list()
         for comp in components:
             temp_dict = {"id": comp}
@@ -224,7 +224,7 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
-        components = client.props.get("components")
+        components = client.props.get("components", [])
         config["components"] = list()
         for comp in components:
             temp_dict = {"id": comp}
