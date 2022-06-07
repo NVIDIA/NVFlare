@@ -31,20 +31,20 @@ fi
 
 init_pipenv() {
     echo "initializing pip environment: $1"
-    python3 -m pipenv install -r $1
+    pipenv install -r $1
     export PYTHONPATH=$PWD
 }
 
 remove_pipenv() {
     echo "removing pip environment"
-    python3 -m pipenv --rm
+    pipenv --rm
     rm Pipfile Pipfile.lock
 }
 
 unit_test() {
     echo "Run unit test..."
     init_pipenv requirements-dev.txt
-    python3 -m pipenv run ./runtest.sh
+    pipenv run ./runtest.sh
     remove_pipenv
 }
 
