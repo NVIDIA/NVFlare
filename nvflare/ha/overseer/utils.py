@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.lighter.utils import load_yaml
 
-print("Using default STORE (MEM)")
+print("Using memory store")
 from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
 system_state = "ready"
@@ -40,7 +40,6 @@ def set_system_state(state):
 def check_integrity(privilege_file):
     data, sig = SecurityContentService.load_content(privilege_file)
     if sig != LoadResult.OK:
-        print("Privilege file is tampered.  Privileged API disabled.")
         data = None
     return data
 
