@@ -16,20 +16,12 @@ import io
 import os
 import sys
 import zipfile
-from typing import Dict, List, Optional, Tuple
 from zipfile import ZipFile
 
 import pytest
 
-from nvflare.apis.client import Client
-from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.fl_snapshot import RunSnapshot
-from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.shareable import Shareable
-from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci import zip_utils
 from nvflare.private.fed.server.job_meta_validator import META, JobMetaValidator
-from nvflare.widgets.widget import Widget
 
 
 def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):
@@ -59,63 +51,6 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
     _zip_directory_with_meta(job_path, folder_name, meta, bio)
     zip_data = bio.getvalue()
     return zip_utils.convert_legacy_zip(zip_data)
-
-
-class MockServerEngine(ServerEngineSpec):
-    def __init__(self):
-        self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name="__mock_engine", run_num="unit-test-run", public_stickers={}, private_stickers={}
-        )
-
-    def fire_event(self, event_type: str, fl_ctx: FLContext):
-        pass
-
-    def get_clients(self) -> List[Client]:
-        pass
-
-    def sync_clients_from_main_process(self):
-        pass
-
-    def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
-        pass
-
-    def new_context(self) -> FLContext:
-        return self.fl_ctx_mgr.new_context()
-
-    def get_workspace(self) -> Workspace:
-        pass
-
-    def get_component(self, component_id: str) -> object:
-        pass
-
-    def register_aux_message_handler(self, topic: str, message_handle_func):
-        pass
-
-    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        pass
-
-    def get_widget(self, widget_id: str) -> Widget:
-        pass
-
-    def persist_components(self, fl_ctx: FLContext, completed: bool):
-        pass
-
-    def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
-        pass
-
-    def start_client_job(self, run_number, client_sites):
-        pass
-
-    def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
-        pass
-
-    def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
-    ):
-        pass
-
-    def get_client_name_from_token(self, token: str) -> str:
-        pass
 
 
 META_WITH_VALID_DEPLOY_MAP = [
@@ -161,9 +96,7 @@ INVALID_JOBS = [
 class TestJobMetaValidator:
     @classmethod
     def setup_class(cls):
-        engine = MockServerEngine()
-        fl_ctx = engine.new_context()
-        cls.validator = JobMetaValidator(fl_ctx)
+        cls.validator = JobMetaValidator()
 
     @pytest.mark.parametrize("meta", META_WITH_VALID_DEPLOY_MAP)
     def test_validate_valid_deploy_map(self, meta):

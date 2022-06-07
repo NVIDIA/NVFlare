@@ -19,7 +19,6 @@ from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
 
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 
 SERVER_CONFIG = "config_fed_server.json"
@@ -32,9 +31,6 @@ logger = logging.getLogger(__name__)
 
 class JobMetaValidator:
     """Job validator"""
-
-    def __init__(self, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
 
     def validate(self, job_name: str, job_data: bytes) -> Tuple[bool, str, dict]:
         """Validate job
