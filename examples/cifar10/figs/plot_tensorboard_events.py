@@ -53,16 +53,16 @@ experiments = {
 add_cross_site_val = True
 
 
-def find_run_number(workdir, fl_app_name="cifar10_fedavg", alpha=None):
+def find_job_id(workdir, fl_app_name="cifar10_fedavg", alpha=None):
     """Find the first matching experiment"""
-    # TODO: return several experiment run_numbers with matching settings
+    # TODO: return several experiment job_ids with matching settings
     fl_app_files = glob.glob(os.path.join(workdir, "**", "fl_app.txt"), recursive=True)
     assert len(fl_app_files) > 0, f"No `fl_app.txt` files found in workdir={workdir}."
     for fl_app_file in fl_app_files:
         with open(fl_app_file, "r") as f:
             _fl_app_name = f.read()
         if fl_app_name == _fl_app_name:  # alpha will be matched based on value in config file
-            run_number = os.path.basename(os.path.dirname(fl_app_file))
+            job_id = os.path.basename(os.path.dirname(fl_app_file))
             if alpha is not None:
                 config_fed_server_file = glob.glob(
                     os.path.join(os.path.dirname(fl_app_file), "**", "config_fed_server.json"), recursive=True
@@ -74,10 +74,10 @@ def find_run_number(workdir, fl_app_name="cifar10_fedavg", alpha=None):
                     server_config = json.load(f)
                 _alpha = server_config["alpha"]
                 if _alpha == alpha:
-                    return run_number
+                    return job_id
             else:
-                return run_number
-    raise ValueError(f"No run number found for fl_app_name={fl_app_name} in workdir={workdir}")
+                return job_id
+    raise ValueError(f"No job id found for fl_app_name={fl_app_name} in workdir={workdir}")
 
 
 def read_eventfile(filepath, tags=["val_acc_global_model"]):
@@ -122,9 +122,9 @@ def main():
     for config, exp in experiments.items():
         config_name = config.split(" ")[0]
         alpha = exp.get("alpha", None)
-        run_number = find_run_number(workdir=server_results_root, fl_app_name=config_name, alpha=alpha)
-        print(f"Found run {run_number} for {config_name} with alpha={alpha}")
-        eventfile = glob.glob(os.path.join(client_results_root, run_number, "**", "events.*"), recursive=True)
+        job_id = find_job_id(workdir=server_results_root, fl_app_name=config_name, alpha=alpha)
+        print(f"Found run {job_id} for {config_name} with alpha={alpha}")
+        eventfile = glob.glob(os.path.join(client_results_root, job_id, "**", "events.*"), recursive=True)
         assert len(eventfile) == 1, "No unique event file found!"
         eventfile = eventfile[0]
         print("adding", eventfile)
@@ -132,7 +132,7 @@ def main():
 
         if add_cross_site_val:
             xsite_file = glob.glob(
-                os.path.join(server_results_root, run_number, "**", "cross_val_results.json"), recursive=True
+                os.path.join(server_results_root, job_id, "**", "cross_val_results.json"), recursive=True
             )
             assert len(xsite_file) == 1, "No unique x-site file found!"
             with open(xsite_file[0], "r") as f:

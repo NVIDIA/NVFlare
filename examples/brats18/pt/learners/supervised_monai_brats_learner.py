@@ -83,7 +83,7 @@ class SupervisedMonaiBratsLearner(SupervisedLearner):
         # Load training configurations json
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
-        app_config_dir = ws.get_app_config_dir(fl_ctx.get_run_number())
+        app_config_dir = ws.get_app_config_dir(fl_ctx.get_job_id())
         train_config_file_path = os.path.join(app_config_dir, self.train_config_filename)
         if not os.path.isfile(train_config_file_path):
             self.log_error(
