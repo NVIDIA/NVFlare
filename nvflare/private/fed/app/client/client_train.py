@@ -23,7 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
@@ -31,7 +31,7 @@ from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, secure_content_check
 
 
 def main():
@@ -146,7 +146,7 @@ def security_check(secure_train: bool, content_folder: str, fed_client_config: s
     SecurityContentService.initialize(content_folder=content_folder)
 
     if secure_train:
-        insecure_list = secure_content_check(fed_client_config)
+        insecure_list = secure_content_check(fed_client_config, site_type="client")
         if len(insecure_list):
             print("The following files are not secure content.")
             for item in insecure_list:
@@ -155,34 +155,6 @@ def security_check(secure_train: bool, content_folder: str, fed_client_config: s
     # initialize the AuditService, which is used by command processing.
     # The Audit Service can be used in other places as well.
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
-
-
-def secure_content_check(config: str):
-    """To check the security contents.
-
-    Args:
-        config (str): fed_client.json
-
-    Returns:
-        A list of insecure content.
-    """
-    insecure_list = []
-    data, sig = SecurityContentService.load_json(config)
-    if sig != LoadResult.OK:
-        insecure_list.append(config)
-
-    client = data["client"]
-    content, sig = SecurityContentService.load_content(client.get(SSLConstants.CERT))
-    if sig != LoadResult.OK:
-        insecure_list.append(client.get(SSLConstants.CERT))
-    content, sig = SecurityContentService.load_content(client.get(SSLConstants.PRIVATE_KEY))
-    if sig != LoadResult.OK:
-        insecure_list.append(client.get(SSLConstants.PRIVATE_KEY))
-    content, sig = SecurityContentService.load_content(client.get(SSLConstants.ROOT_CERT))
-    if sig != LoadResult.OK:
-        insecure_list.append(client.get(SSLConstants.ROOT_CERT))
-
-    return insecure_list
 
 
 def create_admin_agent(

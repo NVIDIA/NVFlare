@@ -18,10 +18,13 @@ import pickle
 import shutil
 from logging.handlers import RotatingFileHandler
 from multiprocessing.connection import Listener
+from typing import List
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 
@@ -94,3 +97,35 @@ def listen_command(listen_port, engine, execute_func, logger):
             conn.close()
         if listener:
             listener.close()
+
+
+def secure_content_check(config: str, site_type: str) -> List[str]:
+    """To check the security contents.
+
+    Args:
+        config (str): The fed_XXX config
+        site_type (str): "server" or "client"
+
+    Returns:
+        A list of insecure content.
+    """
+    insecure_list = []
+    data, sig = SecurityContentService.load_json(config)
+    if sig != LoadResult.OK:
+        insecure_list.append(config)
+
+    sites_to_check = data["servers"] if site_type == "server" else [data["client"]]
+
+    for site in sites_to_check:
+        for filename in [SSLConstants.CERT, SSLConstants.PRIVATE_KEY, SSLConstants.ROOT_CERT]:
+            content, sig = SecurityContentService.load_content(site.get(filename))
+            if sig != LoadResult.OK:
+                insecure_list.append(site.get(filename))
+
+    if site_type == "server":
+        if "authorization.json" in SecurityContentService.security_content_manager.signature:
+            data, sig = SecurityContentService.load_json("authorization.json")
+            if sig != LoadResult.OK:
+                insecure_list.append("authorization.json")
+
+    return insecure_list

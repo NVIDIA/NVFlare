@@ -24,13 +24,13 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, secure_content_check
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 
@@ -144,7 +144,7 @@ def security_check(secure_train: bool, content_folder: str, fed_server_config: s
     SecurityContentService.initialize(content_folder=content_folder)
 
     if secure_train:
-        insecure_list = secure_content_check(fed_server_config)
+        insecure_list = secure_content_check(fed_server_config, site_type="server")
         if len(insecure_list):
             print("The following files are not secure content.")
             for item in insecure_list:
@@ -154,6 +154,7 @@ def security_check(secure_train: bool, content_folder: str, fed_server_config: s
     # initialize the AuditService, which is used by command processing.
     # The Audit Service can be used in other places as well.
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+
     # Initialize the AuthorizationService. It is used by command authorization
     # We use FLAuthorizer for policy processing.
     # AuthorizationService depends on SecurityContentService to read authorization policy file.
@@ -165,39 +166,6 @@ def security_check(secure_train: bool, content_folder: str, fed_server_config: s
     if err:
         print("AuthorizationService error: {}".format(err))
         sys.exit(1)
-
-
-def secure_content_check(config: str):
-    """To check the security contents.
-
-    Args:
-        config (str): The fed_server config
-
-    Returns:
-        A list of insecure content.
-    """
-    insecure_list = []
-    data, sig = SecurityContentService.load_json(config)
-    if sig != LoadResult.OK:
-        insecure_list.append(config)
-
-    for server in data["servers"]:
-        content, sig = SecurityContentService.load_content(server.get(SSLConstants.CERT))
-        if sig != LoadResult.OK:
-            insecure_list.append(server.get(SSLConstants.CERT))
-        content, sig = SecurityContentService.load_content(server.get(SSLConstants.PRIVATE_KEY))
-        if sig != LoadResult.OK:
-            insecure_list.append(server.get(SSLConstants.PRIVATE_KEY))
-        content, sig = SecurityContentService.load_content(server.get(SSLConstants.ROOT_CERT))
-        if sig != LoadResult.OK:
-            insecure_list.append(server.get(SSLConstants.ROOT_CERT))
-
-    if "authorization.json" in SecurityContentService.security_content_manager.signature:
-        data, sig = SecurityContentService.load_json("authorization.json")
-        if sig != LoadResult.OK:
-            insecure_list.append("authorization.json")
-
-    return insecure_list
 
 
 def create_admin_server(
