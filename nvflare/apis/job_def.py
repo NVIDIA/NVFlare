@@ -87,7 +87,7 @@ class Job:
 
         self.submit_time = None
 
-        self.run_record = None  # run number, dispatched time/UUID, finished time, completion code (normal, aborted)
+        self.run_record = None  # job id, dispatched time/UUID, finished time, completion code (normal, aborted)
 
     def get_deployment(self) -> Dict[str, List[str]]:
         """Returns the deployment configuration.

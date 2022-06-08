@@ -33,23 +33,19 @@ class ClientInfoProcessor(RequestProcessor):
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
 
-        run_number = req.get_header(RequestHeader.RUN_NUM)
+        job_id = req.get_header(RequestHeader.JOB_ID)
         if req.topic == InfoCollectorTopic.SHOW_STATS:
-            result = engine.get_current_run_info(run_number)
+            result = engine.get_current_run_info(job_id)
         elif req.topic == InfoCollectorTopic.SHOW_ERRORS:
-            result = engine.get_errors(run_number)
+            result = engine.get_errors(job_id)
         elif req.topic == InfoCollectorTopic.RESET_ERRORS:
-            engine.reset_errors(run_number)
+            engine.reset_errors(job_id)
             result = {"status": "OK"}
         else:
             result = {"error": "invalid topic {}".format(req.topic)}
 
         if not isinstance(result, dict):
             result = {}
-
-        # # add current run number
-        # if run_num >= 0:
-        #     result['run_num'] = run_num
 
         result = json.dumps(result)
         return Message(topic="reply_" + req.topic, body=result)

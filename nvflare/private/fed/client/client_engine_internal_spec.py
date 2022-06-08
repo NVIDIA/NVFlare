@@ -49,12 +49,12 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def deploy_app(self, app_name: str, run_num: str, client_name: str, app_data) -> str:
+    def deploy_app(self, app_name: str, job_id: str, client_name: str, app_data) -> str:
         """Deploys the app to specified run.
 
         Args:
             app_name: FL_app name
-            run_num: run that the app is to be deployed to
+            job_id: job that the app is to be deployed to
             client_name: name of the client
             app_data: zip data of the app
 
@@ -66,7 +66,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
     @abstractmethod
     def start_app(
         self,
-        run_number: str,
+        job_id: str,
         allocated_resource: dict = None,
         token: str = None,
         resource_consumer=None,
@@ -75,7 +75,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         """Starts the app for the specified run.
 
         Args:
-            run_number: run_number
+            job_id: job_id
             allocated_resource: allocated resource
             token: token
             resource_consumer: resource consumer
@@ -87,7 +87,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def abort_app(self, run_number: str) -> str:
+    def abort_app(self, job_id: str) -> str:
         """Aborts the app execution for the specified run.
 
         Returns:
@@ -96,7 +96,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def abort_task(self, run_number: str) -> str:
+    def abort_task(self, job_id: str) -> str:
         """Abort the client current executing task.
 
         Returns:
@@ -105,11 +105,11 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def delete_run(self, run_num: str) -> str:
+    def delete_run(self, job_id: str) -> str:
         """Deletes the specified run.
 
         Args:
-            run_num: run_number
+            job_id: job_id
 
         Returns:
             A string message.
@@ -135,10 +135,10 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_all_run_numbers(self) -> []:
-        """Get all the client run_number.
+    def get_all_job_ids(self) -> []:
+        """Get all the client job_id.
 
-        Returns: list of all the run_number
+        Returns: list of all the job_id
 
         """
         pass

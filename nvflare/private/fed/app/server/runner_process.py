@@ -39,7 +39,7 @@ def main():
         "--fed_server", "-s", type=str, help="an aggregation server specification json file", required=True
     )
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
-    parser.add_argument("--run_number", "-n", type=str, help="run number", required=True)
+    parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
     parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
     parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
 
@@ -64,7 +64,7 @@ def main():
     startup = os.path.join(args.workspace, "startup")
     logging_setup(startup)
 
-    log_file = os.path.join(args.workspace, args.run_number, "log.txt")
+    log_file = os.path.join(args.workspace, args.job_id, "log.txt")
     add_logfile_handler(log_file)
     logger = logging.getLogger("runner_process")
     logger.info("Runner_process started.")
@@ -105,9 +105,9 @@ def main():
 
             snapshot = None
             if args.snapshot:
-                snapshot = server.snapshot_persistor.retrieve_run(args.run_number)
+                snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
 
-            start_server_app(server, args, args.app_root, args.run_number, snapshot, logger)
+            start_server_app(server, args, args.app_root, args.job_id, snapshot, logger)
         finally:
             if command_agent:
                 command_agent.shutdown()
@@ -124,7 +124,7 @@ def logging_setup(startup):
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
-def start_server_app(server, args, app_root, run_number, snapshot, logger):
+def start_server_app(server, args, app_root, job_id, snapshot, logger):
 
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)
@@ -141,7 +141,7 @@ def start_server_app(server, args, app_root, run_number, snapshot, logger):
         server.engine.create_parent_connection(int(args.conn))
         server.engine.sync_clients_from_main_process()
 
-        server.start_run(run_number, app_root, conf, args, snapshot)
+        server.start_run(job_id, app_root, conf, args, snapshot)
     except BaseException as e:
         logger.exception(f"FL server execution exception: {e}", exc_info=True)
         raise e

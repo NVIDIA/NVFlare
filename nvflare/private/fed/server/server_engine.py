@@ -127,8 +127,8 @@ class ServerEngine(ServerEngineInternalSpec):
     def _get_client_app_folder(self, client_name):
         return WorkspaceConstants.APP_PREFIX + client_name
 
-    def _get_run_folder(self, run_number):
-        return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+    def _get_run_folder(self, job_id):
+        return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
 
     def get_engine_info(self) -> EngineInfo:
         self.engine_info.app_names = {}
@@ -137,14 +137,14 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             self.engine_info.status = MachineStatus.STOPPED
 
-        for run_number, _ in self.run_processes.items():
-            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+        for job_id, _ in self.run_processes.items():
+            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
-                    self.engine_info.app_names[run_number] = f.readline().strip()
+                    self.engine_info.app_names[job_id] = f.readline().strip()
             else:
-                self.engine_info.app_names[run_number] = "?"
+                self.engine_info.app_names[job_id] = "?"
 
         return self.engine_info
 
@@ -179,10 +179,10 @@ class ServerEngine(ServerEngineInternalSpec):
         time.sleep(30)
         os.killpg(os.getpgid(os.getpid()), 9)
 
-    def delete_run_number(self, num):
-        run_number_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(num))
-        if os.path.exists(run_number_folder):
-            shutil.rmtree(run_number_folder)
+    def delete_job_id(self, num):
+        job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(num))
+        if os.path.exists(job_id_folder):
+            shutil.rmtree(job_id_folder)
         return ""
 
     def get_clients(self) -> [Client]:
@@ -215,14 +215,14 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STARTED
             return ""
 
-    def _listen_command(self, listen_port, run_number):
+    def _listen_command(self, listen_port, job_id):
         address = ("localhost", int(listen_port))
         listener = Listener(address, authkey="parent process secret password".encode())
         conn = listener.accept()
 
-        while run_number in self.run_processes.keys():
-            clients = self.run_processes.get(run_number).get(RunProcessKey.PARTICIPANTS)
-            job_id = self.run_processes.get(run_number).get(RunProcessKey.JOB_ID)
+        while job_id in self.run_processes.keys():
+            clients = self.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
+            job_id = self.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
             try:
                 if conn.poll(0.1):
                     received_data = conn.recv()
@@ -245,22 +245,22 @@ class ServerEngine(ServerEngineInternalSpec):
             except BaseException as e:
                 self.logger.warning(f"Failed to process the child process command: {e}", exc_info=True)
 
-    def wait_for_complete(self, run_number):
+    def wait_for_complete(self, job_id):
         while True:
             try:
                 with self.lock:
-                    command_conn = self.get_command_conn(run_number)
+                    command_conn = self.get_command_conn(job_id)
                     if command_conn:
                         data = {ServerCommandKey.COMMAND: ServerCommandNames.HEARTBEAT, ServerCommandKey.DATA: {}}
                         command_conn.send(data)
                 time.sleep(1.0)
             except BaseException:
                 with self.lock:
-                    run_process_info = self.run_processes.pop(run_number)
+                    run_process_info = self.run_processes.pop(job_id)
                     return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
                     # if process exit but with Execution exception
                     if return_code and return_code != 0:
-                        self.execution_exception_run_processes[run_number] = run_process_info
+                        self.execution_exception_run_processes[job_id] = run_process_info
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
@@ -340,15 +340,15 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before abort."
         return ""
 
-    def abort_app_on_server(self, run_number: str) -> str:
-        if run_number not in self.run_processes.keys():
+    def abort_app_on_server(self, job_id: str) -> str:
+        if job_id not in self.run_processes.keys():
             return "Server app has not started."
 
         self.logger.info("Abort the server app run.")
 
         try:
             with self.lock:
-                command_conn = self.get_command_conn(run_number)
+                command_conn = self.get_command_conn(job_id)
                 if command_conn:
                     data = {ServerCommandKey.COMMAND: AdminCommandNames.ABORT, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
@@ -356,19 +356,19 @@ class ServerEngine(ServerEngineInternalSpec):
                     self.logger.info(f"Abort server: {status_message}")
         except BaseException:
             with self.lock:
-                child_process = self.run_processes.get(run_number, {}).get(RunProcessKey.CHILD_PROCESS, None)
+                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS, None)
                 if child_process:
                     child_process.terminate()
         finally:
             with self.lock:
-                self.run_processes.pop(run_number)
+                self.run_processes.pop(job_id)
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
 
-    def check_app_start_readiness(self, run_number: str) -> str:
-        if run_number not in self.run_processes.keys():
-            return f"Server app run_{run_number} has not started."
+    def check_app_start_readiness(self, job_id: str) -> str:
+        if job_id not in self.run_processes.keys():
+            return f"Server app run_{job_id} has not started."
         return ""
 
     def shutdown_server(self) -> str:
@@ -440,17 +440,17 @@ class ServerEngine(ServerEngineInternalSpec):
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
 
-    def get_app_run_info(self, run_number) -> RunInfo:
+    def get_app_run_info(self, job_id) -> RunInfo:
         run_info = None
         try:
             with self.lock:
-                command_conn = self.get_command_conn(run_number)
+                command_conn = self.get_command_conn(job_id)
                 if command_conn:
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_RUN_INFO, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     run_info = command_conn.recv()
         except BaseException:
-            self.logger.error(f"Failed to get_app_run_info from run_{run_number}")
+            self.logger.error(f"Failed to get_app_run_info from run_{job_id}")
 
         return run_info
 
@@ -477,7 +477,7 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             # return FLContext()
             return FLContextManager(
-                engine=self, identity_name=self.server.project_name, run_num="", public_stickers={}, private_stickers={}
+                engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
             ).new_context()
 
     def get_component(self, component_id: str) -> object:
@@ -498,16 +498,16 @@ class ServerEngine(ServerEngineInternalSpec):
     def ask_to_stop(self):
         self.asked_to_stop = True
 
-    def deploy_app(self, run_number, src, dst):
+    def deploy_app(self, job_id, src, dst):
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, src)
-        fullpath_dst = os.path.join(self._get_run_folder(run_number), dst)
+        fullpath_dst = os.path.join(self._get_run_folder(job_id), dst)
         if not os.path.exists(fullpath_src):
             return f"App folder '{src}' does not exist in staging area."
         if os.path.exists(fullpath_dst):
             shutil.rmtree(fullpath_dst)
         shutil.copytree(fullpath_src, fullpath_dst)
 
-        app_file = os.path.join(self._get_run_folder(run_number), "fl_app.txt")
+        app_file = os.path.join(self._get_run_folder(job_id), "fl_app.txt")
         if os.path.exists(app_file):
             os.remove(app_file)
         with open(app_file, "wt") as f:
@@ -574,7 +574,7 @@ class ServerEngine(ServerEngineInternalSpec):
         request.set_peer_props(fl_ctx.get_all_public_props())
 
         message = Message(topic=ReservedTopic.AUX_COMMAND, body=pickle.dumps(request))
-        message.set_header(RequestHeader.RUN_NUM, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
+        message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
         requests = {}
         for n in targets:
             requests.update({n: message})
@@ -597,17 +597,17 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return results
 
-    def get_command_conn(self, run_number):
+    def get_command_conn(self, job_id):
         # this function need to be called with self.lock
-        port = self.run_processes.get(run_number, {}).get(RunProcessKey.LISTEN_PORT)
-        command_conn = self.run_processes.get(run_number, {}).get(RunProcessKey.CONNECTION, None)
+        port = self.run_processes.get(job_id, {}).get(RunProcessKey.LISTEN_PORT)
+        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.CONNECTION, None)
 
         if not command_conn:
             try:
                 address = ("localhost", port)
                 command_conn = CommandClient(address, authkey="client process secret password".encode())
                 command_conn = ClientConnection(command_conn)
-                self.run_processes[run_number][RunProcessKey.CONNECTION] = command_conn
+                self.run_processes[job_id][RunProcessKey.CONNECTION] = command_conn
             except Exception:
                 pass
         return command_conn
@@ -620,8 +620,8 @@ class ServerEngine(ServerEngineInternalSpec):
         # 2. call persistence API to save the component states
 
         try:
-            run_number = fl_ctx.get_run_number()
-            snapshot = RunSnapshot(run_number)
+            job_id = fl_ctx.get_job_id()
+            snapshot = RunSnapshot(job_id)
             for component_id, component in self.run_manager.components.items():
                 if isinstance(component, FLComponent):
                     snapshot.set_component_snapshot(
@@ -671,31 +671,31 @@ class ServerEngine(ServerEngineInternalSpec):
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 
-    def show_stats(self, run_number):
+    def show_stats(self, job_id):
         stats = None
         try:
             with self.lock:
-                command_conn = self.get_command_conn(run_number)
+                command_conn = self.get_command_conn(job_id)
                 if command_conn:
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.SHOW_STATS, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     stats = command_conn.recv()
         except BaseException:
-            self.logger.error(f"Failed to get_stats from run_{run_number}")
+            self.logger.error(f"Failed to get_stats from run_{job_id}")
 
         return stats
 
-    def get_errors(self, run_number):
+    def get_errors(self, job_id):
         stats = None
         try:
             with self.lock:
-                command_conn = self.get_command_conn(run_number)
+                command_conn = self.get_command_conn(job_id)
                 if command_conn:
                     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_ERRORS, ServerCommandKey.DATA: {}}
                     command_conn.send(data)
                     stats = command_conn.recv()
         except BaseException:
-            self.logger.error(f"Failed to get_stats from run_{run_number}")
+            self.logger.error(f"Failed to get_stats from run_{job_id}")
 
         return stats
 
@@ -744,13 +744,13 @@ class ServerEngine(ServerEngineInternalSpec):
         if requests:
             _ = self._send_admin_requests(requests)
 
-    def start_client_job(self, run_number, client_sites):
+    def start_client_job(self, job_id, client_sites):
         requests = {}
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
             request = Message(topic=TrainingTopic.START_JOB, body=pickle.dumps(resource_requirement))
-            request.set_header(RequestHeader.RUN_NUM, run_number)
+            request.set_header(RequestHeader.JOB_ID, job_id)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)
             if client:

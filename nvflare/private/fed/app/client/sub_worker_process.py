@@ -134,11 +134,11 @@ def main():
     data = exe_conn.recv()
 
     client_name = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CLIENT_NAME)
-    run_number = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CURRENT_RUN)
+    job_id = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CURRENT_RUN)
     workspace = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.WORKSPACE_OBJECT)
     run_manager = ClientRunManager(
         client_name=client_name,
-        run_num=run_number,
+        job_id=job_id,
         workspace=workspace,
         client=None,
         components=data[CommunicationMetaData.COMPONENTS],
@@ -149,7 +149,7 @@ def main():
     log_config_file_path = os.path.join(startup, "log.config")
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
-    log_file = os.path.join(args.workspace, run_number, "log.txt")
+    log_file = os.path.join(args.workspace, job_id, "log.txt")
     add_logfile_handler(log_file)
 
     relayer = EventRelayer(event_conn, local_rank)

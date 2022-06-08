@@ -41,7 +41,7 @@ class StorageStatePersistor(StatePersistor):
         Returns:
             storage location
         """
-        path = os.path.join(self.uri_root, snapshot.run_number)
+        path = os.path.join(self.uri_root, snapshot.job_id)
         if snapshot.completed:
             full_uri = self.storage.delete_object(path)
         else:
@@ -61,20 +61,20 @@ class StorageStatePersistor(StatePersistor):
         fl_snapshot = FLSnapshot()
         for item in all_items:
             snapshot = pickle.loads(self.storage.get_data(item))
-            fl_snapshot.add_snapshot(snapshot.run_number, snapshot)
+            fl_snapshot.add_snapshot(snapshot.job_id, snapshot)
         return fl_snapshot
 
-    def retrieve_run(self, run_number: str) -> RunSnapshot:
-        """Call to load the persisted RunSnapshot of a run_number from the persisted location.
+    def retrieve_run(self, job_id: str) -> RunSnapshot:
+        """Call to load the persisted RunSnapshot of a job from the persisted location.
 
         Args:
-            run_number: run_number
+            job_id: job_id
 
         Returns:
-            RunSnapshot of the run_number
+            RunSnapshot of the job_id
 
         """
-        path = os.path.join(self.uri_root, run_number)
+        path = os.path.join(self.uri_root, job_id)
         snapshot = pickle.loads(self.storage.get_data(uri=path))
         return snapshot
 
@@ -85,11 +85,11 @@ class StorageStatePersistor(StatePersistor):
         for item in all_items:
             self.storage.delete_object(item)
 
-    def delete_run(self, run_number: str):
-        """Deletes the RunSnapshot of a run_number.
+    def delete_run(self, job_id: str):
+        """Deletes the RunSnapshot of a job.
 
         Args:
-            run_number: run_number
+            job_id: job_id
         """
-        path = os.path.join(self.uri_root, run_number)
+        path = os.path.join(self.uri_root, job_id)
         self.storage.delete_object(path)

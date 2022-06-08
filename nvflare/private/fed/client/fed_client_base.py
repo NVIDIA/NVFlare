@@ -145,8 +145,8 @@ class FederatedClientBase:
 
     def _switch_ssid(self):
         if self.engine:
-            for run_number in self.engine.get_all_run_numbers():
-                self.engine.abort_task(run_number)
+            for job_id in self.engine.get_all_job_ids():
+                self.engine.abort_task(job_id)
         # self.register()
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 

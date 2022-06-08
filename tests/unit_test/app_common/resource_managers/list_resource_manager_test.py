@@ -26,7 +26,7 @@ class MockEngine:
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
             identity_name="__mock_engine",
-            run_num=run_name,
+            job_id=run_name,
             public_stickers={},
             private_stickers={},
         )

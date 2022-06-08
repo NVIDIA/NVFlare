@@ -43,7 +43,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     _wf = "wf"
 
     all_kvs = {}
-    my_run = fl_ctx.get_run_number()
+    my_run = fl_ctx.get_job_id()
     if not my_run:
         my_run = "?"
     all_kvs[_my_run] = my_run
@@ -65,7 +65,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     if peer_ctx:
         if not isinstance(peer_ctx, FLContext):
             raise TypeError("peer_ctx must be an instance of FLContext, but got {}".format(type(peer_ctx)))
-        peer_run = peer_ctx.get_run_number()
+        peer_run = peer_ctx.get_job_id()
         if not peer_run:
             peer_run = "?"
         all_kvs[_peer_run] = peer_run

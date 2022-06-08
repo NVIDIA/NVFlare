@@ -57,13 +57,13 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def deploy_app_to_server(self, run_number: str, app_name: str, app_staging_path: str) -> str:
+    def deploy_app_to_server(self, job_id: str, app_name: str, app_staging_path: str) -> str:
         """Deploy the specified app to the server.
 
         Copy the app folder tree from staging area to the server's RUN area
 
         Args:
-            run_number: run number of the app to be deployed
+            job_id: job id of the app to be deployed
             app_name: name of the app to be deployed
             app_staging_path: the full path to the app folder in staging area
 
@@ -85,7 +85,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_app_run_info(self, run_number) -> RunInfo:
+    def get_app_run_info(self, job_id) -> RunInfo:
         """Get the app RunInfo from the child process.
 
         Returns:
@@ -95,12 +95,12 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def delete_run_number(self, run_num: str) -> str:
+    def delete_job_id(self, job_id: str) -> str:
         """Delete specified RUN.
 
         The Engine must do status check before the run can be deleted.
         Args:
-            run_num: run number
+            job_id: job id
 
         Returns:
             An error message. An empty string if successful.
@@ -108,7 +108,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(self, job_idber: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
         """Start the FL app on Server.
 
         Returns:
@@ -117,7 +117,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def check_app_start_readiness(self, run_number: str) -> str:
+    def check_app_start_readiness(self, job_id: str) -> str:
         """Check whether the app is ready to start.
 
         Returns:
@@ -131,7 +131,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def abort_app_on_server(self, run_number: str):
+    def abort_app_on_server(self, job_id: str):
         """Abort the application on the server."""
         pass
 
@@ -274,11 +274,11 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def show_stats(self, run_number):
+    def show_stats(self, job_id):
         """Show_stats of the server.
 
         Args:
-            run_number: current run_number
+            job_id: current job_id
 
         Returns:
             Component stats of the server
@@ -287,11 +287,11 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_errors(self, run_number):
+    def get_errors(self, job_id):
         """Get the errors of the server components.
 
         Args:
-            run_number: current run_number
+            job_id: current job_id
 
         Returns:
             Server components errors.

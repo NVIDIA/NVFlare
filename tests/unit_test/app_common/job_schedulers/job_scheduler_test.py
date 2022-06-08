@@ -71,7 +71,7 @@ class MockServerEngine(ServerEngineSpec):
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
             identity_name="__mock_engine",
-            run_num=run_name,
+            job_id=run_name,
             public_stickers={},
             private_stickers={},
         )
@@ -113,7 +113,7 @@ class MockServerEngine(ServerEngineSpec):
     def restore_components(self, snapshot, fl_ctx: FLContext):
         pass
 
-    def start_client_job(self, run_number, client_sites):
+    def start_client_job(self, job_id, client_sites):
         pass
 
     def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:

@@ -204,8 +204,8 @@ requirements for the clients, the job runner will dispatch the FL application fo
 corresponding destination. Then the job runner will start the FL server application and client applications to run
 the job.
 
-The job runner keeps track of the running jobs and the corresponding run numbers. Once a job finishes running, or the
-job execution got aborted, the job runner will remove the run number from the running_jobs table.
+The job runner keeps track of the running jobs and the corresponding job ids. Once a job finishes running, or the
+job execution got aborted, the job runner will remove the job id from the running_jobs table.
 
 One-Shot Execution
 ------------------

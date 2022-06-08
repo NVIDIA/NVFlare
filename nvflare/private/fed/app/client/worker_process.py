@@ -55,7 +55,7 @@ def main():
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
     parser.add_argument("--token", "-t", type=str, help="token", required=True)
     parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
-    parser.add_argument("--run_number", "-n", type=str, help="run_number", required=True)
+    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
     parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
     parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
@@ -108,13 +108,13 @@ def main():
     startup = args.startup
     app_root = os.path.join(
         args.workspace,
-        WorkspaceConstants.WORKSPACE_PREFIX + str(args.run_number),
+        WorkspaceConstants.WORKSPACE_PREFIX + str(args.job_id),
         WorkspaceConstants.APP_PREFIX + args.client_name,
     )
 
     logging_setup(app_root, args, config_folder, startup)
 
-    log_file = os.path.join(args.workspace, args.run_number, "log.txt")
+    log_file = os.path.join(args.workspace, args.job_id, "log.txt")
     add_logfile_handler(log_file)
     logger = logging.getLogger("worker_process")
     logger.info("Worker_process started.")
@@ -153,7 +153,7 @@ def main():
         workspace = Workspace(args.workspace, args.client_name, config_folder)
         run_manager = ClientRunManager(
             client_name=args.client_name,
-            run_num=args.run_number,
+            job_id=args.job_id,
             workspace=workspace,
             client=federated_client,
             components=conf.runner_config.components,
@@ -171,7 +171,7 @@ def main():
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
 
-            client_runner = ClientRunner(config=conf.runner_config, run_num=args.run_number, engine=run_manager)
+            client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 

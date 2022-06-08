@@ -225,7 +225,7 @@ Once you are ready to start the FL system, you can run the following commands to
   
   as described in the :ref:`installation <installation>` section.
 
-  If running containerized, you can use a terminal multiplexer like screen or tmux if availble.  Another option is creating multiple interactive shells by running ``docker exec`` into the running container.
+  If running containerized, you can use a terminal multiplexer like screen or tmux if available.  Another option is creating multiple interactive shells by running ``docker exec`` into the running container.
 
 The first step is starting the FL server:
 
@@ -281,9 +281,9 @@ As an example, we can check the status of the server:
 
   > check_status server
   Engine status: stopped
-  -------------------------
-  | RUN_NUMBER | APP NAME |
-  -------------------------
+  ---------------------
+  | JOB_ID | APP NAME |
+  ---------------------
   -------------------------
   Registered clients: 2 
   ----------------------------------------------------------------------------
@@ -306,7 +306,7 @@ Now you can verify that the job has been submitted and clients started with
 
   > check_status client
   -------------------------------------------------------------------------
-  | CLIENT | APP_NAME    | RUN_NUMBER                           | STATUS  |
+  | CLIENT | APP_NAME    | JOB_ID                               | STATUS  |
   -------------------------------------------------------------------------
   | site-1 | hello-pt-tb | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |
   | site-2 | hello-pt-tb | aefdb0a3-6fbb-4c53-a677-b6951d6845a6 | started |

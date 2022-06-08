@@ -78,7 +78,7 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
             return False, None
 
         job_id = args[1].lower()
-        conn.set_prop(self.RUN_NUMBER, job_id)
+        conn.set_prop(self.JOB_ID, job_id)
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
 
@@ -141,7 +141,7 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
         conn.append_success("")
 
     def delete_job(self, conn: Connection, args: List[str]):
-        job_id = conn.get_prop(self.RUN_NUMBER)
+        job_id = conn.get_prop(self.JOB_ID)
         engine = conn.app_ctx
         try:
             if not isinstance(engine, ServerEngine):
@@ -164,8 +164,8 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
         job_runner = engine.job_runner
 
         try:
-            run_number = conn.get_prop(self.RUN_NUMBER)
-            job_runner.stop_run(run_number, engine.new_context())
+            job_id = conn.get_prop(self.JOB_ID)
+            job_runner.stop_run(job_id, engine.new_context())
             conn.append_string("Abort signal has been sent to the server app.")
             conn.append_success("")
         except Exception as e:
@@ -173,7 +173,7 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
             return
 
     def clone_job(self, conn: Connection, args: List[str]):
-        job_id = conn.get_prop(self.RUN_NUMBER)
+        job_id = conn.get_prop(self.JOB_ID)
         engine = conn.app_ctx
         try:
             if not isinstance(engine, ServerEngine):
