@@ -77,14 +77,14 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def delete_run(self, run_number: str) -> FLAdminAPIResponse:
+    def delete_run(self, job_id: str) -> FLAdminAPIResponse:
         """Deletes a specified run.
 
-        This deletes the run folder corresponding to the run number on the server and
+        This deletes the run folder corresponding to the job id on the server and
         all connected clients. This is not reversible.
 
         Args:
-            run_number (str): run number to delete
+            job_id (str): job id to delete
 
         Returns: FLAdminAPIResponse
 
@@ -142,13 +142,11 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def abort(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
-    ) -> FLAdminAPIResponse:
+    def abort(self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
         """Issue a command to abort training.
 
         Args:
-            run_number (str): run number
+            job_id (str): job id
             target_type: server | client
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -358,12 +356,12 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def show_stats(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
         """Gets and shows stats from the Info Collector.
 
         Args:
-            run_number (str): run number
+            job_id (str): job id
             target_type: server | client
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -373,12 +371,12 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def show_errors(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
         """Gets and shows errors from the Info Collector.
 
         Args:
-            run_number (str): run number
+            job_id (str): job id
             target_type: server | client
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -387,11 +385,11 @@ class FLAdminAPISpec(ABC):
         """
 
     @abstractmethod
-    def reset_errors(self, run_number: str) -> FLAdminAPIResponse:
+    def reset_errors(self, job_id: str) -> FLAdminAPIResponse:
         """Resets the collector errors.
 
         Args:
-            run_number (str): run number
+            job_id (str): job id
 
         Returns: FLAdminAPIResponse
 

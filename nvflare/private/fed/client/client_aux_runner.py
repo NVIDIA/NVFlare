@@ -98,7 +98,7 @@ class ClientAuxRunner(AuxRunner):
         rc = reply.get_return_code()
         if rc == ReturnCode.RUN_MISMATCH:
             self.log_info(fl_ctx, "got RUN_MISMATCH - asked engine to abort app")
-            engine.abort_app(run_number=self.run_num, fl_ctx=fl_ctx)
+            engine.abort_app(job_id=self.run_num, fl_ctx=fl_ctx)
 
         return reply
 

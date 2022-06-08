@@ -25,7 +25,7 @@ commands shown as examples of how they may be run with a description.
     help,``help``,Get command help information
     lpwd,``lpwd``,Print local workspace root directory of the admin client
     info,``info``,Show folder setup info (upload and download sources and destinations)
-    check_status,``check_status server``,"The FL run number, FL server status, and the registered clients with their names and tokens are displayed. If training is running, the round information is also displayed."
+    check_status,``check_status server``,"The FL job id, FL server status, and the registered clients with their names and tokens are displayed. If training is running, the round information is also displayed."
     ,``check_status client``,"The name, token, and status of each connected client are displayed."
     ,``check_status client clientname``,"The name, token, and status of the specified client with *clientname* are displayed."
     submit_job,``submit_job job_folder_name``,Submits the job to the server.

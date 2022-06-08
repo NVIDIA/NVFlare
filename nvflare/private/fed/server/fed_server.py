@@ -404,12 +404,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             # engine = fl_ctx.get_engine()
             shared_fl_ctx = pickle.loads(proto_to_bytes(request.context["fl_context"]))
-            run_number = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
+            job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
             # fl_ctx.set_peer_context(shared_fl_ctx)
 
             with self.lock:
                 # if self.server_runner is None or engine is None or self.engine.run_manager is None:
-                if run_number not in self.engine.run_processes.keys():
+                if job_id not in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
                     task_name = SpecialTaskName.END_RUN
                     task_id = ""
@@ -449,8 +449,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         shareable = None
         try:
             with self.engine.lock:
-                run_number = shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-                command_conn = self.engine.get_command_conn(str(run_number))
+                job_id = shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(job_id))
                 if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
@@ -493,8 +493,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     shareable = Shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
                     shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
 
-                    run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-                    if run_number not in self.engine.run_processes.keys():
+                    job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
+                    if job_id not in self.engine.run_processes.keys():
                         self.logger.info("ignored result submission since Server Engine isn't ready")
                         context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
@@ -538,8 +538,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def _submit_update(self, shareable, shared_fl_context):
         try:
             with self.engine.lock:
-                run_number = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
-                command_conn = self.engine.get_command_conn(str(run_number))
+                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(job_id))
                 if command_conn:
                     data = {
                         ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
@@ -567,8 +567,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
             shared_fl_context = pickle.loads(proto_to_bytes(request.data["fl_context"]))
 
-            run_number = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-            if run_number not in self.engine.run_processes.keys():
+            job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
+            if job_id not in self.engine.run_processes.keys():
                 self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
                 reply = make_reply(ReturnCode.SERVER_NOT_READY)
                 aux_reply = fed_msg.AuxReply()
@@ -595,8 +595,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:
             with self.engine.lock:
-                run_number = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
-                command_conn = self.engine.get_command_conn(str(run_number))
+                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(job_id))
                 if command_conn:
                     command_shareable = Shareable()
                     command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
@@ -686,13 +686,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         response = admin_msg.Empty()
         return response
 
-    def start_run(self, run_number, run_root, conf, args, snapshot):
+    def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine
         workspace = Workspace(args.workspace, "server", args.config_folder)
         self.run_manager = RunManager(
             server_name=self.project_name,
             engine=self.engine,
-            run_num=run_number,
+            job_id=job_id,
             workspace=workspace,
             components=self.runner_config.components,
             client_manager=self.client_manager,
@@ -706,7 +706,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.run_manager.add_handler(fed_event_runner)
 
         try:
-            self.server_runner = ServerRunner(config=self.runner_config, run_num=run_number, engine=self.engine)
+            self.server_runner = ServerRunner(config=self.runner_config, job_id=job_id, engine=self.engine)
             self.run_manager.add_handler(self.server_runner)
             self.run_manager.add_component("_Server_Runner", self.server_runner)
 
@@ -716,7 +716,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     self.engine.restore_components(snapshot=snapshot, fl_ctx=FLContext())
 
                 fl_ctx.set_prop(FLContextKey.APP_ROOT, run_root, sticky=True)
-                fl_ctx.set_prop(FLContextKey.CURRENT_RUN, run_number, private=False, sticky=True)
+                fl_ctx.set_prop(FLContextKey.CURRENT_RUN, job_id, private=False, sticky=True)
                 fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True, sticky=True)
                 fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
                 fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)

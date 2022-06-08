@@ -34,7 +34,7 @@ class ComponentCallerProcessor(RequestProcessor):
             raise TypeError("caller must be ComponentCaller, but got {}".format(type(caller)))
 
         run_info = engine.get_current_run_info()
-        if not run_info or run_info.run_number < 0:
+        if not run_info or run_info.job_id < 0:
             result = {"error": "app not running"}
         else:
             comp_target = req.get_header(RequestHeader.COMPONENT_TARGET)

@@ -44,7 +44,7 @@ def _get_client_state(project_name, token, ssid, fl_ctx: FLContext):
     """
     state_message = fed_msg.ClientState(token=token, ssid=ssid)
     state_message.meta.project.name = project_name
-    # state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+    # state_message.meta.job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
 
     context_data = make_context_data(fl_ctx)
     state_message.context["fl_context"].CopyFrom(context_data)
@@ -406,9 +406,9 @@ class Communicator:
                     while retry > 0:
                         try:
                             self.logger.debug(f"Send {task_name} heartbeat {token}")
-                            run_numbers = engine.get_all_run_numbers()
+                            job_ids = engine.get_all_job_ids()
                             del message.jobs[:]
-                            message.jobs.extend(run_numbers)
+                            message.jobs.extend(job_ids)
                             response = stub.Heartbeat(message)
                             self._clean_up_runs(engine, response)
                             break

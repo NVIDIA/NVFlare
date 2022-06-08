@@ -67,7 +67,7 @@ class Responder(FLComponent, ABC):
         """Called when a new RUN is about to start.
 
         Args:
-            fl_ctx: FL context. It must contain 'run_number' that is to be initialized
+            fl_ctx: FL context. It must contain 'job_id' that is to be initialized
 
         """
         pass

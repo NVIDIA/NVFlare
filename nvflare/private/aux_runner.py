@@ -30,7 +30,7 @@ class AuxRunner(FLComponent):
     def __init__(self):
         """To init the AuxRunner."""
         FLComponent.__init__(self)
-        self.run_num = None
+        self.job_id = None
         self.topic_table = {
             self.TOPIC_BULK: self._process_bulk_requests,
         }  # topic => handler
@@ -38,7 +38,7 @@ class AuxRunner(FLComponent):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            self.run_num = fl_ctx.get_run_number()
+            self.job_id = fl_ctx.get_job_id()
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
@@ -111,9 +111,9 @@ class AuxRunner(FLComponent):
             )
             return make_reply(ReturnCode.BAD_PEER_CONTEXT)
 
-        peer_run_num = peer_props.get(ReservedKey.RUN_NUM)
-        if peer_run_num != self.run_num:
-            self.log_error(fl_ctx, "invalid aux msg: not for the same run_number")
+        peer_job_id = peer_props.get(ReservedKey.RUN_NUM)
+        if peer_job_id != self.job_id:
+            self.log_error(fl_ctx, "invalid aux msg: not for the same job_id")
             return make_reply(ReturnCode.RUN_MISMATCH)
 
         try:

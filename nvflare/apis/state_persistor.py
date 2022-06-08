@@ -40,14 +40,14 @@ class StatePersistor(ABC):
         pass
 
     @abstractmethod
-    def retrieve_run(self, run_number: str) -> RunSnapshot:
-        """Loads the persisted RunSnapshot of a run_number from the persisted location.
+    def retrieve_run(self, job_id: str) -> RunSnapshot:
+        """Loads the persisted RunSnapshot of a job_id from the persisted location.
 
         Args:
-            run_number: run_number
+            job_id: job_id
 
         Returns:
-            A RunSnapshot of the run_number
+            A RunSnapshot of the job_id
         """
         pass
 
@@ -57,6 +57,6 @@ class StatePersistor(ABC):
         pass
 
     @abstractmethod
-    def delete_run(self, run_number: str):
-        """Deletes the RunSnapshot of a run_number"""
+    def delete_run(self, job_id: str):
+        """Deletes the RunSnapshot of a job_id"""
         pass

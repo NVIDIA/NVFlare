@@ -27,9 +27,9 @@ from .server_aux_runner import ServerAuxRunner
 
 
 class RunInfo(object):
-    def __init__(self, run_num, app_path):
+    def __init__(self, job_id, app_path):
         """Information for a run."""
-        self.run_number = run_num
+        self.job_id = job_id
         self.start_time = time.time()
         self.app_path = app_path
         self.status = MachineStatus.STOPPED
@@ -40,7 +40,7 @@ class RunManager:
         self,
         server_name,
         engine: ServerEngineSpec,
-        run_num,
+        job_id,
         workspace: Workspace,
         components: {str: FLComponent},
         client_manager: Optional[ClientManager] = None,
@@ -51,7 +51,7 @@ class RunManager:
         Args:
             server_name: server name
             engine (ServerEngineSpec): server engine
-            run_num: run number
+            job_id: job id
             workspace (Workspace): workspace
             components (dict): A dict of extra python objects {id: object}
             client_manager (ClientManager, optional): client manager
@@ -66,11 +66,11 @@ class RunManager:
         self.add_handler(self.aux_runner)
 
         self.fl_ctx_mgr = FLContextManager(
-            engine=engine, identity_name=server_name, run_num=run_num, public_stickers={}, private_stickers={}
+            engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers={}
         )
 
         self.workspace = workspace
-        self.run_info = RunInfo(run_num=run_num, app_path=self.workspace.get_app_dir(run_num))
+        self.run_info = RunInfo(job_id=job_id, app_path=self.workspace.get_app_dir(job_id))
 
         self.components = components
 

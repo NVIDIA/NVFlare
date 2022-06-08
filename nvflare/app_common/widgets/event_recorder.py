@@ -200,7 +200,7 @@ class EventRecorder(Widget):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if not self._log_handler_added:
             workspace = fl_ctx.get_engine().get_workspace()
-            app_dir = workspace.get_app_dir(fl_ctx.get_run_number())
+            app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
             output_file_handler = logging.FileHandler(os.path.join(app_dir, self.log_file_name))
             formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             output_file_handler.setFormatter(formatter)

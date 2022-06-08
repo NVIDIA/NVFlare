@@ -77,13 +77,13 @@ class StartJobProcessor(RequestProcessor):
         try:
             with engine.new_context() as fl_ctx:
                 resource_spec = pickle.loads(req.body)
-                run_number = req.get_header(RequestHeader.RUN_NUM)
+                job_id = req.get_header(RequestHeader.JOB_ID)
                 token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
                 allocated_resources = resource_manager.allocate_resources(
                     resource_requirement=resource_spec, token=token, fl_ctx=fl_ctx
                 )
             result = engine.start_app(
-                run_number,
+                job_id,
                 allocated_resource=allocated_resources,
                 token=token,
                 resource_consumer=resource_consumer,

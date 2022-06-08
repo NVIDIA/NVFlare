@@ -97,13 +97,13 @@ def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
     #               'CrossSiteModelEval':
     #                   {'tasks': {}},
     #               'ServerRunner': {
-    #                   'run_number': XXX,
+    #                   'job_id': XXX,
     #                   'status': 'started',
     #                   'workflow': 'scatter_and_gather'
     #                }
     #            }
     #       },
-    # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [{'type': 'dict', 'data': {'ScatterAndGather': {'tasks': {'train': []}, 'phase': 'train', 'current_round': 0, 'num_rounds': 2}, 'CrossSiteModelEval': {'tasks': {}}, 'ServerRunner': {'run_number': XXX, 'status': 'started', 'workflow': 'scatter_and_gather'}}}], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
+    # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [{'type': 'dict', 'data': {'ScatterAndGather': {'tasks': {'train': []}, 'phase': 'train', 'current_round': 0, 'num_rounds': 2}, 'CrossSiteModelEval': {'tasks': {}}, 'ServerRunner': {'job_id': XXX, 'status': 'started', 'workflow': 'scatter_and_gather'}}}], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
     prev_run_state = run_state.copy()
 
     # parse stats

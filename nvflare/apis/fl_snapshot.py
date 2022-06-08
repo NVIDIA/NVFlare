@@ -20,11 +20,11 @@ class RunSnapshot:
             { component_id: component_state_dict }
     """
 
-    def __init__(self, run_number: str):
+    def __init__(self, job_id: str):
         super().__init__()
         self.component_states = {}
         self.completed = False
-        self.run_number = run_number
+        self.job_id = job_id
 
     def get_component_snapshot(self, component_id: str) -> dict:
         """Get a state snapshot of a particular FL component.
@@ -54,44 +54,44 @@ class FLSnapshot:
     """FLSnapshot keeps a snapshot of all the current running FL application RunSnapshots.
 
     The format is:
-            { run_number: RunSnapshot }
+            { job_id: RunSnapshot }
     """
 
     def __init__(self):
         super().__init__()
         self.run_snapshots = {}
 
-    def add_snapshot(self, run_number: str, snapshot: RunSnapshot):
-        """Add the RunSnapshot for run_number to the FLSnapshot.
+    def add_snapshot(self, job_id: str, snapshot: RunSnapshot):
+        """Add the RunSnapshot for job_id to the FLSnapshot.
 
         Args:
-            run_number: the run_number
+            job_id: the job_id
             snapshot: snapshot of the Run
 
         Returns:
 
         """
-        self.run_snapshots[run_number] = snapshot
+        self.run_snapshots[job_id] = snapshot
 
-    def get_snapshot(self, run_number: str) -> RunSnapshot:
-        """Get the RunSnapshot for run_number to the FLSnapshot.
+    def get_snapshot(self, job_id: str) -> RunSnapshot:
+        """Get the RunSnapshot for job_id to the FLSnapshot.
 
         Args:
-            run_number: the run_number
+            job_id: the job_id
 
         Returns: Snapshot of the Run
 
         """
-        return self.run_snapshots.get(run_number)
+        return self.run_snapshots.get(job_id)
 
-    def remove_snapshot(self, run_number: str):
-        """Remove the RunSnapshot of run_number from the FLSnapshot.
+    def remove_snapshot(self, job_id: str):
+        """Remove the RunSnapshot of job_id from the FLSnapshot.
 
         Args:
-            run_number: the run_number
+            job_id: the job_id
 
         Returns:
 
         """
-        if run_number in self.run_snapshots.keys():
-            self.run_snapshots.pop(run_number)
+        if job_id in self.run_snapshots.keys():
+            self.run_snapshots.pop(job_id)
