@@ -193,23 +193,26 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
             return
         conn.append_success("")
 
-    def _job_match(self, job_meta: Dict, id_prefix: str, name_prefix: str) -> bool:
+    @staticmethod
+    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str) -> bool:
         return ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower())) and (
             (not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower())
         )
 
-    def _send_detail_list(self, conn: Connection, jobs: List[Job]):
+    @staticmethod
+    def _send_detail_list(conn: Connection, jobs: List[Job]):
         for job in jobs:
             conn.append_string(json.dumps(job.meta, indent=4))
 
-    def _send_summary_list(self, conn: Connection, jobs: List[Job]):
+    @staticmethod
+    def _send_summary_list(conn: Connection, jobs: List[Job]):
 
         table = Table(["Job ID", "Name", "Status", "Submit Time"])
         for job in jobs:
             table.add_row(
                 [
                     job.meta.get(JobMetaKey.JOB_ID, ""),
-                    job.meta.get(JobMetaKey.JOB_FOLDER_NAME, ""),
+                    CommandUtil.get_job_name(job.meta),
                     job.meta.get(JobMetaKey.STATUS, ""),
                     job.meta.get(JobMetaKey.SUBMIT_TIME_ISO, ""),
                 ]

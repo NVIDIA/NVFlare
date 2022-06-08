@@ -26,10 +26,11 @@ META_NAME = "meta.json"
 
 def _get_default_meta(job_folder_name: str) -> str:
     meta = f"""{{
+                 "{JobMetaKey.JOB_NAME.value}": "{job_folder_name}",
                  "{JobMetaKey.JOB_FOLDER_NAME.value}": "{job_folder_name}",
                  "{JobMetaKey.RESOURCE_SPEC.value}": {{ }},
-                 "{JobMetaKey.DEPLOY_MAP}": {{ "{job_folder_name}": ["{ALL_SITES}"] }},
-                 "{JobMetaKey.MIN_CLIENTS}": 1
+                 "{JobMetaKey.DEPLOY_MAP.value}": {{ "{job_folder_name}": ["{ALL_SITES}"] }},
+                 "{JobMetaKey.MIN_CLIENTS.value}": 1
                }}
             """
     return meta
