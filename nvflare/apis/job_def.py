@@ -36,6 +36,7 @@ class RunStatus(str, Enum):
 
 class JobMetaKey(str, Enum):
     JOB_ID = "job_id"
+    JOB_NAME = "name"
     JOB_FOLDER_NAME = "job_folder_name"
     STATUS = "status"
     DEPLOY_MAP = "deploy_map"

@@ -150,7 +150,7 @@ class CommandUtil(object):
 
         deploy_map = meta.get("deploy_map")
         if not deploy_map:
-            conn.append_error(f"deploy_map missing for job {meta.get(JobMetaKey.JOB_FOLDER_NAME)}")
+            conn.append_error(f"deploy_map missing for job {self.get_job_name(meta)}")
             return False, None
 
         sites = set()
@@ -191,6 +191,16 @@ class CommandUtil(object):
             return process_client_replies(replies)
         else:
             return replies
+
+    @staticmethod
+    def get_job_name(meta: dict) -> str:
+        """Get job name from meta.json"""
+
+        name = meta.get(JobMetaKey.JOB_NAME)
+        if not name:
+            name = meta.get(JobMetaKey.JOB_FOLDER_NAME, "No name")
+
+        return name
 
     def process_replies_to_table(self, conn: Connection, replies):
         """Process the clients' replies and put in a table format.
