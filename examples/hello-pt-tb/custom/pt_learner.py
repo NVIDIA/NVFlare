@@ -174,7 +174,7 @@ class PTLearner(Learner):
             self.writer.add_scalar("validation_accuracy", metric, epoch)
 
     def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
-        run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_run_number())
+        run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
         models_dir = os.path.join(run_dir, PTConstants.PTModelsDir)
         if not os.path.exists(models_dir):
             return None
