@@ -21,7 +21,7 @@ from typing import List
 from zipfile import ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobDataKey, JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
@@ -303,12 +303,8 @@ class FileTransferModule(CommandModule, CommandUtil):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
-                data_bytes = job_def_manager.get_content(job_id, fl_ctx)
-                job_id_dir = os.path.join(self.download_dir, job_id)
-                if os.path.exists(job_id_dir):
-                    shutil.rmtree(job_id_dir)
-                os.mkdir(job_id_dir)
-                unzip_all_from_bytes(data_bytes, job_id_dir)
+                job_data = job_def_manager.get_job_data(job_id, fl_ctx)
+                self._unzip_data(job_data, job_id)
         except Exception as e:
             conn.append_error("Exception occurred trying to get job from store: " + str(e))
             return
@@ -319,6 +315,22 @@ class FileTransferModule(CommandModule, CommandUtil):
         except BaseException:
             traceback.print_exc()
             conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))
+
+    def _unzip_data(self, job_data, job_id):
+        job_id_dir = os.path.join(self.download_dir, job_id)
+        if os.path.exists(job_id_dir):
+            shutil.rmtree(job_id_dir)
+
+        data_bytes = job_data[JobDataKey.JOB_DATA]
+        job_dir = os.path.join(job_id_dir, "job")
+        os.makedirs(job_dir)
+        unzip_all_from_bytes(data_bytes, job_dir)
+
+        workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA]
+        workspace_dir = os.path.join(job_id_dir, "workspace")
+        os.makedirs(workspace_dir)
+        if workspace_bytes:
+            unzip_all_from_bytes(workspace_bytes, workspace_dir)
 
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))

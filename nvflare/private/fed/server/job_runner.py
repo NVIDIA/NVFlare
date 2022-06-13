@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os.path
+import shutil
 import threading
 import time
 from typing import List
@@ -22,6 +23,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, RunStatus
+from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
@@ -52,6 +54,8 @@ class JobRunner(FLComponent):
         if event_type == EventType.SYSTEM_START:
             engine = fl_ctx.get_engine()
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
+        elif event_type in [EventType.JOB_COMPLETED, EventType.JOB_ABORTED, EventType.JOB_CANCELLED]:
+            self._save_workspace(fl_ctx)
 
     def _deploy_clients(self, app_data, app_name, job_id, client_sites: List[str], fl_ctx):
         engine = fl_ctx.get_engine()
@@ -226,6 +230,16 @@ class JobRunner(FLComponent):
                             self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
                             self.log_debug(fl_ctx, f"Finished running job:{job.job_id}")
             time.sleep(1.0)
+
+    def _save_workspace(self, fl_ctx: FLContext):
+        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
+        workspace_data = zip_directory_to_bytes(workspace, "")
+        engine = fl_ctx.get_engine()
+        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+
+        job_manager.save_workspace(job_id, workspace_data, fl_ctx)
+        shutil.rmtree(workspace)
 
     def run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

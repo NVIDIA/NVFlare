@@ -34,7 +34,15 @@ class RunStatus(str, Enum):
     FAILED_TO_RUN = "FAILED_TO_RUN"
 
 
+class JobDataKey(str, Enum):
+    DATA = "data"
+    META = "meta"
+    JOB_DATA = "job_data_"
+    WORKSPACE_DATA = "workspace_data_"
+
+
 class JobMetaKey(str, Enum):
+    VERSION = "job_version"
     JOB_ID = "job_id"
     JOB_NAME = "name"
     JOB_FOLDER_NAME = "job_folder_name"
