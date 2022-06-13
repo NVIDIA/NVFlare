@@ -15,6 +15,7 @@
 import datetime
 import os
 import pathlib
+import pickle
 import shutil
 import tempfile
 import time
@@ -23,7 +24,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job, JobMetaKey, job_from_meta
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import StorageSpec
@@ -73,6 +74,8 @@ class _ReviewerFilter(_JobFilter):
 
 
 class SimpleJobDefManager(JobDefManagerSpec):
+    JOB_VERSION = 2.1
+
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store"):
         super().__init__()
         self.uri_root = uri_root
@@ -95,6 +98,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # validate meta to make sure it has:
 
         jid = str(uuid.uuid4())
+        meta[JobMetaKey.VERSION.value] = SimpleJobDefManager.JOB_VERSION
         meta[JobMetaKey.JOB_ID.value] = jid
         meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
         meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
@@ -103,8 +107,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
 
         # write it to the store
+        stored_data = {JobDataKey.JOB_DATA.value: uploaded_content, JobDataKey.WORKSPACE_DATA: None}
         store = self._get_job_store(fl_ctx)
-        store.create_object(self.job_uri(jid), uploaded_content, meta, overwrite_existing=True)
+        store.create_object(self.job_uri(jid), pickle.dumps(stored_data), meta, overwrite_existing=True)
         return meta
 
     def delete(self, jid: str, fl_ctx: FLContext):
@@ -164,8 +169,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return result_dict
 
     def _load_job_data_from_store(self, jid: str, temp_dir: str, fl_ctx: FLContext):
-        store = self._get_job_store(fl_ctx)
-        data_bytes = store.get_data(self.job_uri(jid))
+        data_bytes = self.get_content(jid, fl_ctx)
         job_id_dir = os.path.join(temp_dir, jid)
         if os.path.exists(job_id_dir):
             shutil.rmtree(job_id_dir)
@@ -175,7 +179,25 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_content(self, jid: str, fl_ctx: FLContext) -> bytes:
         store = self._get_job_store(fl_ctx)
-        return store.get_data(self.job_uri(jid))
+        meta = store.get_meta(self.job_uri(jid))
+        stored_data = store.get_data(self.job_uri(jid))
+        version = meta.get(JobMetaKey.VERSION, 1.0)
+        if version >= SimpleJobDefManager.JOB_VERSION:
+            return pickle.loads(stored_data).get(JobDataKey.JOB_DATA.value)
+        else:
+            return stored_data
+
+    def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
+        store = self._get_job_store(fl_ctx)
+        meta, stored_data = store.get_detail(self.job_uri(jid))
+        return self._fetch_data(meta, stored_data)
+
+    def _fetch_data(self, meta, stored_data):
+        version = meta.get(JobMetaKey.VERSION, 1.0)
+        if version >= SimpleJobDefManager.JOB_VERSION:
+            return pickle.loads(stored_data)
+        else:
+            return {JobDataKey.JOB_DATA.value: stored_data, JobDataKey.WORKSPACE_DATA: None}
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}
@@ -229,3 +251,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
             store = self._get_job_store(fl_ctx)
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
+
+    def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
+        store = self._get_job_store(fl_ctx)
+        meta, stored_data = store.get_detail(self.job_uri(jid))
+        job_data = self._fetch_data(meta, stored_data)
+        job_data[JobDataKey.WORKSPACE_DATA] = data
+        store.update_data(self.job_uri(jid), pickle.dumps(job_data))

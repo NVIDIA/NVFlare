@@ -95,6 +95,23 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
+        """Gets the entire uploaded content and workspace for a job.
+
+        Args:
+            jid (str): Job ID
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            a dict to hold the job data and workspace.
+            Format: {
+                        JobDataKey.JOB_DATA.value: stored_data,
+                        JobDataKey.WORKSPACE_DATA: workspace_data
+                    }
+        """
+        pass
+
+    @abstractmethod
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):
         """Update the meta of an existing Job.
 
@@ -180,6 +197,18 @@ class JobDefManagerSpec(FLComponent, ABC):
 
         Args:
             jid (str): Job ID
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
+        """Save the job workspace to the job storage.
+
+        Args:
+            jid (str): Job ID
+            data: Job workspace data
             fl_ctx (FLContext): FLContext information
 
         """
