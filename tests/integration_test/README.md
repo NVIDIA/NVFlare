@@ -1,6 +1,14 @@
 # NVIDIA FLARE Integration test
 
-The integration tests entry file is `test/integration_test/system_test.py`.
+The integration tests entry file is `tests/integration_test/system_test.py`.
+The overseer tests entry file is `tests/integration_test/overseer_test.py`
+
+## Setup
+
+Note that the HA test cases are using `./data/project.yml` to provision the whole system.
+That will require we have `localhost0` and `localhost1` map to `127.0.0.1`.
+You need to either modify `/etc/hosts` file before running the test.
+Or if you are running using docker container you should use `--add-host localhost0:127.0.0.1`.
 
 ## Run
 
@@ -19,25 +27,15 @@ Each test configuration yaml should contain the following attributes:
 
 | Attributes          | Description                                                 |
 |---------------------|-------------------------------------------------------------|
-| `system_setup`      | How to set up the system. (num of servers, clients)         |
+| `n_servers`         | Number of servers                                           |
+| `n_clients`         | Number of clients                                           |
 | `single_app_as_job` | Whether the test cases are single app job or not.           |
 | `cleanup`           | Whether to clean up test folders or not. (Default to True.) |
 | `tests`             | The test cases to run                                       |
+| `ha`                | Whether to use provision mode or not. (Default to False.)   |
 
 If `single_app_as_job` is True, `apps_root_dir` is required.
 Otherwise, `jobs_root_dir` is required.
-
-### System setup config
-
-Each system setup configuration yaml should contain the following attribute:
-
-| Attributes     | Description                                                          |
-|----------------|----------------------------------------------------------------------|
-| poc            | Which poc folder to use (to get fed_server.json and fed_client.json) |
-| n_servers      | number of servers                                                    |
-| n_clients      | number of client sites                                               |
-| snapshot_path  | Where to store server snapshot. (needs to match what's inside poc)   |
-| job_store_path | Where to store job information. (needs to match what's inside poc)   | 
 
 
 ### Test cases
@@ -74,11 +72,11 @@ Triggers can be triggered based on its type:
 
 ## Folder Structure
 
+- src: source codes for integration test system
 - data:
   - apps: applications for testing
-  - ha: ha test event sequence yaml files
+  - event_sequence: ha test event sequence yaml files
   - single_app_as_job: test configuration for single app as job test cases
-  - system: system setup config yaml files
 - tf2: TensorFlow2 related codes for the applications used in
   integration tests.
 - validators: Codes that implement the logic to validate the running result

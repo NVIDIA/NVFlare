@@ -3,13 +3,6 @@ events: [
   {
     "trigger": "sent task assignment to client",
     "actions": ["test admin_commands"],
-    "result_state": {
-      "workflows": {
-        "ScatterAndGather": {
-          "phase": "train",
-          "current_round": 0
-        }
-      }
-    },
+    "result_state": {},
   },
 ]
