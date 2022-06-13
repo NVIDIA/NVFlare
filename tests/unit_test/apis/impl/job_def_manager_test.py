@@ -16,8 +16,7 @@ import os
 import shutil
 import tempfile
 import unittest
-
-import mock
+from unittest import mock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
@@ -39,7 +38,7 @@ class TestJobManager(unittest.TestCase):
         shutil.rmtree(self.uri_root)
 
     def test_create_job(self):
-        with mock.patch('nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store') as mock_store:
+        with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
             mock_store.return_value = FilesystemStorage()
 
             data, meta = self._create_job()
@@ -55,7 +54,7 @@ class TestJobManager(unittest.TestCase):
         return data, meta
 
     def test_save_workspace(self):
-        with mock.patch('nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store') as mock_store:
+        with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
             mock_store.return_value = FilesystemStorage()
 
             data, meta = self._create_job()
@@ -63,4 +62,3 @@ class TestJobManager(unittest.TestCase):
             self.job_manager.save_workspace(job_id, data, self.fl_ctx)
             result = self.job_manager.get_job_data(job_id, self.fl_ctx)
             assert result.get(JobDataKey.WORKSPACE_DATA) == data
-
