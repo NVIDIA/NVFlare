@@ -38,7 +38,7 @@ class POCDirectory:
             raise ValueError(
                 f"poc_dir {poc_dir} is not a directory. " "Please run POC command first and provide the POC path!"
             )
-        for f in [server_dir_name, client_dir_name, admin_dir_name, overseer_dir_name]:
+        for f in [server_dir_name, client_dir_name, admin_dir_name]:
             if not os.path.isdir(os.path.join(poc_dir, f)):
                 raise ValueError(f"{f} is not a directory inside poc.")
         self.poc_dir = poc_dir

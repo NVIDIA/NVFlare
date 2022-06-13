@@ -165,6 +165,7 @@ def setup_and_teardown(request):
 
 @pytest.mark.xdist_group(name="system_tests_group")
 class TestSystem:
+    @pytest.mark.skip(reason="skip due to no overseer in poc")
     def test_overseer_server_down_and_up(self):
         oa_launcher = OALauncher()
         try:
@@ -190,6 +191,7 @@ class TestSystem:
             oa_launcher.stop_servers()
             oa_launcher.stop_overseer()
 
+    @pytest.mark.skip(reason="skip due to no overseer in poc")
     def test_overseer_client_down_and_up(self):
         oa_launcher = OALauncher()
         try:
@@ -213,6 +215,7 @@ class TestSystem:
             oa_launcher.stop_servers()
             oa_launcher.stop_overseer()
 
+    @pytest.mark.skip(reason="skip due to no overseer in poc")
     def test_overseer_overseer_down_and_up(self):
         oa_launcher = OALauncher()
         try:
