@@ -50,6 +50,7 @@ integration_test() {
     pipenv run ./run_integration_tests.sh
     popd
     rm -rf /tmp/snapshot-storage
+    remove_pipenv
 }
 
 case $BUILD_TYPE in
