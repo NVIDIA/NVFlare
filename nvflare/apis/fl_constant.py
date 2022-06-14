@@ -138,7 +138,7 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
-    DELETE_RUN = "delete_run"
+    DELETE_WORKSPACE = "delete_workspace"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
