@@ -23,11 +23,11 @@ import tensorflow as tf
 
 # secure workspace
 client_results_root = "./workspaces/secure_workspace/site-1"
-server_results_root = "./workspaces/secure_workspace/localhost"
+download_dir = "./workspaces/secure_workspace/admin@nvidia.com/transfer"
 
 # poc workspace
 # client_results_root = "./workspaces/poc_workspace/site-1"
-# server_results_root = "./workspaces/poc_workspace/server"
+# download_dir = "./workspaces/poc_workspace/admin/transfer"
 
 # 4.1 Central vs. FedAvg
 experiments = {
@@ -62,7 +62,7 @@ def find_job_id(workdir, fl_app_name="cifar10_fedavg", alpha=None):
         with open(fl_app_file, "r") as f:
             _fl_app_name = f.read()
         if fl_app_name == _fl_app_name:  # alpha will be matched based on value in config file
-            job_id = os.path.basename(os.path.dirname(fl_app_file))
+            job_id = os.path.basename(os.path.dirname(os.path.dirname(os.path.join(fl_app_file))))  # skip "workspace" subfolder
             if alpha is not None:
                 config_fed_server_file = glob.glob(
                     os.path.join(os.path.dirname(fl_app_file), "**", "config_fed_server.json"), recursive=True
@@ -122,7 +122,7 @@ def main():
     for config, exp in experiments.items():
         config_name = config.split(" ")[0]
         alpha = exp.get("alpha", None)
-        job_id = find_job_id(workdir=server_results_root, fl_app_name=config_name, alpha=alpha)
+        job_id = find_job_id(workdir=download_dir, fl_app_name=config_name, alpha=alpha)
         print(f"Found run {job_id} for {config_name} with alpha={alpha}")
         eventfile = glob.glob(os.path.join(client_results_root, job_id, "**", "events.*"), recursive=True)
         assert len(eventfile) == 1, "No unique event file found!"
@@ -132,7 +132,7 @@ def main():
 
         if add_cross_site_val:
             xsite_file = glob.glob(
-                os.path.join(server_results_root, job_id, "**", "cross_val_results.json"), recursive=True
+                os.path.join(download_dir, job_id, "**", "cross_val_results.json"), recursive=True
             )
             assert len(xsite_file) == 1, "No unique x-site file found!"
             with open(xsite_file[0], "r") as f:
