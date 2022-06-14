@@ -334,7 +334,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if not isinstance(job_id, str):
             raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.DELETE_RUN + " " + str(job_id)
+            AdminCommandNames.DELETE_WORKSPACE + " " + str(job_id)
         )
         if reply_data_full_response:
             if "can not be deleted" in reply_data_full_response:
