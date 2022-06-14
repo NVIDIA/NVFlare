@@ -330,22 +330,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def delete_run(self, job_id: str) -> FLAdminAPIResponse:
-        if not isinstance(job_id, str):
-            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.DELETE_RUN + " " + str(job_id)
-        )
-        if reply_data_full_response:
-            if "can not be deleted" in reply_data_full_response:
-                return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
-        if success:
-            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
     def submit_job(self, job_folder: str) -> FLAdminAPIResponse:
         if not job_folder:
             raise APISyntaxError("job_folder is required but not specified.")
@@ -365,12 +349,12 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def clone_job(self, job_folder: str) -> FLAdminAPIResponse:
-        if not job_folder:
+    def clone_job(self, job_id: str) -> FLAdminAPIResponse:
+        if not job_id:
             raise APISyntaxError("job_folder is required but not specified.")
-        if not isinstance(job_folder, str):
-            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_folder)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("clone_job " + job_folder)
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_id)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("clone_job " + job_id)
         if reply_data_full_response:
             if "Cloned job" in reply_data_full_response:
                 return FLAdminAPIResponse(
@@ -396,6 +380,23 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
+    def download_job(self, job_id: str) -> FLAdminAPIResponse:
+        if not job_id:
+            raise APISyntaxError("job_id is required but not specified.")
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("download_job " + job_id)
+        if success:
+            return FLAdminAPIResponse(
+                APIStatus.SUCCESS,
+                {"message": reply.get("details")},
+                reply,
+            )
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
     def abort_job(self, job_id: str) -> FLAdminAPIResponse:
         if not job_id:
             raise APISyntaxError("job_id is required but not specified.")
@@ -409,6 +410,22 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     {"message": reply_data_full_response},
                     reply,
                 )
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
+    def delete_job(self, job_id: str) -> FLAdminAPIResponse:
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.DELETE_RUN + " " + str(job_id)
+        )
+        if reply_data_full_response:
+            if "can not be deleted" in reply_data_full_response:
+                return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
+        if success:
+            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
