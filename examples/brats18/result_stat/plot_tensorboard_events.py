@@ -47,7 +47,7 @@ def smooth(scalars, weight):  # Weight between 0 and 1
     return smoothed
 
 
-def find_run_number(workdir, fl_app_name="prostate_central"):
+def find_job_id(workdir, fl_app_name="prostate_central"):
     """Find the first matching experiment"""
     target_path = os.path.join(workdir, "*", "fl_app.txt")
     fl_app_files = glob.glob(target_path, recursive=True)
@@ -56,9 +56,9 @@ def find_run_number(workdir, fl_app_name="prostate_central"):
         with open(fl_app_file, "r") as f:
             _fl_app_name = f.read()
         if fl_app_name == _fl_app_name:  # alpha will be matched based on value in config file
-            run_number = os.path.basename(os.path.dirname(fl_app_file))
-            return run_number
-    raise ValueError(f"No run number found for fl_app_name={fl_app_name} in workdir={workdir}")
+            job_id = os.path.basename(os.path.dirname(fl_app_file))
+            return job_id
+    raise ValueError(f"No job id found for fl_app_name={fl_app_name} in workdir={workdir}")
 
 
 def read_eventfile(filepath, tags=["val_metric_global_model"]):
@@ -101,13 +101,13 @@ def main():
         site = site + 1
         data = {"Config": [], "Epoch": [], "Dice": []}
         for config, exp in experiments.items():
-            run_number = find_run_number(workdir=server_results_root, fl_app_name=config)
-            print(f"Found run {run_number} for {config}")
+            job_id = find_job_id(workdir=server_results_root, fl_app_name=config)
+            print(f"Found run {job_id} for {config}")
             spec_site = exp.get("site", None)
             if spec_site is not None:
-                record_path = os.path.join(client_results_root, site_pre + spec_site, run_number, "*", "events.*")
+                record_path = os.path.join(client_results_root, site_pre + spec_site, job_id, "*", "events.*")
             else:
-                record_path = os.path.join(client_results_root, site_pre + str(site), run_number, "*", "events.*")
+                record_path = os.path.join(client_results_root, site_pre + str(site), job_id, "*", "events.*")
             eventfile = glob.glob(record_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]

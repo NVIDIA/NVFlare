@@ -45,12 +45,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             name="training",
             cmd_specs=[
                 CommandSpec(
-                    name=AdminCommandNames.DELETE_RUN,
-                    description="delete a run",
-                    usage="delete_run job_id",
+                    name=AdminCommandNames.DELETE_WORKSPACE,
+                    description="delete the workspace of a job",
+                    usage="delete_workspace job_id",
                     handler_func=self.delete_job_id,
                     authz_func=self.authorize_set_job_id,
-                    visible=True,
+                    visible=False,
                     confirm="auth",
                 ),
                 CommandSpec(
