@@ -19,34 +19,25 @@ import numpy as np
 from .job_result_validator import FinishJobResultValidator
 
 
-def _print_info(msg: str):
-    print(f"_check_np_model_exist: {msg}")
-
-
-def _check_np_model_exist(server_data, run_data):
-    server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
-
-    models_dir = os.path.join(server_run_dir, "models")
-    if not os.path.exists(models_dir):
-        _print_info(f"models dir {models_dir} doesn't exist.")
-        return False
-
-    model_path = os.path.join(models_dir, "server.npy")
-    if not os.path.isfile(model_path):
-        _print_info(f"model_path {model_path} doesn't exist.")
-        return False
-
-    try:
-        data = np.load(model_path)
-        _print_info(f"data loaded: {data}.")
-    except Exception as e:
-        _print_info(f"exception happens: {e.__str__()}")
-        return False
-
-    return True
-
-
 class NumpyModelValidator(FinishJobResultValidator):
-    def validate_results(self, server_data, client_data, run_data) -> bool:
-        super().validate_results(server_data, client_data, run_data)
-        return _check_np_model_exist(server_data, run_data)
+    def validate_finished_results(self, job_result, client_props) -> bool:
+        server_run_dir = job_result["workspace_root"]
+
+        models_dir = os.path.join(server_run_dir, "models")
+        if not os.path.exists(models_dir):
+            self.logger.info(f"models dir {models_dir} doesn't exist.")
+            return False
+
+        model_path = os.path.join(models_dir, "server.npy")
+        if not os.path.isfile(model_path):
+            self.logger.info(f"model_path {model_path} doesn't exist.")
+            return False
+
+        try:
+            data = np.load(model_path)
+            self.logger.info(f"data loaded: {data}.")
+        except Exception as e:
+            self.logger.info(f"exception happens: {e.__str__()}")
+            return False
+
+        return True

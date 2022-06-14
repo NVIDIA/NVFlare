@@ -161,13 +161,13 @@ def _check_event_trigger(event_trigger: dict, run_state: dict):
 class AdminController:
     ADMIN_USER_NAME = "admin"
 
-    def __init__(self, jobs_root_dir, ha, poll_period=1):
+    def __init__(self, upload_root_dir: str, download_root_dir: str, ha: bool, poll_period=1):
         """
-        This class runs an app on a given server and clients.
-        """
-        super().__init__()
 
-        self.jobs_root_dir = jobs_root_dir
+        Args:
+            upload_root_dir: the root dir to look for folders to upload
+            download_root_dir: the root dir to download things to
+        """
         self.poll_period = poll_period
 
         if ha:
@@ -177,9 +177,10 @@ class AdminController:
         else:
             overseer_agent = DummyOverseerAgent(sp_end_point="localhost:8002:8003")
 
-        self.admin_api: FLAdminAPI = FLAdminAPI(
-            upload_dir=self.jobs_root_dir,
-            download_dir=self.jobs_root_dir,
+        self.download_root_dir = download_root_dir
+        self.admin_api = FLAdminAPI(
+            upload_dir=upload_root_dir,
+            download_dir=download_root_dir,
             overseer_agent=overseer_agent,
             poc=True,
             debug=False,
@@ -213,8 +214,15 @@ class AdminController:
             print(f"Exception in logging in to admin: {e.__str__()}")
         return success
 
-    def get_run_data(self):
-        run_data = {"job_id": self.job_id, "jobs_root_dir": self.jobs_root_dir}
+    def get_job_result(self):
+        command_name = "download_job"
+        response = self.admin_api.do_command(f"{command_name} {self.job_id}")
+        if response["status"] != APIStatus.SUCCESS:
+            raise RuntimeError(f"{command_name} failed: {response}")
+        run_data = {
+            "job_id": self.job_id,
+            "workspace_root": os.path.join(self.download_root_dir, self.job_id, "workspace"),
+        }
 
         return run_data
 
@@ -270,9 +278,6 @@ class AdminController:
         return ""
 
     def submit_job(self, job_name) -> bool:
-        if not self.admin_api:
-            raise RuntimeError("Missing admin_api in admin_controller.")
-
         response = self.admin_api.submit_job(job_name)
         if response["status"] != APIStatus.SUCCESS:
             raise RuntimeError(f"submit_job failed: {response}")
