@@ -53,7 +53,7 @@ New commands are introduced to help user understand the states of submitted jobs
     - submit_job: submit a prepared job to the system. A unique Job ID is returned to the user if the submission is successful. The user can use this ID to query the status of the job later.
     - list_jobs: list jobs that are in the system already (flags can be used for filtering)
     - abort_job: abort job if it is already running or dispatched
-    - get_job_result: after the job is finished, its result will be stored in the Job Store. This command downloads the result to the user’s machine.
+    - download_job: after the job is finished, its resulting workspace will be stored in the Job Store. This command downloads the job and workspace to the user’s machine.
 
 Some commands are modified for the job-centric behavior:
 
