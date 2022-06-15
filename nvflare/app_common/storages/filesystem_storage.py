@@ -18,9 +18,9 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
-from nvflare.apis.storage import StorageSpec
+from nvflare.apis.storage import StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 
 
@@ -35,7 +35,7 @@ def _write(path: str, content):
     except Exception as e:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)
-        raise IOError("failed to write content: {}".format(e))
+        raise StorageException("failed to write content: {}".format(e))
 
     if os.path.exists(tmp_path):
         os.rename(tmp_path, path)
@@ -46,7 +46,7 @@ def _read(path: str) -> bytes:
         with open(path, "rb") as f:
             content = f.read()
     except Exception as e:
-        raise IOError("failed to read content: {}".format(e))
+        raise StorageException("failed to read content: {}".format(e))
 
     return content
 
@@ -89,10 +89,9 @@ class FilesystemStorage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError:
+            StorageException:
                 - if error creating the object
                 - if object already exists and overwrite_existing is False
-                - if object will be inside pre-existing object
                 - if object will be at a non-empty directory
             IOError: if error writing the object
 
@@ -100,10 +99,10 @@ class FilesystemStorage(StorageSpec):
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if _object_exists(full_uri) and not overwrite_existing:
-            raise RuntimeError("object {} already exists and overwrite_existing is False".format(uri))
+            raise StorageException("object {} already exists and overwrite_existing is False".format(uri))
 
         if not _object_exists(full_uri) and os.path.isdir(full_uri) and os.listdir(full_uri):
-            raise RuntimeError("cannot create object {} at nonempty directory".format(uri))
+            raise StorageException("cannot create object {} at nonempty directory".format(uri))
 
         data_path = os.path.join(full_uri, "data")
         meta_path = os.path.join(full_uri, "meta")
@@ -129,14 +128,14 @@ class FilesystemStorage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            StorageException: if object does not exist
             IOError: if error writing the object
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         if replace:
             _write(os.path.join(full_uri, "meta"), json.dumps(str(meta)).encode("utf-8"))
@@ -154,14 +153,14 @@ class FilesystemStorage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            StorageException: if object does not exist
             IOError: if error writing the object
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         _write(os.path.join(full_uri, "data"), data)
 
@@ -176,12 +175,12 @@ class FilesystemStorage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if path does not exist or is not a valid directory.
+            StorageException: if path does not exist or is not a valid directory.
 
         """
         full_dir_path = os.path.join(self.root_dir, path.lstrip(self.uri_root))
         if not os.path.isdir(full_dir_path):
-            raise RuntimeError(f"path {full_dir_path} is not a valid directory.")
+            raise StorageException(f"path {full_dir_path} is not a valid directory.")
 
         return [
             os.path.join(path, f) for f in os.listdir(full_dir_path) if _object_exists(os.path.join(full_dir_path, f))
@@ -195,20 +194,20 @@ class FilesystemStorage(StorageSpec):
 
         Returns:
             meta of the object.
-            if object does not exist, return empty dict {}
 
         Raises:
             TypeError: if invalid argument types
+            StorageException: if object does not exist
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            return {}
+            raise StorageException("object {} does not exist".format(uri))
 
         return ast.literal_eval(json.loads(_read(os.path.join(full_uri, "meta")).decode("utf-8")))
 
-    def get_data(self, uri: str) -> Optional[bytes]:
+    def get_data(self, uri: str) -> bytes:
         """Gets data of the specified object.
 
         Args:
@@ -216,16 +215,16 @@ class FilesystemStorage(StorageSpec):
 
         Returns:
             data of the object.
-            if object does not exist, return None
 
         Raises:
             TypeError: if invalid argument types
+            StorageException: if object does not exist
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            return None
+            raise StorageException("object {} does not exist".format(uri))
 
         return _read(os.path.join(full_uri, "data"))
 
@@ -240,13 +239,13 @@ class FilesystemStorage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            StorageException: if object does not exist
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         return self.get_meta(uri), self.get_data(uri)
 
@@ -258,13 +257,13 @@ class FilesystemStorage(StorageSpec):
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
+            StorageException: if object does not exist
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         shutil.rmtree(full_uri)
 

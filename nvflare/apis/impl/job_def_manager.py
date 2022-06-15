@@ -27,7 +27,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.storage import StorageSpec
+from nvflare.apis.storage import StorageException, StorageSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
 
@@ -136,10 +136,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_job(self, jid: str, fl_ctx: FLContext) -> Optional[Job]:
         store = self._get_job_store(fl_ctx)
-        job_meta = store.get_meta(self.job_uri(jid))
-        if job_meta:
+        try:
+            job_meta = store.get_meta(self.job_uri(jid))
             return job_from_meta(job_meta)
-        else:
+        except StorageException:
             return None
 
     def set_results_uri(self, jid: str, result_uri: str, fl_ctx: FLContext):
@@ -179,8 +179,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
         store = self._get_job_store(fl_ctx)
-        stored_data = store.get_data(self.job_uri(jid))
-        if not stored_data:
+        try:
+            stored_data = store.get_data(self.job_uri(jid))
+        except StorageException:
             return None
         return pickle.loads(stored_data).get(JobDataKey.JOB_DATA.value)
 
