@@ -262,7 +262,7 @@ class ClientEngine(ClientEngineInternalSpec):
         return self.client_executor.send_aux_command(shareable, job_id)
 
     def get_all_job_ids(self):
-        return self.client_executor.run_processes.keys()
+        return self.client_executor.get_run_processes_keys()
 
 
 def _do_validate(sender, message):

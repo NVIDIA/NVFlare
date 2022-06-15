@@ -320,16 +320,17 @@ class FileTransferModule(CommandModule, CommandUtil):
         job_id_dir = os.path.join(self.download_dir, job_id)
         if os.path.exists(job_id_dir):
             shutil.rmtree(job_id_dir)
+        os.mkdir(job_id_dir)
 
-        data_bytes = job_data[JobDataKey.JOB_DATA]
+        data_bytes = job_data[JobDataKey.JOB_DATA.value]
         job_dir = os.path.join(job_id_dir, "job")
-        os.makedirs(job_dir)
+        os.mkdir(job_dir)
         unzip_all_from_bytes(data_bytes, job_dir)
 
-        workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA]
+        workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
         workspace_dir = os.path.join(job_id_dir, "workspace")
-        os.makedirs(workspace_dir)
-        if workspace_bytes:
+        os.mkdir(workspace_dir)
+        if workspace_bytes is not None:
             unzip_all_from_bytes(workspace_bytes, workspace_dir)
 
     def info(self, conn: Connection, args: List[str]):

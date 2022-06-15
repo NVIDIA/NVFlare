@@ -114,10 +114,12 @@ def setup_and_teardown(request):
     site_launcher.start_servers(n=system_setup["n_servers"])
     site_launcher.start_clients(n=system_setup["n_clients"])
 
+    test_temp_dir = tempfile.mkdtemp()
     # testing jobs
     test_jobs = []
     if test_config["single_app_as_job"]:
-        jobs_root_dir = tempfile.mkdtemp()
+        jobs_root_dir = os.path.join(test_temp_dir, "generated_jobs")
+        os.mkdir(jobs_root_dir)
         for x in test_config["tests"]:
             _ = generate_job_dir_for_single_app_job(
                 app_name=x["app_name"],
@@ -138,9 +140,19 @@ def setup_and_teardown(request):
     else:
         jobs_root_dir = test_config["jobs_root_dir"]
         for x in test_config["tests"]:
-            test_jobs.append((x["job_name"], x["validators"], x.get("setup", []), x.get("teardown", [])))
+            test_jobs.append(
+                (
+                    x["job_name"],
+                    x["validators"],
+                    x.get("setup", []),
+                    x.get("teardown", []),
+                    x.get("event_sequence_yaml", ""),
+                ),
+            )
 
-    admin_controller = AdminController(jobs_root_dir=jobs_root_dir, ha=ha)
+    download_root_dir = os.path.join(test_temp_dir, "download_result")
+    os.mkdir(download_root_dir)
+    admin_controller = AdminController(upload_root_dir=jobs_root_dir, download_root_dir=download_root_dir, ha=ha)
     if not admin_controller.initialize():
         raise RuntimeError("AdminController init failed.")
     admin_controller.ensure_clients_started(num_clients=system_setup["n_clients"])
@@ -156,9 +168,7 @@ def setup_and_teardown(request):
             site_launcher.cleanup()
 
     if cleanup:
-        if test_config["single_app_as_job"]:
-            print(f"Cleaning up generated job dir {jobs_root_dir}")
-            shutil.rmtree(jobs_root_dir)
+        cleanup_path(test_temp_dir)
         cleanup_path(snapshot_path)
         cleanup_path(job_store_path)
 
@@ -244,7 +254,7 @@ class TestSystem:
 
         print(f"Server status: {admin_controller.server_status()}.")
 
-        job_results = []
+        job_validate_results = []
         for job_data in test_jobs:
             start_time = time.time()
 
@@ -278,22 +288,17 @@ class TestSystem:
                     job_validator_cls = getattr(importlib.import_module(module_name), class_name)
                     job_validator = job_validator_cls(**validator_args)
 
-                    active_server_prop = site_launcher.get_server_prop(
-                        server_id=site_launcher.get_active_server_id(admin_controller.admin_api.port)
-                    )
-                    print(active_server_prop)
-                    run_data = admin_controller.get_run_data()
+                    job_result = admin_controller.get_job_result()
                     job_validate_res = job_validator.validate_results(
-                        server_data=active_server_prop,
-                        client_data=list(site_launcher.client_properties.values()),
-                        run_data=run_data,
+                        job_result=job_result,
+                        client_props=list(site_launcher.client_properties.values()),
                     )
                     print(
-                        f"Job {test_job_name}, Validator {job_validator.__class__.__name__} result: {job_validate_res}"
+                        f"Job {test_job_name}, Validator {job_validator.__class__.__name__}, Result: {job_validate_res}"
                     )
                     validate_result = validate_result and job_validate_res
 
-                job_results.append((test_job_name, validate_result))
+                job_validate_results.append((test_job_name, validate_result))
             else:
                 print("No validators provided so results can't be checked.")
 
@@ -304,9 +309,9 @@ class TestSystem:
                 process.wait()
 
         print("==============================================================")
-        print(f"Job results: {job_results}")
+        print(f"Job validate results: {job_validate_results}")
         failure = False
-        for job_name, job_result in job_results:
+        for job_name, job_result in job_validate_results:
             print(f"Job name: {job_name}, Result: {job_result}")
             if not job_result:
                 failure = True

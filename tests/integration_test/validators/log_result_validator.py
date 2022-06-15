@@ -18,37 +18,29 @@ import re
 from .job_result_validator import FinishJobResultValidator
 
 
-def _print_info(msg: str):
-    print(f"_check_log_results: {msg}")
-
-
-def _check_log_results(server_data, run_data, expected_in_result, expected_not_in_result):
-    server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
-
-    log_txt = os.path.join(server_run_dir, "log.txt")
-    if not os.path.exists(log_txt):
-        _print_info(f"log file {log_txt} doesn't exist.")
-        return False
-
-    try:
-        with open(log_txt) as f:
-            server_log = f.read()
-        if expected_in_result:
-            assert re.search(expected_in_result, server_log)
-        if expected_not_in_result:
-            assert not re.search(expected_not_in_result, server_log)
-    except Exception as e:
-        _print_info(f"exception happens: {e.__str__()}")
-        return False
-
-    return True
-
-
 class LogResultValidator(FinishJobResultValidator):
     def __init__(self, expected_in_result=None, expected_not_in_result=None):
+        super().__init__()
         self.expected_in_result = expected_in_result
         self.expected_not_in_result = expected_not_in_result
 
-    def validate_results(self, server_data, client_data, run_data) -> bool:
-        super().validate_results(server_data, client_data, run_data)
-        return _check_log_results(server_data, run_data, self.expected_in_result, self.expected_not_in_result)
+    def validate_finished_results(self, job_result, client_props) -> bool:
+        server_run_dir = job_result["workspace_root"]
+
+        log_txt = os.path.join(server_run_dir, "log.txt")
+        if not os.path.exists(log_txt):
+            self.logger.info(f"log file {log_txt} doesn't exist.")
+            return False
+
+        try:
+            with open(log_txt) as f:
+                server_log = f.read()
+            if expected_in_result:
+                assert re.search(expected_in_result, server_log)
+            if expected_not_in_result:
+                assert not re.search(expected_not_in_result, server_log)
+        except Exception as e:
+            self.logger.info(f"exception happens: {e.__str__()}")
+            return False
+
+        return True

@@ -61,4 +61,4 @@ class TestJobManager(unittest.TestCase):
             job_id = meta.get(JobMetaKey.JOB_ID)
             self.job_manager.save_workspace(job_id, data, self.fl_ctx)
             result = self.job_manager.get_job_data(job_id, self.fl_ctx)
-            assert result.get(JobDataKey.WORKSPACE_DATA) == data
+            assert result.get(JobDataKey.WORKSPACE_DATA.value) == data
