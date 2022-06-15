@@ -205,6 +205,7 @@ def create_admin_server(
         server_key_file_name=server_key,
         accepted_client_cns=None,
         app_validator=app_validator,
+        download_job_url=server_conf.get("download_job_url", "http://"),
     )
     return admin_server
 

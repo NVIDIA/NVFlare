@@ -16,7 +16,7 @@ import json
 import logging
 from typing import Dict, List
 
-from nvflare.apis.job_def import Job, JobMetaKey
+from nvflare.apis.job_def import Job, JobMetaKey, RunStatus
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
@@ -152,6 +152,14 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
+                job = job_def_manager.get_job(job_id, fl_ctx)
+                if not job:
+                    conn.append_error(f"job: {job_id} does not exist")
+                    return
+                if job.meta.get(JobMetaKey.STATUS, "") in [RunStatus.DISPATCHED.value, RunStatus.RUNNING.value]:
+                    conn.append_error(f"job: {job_id} is running, could not be deleted at this time.")
+                    return
+
                 job_def_manager.delete(job_id, fl_ctx)
             conn.append_string("Job {} deleted.".format(job_id))
         except Exception as e:

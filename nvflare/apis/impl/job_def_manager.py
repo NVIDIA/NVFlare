@@ -21,7 +21,7 @@ import tempfile
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta
@@ -134,10 +134,13 @@ class SimpleJobDefManager(JobDefManagerSpec):
         """
         pass
 
-    def get_job(self, jid: str, fl_ctx: FLContext) -> Job:
+    def get_job(self, jid: str, fl_ctx: FLContext) -> Optional[Job]:
         store = self._get_job_store(fl_ctx)
         job_meta = store.get_meta(self.job_uri(jid))
-        return job_from_meta(job_meta)
+        if job_meta:
+            return job_from_meta(job_meta)
+        else:
+            return None
 
     def set_results_uri(self, jid: str, result_uri: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
@@ -174,9 +177,11 @@ class SimpleJobDefManager(JobDefManagerSpec):
         unzip_all_from_bytes(data_bytes, job_id_dir)
         return job_id_dir
 
-    def get_content(self, jid: str, fl_ctx: FLContext) -> bytes:
+    def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
         store = self._get_job_store(fl_ctx)
         stored_data = store.get_data(self.job_uri(jid))
+        if not stored_data:
+            return None
         return pickle.loads(stored_data).get(JobDataKey.JOB_DATA.value)
 
     def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:

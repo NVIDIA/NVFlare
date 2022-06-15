@@ -18,7 +18,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from nvflare.apis.storage import StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
@@ -195,20 +195,20 @@ class FilesystemStorage(StorageSpec):
 
         Returns:
             meta of the object.
+            if object does not exist, return empty dict {}
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            return {}
 
         return ast.literal_eval(json.loads(_read(os.path.join(full_uri, "meta")).decode("utf-8")))
 
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str) -> Optional[bytes]:
         """Gets data of the specified object.
 
         Args:
@@ -216,16 +216,16 @@ class FilesystemStorage(StorageSpec):
 
         Returns:
             data of the object.
+            if object does not exist, return None
 
         Raises:
             TypeError: if invalid argument types
-            RuntimeError: if object does not exist
 
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
         if not _object_exists(full_uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            return None
 
         return _read(os.path.join(full_uri, "data"))
 

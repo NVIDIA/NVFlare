@@ -26,6 +26,7 @@ from nvflare.fuel.hci.base64_utils import (
 )
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import remove_leading_dotdot, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 
@@ -125,14 +126,22 @@ class _DownloadFolderProcessor(ReplyProcessor):
     def process_string(self, api, item: str):
         try:
             self.data_received = True
-            data_bytes = b64str_to_bytes(item)
-            unzip_all_from_bytes(data_bytes, self.download_dir)
-            api.set_command_result(
-                {
-                    "status": APIStatus.SUCCESS,
-                    "details": "Download to dir {}".format(self.download_dir),
-                }
-            )
+            if item.startswith(ConnProps.DOWNLOAD_JOB_URL):
+                api.set_command_result(
+                    {
+                        "status": APIStatus.SUCCESS,
+                        "details": item,
+                    }
+                )
+            else:
+                data_bytes = b64str_to_bytes(item)
+                unzip_all_from_bytes(data_bytes, self.download_dir)
+                api.set_command_result(
+                    {
+                        "status": APIStatus.SUCCESS,
+                        "details": "Download to dir {}".format(self.download_dir),
+                    }
+                )
         except Exception as ex:
             traceback.print_exc()
             api.set_command_result(

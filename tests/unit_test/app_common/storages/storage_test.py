@@ -248,10 +248,8 @@ class TestStorage:
         with pytest.raises(RuntimeError):
             meta4 = random_meta()
             storage.update_meta(uri, meta4, replace=True)
-        with pytest.raises(RuntimeError):
-            storage.get_data(uri)
-        with pytest.raises(RuntimeError):
-            storage.get_meta(uri)
+        assert storage.get_data(uri) is None
+        assert storage.get_meta(uri) == {}
         with pytest.raises(RuntimeError):
             storage.get_detail(uri)
         with pytest.raises(RuntimeError):

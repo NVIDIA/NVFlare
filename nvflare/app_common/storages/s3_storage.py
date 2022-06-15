@@ -15,7 +15,7 @@
 import ast
 import io
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from minio import Minio
 from minio.commonconfig import REPLACE, CopySource
@@ -206,16 +206,16 @@ class S3Storage(StorageSpec):
 
         Returns:
             meta info of the object.
+            if object does not exist, return empty dict {}
 
         Raises:
             TypeError: if invalid argument types
             RuntimeError:
-                - if object does not exist
                 - if error accessing object
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            return {}
 
         try:
             return ast.literal_eval(
@@ -224,7 +224,7 @@ class S3Storage(StorageSpec):
         except MinioException as e:
             raise RuntimeError(f"error accessing object ({uri}): {str(e)}.")
 
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str) -> Optional[bytes]:
         """Gets data of the specified object.
 
         Args:
@@ -232,16 +232,16 @@ class S3Storage(StorageSpec):
 
         Returns:
             data of the object.
+            if object does not exist, return None
 
         Raises:
             TypeError: if invalid argument types
             RuntimeError:
-                - if object does not exist
                 - if error accessing object
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            return None
 
         try:
             return self.s3_client.get_object(self.bucket_name, uri).data
