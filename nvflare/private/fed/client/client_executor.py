@@ -410,5 +410,9 @@ class ProcessExecutor(ClientExecutor):
             process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
             return process_status
 
+    def get_run_processes_keys(self):
+        with self.lock:
+            return [x for x in self.run_processes.keys()]
+
     def close(self):
         self.cleanup()

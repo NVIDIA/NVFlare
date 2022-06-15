@@ -42,7 +42,6 @@ class JobDataKey(str, Enum):
 
 
 class JobMetaKey(str, Enum):
-    VERSION = "job_version"
     JOB_ID = "job_id"
     JOB_NAME = "name"
     JOB_FOLDER_NAME = "job_folder_name"

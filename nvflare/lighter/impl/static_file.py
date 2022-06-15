@@ -28,6 +28,7 @@ class StaticFileBuilder(Builder):
         enable_byoc=False,
         config_folder="",
         app_validator="",
+        download_job_url="",
         docker_image="",
         snapshot_persistor="",
         overseer_agent="",
@@ -52,6 +53,7 @@ class StaticFileBuilder(Builder):
         self.enable_byoc = enable_byoc
         self.config_folder = config_folder
         self.docker_image = docker_image
+        self.download_job_url = download_job_url
         self.app_validator = app_validator
         self.overseer_agent = overseer_agent
         self.snapshot_persistor = snapshot_persistor
@@ -129,6 +131,8 @@ class StaticFileBuilder(Builder):
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
+        if self.download_job_url:
+            server_0["download_job_url"] = self.download_job_url
         config["enable_byoc"] = server.enable_byoc
         if self.app_validator:
             config["app_validator"] = {"path": self.app_validator}

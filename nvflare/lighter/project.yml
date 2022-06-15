@@ -95,6 +95,10 @@ builders:
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
 
+      # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
+      # to different url.
+      # download_job_url: http://download.server.com/
+
       overseer_agent:
         path: nvflare.ha.overseer_agent.HttpOverseerAgent
         # if overseer_exists is true, args here are ignored.  Provisioning

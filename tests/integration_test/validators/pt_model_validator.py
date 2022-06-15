@@ -20,23 +20,18 @@ from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from .job_result_validator import FinishJobResultValidator
 
 
-def _check_pt_model_exist(server_data, run_data):
-    server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
-
-    server_models_dir = os.path.join(server_run_dir, WorkspaceConstants.APP_PREFIX + "server")
-    if not os.path.exists(server_models_dir):
-        print(f"_check_pt_model_exist: models dir {server_models_dir} doesn't exist.")
-        return False
-
-    model_path = os.path.join(server_models_dir, DefaultCheckpointFileName.GLOBAL_MODEL)
-    if not os.path.isfile(model_path):
-        print(f"_check_pt_model_exist: model_path {model_path} doesn't exist.")
-        return False
-
-    return True
-
-
 class PTModelValidator(FinishJobResultValidator):
-    def validate_results(self, server_data, client_data, run_data) -> bool:
-        super().validate_results(server_data, client_data, run_data)
-        return _check_pt_model_exist(server_data, run_data)
+    def validate_finished_results(self, job_result, client_props) -> bool:
+        server_run_dir = job_result["workspace_root"]
+
+        server_models_dir = os.path.join(server_run_dir, WorkspaceConstants.APP_PREFIX + "server")
+        if not os.path.exists(server_models_dir):
+            self.logger.info(f"models dir {server_models_dir} doesn't exist.")
+            return False
+
+        model_path = os.path.join(server_models_dir, DefaultCheckpointFileName.GLOBAL_MODEL)
+        if not os.path.isfile(model_path):
+            self.logger.info(f"model_path {model_path} doesn't exist.")
+            return False
+
+        return True

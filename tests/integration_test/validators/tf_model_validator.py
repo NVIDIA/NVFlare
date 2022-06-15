@@ -20,31 +20,26 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 from .job_result_validator import FinishJobResultValidator
 
 
-def _check_tf_results(server_data, run_data):
-    server_run_dir = os.path.join(server_data.root_dir, run_data["job_id"])
-    server_models_dir = os.path.join(server_run_dir, WorkspaceConstants.APP_PREFIX + "server")
-    if not os.path.exists(server_models_dir):
-        print(f"_check_tf_results: models dir {server_models_dir} doesn't exist.")
-        return False
-
-    model_path = os.path.join(server_models_dir, "tf2weights.pickle")
-    if not os.path.isfile(model_path):
-        print(f"_check_tf_results: model_path {model_path} doesn't exist.")
-        return False
-
-    try:
-        data = pickle.load(open(model_path, "rb"))
-        print(f"_check_tf_results: Data loaded: {data}.")
-        assert "weights" in data
-        assert "meta" in data
-    except Exception as e:
-        print(f"Exception in validating TF model: {e.__str__()}")
-        return False
-
-    return True
-
-
 class TFModelValidator(FinishJobResultValidator):
-    def validate_results(self, server_data, client_data, run_data) -> bool:
-        super().validate_results(server_data, client_data, run_data)
-        return _check_tf_results(server_data, run_data)
+    def validate_finished_results(self, job_result, client_props) -> bool:
+        server_run_dir = job_result["workspace_root"]
+        server_models_dir = os.path.join(server_run_dir, WorkspaceConstants.APP_PREFIX + "server")
+        if not os.path.exists(server_models_dir):
+            self.logger.info(f"models dir {server_models_dir} doesn't exist.")
+            return False
+
+        model_path = os.path.join(server_models_dir, "tf2weights.pickle")
+        if not os.path.isfile(model_path):
+            self.logger.info(f"model_path {model_path} doesn't exist.")
+            return False
+
+        try:
+            data = pickle.load(open(model_path, "rb"))
+            self.logger.info(f"Data loaded: {data}.")
+            assert "weights" in data
+            assert "meta" in data
+        except Exception as e:
+            self.logger.info(f"Exception in validating TF model: {e.__str__()}")
+            return False
+
+        return True
