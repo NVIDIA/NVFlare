@@ -26,6 +26,7 @@
       "num_server_workers": 4,
       "compression": "Gzip",
       "admin_storage": "transfer",
+      "download_job_url": "http://download.server.com/",
       "min_num_clients": 1
     }
   ],

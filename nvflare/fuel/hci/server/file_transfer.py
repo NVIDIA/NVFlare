@@ -23,6 +23,7 @@ from zipfile import ZipFile
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.job_def import JobDataKey, JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+from nvflare.apis.utils.common_utils import get_size
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -40,10 +41,11 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.security.security import Action
 
 META_FILE = "meta.json"
+MAX_DOWNLOAD_JOB__SIZE = 50 * 1024 * 1024 * 1204
 
 
 class FileTransferModule(CommandModule, CommandUtil):
-    def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None):
+    def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None, download_job_url=None):
         """Command module for file transfers.
 
         Args:
@@ -60,6 +62,7 @@ class FileTransferModule(CommandModule, CommandUtil):
         self.upload_dir = upload_dir
         self.download_dir = download_dir
         self.upload_folder_authz_func = upload_folder_authz_func
+        self.download_url = download_job_url
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -304,6 +307,11 @@ class FileTransferModule(CommandModule, CommandUtil):
                 )
             with engine.new_context() as fl_ctx:
                 job_data = job_def_manager.get_job_data(job_id, fl_ctx)
+                size = get_size(job_data, seen=None)
+                if size > MAX_DOWNLOAD_JOB__SIZE:
+                    conn.append_string(ConnProps.DOWNLOAD_JOB_URL + self.download_url + job_id)
+                    return
+
                 self._unzip_data(job_data, job_id)
         except Exception as e:
             conn.append_error("Exception occurred trying to get job from store: " + str(e))
