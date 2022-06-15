@@ -227,9 +227,6 @@ class AdminController:
         return run_data
 
     def ensure_clients_started(self, num_clients):
-        if not self.admin_api:
-            return False
-
         timeout = 1000
         start_time = time.time()
         clients_up = False
@@ -258,24 +255,16 @@ class AdminController:
         return clients_up
 
     def server_status(self):
-        if not self.admin_api:
-            return ""
-
         response = self.admin_api.check_status(target_type=TargetType.SERVER)
-        if response["status"] == APIStatus.SUCCESS:
-            if "details" in response:
-                return response["details"]
-        return ""
+        if response and "status" in response and response["status"] == APIStatus.SUCCESS and "details" in response:
+            return response["details"]
+        return None
 
     def client_status(self):
-        if not self.admin_api:
-            return ""
-
         response = self.admin_api.check_status(target_type=TargetType.CLIENT)
-        if response["status"] == APIStatus.SUCCESS:
-            if "details" in response:
-                return response["details"]
-        return ""
+        if response and "status" in response and response["status"] == APIStatus.SUCCESS and "details" in response:
+            return response["details"]
+        return None
 
     def submit_job(self, job_name) -> bool:
         response = self.admin_api.submit_job(job_name)
@@ -285,24 +274,48 @@ class AdminController:
         self.last_job_name = job_name
         return True
 
+    def _check_job_done(self):
+        response = self.admin_api.check_status(target_type=TargetType.SERVER)
+        if response and "status" in response:
+            if response["status"] != APIStatus.SUCCESS:
+                print(f"Check server status failed: {response}.")
+                return False
+            else:
+                if "details" not in response:
+                    print(f"Check server status missing details: {response}.")
+                    return False
+                else:
+                    # check if run is stopped
+                    if (
+                        FLDetailKey.SERVER_ENGINE_STATUS in response["details"]
+                        and response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped"
+                    ):
+                        response = self.admin_api.check_status(target_type=TargetType.CLIENT)
+                        if response["status"] != APIStatus.SUCCESS:
+                            print(f"CHECK client status failed: {response}")
+                            return False
+                        if "details" not in response:
+                            print(f"Check client status missing details: {response}.")
+                            return False
+                        else:
+                            job_run_statuses = self._get_job_run_statuses()
+                            for row in response["details"]["client_statuses"]:
+                                if row[3] != "stopped":
+                                    continue
+                            # check if the current job is completed
+                            if job_run_statuses[self.job_id] in (
+                                RunStatus.FINISHED_COMPLETED.value,
+                                RunStatus.FINISHED_ABORTED.value,
+                            ):
+                                return True
+        return False
+
     def wait_for_job_done(self):
         # TODO:: Is it possible to get the training log after training is done?
         training_done = False
         while not training_done:
+            training_done = self._check_job_done()
             time.sleep(self.poll_period)
-            response = self.admin_api.check_status(target_type=TargetType.SERVER)
-            if response["status"] != APIStatus.SUCCESS:
-                raise RuntimeError(f"check_status failed: {response}")
-            if not response["details"]:
-                raise RuntimeError(f"response {response} does not have details.")
-            if response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped":
-                response = self.admin_api.check_status(target_type=TargetType.CLIENT)
-                if response["status"] != APIStatus.SUCCESS:
-                    raise RuntimeError(f"check_status failed: {response}")
-                for row in response["details"]["client_statuses"]:
-                    if row[3] != "stopped":
-                        continue
-                training_done = True
 
     def _get_stats(self, target):
         return self.admin_api.show_stats(self.job_id, target)
@@ -367,43 +380,16 @@ class AdminController:
                     self.execute_actions(site_launcher, ha_events[event_idx]["actions"])
                     continue
 
-            response = self.admin_api.check_status(target_type=TargetType.SERVER)
-            if response and "status" in response:
-                if response["status"] != APIStatus.SUCCESS:
-                    print(f"Check server status failed: {response}.")
-                else:
-                    if "details" not in response:
-                        print(f"Check server status missing details: {response}.")
-                    else:
-                        # compare run_state to expected result_state from the test case
-                        if event_idx < len(ha_events) and event_test_status[event_idx]:
-                            result_state = ha_events[event_idx]["result_state"]
-                            # if result_state == "unchanged":
-                            #     result_state = ha_events[event_idx]["trigger"]
-                            if any(list(run_state.values())):
-                                _check_run_state(state=run_state, expected_state=result_state)
-                                event_idx += 1
+            # check result state only when server is up and running
+            if self.server_status():
+                # compare run_state to expected result_state from the test case
+                if event_idx < len(ha_events) and event_test_status[event_idx]:
+                    result_state = ha_events[event_idx]["result_state"]
+                    if any(list(run_state.values())):
+                        _check_run_state(state=run_state, expected_state=result_state)
+                        event_idx += 1
 
-                        # check if run is stopped
-                        if (
-                            FLDetailKey.SERVER_ENGINE_STATUS in response["details"]
-                            and response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped"
-                        ):
-                            response = self.admin_api.check_status(target_type=TargetType.CLIENT)
-                            if response["status"] != APIStatus.SUCCESS:
-                                print(f"CHECK client status failed: {response}")
-                            if "details" not in response:
-                                print(f"Check client status missing details: {response}.")
-                            else:
-                                for row in response["details"]["client_statuses"]:
-                                    if row[3] != "stopped":
-                                        continue
-                                # check if job is completed
-                                if job_run_statuses[self.job_id] in (
-                                    RunStatus.FINISHED_COMPLETED.value,
-                                    RunStatus.FINISHED_ABORTED.value,
-                                ):
-                                    training_done = True
+            training_done = self._check_job_done()
             time.sleep(self.poll_period)
 
         assert all(event_test_status), "Test failed: not all test events were triggered"
