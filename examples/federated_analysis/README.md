@@ -82,11 +82,11 @@ Your output should be similar to the following.
 
 ```
 > list_jobs 
-------------------------------------------------------------------------------------------------------------------------
-| JOB ID                               | NAME         | STUDY             | STATUS  | SUBMIT TIME                      |
-------------------------------------------------------------------------------------------------------------------------
-| b289d93f-a958-4f03-81b1-c3d35ca1d274 | fed_analysis | __default_study__ | RUNNING | 2022-05-09T09:59:24.164731-04:00 |
-------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
+| JOB ID                               | NAME         | STATUS  | SUBMIT TIME                      |
+----------------------------------------------------------------------------------------------------
+| a0deac00-25fa-4517-9e0c-7a74df53256f | fed_analysis | RUNNING | 2022-06-14T17:02:22.204339-04:00 |
+----------------------------------------------------------------------------------------------------
 ```
 
 **Note:** This example uses the [k-anonymity](https://en.wikipedia.org/wiki/K-anonymity) approach to ensure that no individual patient's data is leaked to the server. 
@@ -96,29 +96,14 @@ Other default parameters of the `AnalysisExecutor` are chosen to work well with 
 
 ## 4. Visualize the result
 
-If successful, the computed histograms will be shown in the `./workspaces/poc_workspace/server/[RUN_ID]` folders as `histograms.html` and `histograms.svg`. 
+If successful, the computed histograms can be downloaded using this admin command:
+```
+download_job [JOB_ID]
+```
+After download, it will be available in the stated download directory under `[JOB_ID]/workspace` as `histograms.html` and `histograms.svg`. 
 
-Note, `[RUN_ID]` will be assigned by the system when submitting the job (it is also shown in the `list_jobs` command). 
+Note, `[JOB_ID]` will be assigned by the system when submitting the job (it is also shown in the `list_jobs` command). 
 
 For example, the gathered local and global histograms will look like this.
 
 ![Example local and global histograms](./histograms_example.svg)
-
-## 5. Get results using the admin client  
-In real-world FL scenarios, the researcher might not have direct access to the server machine. Hence, the researcher can use the admin client console to control the experimentation (see [here](https://nvflare.readthedocs.io/en/2.1.0/user_guide/admin_commands.html) for details).
-
-After completing the federated analysis run, you can check the histogram files have been created by running `ls server [RUN_ID]`:
-```
-> ls server b289d93f-a958-4f03-81b1-c3d35ca1d274
-app_server
-fl_app.txt
-histograms.html
-histograms.svg
-log.txt
-```
-The result can be downloaded to the admin's machine using this command `download_folder [RUN_ID]`:
-```
-> download_folder ../b289d93f-a958-4f03-81b1-c3d35ca1d274
-```
-
-After download, the files will be available in the admin workspace under `transfer`.
