@@ -18,7 +18,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from nvflare.apis.storage import StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args

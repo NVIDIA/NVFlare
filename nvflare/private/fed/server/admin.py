@@ -225,7 +225,7 @@ class FedAdminServer(AdminServer):
                 upload_dir=file_upload_dir,
                 download_dir=file_download_dir,
                 upload_folder_authz_func=AppAuthzService.authorize_upload,
-                download_job_url=download_job_url
+                download_job_url=download_job_url,
             )
         )
 

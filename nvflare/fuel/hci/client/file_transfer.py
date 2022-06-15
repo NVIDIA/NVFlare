@@ -24,9 +24,9 @@ from nvflare.fuel.hci.base64_utils import (
     bytes_to_b64str,
     text_file_to_b64str,
 )
-from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import remove_leading_dotdot, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 

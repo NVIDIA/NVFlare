@@ -15,7 +15,7 @@
 import ast
 import io
 import os
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from minio import Minio
 from minio.commonconfig import REPLACE, CopySource
