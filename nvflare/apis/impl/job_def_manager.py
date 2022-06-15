@@ -74,8 +74,6 @@ class _ReviewerFilter(_JobFilter):
 
 
 class SimpleJobDefManager(JobDefManagerSpec):
-    JOB_VERSION = 2.1
-
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store"):
         super().__init__()
         self.uri_root = uri_root
@@ -98,7 +96,6 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # validate meta to make sure it has:
 
         jid = str(uuid.uuid4())
-        meta[JobMetaKey.VERSION.value] = SimpleJobDefManager.JOB_VERSION
         meta[JobMetaKey.JOB_ID.value] = jid
         meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
         meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
@@ -107,7 +104,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
 
         # write it to the store
-        stored_data = {JobDataKey.JOB_DATA.value: uploaded_content, JobDataKey.WORKSPACE_DATA: None}
+        stored_data = {JobDataKey.JOB_DATA.value: uploaded_content, JobDataKey.WORKSPACE_DATA.value: None}
         store = self._get_job_store(fl_ctx)
         store.create_object(self.job_uri(jid), pickle.dumps(stored_data), meta, overwrite_existing=True)
         return meta
@@ -179,25 +176,13 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_content(self, jid: str, fl_ctx: FLContext) -> bytes:
         store = self._get_job_store(fl_ctx)
-        meta = store.get_meta(self.job_uri(jid))
         stored_data = store.get_data(self.job_uri(jid))
-        version = meta.get(JobMetaKey.VERSION, 1.0)
-        if version >= SimpleJobDefManager.JOB_VERSION:
-            return pickle.loads(stored_data).get(JobDataKey.JOB_DATA.value)
-        else:
-            return stored_data
+        return pickle.loads(stored_data).get(JobDataKey.JOB_DATA.value)
 
     def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
         store = self._get_job_store(fl_ctx)
-        meta, stored_data = store.get_detail(self.job_uri(jid))
-        return self._fetch_data(meta, stored_data)
-
-    def _fetch_data(self, meta, stored_data):
-        version = meta.get(JobMetaKey.VERSION, 1.0)
-        if version >= SimpleJobDefManager.JOB_VERSION:
-            return pickle.loads(stored_data)
-        else:
-            return {JobDataKey.JOB_DATA.value: stored_data, JobDataKey.WORKSPACE_DATA: None}
+        stored_data = store.get_data(self.job_uri(jid))
+        return pickle.loads(stored_data)
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}
@@ -254,7 +239,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
-        meta, stored_data = store.get_detail(self.job_uri(jid))
-        job_data = self._fetch_data(meta, stored_data)
-        job_data[JobDataKey.WORKSPACE_DATA] = data
+        stored_data = store.get_data(self.job_uri(jid))
+        job_data = pickle.loads(stored_data)
+        job_data[JobDataKey.WORKSPACE_DATA.value] = data
         store.update_data(self.job_uri(jid), pickle.dumps(job_data))

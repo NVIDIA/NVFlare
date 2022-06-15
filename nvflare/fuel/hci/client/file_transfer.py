@@ -118,6 +118,10 @@ class _DownloadFolderProcessor(ReplyProcessor):
         if not self.data_received:
             api.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": "protocol error - no data received"})
 
+    def process_error(self, api: AdminAPISpec, err: str):
+        self.data_received = True
+        api.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": err})
+
     def process_string(self, api, item: str):
         try:
             self.data_received = True
