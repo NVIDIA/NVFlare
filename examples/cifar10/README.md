@@ -138,8 +138,8 @@ You can copy the whole block into the terminal, and it will execute each experim
 ./submit_job.sh cifar10_fedavg 0.1
 ```
 
-> **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
-  using `abort_job [RUN_ID]`. 
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
 > For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/admin_commands.html).
 
 > To log into the POC workspace admin console no username is required 

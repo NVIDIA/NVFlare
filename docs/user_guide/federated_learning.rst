@@ -41,4 +41,4 @@ for an example with ditto in addition to FedProx, FedAvg, and centralized traini
 Federated Analytics
 -------------------
 Federated analytics may be used to gather information about the data at various sites. An example can be found in the
-`Federated Analysis example <https://github.com/NVIDIA/NVFlare/tree/dev-2.1/examples/federated_analysis>`_.
+`Federated Analysis example <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_analysis>`_.
