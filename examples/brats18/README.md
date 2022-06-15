@@ -131,6 +131,14 @@ To run FL with differential privacy, we use
 ```
 bash submit_job.sh brats_fedavg_dp 
 ```
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/2.1.0/user_guide/admin_commands.html).
+
+> To log into the POC workspace admin console no username is required 
+> (use "admin" for commands requiring conformation with username). 
+
+> For the secure workspace admin console, use username "admin@nvidia.com"
 
 ## 4. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
 In this example, only the global model gets evaluated at each round, and saved as the final model. 

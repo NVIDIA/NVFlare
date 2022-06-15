@@ -106,8 +106,16 @@ To run FL with [Ditto](https://arxiv.org/abs/2012.04221)(official [implementatio
 ```
 bash submit_job.sh prostate_ditto
 ```
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/2.1.0/user_guide/admin_commands.html).
 
-## 5. Results on 6 clients for Central vs. FedAvg vs. FedProx vs. Ditto
+> To log into the POC workspace admin console no username is required 
+> (use "admin" for commands requiring conformation with username). 
+
+> For the secure workspace admin console, use username "admin@nvidia.com"
+
+## 3. Results on 6 clients for Central vs. FedAvg vs. FedProx vs. Ditto
 In this example, for Central/FedAvg/FedProx, only the global model gets evaluated at each round, and saved as the final model. For Ditto, each client will have its own personalized model, which is validated and saved locally.
 ### Validation curve on each site
 

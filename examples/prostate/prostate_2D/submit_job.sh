@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 export PYTHONPATH="${PYTHONPATH}:${PWD}"
-export PYTHONPATH="${PYTHONPATH}:/media/ziyuexu/Research/Experiment/NVFlare/NVFlare_Special"
-
 echo "PYTHONPATH is ${PYTHONPATH}"
 
 algorithms_dir="${PWD}/configs"
