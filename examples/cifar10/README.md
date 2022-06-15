@@ -41,7 +41,7 @@ python3 -m nvflare.lighter.provision -p ./secure_project.yml
 cp -r ./workspace/secure_project/prod_00 ./secure_workspace
 cd ..
 ```
-For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/2.1.0/user_guide/provisioning_tool.html).
+For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/provisioning_tool.html).
 
 For starting the FL system with 8 clients in the secure workspace, run
 ```
@@ -75,7 +75,7 @@ we set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager
 For the POC workspace, adjust the default values in `./workspaces/poc_workspace/site-*/startup/fed_client.json` 
 and `./workspaces/poc_workspace/server/startup/fed_server.json`. 
 
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/2.1.0/user_guide/job.html).
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
 
 ### 2.3 Download the CIFAR-10 dataset 
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
@@ -140,7 +140,7 @@ You can copy the whole block into the terminal, and it will execute each experim
 
 > **_NOTE:_** You can always use the admin console to manually abort a running job. 
   using `abort_job [JOB_ID]`. 
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/2.1.0/user_guide/admin_commands.html).
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
 > To log into the POC workspace admin console no username is required 
 > (use "admin" for commands requiring conformation with username). 

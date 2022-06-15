@@ -44,7 +44,7 @@ To enable multi-tasking, here we adjust the default value in `workspace_server/s
 
 (Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
 
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/2.1.0/user_guide/job.html).
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
 
 ## 2. Run automated experiments
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.

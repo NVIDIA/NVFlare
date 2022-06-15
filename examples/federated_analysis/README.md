@@ -72,7 +72,7 @@ To do this, you need to log into the NVFlare admin console.
 3. Start the admin console: `./workspaces/poc_workspace/admin/startup/fl_admin.sh`
 4. Inside the console, submit the job: `submit_job [PWD]/configs/fed_analysis` (replace `[PWD]` with your current path) 
 
-For a complete list of avialble admin console commands, see [here](https://nvflare.readthedocs.io/en/2.1.0/user_guide/admin_commands.html).
+For a complete list of available admin console commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
 ### 3.2 List the submitted job
 
