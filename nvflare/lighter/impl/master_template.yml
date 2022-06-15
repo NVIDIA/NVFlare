@@ -156,19 +156,6 @@ authz_def: |
       }
     },
     "rights": {
-      "upload_app": {
-        "desc": "upload app",
-        "default": true
-      },
-      "deploy_self": {
-        "desc": "deploy app to own site",
-        "default": false,
-        "precond": "selfOrg"
-      },
-      "deploy_all": {
-        "desc": "deploy app to all sites",
-        "default": false
-      },
       "train_self": {
         "desc": "do training operations on own site",
         "default": false,
