@@ -20,18 +20,18 @@ from zipfile import ZipFile
 
 import pytest
 
-from nvflare.fuel.hci import zip_utils
+from nvflare.fuel.hci.zip_utils import convert_legacy_zip, get_all_file_paths, normpath_for_zip, split_path
 from nvflare.private.fed.server.job_meta_validator import META, JobMetaValidator
 
 
 def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):
-    dir_name = zip_utils._path_join(root_dir, folder_name)
+    dir_name = normpath_for_zip(os.path.join(root_dir, folder_name))
     assert os.path.exists(dir_name), 'directory "{}" does not exist'.format(dir_name)
     assert os.path.isdir(dir_name), '"{}" is not a valid directory'.format(dir_name)
 
-    file_paths = zip_utils.get_all_file_paths(dir_name)
+    file_paths = get_all_file_paths(dir_name)
     if folder_name:
-        prefix_len = len(zip_utils.split_path(dir_name)[0]) + 1
+        prefix_len = len(split_path(dir_name)[0]) + 1
     else:
         prefix_len = len(dir_name) + 1
 
@@ -50,7 +50,7 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
     bio = io.BytesIO()
     _zip_directory_with_meta(job_path, folder_name, meta, bio)
     zip_data = bio.getvalue()
-    return zip_utils.convert_legacy_zip(zip_data)
+    return convert_legacy_zip(zip_data)
 
 
 META_WITH_VALID_DEPLOY_MAP = [
