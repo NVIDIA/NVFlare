@@ -36,7 +36,7 @@ stop_fl() {
   sleep 10
   kill -0 ${pid} 2> /dev/null 1>&2
   if [[ $? -ne 0 ]]; then
-    echo "Process alreday terminated"
+    echo "Process already terminated"
     return
   fi
   kill -9 $pid
