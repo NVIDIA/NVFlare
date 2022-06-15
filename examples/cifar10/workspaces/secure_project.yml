@@ -2,9 +2,33 @@ api_version: 3
 name: secure_project
 description: NVIDIA FLARE sample project yaml file for CIFAR-10 example
 
+client_components: &cln_comps
+  resource_manager:    # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
+    args:
+      resources:
+        gpu: [0, 1]
+  resource_consumer:    # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
+    args:
+      gpu_resource_key: gpu
+
+server_components: &svr_comps
+  job_scheduler:  # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
+    args:
+      max_jobs: 2
+  job_manager:    # This id is reserved by system.  Do not change it.
+    path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
+    args:
+      uri_root: /tmp/nvflare/jobs-storage
+      job_store_id: job_store
+  job_store:
+    path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+
 participants:
-  # change overseer.nvflare.nvidia.com to the FQDN of the overseer
-  - name: overseer-server
+  # change overseer.example.com to the FQDN of the overseer (does not need to exist as dummy is used below)
+  - name: overseer.example.com
     type: overseer
     org: nvidia
     protocol: https
@@ -18,45 +42,56 @@ participants:
     admin_port: 8003
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: false
-  - name: localhost2
-    type: server
-    org: nvidia
-    fed_learn_port: 9002
-    admin_port: 9003
-    # enable_byoc loads python codes in app.  Default is false.
-    enable_byoc: false
+    components:
+      <<: *svr_comps
   - name: site-1
     type: client
     org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-2
     type: client
     org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-3
     type: client
     org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-4
     type: client
     org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-5
     type: client
     org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-6
     type: client
-    org: nvidia      
+    org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-7
     type: client
     org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-8
     type: client
-    org: nvidia    
+    org: nvidia
     enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: admin@nvidia.com
     type: admin
     org: nvidia
@@ -101,30 +136,6 @@ builders:
               root_dir: /tmp/nvflare/snapshot-storage
               uri_root: /
 
-      components:
-        server:
-          - id: job_scheduler  # This id is reserved by system.  Do not change it.
-            path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
-            args:
-              max_jobs: 2
-          - id: job_manager    # This id is reserved by system.  Do not change it.
-            path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
-            args:
-              uri_root: /tmp/nvflare/jobs-storage
-              job_store_id: job_store
-          - id: job_store
-            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
-        client:
-          - id: resource_manager    # This id is reserved by system.  Do not change it.
-            path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
-            args:
-              resources:
-                gpu: [0, 1]
-          - id: resource_consumer    # This id is reserved by system.  Do not change it.
-            path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
-            args:
-              gpu_resource_key: gpu
-
   - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
     args:
       orgs:
@@ -139,7 +150,6 @@ builders:
             allow_byoc: false
             allow_custom_datalist: false
       disabled: false
-
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.he.HEBuilder
     args:
@@ -148,6 +158,3 @@ builders:
       scale_bits: 40
       scheme: CKKS
   - path: nvflare.lighter.impl.signature.SignatureBuilder
-  - path: nvflare.lighter.impl.workspace.DistributionBuilder
-    args:
-      zip_password: false
