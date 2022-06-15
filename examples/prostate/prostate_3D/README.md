@@ -133,7 +133,21 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 20
 
 ### Testing score
 The testing score is computed based on the best global model for Central/FedAvg/FedProx, and the six best personalized models for Ditto.
-We provide a script for performing validation on testing data split, please add the correct paths and job_ids, and run
+We provide a script for performing validation on testing data split.
+
+To get the model after training, the results can be downloaded and shown with the admin console using
+```
+  download_job [JOB_ID]
+```
+where `[JOB_ID]` is the ID assigned by the system when submitting the job.
+
+The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+You should see the best global model at
+```
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths and job_ids to the testing script, and run
 
 ```
 bash ./result_stat/testing_models_3d.sh
