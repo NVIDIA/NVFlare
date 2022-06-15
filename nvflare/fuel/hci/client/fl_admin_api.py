@@ -292,7 +292,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         on the clients but returns the last information the server had at the time this call is made.
 
         """
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(AdminCommandNames.CHECK_STATUS + " server")
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.CHECK_STATUS + " server"
+        )
         details = {}
         if reply.get("data"):
             for data in reply["data"]:
@@ -335,7 +337,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             raise APISyntaxError("job_folder is required but not specified.")
         if not isinstance(job_folder, str):
             raise APISyntaxError("job_folder must be str but got {}.".format(type(job_folder)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(AdminCommandNames.SUBMIT_JOB + " " + job_folder)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.SUBMIT_JOB + " " + job_folder
+        )
         if reply_data_full_response:
             if "Submitted job" in reply_data_full_response:
                 # TODO:: this is a hack to get job id
@@ -354,7 +358,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             raise APISyntaxError("job_folder is required but not specified.")
         if not isinstance(job_id, str):
             raise APISyntaxError("job_folder must be str but got {}.".format(type(job_id)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(AdminCommandNames.CLONE_JOB + " " + job_id)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.CLONE_JOB + " " + job_id
+        )
         if reply_data_full_response:
             if "Cloned job" in reply_data_full_response:
                 return FLAdminAPIResponse(
@@ -385,7 +391,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             raise APISyntaxError("job_id is required but not specified.")
         if not isinstance(job_id, str):
             raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(AdminCommandNames.DOWNLOAD_JOB + " " + job_id)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.DOWNLOAD_JOB + " " + job_id
+        )
         if success:
             return FLAdminAPIResponse(
                 APIStatus.SUCCESS,
@@ -402,7 +410,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             raise APISyntaxError("job_id is required but not specified.")
         if not isinstance(job_id, str):
             raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(AdminCommandNames.ABORT_JOB + " " + job_id)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.ABORT_JOB + " " + job_id
+        )
         if reply_data_full_response:
             if "Abort signal has been sent" in reply_data_full_response:
                 return FLAdminAPIResponse(
@@ -419,7 +429,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if not isinstance(job_id, str):
             raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.DELETE_RUN + " " + str(job_id)
+            AdminCommandNames.DELETE_JOB + " " + str(job_id)
         )
         if reply_data_full_response:
             if "can not be deleted" in reply_data_full_response:
