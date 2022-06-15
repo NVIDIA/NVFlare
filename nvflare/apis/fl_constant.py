@@ -138,6 +138,12 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
+    SUBMIT_JOB = "submit_job"
+    LIST_JOBS = "list_jobs"
+    DOWNLOAD_JOB = "download_job"
+    ABORT_JOB = "abort_job"
+    DELETE_JOB = "delete_job"
+    CLONE_JOB = "clone_job"
     DELETE_WORKSPACE = "delete_workspace"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"

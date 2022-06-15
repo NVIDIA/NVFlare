@@ -77,21 +77,6 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def delete_run(self, job_id: str) -> FLAdminAPIResponse:
-        """Deletes a specified run.
-
-        This deletes the run folder corresponding to the job id on the server and
-        all connected clients. This is not reversible.
-
-        Args:
-            job_id (str): job id to delete
-
-        Returns: FLAdminAPIResponse
-
-        """
-        pass
-
-    @abstractmethod
     def submit_job(self, job_folder: str) -> FLAdminAPIResponse:
         """Submit a job.
 
@@ -106,11 +91,11 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def clone_job(self, job_folder: str) -> FLAdminAPIResponse:
+    def clone_job(self, job_id: str) -> FLAdminAPIResponse:
         """Clone a job that exists by copying the job contents and providing a new job_id.
 
         Args:
-            job_folder (str): name of the job folder in upload_dir to submit
+            job_id (str): job id of the job to clone
 
         Returns: FLAdminAPIResponse
 
@@ -130,11 +115,35 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
+    def download_job(self, job_id: str) -> FLAdminAPIResponse:
+        """Download the specified job in the system.
+
+        Args:
+            job_id (str): Job id for the job to download
+
+        Returns: FLAdminAPIResponse
+
+        """
+        pass
+
+    @abstractmethod
     def abort_job(self, job_id: str) -> FLAdminAPIResponse:
         """Abort a job that is running.
 
         Args:
-            job_id (str): the job_id to abort
+            job_id (str): the job id to abort
+
+        Returns: FLAdminAPIResponse
+
+        """
+        pass
+
+    @abstractmethod
+    def delete_job(self, job_id: str) -> FLAdminAPIResponse:
+        """Delete the specified job and workspace from the permanent store.
+
+        Args:
+            job_id (str): the job id to delete
 
         Returns: FLAdminAPIResponse
 
