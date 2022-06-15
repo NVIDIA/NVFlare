@@ -106,10 +106,10 @@ class StorageSpec(ABC):
 
         Returns:
             meta info of the object.
+            if object does not exist, return empty dict {}
 
         Raises exception when:
           - invalid args
-          - no such object
 
         """
         pass
@@ -123,10 +123,10 @@ class StorageSpec(ABC):
 
         Returns:
             data of the object.
+            if object does not exist, return None
 
         Raises exception when:
         - invalid args
-        - no such object
 
         """
         pass

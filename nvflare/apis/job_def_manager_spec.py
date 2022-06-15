@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -82,7 +82,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_content(self, jid: str, fl_ctx: FLContext) -> bytes:
+    def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
         """Gets the entire uploaded content for a Job.
 
         Args:
