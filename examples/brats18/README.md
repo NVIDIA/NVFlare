@@ -131,6 +131,12 @@ To run FL with differential privacy, we use
 ```
 bash submit_job.sh brats_fedavg_dp 
 ```
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
+
+> To log into the POC workspace admin console no username is required 
+> (use "admin" for commands requiring conformation with username). 
 
 ## 4. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
 In this example, only the global model gets evaluated at each round, and saved as the final model. 
@@ -149,7 +155,20 @@ As shown, FedAvg achieves similar accuracy as centralized training, while DP wil
 
 ### 4.2 Validation score
 We also provide a script for performing standalone validation on the data split based on the best global model for Central/FedAvg/FedAvg_DP. 
-Please add the correct paths and job_ids, and run
+
+To get the model after training, the results can be downloaded and shown with the admin console using
+```
+  download_job [JOB_ID]
+```
+where `[JOB_ID]` is the ID assigned by the system when submitting the job.
+
+The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+You should see the best global model at
+```
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths and job_ids to the testing script, and run
 ```
 cd ./result_stat
 bash testing_models_3d.sh

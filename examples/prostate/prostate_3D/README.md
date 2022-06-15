@@ -107,8 +107,14 @@ To run FL with [Ditto](https://arxiv.org/abs/2012.04221)(official [implementatio
 ```
 bash submit_job.sh prostate_ditto
 ```
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
-## 5. Results on 4 clients for Central vs. FedAvg vs. FedProx vs. Ditto
+> To log into the POC workspace admin console no username is required 
+> (use "admin" for commands requiring conformation with username). 
+
+## 3. Results on 4 clients for Central vs. FedAvg vs. FedProx vs. Ditto
 In this example, for Central/FedAvg/FedProx, only the global model gets evaluated at each round, and saved as the final model. For Ditto, each client will have its own personalized model, which is validated and saved locally.
 ### Validation curve on each site
 
@@ -125,7 +131,21 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 20
 
 ### Testing score
 The testing score is computed based on the best global model for Central/FedAvg/FedProx, and the six best personalized models for Ditto.
-We provide a script for performing validation on testing data split, please add the correct paths and job_ids, and run
+We provide a script for performing validation on testing data split.
+
+To get the model after training, the results can be downloaded and shown with the admin console using
+```
+  download_job [JOB_ID]
+```
+where `[JOB_ID]` is the ID assigned by the system when submitting the job.
+
+The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+You should see the best global model at
+```
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths and job_ids to the testing script, and run
 
 ```
 bash ./result_stat/testing_models_3d.sh
