@@ -16,6 +16,12 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple
 
 
+class StorageException(Exception):
+    """Base class for Storage exceptions."""
+
+    pass
+
+
 class StorageSpec(ABC):
     """Functional spec of object storage.
 
@@ -42,11 +48,10 @@ class StorageSpec(ABC):
             meta: meta info of the object
             overwrite_existing: whether to overwrite the object if already exists
 
-        Raises exception when:
-        - invalid URI specification
-        - invalid args
-        - object already exists and overwrite_existing is False
-        - error creating the object
+        Raises StorageException when:
+            - invalid args
+            - object already exists and overwrite_existing is False
+            - error creating the object
 
         """
         pass
@@ -60,10 +65,10 @@ class StorageSpec(ABC):
             meta: value of new meta info
             replace: whether to replace the current meta completely or partial update
 
-        Raises exception when:
-        - invalid args
-        - no such object
-        - error updating the object
+        Raises StorageException when:
+            - invalid args
+            - no such object
+            - error updating the object
 
         """
         pass
@@ -76,10 +81,10 @@ class StorageSpec(ABC):
             uri: URI of the object
             data: value of new data
 
-        Raises exception when:
-        - invalid args
-        - no such object
-        - error updating the object
+        Raises StorageException when:
+            - invalid args
+            - no such object
+            - error updating the object
 
         """
         pass
@@ -108,7 +113,7 @@ class StorageSpec(ABC):
             meta info of the object.
             if object does not exist, return empty dict {}
 
-        Raises exception when:
+        Raises StorageException when:
           - invalid args
 
         """
@@ -125,8 +130,8 @@ class StorageSpec(ABC):
             data of the object.
             if object does not exist, return None
 
-        Raises exception when:
-        - invalid args
+        Raises StorageException when:
+            - invalid args
 
         """
         pass
@@ -141,9 +146,9 @@ class StorageSpec(ABC):
         Returns:
             meta info and data of the object.
 
-        Raises exception when:
-        - invalid args
-        - no such object
+        Raises StorageException when:
+            - invalid args
+            - no such object
 
         """
         pass
