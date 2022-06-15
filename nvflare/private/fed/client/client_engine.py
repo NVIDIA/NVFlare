@@ -16,10 +16,13 @@ import logging
 import os
 import re
 import shutil
+import signal
 import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from multiprocessing.dummy import Pool as ThreadPool
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -72,6 +75,12 @@ class ClientEngine(ClientEngineInternalSpec):
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
+        signal.signal(signal.SIGUSR2, self._handler)
+
+    def _handler(self, signum, frame):
+        if signum == signal.SIGUSR2:
+            self.logger.info("Received signal to shutdown")
+            self.shutdown()
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
@@ -220,6 +229,15 @@ class ClientEngine(ClientEngineInternalSpec):
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         self.client_executor.close()
         self.fire_event(EventType.SYSTEM_END, self.new_context())
+        pool = None
+        try:
+            self.logger.info("Client unregistering itself")
+            pool = ThreadPool(len(self.client.servers))
+            _ = pool.map(partial(self.client.quit_remote, fl_ctx=self.new_context()), tuple(self.client.servers))
+        finally:
+            if pool:
+                pool.terminate()
+
         _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
         self.executor.shutdown()
