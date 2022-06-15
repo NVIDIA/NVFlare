@@ -15,6 +15,7 @@
 import io
 import json
 import os
+from pathlib import Path
 from typing import Optional
 from zipfile import ZipFile
 
@@ -49,7 +50,8 @@ def normpath_for_zip(path):
 
 
 def remove_leading_dotdot(path: str) -> str:
-    while path.startswith(f"..{os.sep}"):
+    path = str(Path(path))
+    while path.startswith(f"..{os.path.sep}"):
         path = path[3:]
     return path
 
@@ -57,7 +59,7 @@ def remove_leading_dotdot(path: str) -> str:
 def split_path(path: str) -> (str, str):
     """Splits a path into a pair of head and tail.
 
-    It removes trailing `os.sep` and call `os.path.split`
+    It removes trailing `os.path.sep` and call `os.path.split`
 
     Args:
         path: Path to split
@@ -65,8 +67,8 @@ def split_path(path: str) -> (str, str):
     Returns:
         A tuple of `(head, tail)`
     """
-
-    if path.endswith(os.sep):
+    path = str(Path(path))
+    if path.endswith(os.path.sep):
         full_path = path[:-1]
     else:
         full_path = path

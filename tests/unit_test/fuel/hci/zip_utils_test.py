@@ -122,7 +122,7 @@ def create_fake_dir():
       file7
     """
     temp_dir = Path(tempfile.mkdtemp())
-    prefix = os.sep.join(["a", "b", "c"])
+    prefix = os.path.sep.join(["a", "b", "c"])
     root_dir = temp_dir / prefix
     os.makedirs(root_dir)
     os.mkdir(root_dir / "folder1")
@@ -146,11 +146,11 @@ class TestSecurityUtils:
     @pytest.mark.parametrize(
         "path, output",
         [
-            (os.sep.join(["..", "..", "..", "hello"]), "hello"),
-            (f".{os.sep}hello", f".{os.sep}hello"),
-            (os.sep.join(["..", "..", "..", "hello", "motor"]), f"hello{os.sep}motor"),
-            (os.sep.join(["..", "..", "..", "hello", "..", "motor"]), os.sep.join(["hello", "..", "motor"])),
-            (f"{os.path.abspath(os.sep)}hello", f"{os.path.abspath(os.sep)}hello"),
+            (os.path.sep.join(["..", "..", "..", "hello"]), "hello"),
+            (f".{os.path.sep}hello", "hello"),
+            (os.path.sep.join(["..", "..", "..", "hello", "motor"]), f"hello{os.path.sep}motor"),
+            (os.path.sep.join(["..", "..", "..", "hello", "..", "motor"]), os.path.sep.join(["hello", "..", "motor"])),
+            (f"{os.path.abspath(os.path.sep)}hello", f"{os.path.abspath(os.path.sep)}hello"),
         ],
     )
     def test_remove_leading_dotdot(self, path, output):
@@ -160,16 +160,16 @@ class TestSecurityUtils:
         "path, output",
         [
             ("hello", ("", "hello")),
-            (f".{os.sep}hello", (".", "hello")),
+            (f".{os.path.sep}hello", ("", "hello")),
             (
-                os.sep.join(["..", "..", "..", "hello", "..", "motor"]),
-                (os.sep.join(["..", "..", "..", "hello", ".."]), "motor"),
+                os.path.sep.join(["..", "..", "..", "hello", "..", "motor"]),
+                (os.path.sep.join(["..", "..", "..", "hello", ".."]), "motor"),
             ),
-            (f"{os.path.abspath(os.sep)}hello", (os.path.abspath(os.sep), "hello")),
-            (f"hello{os.sep}", ("", "hello")),
+            (f"{os.path.abspath(os.path.sep)}hello", (os.path.abspath(os.path.sep), "hello")),
+            (f"hello{os.path.sep}", ("", "hello")),
             (
-                os.sep.join(["..", "hello", "..", "motor", ""]),
-                (os.sep.join(["..", "hello", ".."]), "motor"),
+                os.path.sep.join(["..", "hello", "..", "motor", ""]),
+                (os.path.sep.join(["..", "hello", ".."]), "motor"),
             ),
         ],
     )
