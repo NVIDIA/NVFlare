@@ -141,6 +141,3 @@ variables.*
 *.hdf5
 
 wrksp/*
-
-# poc run data
-*run_*
