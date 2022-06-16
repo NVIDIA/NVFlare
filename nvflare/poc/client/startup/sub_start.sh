@@ -33,7 +33,6 @@ stop_fl() {
     return
   fi
   pid=`cat $DIR/../pid.fl`
-  kill -SIGUSR2 $pid
   sleep 10
   kill -0 ${pid} 2> /dev/null 1>&2
   if [[ $? -ne 0 ]]; then
