@@ -14,10 +14,11 @@
 import io
 import json
 import logging
+import time
 from typing import Dict, List
 
-from nvflare.apis.job_def import Job, JobMetaKey, RunStatus
-from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+from nvflare.apis.job_def import Job, JobMetaKey
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import AuthorizationService
@@ -210,25 +211,33 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
     @staticmethod
     def _send_detail_list(conn: Connection, jobs: List[Job]):
         for job in jobs:
+            JobCommandModule._set_duration(job)
             conn.append_string(json.dumps(job.meta, indent=4))
 
     @staticmethod
     def _send_summary_list(conn: Connection, jobs: List[Job]):
 
-        table = Table(["Job ID", "Name", "Status", "Submit Time"])
+        table = Table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"])
         for job in jobs:
+            JobCommandModule._set_duration(job)
             table.add_row(
                 [
                     job.meta.get(JobMetaKey.JOB_ID, ""),
                     CommandUtil.get_job_name(job.meta),
                     job.meta.get(JobMetaKey.STATUS, ""),
                     job.meta.get(JobMetaKey.SUBMIT_TIME_ISO, ""),
+                    str(job.meta.get(JobMetaKey.DURATION, "N/A")),
                 ]
             )
 
         writer = io.StringIO()
         table.write(writer)
         conn.append_string(writer.getvalue())
+
+    @staticmethod
+    def _set_duration(job):
+        if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING.value:
+            job.meta[JobMetaKey.DURATION] = round(time.time() - job.meta.get(JobMetaKey.START_TIME), 2)
 
     def _job_authorized(self, conn: Connection, job: Job) -> bool:
 

@@ -55,6 +55,8 @@ class JobMetaKey(str, Enum):
     MANDATORY_CLIENTS = "mandatory_clients"
     SUBMIT_TIME = "submit_time"
     SUBMIT_TIME_ISO = "submit_time_iso"
+    START_TIME = "start_time"
+    DURATION = "duration"
 
     def __repr__(self):
         return self.value

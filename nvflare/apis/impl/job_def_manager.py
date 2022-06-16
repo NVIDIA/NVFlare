@@ -101,6 +101,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
             datetime.datetime.fromtimestamp(meta[JobMetaKey.SUBMIT_TIME]).astimezone().isoformat()
         )
+        meta[JobMetaKey.START_TIME.value] = ""
+        meta[JobMetaKey.DURATION.value] = "N/A"
         meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
 
         # write it to the store
@@ -193,6 +195,16 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}
         store = self._get_job_store(fl_ctx)
+        if status == RunStatus.RUNNING.value:
+            meta[JobMetaKey.START_TIME.value] = time.time()
+        elif status in [
+            RunStatus.FINISHED_ABORTED.value,
+            RunStatus.FINISHED_COMPLETED.value,
+            RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
+        ]:
+            job_meta = store.get_meta(self.job_uri(jid))
+            if job_meta[JobMetaKey.START_TIME.value]:
+                meta[JobMetaKey.DURATION.value] = round(time.time() - job_meta[JobMetaKey.START_TIME.value], 2)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):
