@@ -43,7 +43,7 @@ Provisioning a federated learning project
 The :ref:`provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open
 Provision API, which you can use to customize configurations to fit your own requirements.
 
-Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
+Edit the :ref:`programming_guide/provisioning_system:Project yaml file` in the directory with the provisioning tool to meet your
 project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
 for your project).
 
@@ -51,7 +51,7 @@ Then run the provision command with (here we assume your project.yml is in curre
 
     provision -p project.yml
 
-The generated startup kits are created by default in a directory prefixed with "prod_" within a folder of the project
+The generated startup kits are created by default in a directory prefixed with "prod\_" within a folder of the project
 name in the workspace folder created where provision.py is run.
 
 .. attention::

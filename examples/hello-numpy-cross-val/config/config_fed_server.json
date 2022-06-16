@@ -32,6 +32,11 @@
       "id": "formatter",
       "path": "nvflare.app_common.np.np_formatter.NPFormatter",
       "args": {}
+    },
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+      "args": {}
     }
   ],
   "workflows": [

@@ -10,7 +10,7 @@ NVIDIA FLARE has several examples to help you get started with federated learnin
    :maxdepth: 1
    :hidden:
 
-   examples/hello_numpy
+   examples/hello_scatter_and_gather
    examples/hello_cross_val
    examples/hello_pt 
    examples/hello_pt_tb
