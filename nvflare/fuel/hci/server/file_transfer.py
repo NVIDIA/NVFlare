@@ -105,13 +105,6 @@ class FileTransferModule(CommandModule, CommandUtil):
                     visible=False,
                 ),
                 CommandSpec(
-                    name=ftd.SERVER_CMD_DOWNLOAD_FOLDER,
-                    description="download a folder to client",
-                    usage="download folder_name",
-                    handler_func=self.download_folder,
-                    visible=False,
-                ),
-                CommandSpec(
                     name=ftd.SERVER_CMD_SUBMIT_JOB,
                     description="Submit a job",
                     usage="submit_job job_folder",
@@ -239,29 +232,6 @@ class FileTransferModule(CommandModule, CommandUtil):
         unzip_all_from_bytes(data_bytes, self.upload_dir)
         conn.set_prop("upload_folder_path", folder_path)
         conn.append_string("Created folder {}".format(folder_path))
-
-    def download_folder(self, conn: Connection, args: List[str]):
-        if len(args) != 2:
-            conn.append_error("syntax error: require folder name")
-            return
-
-        folder_name = args[1]
-        full_path = os.path.join(self.download_dir, folder_name)
-        if not os.path.exists(full_path):
-            conn.append_error("no such folder: {}".format(full_path))
-            return
-
-        if not os.path.isdir(full_path):
-            conn.append_error("'{}' is not a valid folder".format(full_path))
-            return
-
-        try:
-            data = zip_directory_to_bytes(self.download_dir, folder_name)
-            b64str = bytes_to_b64str(data)
-            conn.append_string(b64str)
-        except BaseException:
-            traceback.print_exc()
-            conn.append_error("exception occurred")
 
     def submit_job(self, conn: Connection, args: List[str]):
 
