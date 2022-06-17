@@ -198,12 +198,6 @@ class FileTransferModule(CommandModule):
                     visible=False,
                 ),
                 CommandSpec(
-                    name="download_folder",
-                    description="download a folder from the server",
-                    usage="download_folder folder_name",
-                    handler_func=self.download_folder,
-                ),
-                CommandSpec(
                     name="submit_job",
                     description="Submit application to the server",
                     usage="submit_job job_folder",
@@ -292,15 +286,6 @@ class FileTransferModule(CommandModule):
         parts = [_server_cmd_name(ftd.SERVER_CMD_UPLOAD_FOLDER), folder_name, b64str]
         command = join_args(parts)
         return api.server_execute(command)
-
-    def download_folder(self, args, api: AdminAPISpec):
-        if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_folder folder_name"}
-
-        parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_FOLDER), args[1]]
-        command = join_args(parts)
-        reply_processor = _DownloadFolderProcessor(self.download_dir)
-        return api.server_execute(command, reply_processor)
 
     def submit_job(self, args, api: AdminAPISpec):
         if len(args) != 2:
