@@ -196,7 +196,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta = {JobMetaKey.STATUS.value: status.value}
         store = self._get_job_store(fl_ctx)
         if status == RunStatus.RUNNING.value:
-            meta[JobMetaKey.START_TIME.value] = time.time()
+            meta[JobMetaKey.START_TIME.value] = str(datetime.datetime.now())
         elif status in [
             RunStatus.FINISHED_ABORTED.value,
             RunStatus.FINISHED_COMPLETED.value,
@@ -204,7 +204,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
         ]:
             job_meta = store.get_meta(self.job_uri(jid))
             if job_meta[JobMetaKey.START_TIME.value]:
-                meta[JobMetaKey.DURATION.value] = round(time.time() - job_meta[JobMetaKey.START_TIME.value], 2)
+                start_time = datetime.datetime.strptime(job_meta.get(JobMetaKey.START_TIME), "%Y-%m-%d %H:%M:%S.%f")
+                meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):
