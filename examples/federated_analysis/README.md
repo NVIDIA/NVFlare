@@ -106,4 +106,4 @@ Note, `[JOB_ID]` will be assigned by the system when submitting the job (it is a
 
 For example, the gathered local and global histograms will look like this.
 
-![Example local and global histograms](./histograms_example.svg)
+![Example local and global histograms](./figs/histograms_example.svg)
