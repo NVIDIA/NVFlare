@@ -21,8 +21,8 @@ pip install -r ./virtualenv/requirements.txt
 
 ## 1. Download the example data
 
-As an example, you can download the dataset from the ["COVID-19 Radiography Database"](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database).
-Download the `archive.zip` and extract to `./data/.`.
+As an example, we use the dataset from the ["COVID-19 Radiography Database"](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database).
+First, download the `archive.zip` and extract to `./data/.`.
 
 Next, create the data lists simulating different clients with varying amounts and types of images. 
 The downloaded archive contains subfolders for four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
@@ -53,13 +53,40 @@ First, we add the current directory path to `config_fed_client.json` files to ge
 ```
 sed -i "s|PWD|${PWD}|g" configs/fed_analysis/config/config_fed_client.json
 ```
-Next, we start the federated analysis by executing the [run_poc.sh](./run_poc.sh) script. This will start the federated workflow automatically, execute the tasks on the clients and gather the histograms on the server. 
 
-**Note:** The [run_poc.sh](./run_poc.sh) script follows this pattern: `./run_poc.sh [n_clients] [config] [run]`
+### 3.1 Start the server and clients
 
-FOr example, to run three clients and under `run_1`, run the following:
+Next, we start the federated analysis by startup up the server and clients using the [start_fl_poc.sh](./start_fl_poc.sh) script. In this example, we assume four clients.
 ```
-./run_poc.sh 4 fed_analysis 1
+./start_fl_poc.sh 4
+```
+
+Next, we submit the federated analysis job configuration to execute the histogram tasks on the clients and gather the computed histograms on the server. 
+
+### 3.2 Submit job using admin console
+
+To do this, you need to log into the NVFlare admin console.
+
+1. Open a new terminal
+2. Activate the virtual environment (if needed): `source ./virtualenv/set_env.sh`
+3. Start the admin console: `./workspaces/poc_workspace/admin/startup/fl_admin.sh`
+4. Inside the console, submit the job: `submit_job [PWD]/configs/fed_analysis` (replace `[PWD]` with your current path) 
+
+For a complete list of available admin console commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
+
+### 3.2 List the submitted job
+
+You should see the server and clients in your first terminal executing the job now.
+You can list the running job by using `list_jobs` in the admin console.
+Your output should be similar to the following.
+
+```
+> list_jobs 
+----------------------------------------------------------------------------------------------------
+| JOB ID                               | NAME         | STATUS  | SUBMIT TIME                      |
+----------------------------------------------------------------------------------------------------
+| a0deac00-25fa-4517-9e0c-7a74df53256f | fed_analysis | RUNNING | 2022-06-14T17:02:22.204339-04:00 |
+----------------------------------------------------------------------------------------------------
 ```
 
 **Note:** This example uses the [k-anonymity](https://en.wikipedia.org/wiki/K-anonymity) approach to ensure that no individual patient's data is leaked to the server. 
@@ -69,26 +96,14 @@ Other default parameters of the `AnalysisExecutor` are chosen to work well with 
 
 ## 4. Visualize the result
 
-If successful, the computed histograms will be shown in the `run_*` folders as `histograms.html` and `histograms.svg`.
+If successful, the computed histograms can be downloaded using this admin command:
+```
+download_job [JOB_ID]
+```
+After download, it will be available in the stated download directory under `[JOB_ID]/workspace` as `histograms.html` and `histograms.svg`. 
+
+Note, `[JOB_ID]` will be assigned by the system when submitting the job (it is also shown in the `list_jobs` command). 
+
 For example, the gathered local and global histograms will look like this.
 
-![Example local and global histograms](./histograms_example.svg)
-
-## 5. Get results using the admin client
-
-In real-world FL scenarios, the researcher might not have direct access to the server machine. Hence, the researcher can use the admin client console to control the experimentation. See [here](https://nvidia.github.io/NVFlare/user_guide/admin_commands.html) for details.
-After completing the federated analysis run, you can check the histogram files have been created:
-```
-> ls server run_1
-app_server
-fl_app.txt
-histograms.html
-histograms.svg
-```
-The result can be downloaded to the admin's machine using this command:
-```
-> download_folder ../run_1
-```
-
-After download, the files will be available in the admin workspace under `transfer`.
-
+![Example local and global histograms](./figs/histograms_example.svg)

@@ -89,6 +89,10 @@ class ReservedKey(object):
     NUM_OF_PROCESSES = "__num_of_processes__"
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
+    SP_END_POINT = "__sp_end_point__"
+    JOB_INFO = "__job_info__"
+    CURRENT_JOB_ID = "__current_job_id__"
+    JOB_RUN_NUMBER = "__job_run_number__"
 
 
 class FLContextKey(object):
@@ -119,6 +123,10 @@ class FLContextKey(object):
     NUM_OF_PROCESSES = ReservedKey.NUM_OF_PROCESSES
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
+    SP_END_POINT = ReservedKey.SP_END_POINT
+    JOB_INFO = ReservedKey.JOB_INFO
+    CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
+    JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
 
 
 class ReservedTopic(object):
@@ -130,8 +138,13 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
-    SET_RUN_NUMBER = "set_run_number"
-    DELETE_RUN_NUMBER = "delete_run_number"
+    SUBMIT_JOB = "submit_job"
+    LIST_JOBS = "list_jobs"
+    DOWNLOAD_JOB = "download_job"
+    ABORT_JOB = "abort_job"
+    DELETE_JOB = "delete_job"
+    CLONE_JOB = "clone_job"
+    DELETE_WORKSPACE = "delete_workspace"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
@@ -145,6 +158,36 @@ class AdminCommandNames(object):
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     AUX_COMMAND = "aux_command"
+
+
+class ServerCommandNames(object):
+
+    GET_RUN_INFO = "get_run_info"
+    GET_TASK = "get_task"
+    SUBMIT_UPDATE = "submit_update"
+    AUX_COMMUNICATE = "aux_communicate"
+    HEARTBEAT = "heartbeat"
+    GET_CLIENTS = "get_clients"
+    AUX_SEND = "aux_send"
+    SHOW_STATS = "show_stats"
+    GET_ERRORS = "get_errors"
+
+
+class ServerCommandKey(object):
+
+    COMMAND = "command"
+    DATA = "data"
+    FL_CONTEXT = "fl_context"
+    PEER_FL_CONTEXT = "peer_fl_ctx"
+    SHAREABLE = "shareable"
+    TASK_NAME = "task_name"
+    TASK_ID = "task_id"
+    FL_CLIENT = "fl_client"
+    TOPIC = "topic"
+    AUX_REPLY = "aux_reply"
+    JOB_ID = "job_id"
+    CLIENTS = "clients"
+    COLLECTOR = "collector"
 
 
 class FedEventHeader(object):
@@ -176,3 +219,50 @@ class LogMessageTag(object):
     WARNING = "log/warning"
     CRITICAL = "log/critical"
     LOG_RECORD = "log_record"
+
+
+class SnapshotKey(object):
+
+    FL_CONTEXT = "fl_context"
+    SERVER_RUNNER = "_Server_Runner"
+    WORKSPACE = "_workspace"
+    JOB_INFO = "_job_info"
+    JOB_ID = "_job_id"
+    JOB_CLIENTS = "_job_clients"
+
+
+class RunProcessKey(object):
+
+    LISTEN_PORT = "_listen_port"
+    CONNECTION = "_comm_conn"
+    CHILD_PROCESS = "_child_process"
+    STATUS = "_status"
+    JOB_ID = "_job_id"
+    PARTICIPANTS = "_participants"
+
+
+class SystemComponents(object):
+
+    JOB_SCHEDULER = "job_scheduler"
+    JOB_MANAGER = "job_manager"
+    JOB_RUNNER = "job_runner"
+    SERVER_RUNNER = "server_runner"
+    CLIENT_RUNNER = "client_runner"
+    CHECK_RESOURCE_PROCESSOR = "check_resource_processor"
+    CANCEL_RESOURCE_PROCESSOR = "cancel_resource_processor"
+    RESOURCE_MANAGER = "resource_manager"
+    RESOURCE_CONSUMER = "resource_consumer"
+
+
+class WorkspaceConstants:
+    """hard coded file names inside the workspace folder."""
+
+    LOGGING_CONFIG = "log.config"
+    AUDIT_LOG = "audit.log"
+
+    # these two files is used by shell scripts to determine restart / shutdown
+    RESTART_FILE = "restart.fl"
+    SHUTDOWN_FILE = "shutdown.fl"
+
+    WORKSPACE_PREFIX = ""
+    APP_PREFIX = "app_"

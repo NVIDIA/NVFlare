@@ -3,17 +3,14 @@
 ## Introduction to MONAI, Prostate and Multi-source Data
 
 ### MONAI
-This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) on medical image applications.
+This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on medical image applications.
 It uses [MONAI](https://github.com/Project-MONAI/MONAI),
 which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 
 ### Prostate
-The application shown in this example is volumetric (3D) segmentation of the prostate in T2-weighted MRIs based on three datasets that can be split into four clients with comparable sizes.
+This example illustrates both 2D (from axial slices) and 3D (from 3D volumes) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
-The [3D U-Net](https://arxiv.org/abs/1606.06650) model is trained to segment the whole prostate region (binary) in a T2-weighted MRI scan. 
-
-![](./figs/prostate_mri_segmentation.png)
-
+Please see details for FL execution within each folder.
 
 ## (Optional) 1. Set up a virtual environment
 ```
@@ -33,7 +30,10 @@ install required packages for training
 pip3 install --upgrade pip
 pip3 install -r ./virtualenv/min-requirements.txt
 ```
-
+(optional) if you would like to plot the TensorBoard event files as shown below, please also install
+```
+pip install -r ./virtualenv/plot-requirements.txt
+```
 ## 2. Multi-source Data Preparation
 To run this example, we are going to make use of three open prostate datasets which we split into four FL clients with comparable sizes. Each of them needs some special preprocessing steps. 
 
@@ -44,17 +44,27 @@ cd ./data_preparation
 ```
 
 From now on, for this section, we assume the current directory (`PWD`) to be `./data_preparation`.  
-We will download the three datasets to `./Raw/$dataset_id/`, store the client-specif datasets to `./dataset/$client_id`, and use `dicom2nifti` and pynrrd tools for data format conversion
+We will download the five datasets to `./Raw/$dataset_id/`, store the client-specif datasets to `./dataset/$client_id`, and use suggested tools for data format conversion, as specified by different datasets.
 
 ```
 mkdir Raw
 mkdir dataset
-for dataset in I2CVB MSD NCI_ISBI; do
+for dataset in I2CVB MSD NCI_ISBI Promise12 PROSTATEx; do
   mkdir Raw/${dataset}
 done
 ```
 
-### 2.1 Downloading steps for each dataset: 
+Note that for 2D example, we use all datasets, while for 3D example we use 4 of them to limit the GPU resource cost. 
+
+Various packages are needed for the candidate datasets, we will need the following:
+ ```
+pip3 install dicom2nifti
+pip3 install simpleitk
+pip3 install pynrrd
+```
+Further, [dcmqi](https://github.com/qiicr/dcmqi) is used to convert DICOM segmentations to NIfTI format by using the [segimage2itkimage](https://qiicr.gitbook.io/dcmqi-guide/opening/cmd_tools/seg/segimage2itkimage#segimage2itkimage) function, download the binary to ./utils folder.
+
+### 2.1 Downloading and preprocessing steps for each dataset: 
 
 [**I2CVB**](https://i2cvb.github.io/): [data link](https://zenodo.org/record/162231#.YZvNc_HMJuG) 
 
@@ -117,131 +127,109 @@ Note that there is one case (ProstateDx-01-0055.nii.gz) with image/label mismatc
 bash data_conversion_NCI_ISBI.sh
 ```
 
-### 2.2 Create data lists
-Now we have all data we need for this example under `./dataset` after data download and preprocessing above, we randomly generate a data split for each dataset, training:validation:testing=8:2:0, and combine all JSON files for simulating centralized training while keeping each data split unchanged.
+[**Promise12**](https://promise12.grand-challenge.org): [data link](https://promise12.grand-challenge.org/Download/)
+
+First, register and log into Grand-Challenge website, then download "Training data (Part 1)", "Training data (Part 2)", and "Training data (Part 3)", store them to `./Raw/Promise12/` 
+We then extract the files using 7z (unzip does not work for the files) as
 
 ```
-bash datalists_gen.sh
-bash merge_all_jsons.sh
+# install 7z in ubuntu as example
+sudo apt install p7zip-full
+7z e ./Raw/Promise12/TrainingData_Part1.zip -o./Raw/Promise12/Raw_Data/
+7z e ./Raw/Promise12/TrainingData_Part2.zip -o./Raw/Promise12/Raw_Data/
+7z e ./Raw/Promise12/TrainingData_Part3.zip -o./Raw/Promise12/Raw_Data/
 ```
-The expected output for these steps is:
-```
-Generate data split for ./dataset/I2CVB, with train:validation:test 8:2:0
-Save json to ./datalists/client_I2CVB.json
-In total 39 cases, 32 for training, 7 for validation, and 0 for testing
-Generate data split for ./dataset/MSD, with train:validation:test 8:2:0
-Save json to ./datalists/client_MSD.json
-In total 32 cases, 26 for training, 6 for validation, and 0 for testing
-Generate data split for ./dataset/NCI_ISBI_3T, with train:validation:test 8:2:0
-Save json to ./datalists/client_NCI_ISBI_3T.json
-In total 40 cases, 32 for training, 8 for validation, and 0 for testing
-Generate data split for ./dataset/NCI_ISBI_Dx, with train:validation:test 8:2:0
-Save json to ./datalists/client_NCI_ISBI_Dx.json
-In total 39 cases, 32 for training, 7 for validation, and 0 for testing
-```
-
-The resulting data lists will be stored in `./datalists`. Note that the ratio among training, validation, and testing can be adjusted.
-
-## 3. Create your FL workspace 
-From now on, we assume the PWD to be `./prostate`, one level higher than the previous section.
-
-If you haven't done so, run
-``
-cd ..
-``
-
-### 3.1 POC ("proof of concept") workspace
-In this example, we run FL experiments in POC mode, starting with creating local FL workspace with
+We will have 200 files under `./Raw/Promise12/Raw_Data/` folder, 2 files (mhd+raw) for each image or mask, thus in total 50 cases. Conversion from mhd+raw to nifti needs SimpleITK
 
 ```
-poc
+bash data_conversion_Promise12.sh
 ```
 
-Press y and enter when prompted.   
-In the following experiments, we will be using 4 clients. Let's rename and make additional client folders as
+[**PROSTATEx**](https://prostatex.grand-challenge.org/): [data link](https://wiki.cancerimagingarchive.net/pages/viewpage.action?pageId=70230177#70230177bcab02c187174a288dbcbf95d26179e8)
+
+Make two folders for image and mask
+```
+mkdir ./Raw/PROSTATEx/Image
+mkdir ./Raw/PROSTATEx/Mask
+```
+Download the two .tcia files for DICOM image/mask data with [NBIA Data Retriever](https://wiki.cancerimagingarchive.net/display/NBIA/Downloading+TCIA+Images), store them to `./Raw/PROSTATEx/Image` and `./Raw/PROSTATEx/Mask`. The downloaded folder structure will look like ![](./figs/PROSTATEx.png)
 
 ```
-mv poc workspace_prostate
-mv workspace_prostate/site-1 workspace_prostate/client_All
-for dataset in I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx; do
-  cp -r workspace_prostate/client_All workspace_prostate/client_${dataset}
-done
+bash data_conversion_PROSTATEx.sh
 ```
 
-### 3.2 (Optional) Secure FL workspace
-We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
-> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
-> with different amounts of clients.
-> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients. 
->
-> The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
-> using SSL certificated communication channels.
+### 2.2 Convert to 2D slices
+For example illustrating the 2D segmentation, for convenience, we first extract and save the 2D slices and their corresponding masks by
 
-## 4. Run automated experiments
-First, we add the current directory path to `config_train.json` files for generating the absolute path to dataset and datalist.  
 ```
-for alg in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
-do
-  sed -i "s|PWD|${PWD}|g" configs/${alg}/config/config_train.json
-done
-```
-Then FL training will be run with an automatic script utilizing the FLAdminAPI functionality.    
-The [run_poc.sh](./run_poc.sh) script follows the pattern:
-```
-./run_poc.sh [config] [run] [client_ids]
-```
-`[config]` is the app that will be used for the FL training, in this example, this includes `prostate_fedavg`, `prostate_fedprox`, and prostate_central.  
-`[run]` is the run number for FL experiment. A unique run number will be needed for each experiment.  
-`[client_ids]` is the list of all candidate client IDs. In this experiment it is either "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx" for 4-client experiment or "All" for centralized training.    
-
-This script will start the FL server and clients automatically to run FL experiments on localhost. 
-Each client will be alternately assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [run_poc.sh](./run_poc.sh). 
-In this example, we run 4 clients on two GPUs, two clients for each GPU with 12 GB memory.  
-
-Note that in order to make it working under most system resource conditions, the current script used regular `Dataset` for data loading in `pt/learners/prostate_learner.py`, which could be slow. If resource permits, it will make the training much faster by replacing it with `CacheDataset`. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
-
-### 4.1 Centralized training
-To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
-```
-./run_poc.sh prostate_central 1 "All"
-```
-### 4.2 FedAvg 
-To run FL with standard [fedAvg](https://arxiv.org/abs/1602.05629), we use
-```
-./run_poc.sh prostate_fedavg 2 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
-```
-### 4.3 FedProx 
-To run FL with [FedProx](https://arxiv.org/abs/1812.06127), which adds a regularizer to the loss used in `SupervisedProstateLearner` (`fedproxloss_mu`), we use
-```
-./run_poc.sh prostate_fedprox 3 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
-```
-### 4.4 Ditto 
-To run FL with [Ditto](https://arxiv.org/abs/2012.04221)(official [implementation](https://github.com/litian96/ditto)), which uses a slightly modified version of the prostate Learner implementation, namely the `ProstateDittoLearner`, which decouples local personalized model from global model via an additional model training and a controllable prox term (`ditto_lambda`), we use
-```
-./run_poc.sh prostate_ditto 4 "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
+bash data_convert_3d_to_2d.sh 
 ```
 
-> **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
-  using `abort all`. An automatic shutdown is useful here for development as code changes 
-> in your FL components will only be picked up on a restart of the FL system. 
-> For real-world deployments, the system should be kept running but the admin restart command can be used, 
-> see [here](https://nvidia.github.io/NVFlare/user_guide/admin_commands.html).
+### 2.3 Create data lists
+Now we have all data we need for these two example under `./dataset` for 3D and `./dataset_2D` for 2D after data download and preprocessing above, we randomly generate a data split at case level (rather than 2D image slice level) for each dataset, training:validation:testing=0.5:0.25:0.25, and combine all JSON files for simulating centralized training while keeping each data split unchanged.
 
-> To log into the POC workspace admin console, use username "admin" and password "admin". 
-> For the secure workspace admin console, use username "admin@nvidia.com"
-
-After training, each client's best model will be used for cross-site validation. The results can be shown with
-for example
 ```
-cat ./workspace_prostate/server/run_1/cross_site_val/global_val.json
+bash datalists_gen_2d.sh
+bash merge_all_jsons_2d.sh
+bash datalists_gen_3d.sh
+bash merge_all_jsons_3d.sh
 ```
 
-## 5. Results on 4 clients for Central vs. FedAvg vs. FedProx
+The resulting data lists will be stored in `./datalists` for 3D and `./datalists_2D` for 2D. Note that the ratio among training, validation, and testing can be adjusted.
 
-### Validation curve 
-Let's summarize the result of the experiments run above. We compare the final validation scores of 
-the global models for different settings. In this example, each client computes their validation scores using their own
-validation set, and the centralized model computes the validation score using the combined validation set. Please note that due to the limited size of data set, the validation curve can have significant variations across runs.
+The expected output for 2D data split is:
+```
+Generate data split for ./dataset_2D/I2CVB, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_I2CVB.json
+Mode: folder
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+In total 762 samples, split at case level, 369 for training, 176 for validation, and 217 for testing
+Generate data split for ./dataset_2D/MSD, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_MSD.json
+Mode: folder
+In total 32 cases, 16 for training, 8 for validation, and 8 for testing
+In total 475 samples, split at case level, 221 for training, 120 for validation, and 134 for testing
+Generate data split for ./dataset_2D/NCI_ISBI_3T, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_NCI_ISBI_3T.json
+Mode: folder
+In total 40 cases, 20 for training, 10 for validation, and 10 for testing
+In total 555 samples, split at case level, 288 for training, 133 for validation, and 134 for testing
+Generate data split for ./dataset_2D/NCI_ISBI_Dx, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_NCI_ISBI_Dx.json
+Mode: folder
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+In total 483 samples, split at case level, 251 for training, 127 for validation, and 105 for testing
+Generate data split for ./dataset_2D/Promise12, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_Promise12.json
+Mode: folder
+In total 50 cases, 25 for training, 12 for validation, and 13 for testing
+In total 778 samples, split at case level, 378 for training, 181 for validation, and 219 for testing
+Generate data split for ./dataset_2D/PROSTATEx, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist_2D/client_PROSTATEx.json
+Mode: folder
+In total 98 cases, 49 for training, 24 for validation, and 25 for testing
+In total 1627 samples, split at case level, 829 for training, 409 for validation, and 389 for testing
+```
 
-The TensorBoard curves for validation Dice of the global model for the 1000 epochs (100 rounds, 10 local epochs per round) during training are shown below:
-![All training curve](./figs/all_training.png)
+The expected output for 3D data split is:
+```
+Generate data split for ./dataset/I2CVB, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_I2CVB.json
+Mode: file
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+Generate data split for ./dataset/MSD, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_MSD.json
+Mode: file
+In total 32 cases, 16 for training, 8 for validation, and 8 for testing
+Generate data split for ./dataset/NCI_ISBI_3T, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_NCI_ISBI_3T.json
+Mode: file
+In total 40 cases, 20 for training, 10 for validation, and 10 for testing
+Generate data split for ./dataset/NCI_ISBI_Dx, with train:validation:test 0.5:0.25:0.25
+Save json to ./datalist/client_NCI_ISBI_Dx.json
+Mode: file
+In total 39 cases, 20 for training, 10 for validation, and 9 for testing
+```
+
+## 3. Federated Training for Prostate Tasks
+Please go to subfolders [./prostate_2D](./prostate_2D) and [./prostate_3D](./prostate_3D) for further instructions on federated training.

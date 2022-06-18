@@ -1,0 +1,13 @@
+description: "upload a job, kill the server after training is completed, restart it should not run anything"
+events: [
+    {
+        "trigger": {"run_finished": True},
+        "actions": [
+            "kill server",
+            "sleep 40",
+            "start server",
+            "sleep 15",
+        ],
+        "result_state": {"run_finished": True}
+    }
+]

@@ -1,6 +1,11 @@
-PyYAML
-psutil
-numpy
-grpcio
-google-api-python-client
-cryptography
+cryptography>=36.0.0
+Flask==2.1.2
+google-api-python-client==2.49.0
+grpcio==1.46.3
+gunicorn==20.1.0
+numpy==1.22.4
+protobuf==3.20.1
+psutil==5.9.1
+PyYAML==6.0
+six==1.16.0
+tenseal==0.3.0

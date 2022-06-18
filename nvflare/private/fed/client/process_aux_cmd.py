@@ -17,8 +17,8 @@ import pickle
 from nvflare.apis.fl_constant import ReservedTopic, ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.private.admin_defs import Message
-
-from .admin import RequestProcessor
+from nvflare.private.defs import RequestHeader
+from nvflare.private.fed.client.admin import RequestProcessor
 
 
 class AuxRequestProcessor(RequestProcessor):
@@ -30,7 +30,8 @@ class AuxRequestProcessor(RequestProcessor):
 
         shareable = pickle.loads(req.body)
 
-        result = engine.send_aux_command(shareable)
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        result = engine.send_aux_command(shareable, job_id)
         if not result:
             result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 

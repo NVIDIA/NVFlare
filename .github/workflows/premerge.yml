@@ -20,7 +20,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: PYTHONPATH=$(pwd) ./runtest.sh
 
-  example-tests:
+  integration-tests:
     runs-on: [self-hosted, temp-ci]
     steps:
       - uses: actions/checkout@v3
@@ -31,22 +31,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: |
           export PYTHONPATH=$(pwd)
-          cd test/app_testing
-          ./run_example_tests.sh
-
-  app-tests:
-    runs-on: [self-hosted, temp-ci]
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v3
-        with:
-          python-version: 3.8
-      - run: pip install -r requirements-dev.txt
-      - run: |
-          export PYTHONPATH=$(pwd)
-          cd test/app_testing
-          ./run_app_tests.sh
+          cd tests/integration_test
+          ./run_integration_tests.sh
 
   wheel-build:
     runs-on: [self-hosted, temp-ci]

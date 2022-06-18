@@ -29,6 +29,7 @@ from nvflare.fuel.hci.shell_cmd_val import (
     ShellCommandValidator,
     TailValidator,
 )
+from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import ClientReply, new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
@@ -113,6 +114,11 @@ class _CommandExecutor(object):
 
         if not isinstance(reply, ClientReply):
             raise TypeError("reply must be ClientReply but got {}".format(type(reply)))
+        if reply.reply is None:
+            conn.append_error("no reply from client - timed out")
+            return
+        if not isinstance(reply.reply, Message):
+            raise TypeError("reply in ClientReply must be Message but got {}".format(type(reply.reply)))
         conn.append_string(reply.reply.body)
 
     def get_usage(self):
@@ -148,13 +154,18 @@ class _FileCmdExecutor(_CommandExecutor):
         self.file_required = file_required
 
     def validate_shell_command(self, args: List[str], parse_result):
-        if self.file_required:
+        if self.file_required or parse_result.files:
             if not hasattr(parse_result, "files"):
                 return "a file is required as an argument"
             if self.single_file_only and len(parse_result.files) != 1:
                 return "only one file is allowed"
 
-            for f in parse_result.files:
+            if isinstance(parse_result.files, list):
+                file_list = parse_result.files
+            else:
+                file_list = [parse_result.files]
+
+            for f in file_list:
                 if not isinstance(f, str):
                     raise TypeError("file must be str but got {}".format(type(f)))
 
@@ -190,7 +201,6 @@ class ShellCommandModule(CommandModule):
         head_exe = _FileCmdExecutor("head", HeadValidator())
         tail_exe = _FileCmdExecutor("tail", TailValidator())
         grep_exe = _FileCmdExecutor("grep", GrepValidator())
-        env_exe = _NoArgCmdExecutor("env")
 
         return CommandModuleSpec(
             name="sys",
@@ -251,14 +261,6 @@ class ShellCommandModule(CommandModule):
                     + grep_exe.get_usage(),
                     handler_func=grep_exe.execute_command,
                     authz_func=grep_exe.authorize_command,
-                    visible=True,
-                ),
-                CommandSpec(
-                    name="env",
-                    description="show system environment vars",
-                    usage="env target\n " + 'where target is "server" or client name\n' + env_exe.get_usage(),
-                    handler_func=env_exe.execute_command,
-                    authz_func=env_exe.authorize_command,
                     visible=True,
                 ),
             ],

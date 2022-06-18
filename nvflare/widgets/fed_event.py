@@ -120,7 +120,7 @@ class FedEventRunner(Widget):
                 self.last_timestamps[peer_name] = timestamp
 
         # NOTE: we do not fire event here since event process could take time.
-        # Instead we simply add the package to the queue and return quickly.
+        # Instead, we simply add the package to the queue and return quickly.
         # The posting of events will be handled in the poster thread
         return make_reply(ReturnCode.OK)
 
@@ -152,9 +152,8 @@ class FedEventRunner(Widget):
                 with self.in_lock:
                     event_to_post = self.in_events.pop(0)
             elif self.asked_to_stop:
-                # the queue is empty and we are asked to stop.  Give
-                # it self.grace_period seconds to wait, then
-                # exit.
+                # the queue is empty, and we are asked to stop.
+                # wait self.grace_period seconds , then exit.
                 if countdown < 0:
                     break
                 else:
@@ -211,7 +210,7 @@ class ClientFedEventRunner(FedEventRunner):
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
         if not self.ready:
-            self.log_warning(fl_ctx, "Engine in not ready, skip the aux event firing.")
+            self.log_warning(fl_ctx, "Engine in not ready, skip the fed event firing.")
             return
 
         if not isinstance(self.engine, ClientEngineSpec):

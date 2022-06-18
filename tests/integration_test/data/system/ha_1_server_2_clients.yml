@@ -1,0 +1,6 @@
+poc: ../../nvflare/poc
+n_servers: 1
+n_clients: 2
+snapshot_path: /tmp/nvflare/snapshot-storage # need to match what's inside poc, TODO: auto generate
+job_store_path: /tmp/nvflare/jobs-storage # need to match what's inside poc, TODO: auto generate
+ha: True

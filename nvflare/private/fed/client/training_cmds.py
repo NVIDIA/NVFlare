@@ -17,9 +17,8 @@ from typing import List
 
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-
-from .admin import RequestProcessor
 
 
 class StartAppProcessor(RequestProcessor):
@@ -31,8 +30,8 @@ class StartAppProcessor(RequestProcessor):
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
 
-        run_number = int(req.get_header(RequestHeader.RUN_NUM))
-        result = engine.start_app(run_number)
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        result = engine.start_app(job_id)
         if not result:
             result = "OK"
         return Message(topic="reply_" + req.topic, body=result)
@@ -46,8 +45,8 @@ class AbortAppProcessor(RequestProcessor):
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
-        run_number = int(req.get_header(RequestHeader.RUN_NUM))
-        result = engine.abort_app(run_number)
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        result = engine.abort_app(job_id)
         if not result:
             result = "OK"
         return Message(topic="reply_" + req.topic, body=result)
@@ -61,8 +60,8 @@ class AbortTaskProcessor(RequestProcessor):
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
-        run_number = int(req.get_header(RequestHeader.RUN_NUM))
-        result = engine.abort_task(run_number)
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        result = engine.abort_task(job_id)
         if not result:
             result = "OK"
         return Message(topic="reply_" + req.topic, body=result)
@@ -104,10 +103,10 @@ class DeployProcessor(RequestProcessor):
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
-        run_number = req.get_header(RequestHeader.RUN_NUM)
+        job_id = req.get_header(RequestHeader.JOB_ID)
         app_name = req.get_header(RequestHeader.APP_NAME)
         client_name = engine.get_client_name()
-        result = engine.deploy_app(app_name=app_name, run_num=run_number, client_name=client_name, app_data=req.body)
+        result = engine.deploy_app(app_name=app_name, job_id=job_id, client_name=client_name, app_data=req.body)
         if not result:
             result = "OK"
         return Message(topic="reply_" + req.topic, body=result)
@@ -121,8 +120,8 @@ class DeleteRunNumberProcessor(RequestProcessor):
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
-        run_number = int(req.get_header(RequestHeader.RUN_NUM))
-        result = engine.delete_run(run_number)
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        result = engine.delete_run(job_id)
         if not result:
             result = "OK"
         message = Message(topic="reply_" + req.topic, body=result)
@@ -139,32 +138,16 @@ class ClientStatusProcessor(RequestProcessor):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         result = engine.get_engine_status()
         # run_info = engine.get_current_run_info()
-        # if not run_info or run_info.run_number < 0:
+        # if not run_info or run_info.job_id < 0:
         #     result = {
         #         ClientStatusKey.RUN_NUM: 'none',
         #         ClientStatusKey.CURRENT_TASK: 'none'
         #     }
         # else:
         #     result = {
-        #         ClientStatusKey.RUN_NUM: str(run_info.run_number),
+        #         ClientStatusKey.RUN_NUM: str(run_info.job_id),
         #         ClientStatusKey.CURRENT_TASK: run_info.current_task_name
         #     }
         result = json.dumps(result)
         message = Message(topic="reply_" + req.topic, body=result)
         return message
-
-
-class SetRunNumberProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
-        return [TrainingTopic.SET_RUN_NUMBER]
-
-    def process(self, req: Message, app_ctx) -> Message:
-        engine = app_ctx
-        if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
-
-        run_number = int(req.get_header(RequestHeader.RUN_NUM))
-        result = engine.set_run_number(run_number)
-        if not result:
-            result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)

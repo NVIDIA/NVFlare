@@ -22,7 +22,7 @@ import sys
 import webbrowser
 
 from nvflare.fuel.utils.class_utils import instantiate_class
-from nvflare.lighter.spec import Participant, Provisioner, Study
+from nvflare.lighter.spec import Participant, Project, Provisioner
 from nvflare.lighter.utils import load_yaml
 
 
@@ -76,27 +76,34 @@ def main():
     project_full_path = os.path.join(current_path, project_file)
     print(f"Project yaml file: {project_full_path}.")
 
-    project = load_yaml(project_full_path)
-    api_version = project.get("api_version")
-    if api_version not in [2]:
-        raise ValueError(f"Incompatible API version found in {project_full_path}")
+    project_dict = load_yaml(project_full_path)
+    api_version = project_dict.get("api_version")
+    if api_version not in [3]:
+        raise ValueError(f"API version expected 3 but found {api_version}")
 
-    study_name = project.get("name")
-    study_description = project.get("description", "")
+    project_name = project_dict.get("name")
+    project_description = project_dict.get("description", "")
     participants = list()
-    for p in project.get("participants"):
+    for p in project_dict.get("participants"):
         participants.append(Participant(**p))
-    study = Study(name=study_name, description=study_description, participants=participants)
+    project = Project(name=project_name, description=project_description, participants=participants)
+
+    n_servers = len(project.get_participants_by_type("server", first_only=False))
+    if n_servers > 2:
+        print(
+            f"Configuration error: Expect 2 or 1 server to be provisioned.  {project_full_path} contains {n_servers} servers."
+        )
+        return
 
     builders = list()
-    for b in project.get("builders"):
+    for b in project_dict.get("builders"):
         path = b.get("path")
         args = b.get("args")
         builders.append(instantiate_class(path, args))
 
     provisioner = Provisioner(workspace_full_path, builders)
 
-    provisioner.provision(study)
+    provisioner.provision(project)
 
 
 if __name__ == "__main__":

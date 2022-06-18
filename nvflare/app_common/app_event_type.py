@@ -66,6 +66,3 @@ class AppEventType(object):
     CROSS_VAL_INIT = "_cross_val_init"
     VALIDATION_RESULT_RECEIVED = "_validation_result_received"
     RECEIVE_BEST_MODEL = "_receive_best_model"
-
-    ANALYTIC_EVENT_TYPE = "analytix_log_stats"
-    LOGGING_EVENT_TYPE = "analytix_logging"

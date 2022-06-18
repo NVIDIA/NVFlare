@@ -21,29 +21,63 @@ import pandas as pd
 import seaborn as sns
 import tensorflow as tf
 
+# secure workspace
 client_results_root = "./workspaces/secure_workspace/site-1"
-server_results_root = "./workspaces/secure_workspace/localhost"
+download_dir = "./workspaces/secure_workspace/admin@nvidia.com/transfer"
+
+# poc workspace
+# client_results_root = "./workspaces/poc_workspace/site-1"
+# download_dir = "./workspaces/poc_workspace/admin/transfer"
 
 # 4.1 Central vs. FedAvg
 experiments = {
-    "cifar10_central": {"run": "run_1", "tag": "val_acc_local_model"},
-    "cifar10_fedavg": {"run": "run_2", "tag": "val_acc_global_model"},
-    "cifar10_fedavg_he": {"run": "run_9", "tag": "val_acc_global_model"},
+    "cifar10_central": {"tag": "val_acc_local_model"},
+    "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 1.0},
+    "cifar10_fedavg_he": {"tag": "val_acc_global_model", "alpha": 1.0},
 }
 
 # # 4.2 Impact of client data heterogeneity
-# experiments = {"cifar10_fedavg (alpha=1.0)": {"run": "run_2", "tag": "val_acc_global_model"},
-#                 "cifar10_fedavg (alpha=0.5)": {"run": "run_3", "tag": "val_acc_global_model"},
-#                 "cifar10_fedavg (alpha=0.3)": {"run": "run_4", "tag": "val_acc_global_model"},
-#                 "cifar10_fedavg (alpha=0.1)": {"run": "run_5", "tag": "val_acc_global_model"}}
-#
+# experiments = {"cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
+#               "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
+#               "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
+#               "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1}
+# }
+
 # # 4.3 FedProx vs. FedOpt vs. SCAFFOLD
-# experiments = {"cifar10_fedavg": {"run": "run_5", "tag": "val_acc_global_model"},
-#                "cifar10_fedprox": {"run": "run_6", "tag": "val_acc_global_model"},
-#                "cifar10_fedopt": {"run": "run_7", "tag": "val_acc_global_model"},
-#                "cifar10_scaffold": {"run": "run_8", "tag": "val_acc_global_model"}}
+# experiments = {"cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1}
+# }
 
 add_cross_site_val = True
+
+
+def find_job_id(workdir, fl_app_name="cifar10_fedavg", alpha=None):
+    """Find the first matching experiment"""
+    # TODO: return several experiment job_ids with matching settings
+    fl_app_files = glob.glob(os.path.join(workdir, "**", "fl_app.txt"), recursive=True)
+    assert len(fl_app_files) > 0, f"No `fl_app.txt` files found in workdir={workdir}."
+    for fl_app_file in fl_app_files:
+        with open(fl_app_file, "r") as f:
+            _fl_app_name = f.read()
+        if fl_app_name == _fl_app_name:  # alpha will be matched based on value in config file
+            job_id = os.path.basename(os.path.dirname(os.path.dirname(os.path.join(fl_app_file))))  # skip "workspace" subfolder
+            if alpha is not None:
+                config_fed_server_file = glob.glob(
+                    os.path.join(os.path.dirname(fl_app_file), "**", "config_fed_server.json"), recursive=True
+                )
+                assert (
+                    len(config_fed_server_file) == 1
+                ), f"No unique server config found in {os.path.dirname(fl_app_file)}"
+                with open(config_fed_server_file[0], "r") as f:
+                    server_config = json.load(f)
+                _alpha = server_config["alpha"]
+                if _alpha == alpha:
+                    return job_id
+            else:
+                return job_id
+    raise ValueError(f"No job id found for fl_app_name={fl_app_name} in workdir={workdir}")
 
 
 def read_eventfile(filepath, tags=["val_acc_global_model"]):
@@ -86,7 +120,11 @@ def main():
 
     # add event files
     for config, exp in experiments.items():
-        eventfile = glob.glob(os.path.join(client_results_root, exp["run"] + "/**/events.*"), recursive=True)
+        config_name = config.split(" ")[0]
+        alpha = exp.get("alpha", None)
+        job_id = find_job_id(workdir=download_dir, fl_app_name=config_name, alpha=alpha)
+        print(f"Found run {job_id} for {config_name} with alpha={alpha}")
+        eventfile = glob.glob(os.path.join(client_results_root, job_id, "**", "events.*"), recursive=True)
         assert len(eventfile) == 1, "No unique event file found!"
         eventfile = eventfile[0]
         print("adding", eventfile)
@@ -94,7 +132,7 @@ def main():
 
         if add_cross_site_val:
             xsite_file = glob.glob(
-                os.path.join(server_results_root, exp["run"] + "/**/cross_val_results.json"), recursive=True
+                os.path.join(download_dir, job_id, "**", "cross_val_results.json"), recursive=True
             )
             assert len(xsite_file) == 1, "No unique x-site file found!"
             with open(xsite_file[0], "r") as f:
@@ -102,7 +140,10 @@ def main():
 
             xsite_data["Config"].append(config)
             for k in xsite_keys:
-                xsite_data[k].append(xsite_results["site-1"][k]["val_accuracy"])
+                try:
+                    xsite_data[k].append(xsite_results["site-1"][k]["val_accuracy"])
+                except BaseException as e:
+                    raise ValueError(f"No val_accuracy for {k} in {xsite_file}!")
 
     print("Training TB data:")
     print(pd.DataFrame(data))

@@ -38,12 +38,13 @@ class ScatterAndGatherScaffold(ScatterAndGather):
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
-        ignore_result_error: bool = True,
+        ignore_result_error: bool = False,
     ):
-        """FederatedAveraging Workflow. The ScatterAndGatherScaffold workflow defines Federated training on all clients.
+        """The controller for ScatterAndGatherScaffold workflow.
+
         The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.
-        Each clients sends it's updated weights after local training which is aggregated (aggregator_id). The
-        shareable generator is used to convert the aggregated weights to shareable and shareable back to weights.
+        Each client sends it's updated weights after local training which is aggregated (aggregator_id). The
+        shareable generator is used to convert the aggregated weights to shareable and shareable back to weight.
         The model_persistor also saves the model after training.
 
         Args:

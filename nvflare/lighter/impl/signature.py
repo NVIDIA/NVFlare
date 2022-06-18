@@ -15,7 +15,7 @@
 import json
 import os
 
-from nvflare.lighter.spec import Builder, Study
+from nvflare.lighter.spec import Builder, Project
 from nvflare.lighter.utils import sign_all
 
 
@@ -26,14 +26,22 @@ class SignatureBuilder(Builder):
     can be cryptographically verified to ensure any tampering is detected. This builder writes the signature.pkl file.
     """
 
-    def build(self, study: Study, ctx: dict):
-        server = study.get_participants_by_type("server")
-        dest_dir = self.get_kit_dir(server, ctx)
-        root_pri_key = ctx.get("root_pri_key")
+    def _do_sign(self, root_pri_key, dest_dir):
         signatures = sign_all(dest_dir, root_pri_key)
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
-        for p in study.get_participants_by_type("client", first_only=False):
+
+    def build(self, project: Project, ctx: dict):
+        root_pri_key = ctx.get("root_pri_key")
+
+        overseer = project.get_participants_by_type("overseer", first_only=True)
+        dest_dir = self.get_kit_dir(overseer, ctx)
+        self._do_sign(root_pri_key, dest_dir)
+
+        servers = project.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            dest_dir = self.get_kit_dir(server, ctx)
+            self._do_sign(root_pri_key, dest_dir)
+
+        for p in project.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(p, ctx)
-            root_pri_key = ctx.get("root_pri_key")
-            signatures = sign_all(dest_dir, root_pri_key)
-            json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
+            self._do_sign(root_pri_key, dest_dir)

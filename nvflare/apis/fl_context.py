@@ -127,7 +127,7 @@ class FLContext(object):
     def get_engine(self):
         return self.get_prop(key=ReservedKey.ENGINE, default=None)
 
-    def get_run_number(self):
+    def get_job_id(self):
         return self.get_prop(key=ReservedKey.RUN_NUM, default=None)
 
     def get_identity_name(self):
@@ -141,9 +141,6 @@ class FLContext(object):
 
     def get_peer_context(self):
         return self.get_prop(key=ReservedKey.PEER_CTX, default=None)
-
-    def set_run_number(self, run_number):
-        return self.set_prop(key=ReservedKey.RUN_NUM, value=run_number, private=False)
 
     def set_public_props(self, metadata: dict):
         # remove all public props
@@ -185,19 +182,19 @@ class FLContextManager(object):
 
     """
 
-    def __init__(self, engine, identity_name: str, run_num: int, public_stickers, private_stickers):
+    def __init__(self, engine, identity_name: str, job_id: str, public_stickers, private_stickers):
         """Init the FLContextManager.
 
         Args:
             engine: the engine that created this FLContextManager object
             identity_name (str): identity name
-            run_num: the run number
+            job_id: the job id
             public_stickers: public sticky properties that are copied into or copied from
             private_stickers: private sticky properties that are copied into or copied from
         """
         self.engine = engine
         self.identity_name = identity_name
-        self.run_num = run_num
+        self.job_id = job_id
         self._update_lock = threading.Lock()
 
         self.public_stickers = {}
@@ -222,7 +219,7 @@ class FLContextManager(object):
 
         # set permanent props
         ctx.set_prop(key=ReservedKey.ENGINE, value=self.engine, private=True)
-        ctx.set_prop(key=ReservedKey.RUN_NUM, value=self.run_num, private=False)
+        ctx.set_prop(key=ReservedKey.RUN_NUM, value=self.job_id, private=False)
 
         if self.identity_name:
             ctx.set_prop(key=ReservedKey.IDENTITY_NAME, value=self.identity_name, private=False)

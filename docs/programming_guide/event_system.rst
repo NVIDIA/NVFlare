@@ -90,8 +90,8 @@ NVIDIA FLARE's system-defined event types are specified in :class:`nvflare.apis.
 .. csv-table::
    :header: Event, Description, Data Key, Data Type, Server, Client
 
-    START_RUN,A new RUN is about to start,fl_ctx.get_run_number(),int,X,X
-    END_RUN,The current RUN is about to end,fl_ctx.get_run_number(),int,X,X
+    START_RUN,A new RUN is about to start,fl_ctx.get_job_id(),int,X,X
+    END_RUN,The current RUN is about to end,fl_ctx.get_job_id(),int,X,X
     START_WORKFLOW,Workflow is about start,FLContextKey.WORKFLOW,int,X,
     END_WORKFLOW,Workflow is about to end,FLContextKey.WORKFLOW,int,X,
     BEFORE_PROCESS_SUBMISSION,Task result submission is about to be processed,FLContextKey.TASK_NAME,str,X,

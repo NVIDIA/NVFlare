@@ -14,10 +14,7 @@
 
 import os
 
-try:
-    import tenseal as ts
-except ImportError:
-    ts = None
+import tenseal as ts
 
 from nvflare.lighter.spec import Builder
 
@@ -41,11 +38,6 @@ class HEBuilder(Builder):
             scale_bits: defaults to 40.
             scheme: defaults to "CKKS".
         """
-        if ts is None:
-            print(
-                "\n *** tenseal is not installed.  HEBuilder is ignored and no tenseal files will be generated. ***\n"
-            )
-            return
         self._context = None
         self.scheme_type_mapping = {
             "CKKS": ts.SCHEME_TYPE.CKKS,
@@ -60,8 +52,6 @@ class HEBuilder(Builder):
         self.serialized = None
 
     def initialize(self, ctx):
-        if ts is None:
-            return
         self._context = ts.context(
             self.scheme_type,
             poly_modulus_degree=self.poly_modulus_degree,
@@ -71,23 +61,20 @@ class HEBuilder(Builder):
         # dynamically call different generate keys method
         # getattr(self._context, f'generate_{self.key_type}_keys')()
         self._context.generate_relin_keys()
-        self._context.global_scale = 2 ** self.scale_bits
+        self._context.global_scale = 2**self.scale_bits
 
-    def build(self, study, ctx):
-        if ts is None:
-            return
-        server = study.get_participants_by_type("server")
-        dest_dir = self.get_kit_dir(server, ctx)
-        with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
-            f.write(self.get_serialized_context())
-        for client in study.get_participants_by_type("client", first_only=False):
+    def build(self, project, ctx):
+        servers = project.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            dest_dir = self.get_kit_dir(server, ctx)
+            with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
+                f.write(self.get_serialized_context())
+        for client in project.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(client, ctx)
             with open(os.path.join(dest_dir, "client_context.tenseal"), "wb") as f:
                 f.write(self.get_serialized_context(is_client=True))
 
     def get_serialized_context(self, is_client=False):
-        if ts is None:
-            return
         _serialized_context = self._context.serialize(
             save_public_key=is_client,
             save_secret_key=is_client,

@@ -12,18 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import json
 import os
+
+import yaml
 
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
-    def __init__(self, enable_byoc=False, config_folder="", app_validator="", docker_image=""):
+    def __init__(
+        self,
+        enable_byoc=False,
+        config_folder="",
+        app_validator="",
+        download_job_url="",
+        docker_image="",
+        snapshot_persistor="",
+        overseer_agent="",
+        components="",
+    ):
         """Build all static files from template.
 
-        Uses the information from project.yml through study to go through the participants and write the contents of
+        Uses the information from project.yml through project to go through the participants and write the contents of
         each file with the template, and replacing with the appropriate values from project.yml.
 
         Usually, two main categories of files are created in all FL participants, static and dynamic. Static files
@@ -40,7 +53,11 @@ class StaticFileBuilder(Builder):
         self.enable_byoc = enable_byoc
         self.config_folder = config_folder
         self.docker_image = docker_image
+        self.download_job_url = download_job_url
         self.app_validator = app_validator
+        self.overseer_agent = overseer_agent
+        self.snapshot_persistor = snapshot_persistor
+        self.components = components
 
     def _write(self, file_full_path, content, mode, exe=False):
         mode = mode + "w"
@@ -49,11 +66,63 @@ class StaticFileBuilder(Builder):
         if exe:
             os.chmod(file_full_path, 0o755)
 
+    def _build_overseer(self, overseer, ctx):
+        dest_dir = self.get_kit_dir(overseer, ctx)
+        self._write(
+            os.path.join(dest_dir, "start.sh"),
+            self.template["start_svr_sh"],
+            "t",
+            exe=True,
+        )
+        protocol = overseer.props.get("protocol", "http")
+        api_root = overseer.props.get("api_root", "/api/v1/")
+        default_port = "443" if protocol == "https" else "80"
+        port = overseer.props.get("port", default_port)
+        replacement_dict = {"port": port, "hostname": overseer.name}
+        admins = self.project.get_participants_by_type("admin", first_only=False)
+        privilege_dict = dict()
+        for admin in admins:
+            for role in admin.props.get("roles", {}):
+                if role in privilege_dict:
+                    privilege_dict[role].append(admin.subject)
+                else:
+                    privilege_dict[role] = [admin.subject]
+        self._write(
+            os.path.join(dest_dir, "privilege.yml"),
+            yaml.dump(privilege_dict, Dumper=yaml.Dumper),
+            "t",
+            exe=False,
+        )
+
+        if self.docker_image:
+            self._write(
+                os.path.join(dest_dir, "docker.sh"),
+                sh_replace(self.template["docker_svr_sh"], replacement_dict),
+                "t",
+                exe=True,
+            )
+        self._write(
+            os.path.join(dest_dir, "gunicorn.conf.py"),
+            sh_replace(self.template["gunicorn_conf_py"], replacement_dict),
+            "t",
+            exe=False,
+        )
+        self._write(
+            os.path.join(dest_dir, "start.sh"),
+            self.template["start_ovsr_sh"],
+            "t",
+            exe=True,
+        )
+        if port:
+            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}:{port}{api_root}"
+        else:
+            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}{api_root}"
+
     def _build_server(self, server, ctx):
         config = json.loads(self.template["fed_server"])
         dest_dir = self.get_kit_dir(server, ctx)
         server_0 = config["servers"][0]
-        server_0["name"] = self.study_name
+        server_0["name"] = self.project_name
         admin_port = server.props.get("admin_port", 8003)
         ctx["admin_port"] = admin_port
         fed_learn_port = server.props.get("fed_learn_port", 8002)
@@ -62,10 +131,37 @@ class StaticFileBuilder(Builder):
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
+        if self.download_job_url:
+            server_0["download_job_url"] = self.download_job_url
         config["enable_byoc"] = server.enable_byoc
         if self.app_validator:
             config["app_validator"] = {"path": self.app_validator}
-        self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config), "t")
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": "server",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.project_name,
+                    "name": server.name,
+                    "fl_port": str(fed_learn_port),
+                    "admin_port": str(admin_port),
+                }
+            overseer_agent.pop("overseer_exists", None)
+            config["overseer_agent"] = overseer_agent
+        if self.snapshot_persistor:
+            config["snapshot_persistor"] = self.snapshot_persistor
+        components = server.props.get("components", [])
+        config["components"] = list()
+        for comp in components:
+            temp_dict = {"id": comp}
+            temp_dict.update(components[comp])
+            config["components"].append(temp_dict)
+        provisioned_client_list = list()
+        for client in self.project.get_participants_by_type("client", first_only=False):
+            provisioned_client_list.append(client.name)
+        config["provisioned_client_list"] = provisioned_client_list
+        self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
@@ -113,16 +209,33 @@ class StaticFileBuilder(Builder):
         dest_dir = self.get_kit_dir(client, ctx)
         fed_learn_port = ctx.get("fed_learn_port")
         server_name = ctx.get("server_name")
-        config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
-        config["servers"][0]["name"] = self.study_name
+        # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
+        config["servers"][0]["name"] = self.project_name
         config["enable_byoc"] = client.enable_byoc
         replacement_dict = {
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
         }
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": "client",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.project_name,
+                    "name": client.subject,
+                }
+            overseer_agent.pop("overseer_exists", None)
+            config["overseer_agent"] = overseer_agent
+        components = client.props.get("components", [])
+        config["components"] = list()
+        for comp in components:
+            temp_dict = {"id": comp}
+            temp_dict.update(components[comp])
+            config["components"].append(temp_dict)
 
-        self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config), "t")
+        self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
@@ -160,6 +273,7 @@ class StaticFileBuilder(Builder):
         )
 
     def _build_admin(self, admin, ctx):
+        config = json.loads(self.template["fed_admin"])
         dest_dir = self.get_kit_dir(admin, ctx)
         admin_port = ctx.get("admin_port")
         server_name = ctx.get("server_name")
@@ -169,6 +283,20 @@ class StaticFileBuilder(Builder):
             "admin_port": f"{admin_port}",
             "docker_image": self.docker_image,
         }
+        agent_config = dict()
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": "admin",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.project_name,
+                    "name": admin.subject,
+                }
+            overseer_agent.pop("overseer_exists", None)
+            agent_config["overseer_agent"] = overseer_agent
+        config["admin"].update(agent_config)
+        self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),
@@ -188,14 +316,18 @@ class StaticFileBuilder(Builder):
             "t",
         )
 
-    def build(self, study, ctx):
+    def build(self, project, ctx):
         self.template = ctx.get("template")
-        server = study.get_participants_by_type("server")
-        self.study_name = study.name
-        self._build_server(server, ctx)
+        self.project_name = project.name
+        self.project = project
+        overseer = project.get_participants_by_type("overseer")
+        self._build_overseer(overseer, ctx)
+        servers = project.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            self._build_server(server, ctx)
 
-        for client in study.get_participants_by_type("client", first_only=False):
+        for client in project.get_participants_by_type("client", first_only=False):
             self._build_client(client, ctx)
 
-        for admin in study.get_participants_by_type("admin", first_only=False):
+        for admin in project.get_participants_by_type("admin", first_only=False):
             self._build_admin(admin, ctx)

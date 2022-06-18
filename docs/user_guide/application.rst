@@ -4,19 +4,32 @@
 NVIDIA FLARE Application
 ########################
 
-To upload and run your FL application with NVIDIA FLARE, you need to put required files into an application folder.
-The structure of the folder needs to be::
+The NVIDIA FLARE application defines how the server and client should run.
+Note that in the scope of one job, each site will only run one application.
+
+The structure of the app folder needs to be::
 
     app_folder/
         config/
-            config_fed_client.json
-            config_fed_server.json
+            config_fed_client.json [required if this app needs to be deployed to clients]
+            config_fed_server.json [required if this app needs to be deployed to server]
         custom/
             [any of your custom code].py
             [another file with custom code].py
             ...
         resources/
             log.config
+
+.. note::
+
+    Note that apps can be configured to run on certain sites in a job's deploy_map configuration.
+    An application can also be run without a job.
+    To do this, simply submit an app as a job and a default deploy map of all sites will be used.
+
+.. note::
+
+    If the same application is going to be deployed on both server and clients, it can contain both
+    ``config_fed_server.json`` and ``config_fed_client.json``
 
 .. note::
 
@@ -92,11 +105,9 @@ the client config should have the following in order to configure it as an Execu
 
 .. note::
 
-    In some examples, "name" is used to identify the class of a component instead of "path". When a component is
-    specified by "name", the system will scan the ``nvflare`` package for the class name, so this notation may be
-    simpler than using the entire path to the class for the component if it is inside the ``nvflare`` package. If the
-    component you are using is not in the ``nvflare`` package, please use "path" and make sure that the path is
-    accessible with the configured PYTHONPATH.
+    Configuration of Executor Tasks is ignored here.
+
+Please follow :ref:`quickstart:Quickstart` to learn more.
 
 .. _troubleshooting_byoc:
 

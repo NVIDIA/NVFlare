@@ -1,8 +1,10 @@
 -r requirements-doc.txt
-pydocstyle
-isort==5.8.0
-flake8==3.9.2
-black==21.5b1
-click==8.0.1
-pytest-xdist
-
+pydocstyle==6.1.1
+isort==5.10.1
+flake8==4.0.1
+black==22.3.0
+click==8.1.2
+pytest-xdist==2.5.0
+pytest-cov==3.0.0
+# wait for approval
+# pylint!=2.13  # https://github.com/PyCQA/pylint/issues/5969

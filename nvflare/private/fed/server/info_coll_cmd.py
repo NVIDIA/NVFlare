@@ -15,10 +15,10 @@
 import json
 from typing import List
 
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import InfoCollectorTopic
+from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.widgets.info_collector import InfoCollector
@@ -42,16 +42,16 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             cmd_specs=[
                 CommandSpec(
                     name=AdminCommandNames.SHOW_STATS,
-                    description="show current system stats",
-                    usage="show_stats",
+                    description="show current system stats for an actively running job",
+                    usage="show_stats job_id server|client",
                     handler_func=self.show_stats,
                     authz_func=self.authorize_info_collection,
                     visible=True,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.SHOW_ERRORS,
-                    description="show latest errors",
-                    usage="show_errors",
+                    description="show latest errors in an actively running job",
+                    usage="show_errors job_id server|client",
                     handler_func=self.show_errors,
                     authz_func=self.authorize_info_collection,
                     visible=True,
@@ -68,6 +68,17 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         )
 
     def authorize_info_collection(self, conn: Connection, args: List[str]):
+        if len(args) != 3:
+            conn.append_error("syntax error: missing job_id and target")
+            return False, None
+
+        run_destination = args[1].lower()
+        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
+            conn.append_error("syntax error: run_destination must be run_XXX")
+            return False, None
+        job_id = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
+        conn.set_prop(self.JOB_ID, job_id)
+
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
@@ -83,28 +94,35 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
 
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
-        run_info = engine.get_run_info()
-        if not run_info or run_info.run_number < 0:
-            conn.append_string("App is not running")
+        run_info = engine.get_app_run_info(job_id)
+        if not run_info:
+            conn.append_string(
+                "Cannot find job: {}. Please make sure the first arg following the command is a valid job_id.".format(
+                    job_id
+                )
+            )
             return False, None
 
         # return True, FLAuthzContext.new_authz_context(
         #     site_names=['server'],
         #     actions=[Action.VIEW])
-        return self.authorize_view(conn, args)
+        auth_args = [args[0]]
+        auth_args.extend(args[2:])
+        return self.authorize_view(conn, auth_args)
 
     def show_stats(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        target_type = args[1]
+        job_id = conn.get_prop(self.JOB_ID)
+        target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
-            result = collector.get_run_stats()
+            result = engine.show_stats(job_id)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_STATS, body="")
+            message.set_header(RequestHeader.JOB_ID, job_id)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
 
@@ -117,10 +135,10 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
-        target_type = args[1]
+        job_id = conn.get_prop(self.JOB_ID)
+        target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
-            result = collector.get_errors()
+            result = engine.get_errors(job_id)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="")
@@ -128,6 +146,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             self._process_stats_replies(conn, replies)
 
     def reset_errors(self, conn: Connection, args: List[str]):
+        job_id = conn.get_prop(self.JOB_ID)
         collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
         collector.reset_errors()
         conn.append_string("errors reset")

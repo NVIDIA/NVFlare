@@ -15,7 +15,7 @@
 import json
 
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import InfoCollectorTopic
+from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 
@@ -33,22 +33,19 @@ class ClientInfoProcessor(RequestProcessor):
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
 
+        job_id = req.get_header(RequestHeader.JOB_ID)
         if req.topic == InfoCollectorTopic.SHOW_STATS:
-            result = engine.get_current_run_info()
+            result = engine.get_current_run_info(job_id)
         elif req.topic == InfoCollectorTopic.SHOW_ERRORS:
-            result = engine.get_errors()
+            result = engine.get_errors(job_id)
         elif req.topic == InfoCollectorTopic.RESET_ERRORS:
-            engine.reset_errors()
+            engine.reset_errors(job_id)
             result = {"status": "OK"}
         else:
             result = {"error": "invalid topic {}".format(req.topic)}
 
         if not isinstance(result, dict):
             result = {}
-
-        # # add current run number
-        # if run_num >= 0:
-        #     result['run_num'] = run_num
 
         result = json.dumps(result)
         return Message(topic="reply_" + req.topic, body=result)

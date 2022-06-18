@@ -1,14 +1,18 @@
-Quickstart (PyTorch)
-====================
+.. _hello_pt:
+
+Hello PyTorch
+=============
 
 Before You Start
 ----------------
 
-Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
+Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point
+to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
-Make sure you have an environment with NVIDIA FLARE installed.  You can follow the
-:doc:`installation <../installation>` guide on the general concept of Python virtual environment (the recommended environment) and how to
-install NVIDIA FLARE.
+Make sure you have an environment with NVIDIA FLARE installed.
+
+You can follow the :ref:`installation <installation>` guide on the general concept of setting up a
+Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
 
 
 Introduction
@@ -18,7 +22,8 @@ Through this exercise, you will integrate NVIDIA FLARE with the popular
 deep learning framework `PyTorch <https://pytorch.org/>`_ and learn how to use NVIDIA FLARE to train a convolutional
 network with the CIFAR10 dataset using the included Scatter and Gather workflow.
 
-The design of this exercise consists of one **server** and two **clients** all having the same PyTorch model. 
+The setup of this exercise consists of one **server** and two **clients**.
+
 The following steps compose one cycle of weight updates, called a **round**:
 
  #. Clients are responsible for generating individual weight-updates for the model using their own CIFAR10 dataset. 
@@ -93,7 +98,8 @@ For simplicity's sake, you can download the same CIFAR10 dataset from the Intern
 Additionally, you need to set up the optimizer, loss function and transform to process the data.
 You can think of all of this code as part of your local training loop, as every deep learning training has a similar setup.
 
-Since you will encapsulate every training-related step in the ``Cifar10Trainer`` class, let's put this preparation stage into the ``__init__`` method:
+Since you will encapsulate every training-related step in the ``Cifar10Trainer`` class,
+let's put this preparation stage into the ``__init__`` method:
 
 .. literalinclude:: ../../examples/hello-pt/custom/cifar10trainer.py
    :language: python
@@ -105,7 +111,8 @@ Since you will encapsulate every training-related step in the ``Cifar10Trainer``
 Local Train
 ^^^^^^^^^^^
 
-Now that you have your network and dataset setup, in the ``Cifar10Trainer`` class let's also implement a local training loop in a method called ``local_train``:
+Now that you have your network and dataset setup, in the ``Cifar10Trainer`` class.
+Let's also implement a local training loop in a method called ``local_train``:
 
 .. literalinclude:: ../../examples/hello-pt/custom/cifar10trainer.py
    :language: python
@@ -126,7 +133,8 @@ NVIDIA FLARE makes it easy to integrate your local train code into the NVIDIA FL
 The simplest way to do this is to subclass the ``Executor`` class and
 implement one method ``execute``, which is called every time the client receives
 an updated model from the server with the task "train" (the server will broadcast the "train" task in the Scatter and
-Gather workflow we will configure below). We can then call our local train inside the ``execute`` method.
+Gather workflow we will configure below).
+We can then call our local train inside the ``execute`` method.
 
 .. note::
 
@@ -140,21 +148,21 @@ Take a look at the following code:
    :language: python
    :pyobject: Cifar10Trainer.execute
 
-The concept of ``Shareable`` is described in :ref:`shareable <shareable>`. Essentially, every
-NVIDIA FLARE client receives the model weights from the server in ``shareable`` passed into the ``execute`` method, and
-returns a new ``shareable`` back to the server. The data is managed by using DXO (see :ref:`data_exchange_object`
-for details).
+The concept of ``Shareable`` is described in :ref:`shareable <shareable>`.
+Essentially, every NVIDIA FLARE client receives the model weights from the server in ``shareable`` format.
+It is then passed into the ``execute`` method, and returns a new ``shareable`` back to the server.
+The data is managed by using DXO (see :ref:`data_exchange_object` for details).
 
 Thus, the first thing is to retrieve the model weights delivered by server via ``shareable``, and this can be seen in
 the first part of the code block above before ``local_train`` is called.
 
 We then perform a local train so the client's model is trained with its own dataset.
 
-After finishing the local train, the train method builds a new ``shareable`` with newly-trained weights and metadata and returns it
-back to the NVIDIA FLARE server for aggregation.
+After finishing the local train, the train method builds a new ``shareable`` with newly-trained weights
+and metadata and returns it back to the NVIDIA FLARE server for aggregation.
 
-There is additional logic to handle the "submit_model" task, but that is for the CrossSiteModelEval workflow, so we will
-be addressing that in a later example.
+There is additional logic to handle the "submit_model" task, but that is for the CrossSiteModelEval workflow,
+so we will be addressing that in a later example.
 
 FLContext
 ^^^^^^^^^
@@ -166,9 +174,12 @@ The ``FLContext`` is used to set and retrieve FL related information among the F
 NVIDIA FLARE Server & Application
 ---------------------------------
 
-In this exercise, you can use the default settings, which leverage NVIDIA FLARE built-in components for NVIDIA FLARE server.  These
-built-in components are commonly used in most deep learning scenarios.  However, you are encouraged to build your own components
-to fully customize NVIDIA FLARE to meet your environment, which we will demonstrate in the following exercises.
+In this exercise, you can use the default settings, which leverage NVIDIA FLARE built-in components for NVIDIA FLARE server.
+
+These built-in components are commonly used in most deep learning scenarios.
+
+However, you are encouraged to build your own components to fully customize NVIDIA FLARE to meet your environment,
+ which we will demonstrate in the following exercises.
 
 
 Application Configuration
@@ -181,13 +192,17 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
    :linenos:
    :caption: config_fed_client.json
 
-Take a look at line 8.  This is the ``Cifar10Trainer`` you just implemented.  The NVIDIA FLARE client loads this
-application configuration and picks your implementation.  You can easily change it to another class so
-your NVIDIA FLARE client has different training logic.
+Take a look at line 8.
 
-The tasks "train" and "submit_model" have been configured to work with the ``Cifar10Trainer`` Executor. The "validate"
-task for ``Cifar10Validator`` and the "submit_model" task are used for the CrossSiteModelEval workflow, so we will
-be addressing that in a later example.
+This is the ``Cifar10Trainer`` you just implemented.
+
+The NVIDIA FLARE client loads this application configuration and picks your implementation.
+
+You can easily change it to another class so your NVIDIA FLARE client has different training logic.
+
+The tasks "train" and "submit_model" have been configured to work with the ``Cifar10Trainer`` Executor.
+The "validate" task for ``Cifar10Validator`` and the "submit_model" task are used for the ``CrossSiteModelEval`` workflow,
+so we will be addressing that in a later example.
 
 
 .. literalinclude:: ../../examples/hello-pt/config/config_fed_server.json
@@ -195,75 +210,32 @@ be addressing that in a later example.
    :linenos:
    :caption: config_fed_server.json
 
-The server application configuration, like said before, leverages NVIDIA FLARE built-in components. Remember, you
-are encouraged to change them to your own classes whenever you have different application logic.
+The server application configuration, like said before, leverages NVIDIA FLARE built-in components.
+Remember, you are encouraged to change them to your own classes whenever you have different application logic.
 
 Note that on line 12, ``persistor`` points to ``PTFileModelPersistor``.
-NVIDIA FLARE provides a built-in PyTorch implementation for a model persistor, however for other frameworks/libraries, you will have to implement your own.
+NVIDIA FLARE provides a built-in PyTorch implementation for a model persistor,
+however for other frameworks/libraries, you will have to implement your own.
 
 The Scatter and Gather workflow is implemented by :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>`
-and is configured to make use of the components with id "aggregator", "persistor", and "shareable_generator". The workflow
-code is all open source now, so feel free to study and use it as inspiration to write your own workflows to support your needs.
+and is configured to make use of the components with id "aggregator", "persistor", and "shareable_generator".
+The workflow code is all open source now, so feel free to study and use it as inspiration
+to write your own workflows to support your needs.
 
 .. _hands-on:
 
 Train the Model, Federated!
 ---------------------------
 
-Now you can use admin commands to upload, deploy, and start this example app. To do this on a proof of concept local
-FL system, follow the sections :ref:`setting_up_poc` and :ref:`starting_poc` if you have not already.
+.. |ExampleApp| replace:: hello-pt
+.. include:: run_fl_system.rst
 
-Running the FL System
-^^^^^^^^^^^^^^^^^^^^^
+.. include:: access_result.rst
 
-With the admin client command prompt successfully connected and logged in, enter the commands below in order.  Pay close
-attention to what happens in each of four terminals.  You can see how the admin controls the server and clients with
-each command.
-
-.. code-block:: shell
-
-    > upload_app hello-pt
-
-Uploads the application from the admin client to the server's staging area.
-
-.. code-block:: shell
-
-    > set_run_number 1
-
-Creates a run directory in the workspace for the run_number on the server and all clients. The run directory allows for
-the isolation of different runs so the information in one particular run does not interfere with other runs.
-
-.. code-block:: shell
-
-    > deploy_app hello-pt all
-
-This will make the hello-pt application the active one in the run_number workspace.  After the above two commands,
-the server and all the clients know the hello-pt application will reside in the ``run_1`` workspace.
-
-
-.. code-block:: shell
-
-    > start_app all
-
-This ``start_app`` command instructs the NVIDIA FLARE server and clients to start training with the hello-pt application in that ``run_1`` workspace.
-
-From time to time, you can issue ``check_status server`` in the admin client to check the entire training progress.
-
-You should now see how the training does in the very first terminal (the one that started the server).
-
-Once the fl run is complete and the server has successfully aggregated the clients' results after all the rounds,
-run the following commands in the fl_admin to shutdown the system (while inputting ``admin`` when prompted with user name):
-
-.. code-block:: shell
-
-    > shutdown client
-    > shutdown server
-    > bye
-
-In order to stop all processes, run ``./stop_fl.sh``.
-
-All artifacts from the FL run can be found in the server run folder you created with ``set_run_number``.  In this exercise, the folder is ``run_1``.
+.. include:: shutdown_fl_system.rst
 
 Congratulations!
 You've successfully built and run your first federated learning system.
-The full `source code <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt/>`_ for this exercise can be found in ``examples/hello-pt``.
+
+The full source code for this exercise can be found in
+`examples/hello-pt <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt/>`_.

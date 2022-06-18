@@ -14,6 +14,8 @@
 
 import os
 
+from nvflare.apis.fl_constant import WorkspaceConstants
+
 
 class Workspace:
     def __init__(self, root_dir: str, name: str, config_folder: str):
@@ -48,14 +50,14 @@ class Workspace:
     def get_root_dir(self) -> str:
         return self.root_dir
 
-    def get_run_dir(self, run_num: int) -> str:
-        return os.path.join(self.root_dir, "run_" + str(run_num))
+    def get_run_dir(self, job_id: str) -> str:
+        return os.path.join(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
 
-    def get_app_dir(self, run_num: int) -> str:
-        return os.path.join(self.get_run_dir(run_num), "app_" + self.name)
+    def get_app_dir(self, job_id: str) -> str:
+        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.name)
 
-    def get_app_config_dir(self, run_num) -> str:
-        return os.path.join(self.get_app_dir(run_num), self.config_folder)
+    def get_app_config_dir(self, job_id: str) -> str:
+        return os.path.join(self.get_app_dir(job_id), self.config_folder)
 
-    def get_app_custom_dir(self, run_num) -> str:
-        return os.path.join(self.get_app_dir(run_num), "custom")
+    def get_app_custom_dir(self, job_id: str) -> str:
+        return os.path.join(self.get_app_dir(job_id), "custom")

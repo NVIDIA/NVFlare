@@ -27,5 +27,6 @@ exclude = '''
     | dist
   )/
   | .pb2.
+  | _version.py
 )
 '''

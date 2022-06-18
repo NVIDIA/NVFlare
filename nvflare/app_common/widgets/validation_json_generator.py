@@ -73,7 +73,7 @@ class ValidationJsonGenerator(Widget):
             else:
                 self.log_error(fl_ctx, "Validation result not found.", fire_event=False)
         elif event_type == EventType.END_RUN:
-            run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_run_number())
+            run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
             cross_val_res_dir = os.path.join(run_dir, self._results_dir)
             if not os.path.exists(cross_val_res_dir):
                 os.makedirs(cross_val_res_dir)

@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import datetime
+import json
 import os
-import pickle
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -50,65 +50,77 @@ class CertBuilder(Builder):
 
     def initialize(self, ctx):
         state_dir = self.get_state_dir(ctx)
-        cert_file = os.path.join(state_dir, "cert.pkl")
+        cert_file = os.path.join(state_dir, "cert.json")
         if os.path.exists(cert_file):
-            self.persistent_state = pickle.load(open(cert_file, "rb"))
-            self.serialized_cert = self.persistent_state["root_cert"]
+            self.persistent_state = json.load(open(cert_file, "rt"))
+            self.serialized_cert = self.persistent_state["root_cert"].encode("ascii")
             self.root_cert = x509.load_pem_x509_certificate(self.serialized_cert, default_backend())
             self.pri_key = serialization.load_pem_private_key(
-                self.persistent_state["root_pri_key"], password=None, backend=default_backend()
+                self.persistent_state["root_pri_key"].encode("ascii"), password=None, backend=default_backend()
             )
             self.pub_key = self.pri_key.public_key()
             self.subject = self.root_cert.subject
+            self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
 
     def _build_root(self, subject):
         if not self.persistent_state:
             pri_key, pub_key = self._generate_keys()
-            self.subject = self._x509_name(subject)
-            issuer = self.subject
-            self.root_cert = self._generate_cert(self.subject, issuer, pri_key, pub_key, ca=True)
+            self.issuer = subject
+            self.root_cert = self._generate_cert(subject, self.issuer, pri_key, pub_key, ca=True)
             self.pri_key = pri_key
             self.pub_key = pub_key
             self.serialized_cert = serialize_cert(self.root_cert)
-            self.persistent_state["root_cert"] = self.serialized_cert
-            self.persistent_state["root_pri_key"] = serialize_pri_key(self.pri_key)
+            self.persistent_state["root_cert"] = self.serialized_cert.decode("ascii")
+            self.persistent_state["root_pri_key"] = serialize_pri_key(self.pri_key).decode("ascii")
 
     def _build_write_cert_pair(self, participant, base_name, ctx):
         subject = participant.subject
         if self.persistent_state and subject in self.persistent_state:
-            cert = x509.load_pem_x509_certificate(self.persistent_state[subject]["cert"], default_backend())
+            cert = x509.load_pem_x509_certificate(
+                self.persistent_state[subject]["cert"].encode("ascii"), default_backend()
+            )
             pri_key = serialization.load_pem_private_key(
-                self.persistent_state[subject]["pri_key"], password=None, backend=default_backend()
+                self.persistent_state[subject]["pri_key"].encode("ascii"), password=None, backend=default_backend()
             )
         else:
             pri_key, cert = self.get_pri_key_cert(participant)
-            self.persistent_state[subject] = dict(cert=serialize_cert(cert), pri_key=serialize_pri_key(pri_key))
+            self.persistent_state[subject] = dict(
+                cert=serialize_cert(cert).decode("ascii"), pri_key=serialize_pri_key(pri_key).decode("ascii")
+            )
         dest_dir = self.get_kit_dir(participant, ctx)
         with open(os.path.join(dest_dir, f"{base_name}.crt"), "wb") as f:
             f.write(serialize_cert(cert))
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
+        pkcs12 = serialization.pkcs12.serialize_key_and_certificates(
+            subject.encode("ascii"), pri_key, cert, None, serialization.BestAvailableEncryption(subject.encode("ascii"))
+        )
+        with open(os.path.join(dest_dir, f"{base_name}.pfx"), "wb") as f:
+            f.write(pkcs12)
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
             f.write(self.serialized_cert)
 
-    def build(self, study, ctx):
-        self._build_root(study.name)
+    def build(self, project, ctx):
+        self._build_root(project.name)
         ctx["root_cert"] = self.root_cert
         ctx["root_pri_key"] = self.pri_key
-        server = study.get_participants_by_type("server")
-        self._build_write_cert_pair(server, "server", ctx)
+        overseer = project.get_participants_by_type("overseer")
+        self._build_write_cert_pair(overseer, "overseer", ctx)
 
-        for client in study.get_participants_by_type("client", first_only=False):
+        servers = project.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            self._build_write_cert_pair(server, "server", ctx)
+
+        for client in project.get_participants_by_type("client", first_only=False):
             self._build_write_cert_pair(client, "client", ctx)
 
-        for admin in study.get_participants_by_type("admin", first_only=False):
+        for admin in project.get_participants_by_type("admin", first_only=False):
             self._build_write_cert_pair(admin, "client", ctx)
 
     def get_pri_key_cert(self, participant):
         pri_key, pub_key = self._generate_keys()
-        subject = self._x509_name(participant.subject)
-        issuer = self.subject
-        cert = self._generate_cert(subject, issuer, self.pri_key, pub_key)
+        subject = participant.subject
+        cert = self._generate_cert(subject, self.issuer, self.pri_key, pub_key)
         return pri_key, cert
 
     def _generate_keys(self):
@@ -117,10 +129,12 @@ class CertBuilder(Builder):
         return pri_key, pub_key
 
     def _generate_cert(self, subject, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False):
+        x509_subject = self._x509_name(subject)
+        x509_issuer = self._x509_name(issuer)
         builder = (
             x509.CertificateBuilder()
-            .subject_name(subject)
-            .issuer_name(issuer)
+            .subject_name(x509_subject)
+            .issuer_name(x509_issuer)
             .public_key(subject_pub_key)
             .serial_number(x509.random_serial_number())
             .not_valid_before(datetime.datetime.utcnow())
@@ -130,6 +144,7 @@ class CertBuilder(Builder):
                 + datetime.timedelta(days=valid_days)
                 # Sign our certificate with our private key
             )
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
         )
         if ca:
             builder = (
@@ -153,5 +168,5 @@ class CertBuilder(Builder):
 
     def finalize(self, ctx):
         state_dir = self.get_state_dir(ctx)
-        cert_file = os.path.join(state_dir, "cert.pkl")
-        pickle.dump(self.persistent_state, open(cert_file, "wb"))
+        cert_file = os.path.join(state_dir, "cert.json")
+        json.dump(self.persistent_state, open(cert_file, "wt"))

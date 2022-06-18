@@ -1,0 +1,52 @@
+system_setup: ./data/system/1_server_2_clients.yml
+apps_root_dir: ./data/apps
+single_app_as_job: True
+cleanup: True
+
+
+tests:
+  - app_name: global_model_eval
+    validators:
+      - path: tests.integration_test.validators.GlobalModelEvalValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: pt
+    validators:
+      - path: tests.integration_test.validators.PTModelValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/cifar10_data
+  - app_name: cross_val_one_client
+    validators:
+      - path: tests.integration_test.validators.CrossValSingleClientResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: cross_val
+    validators:
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: np_sag
+    validators:
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: np_sag_weights_diff
+    validators:
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: filters
+    validators:
+      - path: tests.integration_test.validators.NumpyModelValidator
+  - app_name: tb_streaming
+    validators:
+      - path: tests.integration_test.validators.TBResultValidator
+  - app_name: tf
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator
+  - app_name: cyclic
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator

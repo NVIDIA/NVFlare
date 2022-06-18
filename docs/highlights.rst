@@ -1,5 +1,16 @@
 .. _highlights:
 
+##########
+Highlights
+##########
+
+New in NVIDIA FLARE 2.1.0
+=========================
+    - :ref:`High Availability (HA) <high_availability>` supports multiple FL Servers and automatically cuts
+      over to another server when the currently active server becomes unavailable.
+    - :ref:`Multi-Job Execution <multi_job>` supports resource-based multi-job execution by allowing for concurrent runs
+      provided resources required by the jobs are satisfied.
+
 NVIDIA FLARE Key Features
 =========================
 NVIDIA FLARE provides a set of commonly-used algorithms to illustrate best practices and allow simplified development of
@@ -14,7 +25,7 @@ Training workflows
       example with a federated weighted average.
     - :ref:`Cyclic <cyclic>` is a reference implementation of a cyclic workflow, in which the central server issues a
       series of tasks to be scheduled for cyclic execution among a group of clients.  The client worker Executor passes
-      the Task’s Shareable result to the next client for further execution, and so on, until the final client returns
+      the Task's Shareable result to the next client for further execution, and so on, until the final client returns
       the final Shareable to the server.
 
 Evaluation workflows

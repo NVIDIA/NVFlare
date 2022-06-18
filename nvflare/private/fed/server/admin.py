@@ -14,6 +14,7 @@
 
 import threading
 import time
+from typing import List
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
@@ -26,6 +27,7 @@ from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
+from nvflare.private.defs import ERROR_MSG_PREFIX
 
 from .app_authz import AppAuthzService
 
@@ -136,6 +138,21 @@ class _ClientReq(object):
         self.waiter = None
 
 
+def check_client_replies(replies: List[ClientReply], client_sites: List[str], command: str):
+    display_sites = ", ".join(client_sites)
+    if not replies:
+        raise RuntimeError(f"Failed to {command} to the clients {display_sites}: no replies.")
+    if len(replies) != len(client_sites):
+        raise RuntimeError(f"Failed to {command} to the clients {display_sites}: not enough replies.")
+
+    error_msg = ""
+    for r, client_name in zip(replies, client_sites):
+        if r.reply and ERROR_MSG_PREFIX in r.reply.body:
+            error_msg += f"\t{client_name}: {r.reply.body}\n"
+    if error_msg != "":
+        raise RuntimeError(f"Failed to {command} to the following clients: \n{error_msg}")
+
+
 class FedAdminServer(AdminServer):
     def __init__(
         self,
@@ -152,6 +169,7 @@ class FedAdminServer(AdminServer):
         server_key_file_name,
         accepted_client_cns=None,
         app_validator=None,
+        download_job_url=None,
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
@@ -207,8 +225,11 @@ class FedAdminServer(AdminServer):
                 upload_dir=file_upload_dir,
                 download_dir=file_download_dir,
                 upload_folder_authz_func=AppAuthzService.authorize_upload,
+                download_job_url=download_job_url,
             )
         )
+
+        cmd_reg.register_module(sess_mgr)
 
         if cmd_modules:
             if not isinstance(cmd_modules, list):

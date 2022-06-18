@@ -14,6 +14,8 @@
 
 from typing import List
 
+from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.security.security import Action, FLAuthzContext
@@ -31,6 +33,8 @@ class CommandUtil(object):
     TARGET_TYPE_ALL = "all"
 
     SITE_SERVER = "server"
+    ALL_SITES = "@ALL"
+    JOB_ID = "job_id"
 
     def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
         """Validate specified args and determine and set target type and target names in the Connection.
@@ -131,7 +135,37 @@ class CommandUtil(object):
         return self._authorize_actions(conn, args[1:], [Action.VIEW])
 
     def authorize_train(self, conn: Connection, args: List[str]):
-        return self._authorize_actions(conn, args[1:], [Action.TRAIN])
+        if len(args) != 3:
+            conn.append_error("syntax error: missing job_id and target")
+            return False, None
+
+        job_id = args[1].lower()
+
+        destination = job_id[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
+        conn.set_prop(self.JOB_ID, destination)
+
+        return self._authorize_actions(conn, args[2:], [Action.TRAIN])
+
+    def authorize_job_meta(self, conn: Connection, meta: dict, actions: List[str]):
+
+        deploy_map = meta.get("deploy_map")
+        if not deploy_map:
+            conn.append_error(f"deploy_map missing for job {self.get_job_name(meta)}")
+            return False, None
+
+        sites = set()
+        for app, site_list in deploy_map.items():
+            sites.update(site_list)
+
+        # Run-time might be a better spot for this
+        if self.ALL_SITES.casefold() in (site.casefold() for site in sites):
+            sites.add(self.SITE_SERVER)
+            engine = conn.app_ctx
+            clients = engine.get_clients()
+            sites.update([client.name for client in clients])
+
+        authz_ctx = FLAuthzContext.new_authz_context(site_names=list(sites), actions=actions)
+        return True, authz_ctx
 
     def authorize_operate(self, conn: Connection, args: List[str]):
         return self._authorize_actions(conn, args[1:], [Action.OPERATE])
@@ -157,6 +191,16 @@ class CommandUtil(object):
             return process_client_replies(replies)
         else:
             return replies
+
+    @staticmethod
+    def get_job_name(meta: dict) -> str:
+        """Get job name from meta.json"""
+
+        name = meta.get(JobMetaKey.JOB_NAME)
+        if not name:
+            name = meta.get(JobMetaKey.JOB_FOLDER_NAME, "No name")
+
+        return name
 
     def process_replies_to_table(self, conn: Connection, replies):
         """Process the clients' replies and put in a table format.

@@ -16,6 +16,8 @@
 class EventType(object):
     """Built-in system events."""
 
+    SYSTEM_START = "_system_start"
+    SYSTEM_END = "_system_end"
     ABOUT_TO_START_RUN = "_about_to_start_run"
     START_RUN = "_start_run"
     ABOUT_TO_END_RUN = "_about_to_end_run"
@@ -25,6 +27,11 @@ class EventType(object):
     ABORT_TASK = "_abort_task"
     FATAL_SYSTEM_ERROR = "_fatal_system_error"
     FATAL_TASK_ERROR = "_fatal_task_error"
+    JOB_DEPLOYED = "_job_deployed"
+    JOB_STARTED = "_job_started"
+    JOB_COMPLETED = "_job_completed"
+    JOB_ABORTED = "_job_aborted"
+    JOB_CANCELLED = "_job_cancelled"
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"
