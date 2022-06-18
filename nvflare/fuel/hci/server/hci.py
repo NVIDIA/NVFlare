@@ -16,13 +16,14 @@ import logging
 import socketserver
 import ssl
 import threading
-import traceback
 
 from nvflare.fuel.hci.conn import Connection, receive_til_end
 from nvflare.fuel.hci.proto import validate_proto
 from nvflare.fuel.hci.security import get_certificate_common_name
 
 from .reg import ServerCommandRegister
+
+MAX_ADMIN_CONNECTIONS = 16
 
 
 class _MsgHandler(socketserver.BaseRequestHandler):
@@ -32,8 +33,23 @@ class _MsgHandler(socketserver.BaseRequestHandler):
     ServerCommandRegister.
     """
 
+    connections = 0
+    lock = threading.Lock()
+
+    def __init__(self, request, client_address, server):
+        # handle() is called in the constructor so logger must be initialized first
+        self.logger = logging.getLogger(self.__class__.__name__)
+        super().__init__(request, client_address, server)
+
     def handle(self):
         try:
+            with _MsgHandler.lock:
+                _MsgHandler.connections += 1
+
+            self.logger.debug(f"Concurrent admin connections: {_MsgHandler.connections}")
+            if _MsgHandler.connections > MAX_ADMIN_CONNECTIONS:
+                raise ConnectionRefusedError(f"Admin connection limit ({MAX_ADMIN_CONNECTIONS}) reached")
+
             conn = Connection(self.request, self.server)
 
             if self.server.use_ssl:
@@ -68,8 +84,13 @@ class _MsgHandler(socketserver.BaseRequestHandler):
 
             if not conn.ended:
                 conn.close()
-        except BaseException:
-            traceback.print_exc()
+        except BaseException as exc:
+            self.logger.error(f"Admin connection terminated due to exception: {str(exc)}")
+            if self.logger.getEffectiveLevel() <= logging.DEBUG:
+                self.logger.exception("Admin connection error")
+        finally:
+            with _MsgHandler.lock:
+                _MsgHandler.connections -= 1
 
 
 def initialize_hci():
@@ -121,7 +142,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
             ctx.load_verify_locations(ca_cert)
             ctx.load_cert_chain(certfile=server_cert, keyfile=server_key)
 
-            # replace the socket with an ssl version of itself
+            # replace the socket with an SSL version of itself
             self.socket = ctx.wrap_socket(self.socket, server_side=True)
             self.use_ssl = True
 
