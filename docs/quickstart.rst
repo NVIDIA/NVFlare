@@ -73,7 +73,9 @@ You may find that the pip and setuptools versions in the venv need updating:
 Install Stable Release
 ----------------------
 
-Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nvflare>`_::
+Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nvflare>`_:
+
+.. code-block:: shell
 
   $ python3 -m pip install nvflare
 
@@ -114,8 +116,11 @@ this Dockerfile, for example tagging it nvflare-pt:
 
   docker build -t nvflare-pt .
 
-You will then have a docker image nvflare-pt:latest.  This container can be used to run any of the
-client or server deployments.  In POC mode (described in the next section), you can do this by mounting the directory
+You will then have a docker image nvflare-pt:latest.
+
+This container can be used to run any of the client or server deployments.
+
+In POC mode (described in the next section), you can do this by mounting the directory
 containing the server or client subdirectories and startup scripts when you run the
 docker container.
 
@@ -183,24 +188,30 @@ that contains the set of example applications.
 Cloning the NVFlare Repository and Examples
 ===========================================
 
-The following :ref:`examples` section provides details on the full set of examples included in the NVFlare repository. In this section,
-we will focus on the hello-pt-tb example as a simple POC.  First, we need to clone the repo to get the source code
-including examples:
+In this section, we will focus on the hello-pt-tb example as a simple POC.
+For more details on all examples please refer to :ref:`example_applications`.
+
+First, we need to clone the repo to get the source code including examples:
+
 .. code-block:: shell
 
   $ git clone https://github.com/NVIDIA/NVFlare.git
 
-We can then copy the necessary files (the exercise code in the examples directory of the NVFlare repository) to a working folder (the transfer
-folder for the admin client):
+We can then copy the necessary files (the exercise code in the examples directory of the NVFlare repository)
+to a working folder (the transfer folder for the admin client):
 
 .. code-block:: shell
 
   mkdir -p poc/admin/transfer
   cp -rf NVFlare/examples/* poc/admin/transfer
 
-This step has copied all the NVFlare examples into the admin client's transfer folder.  Once the server and clients are connected, the admin client can be used to deploy and run any of these applications.
+This step has copied all the NVFlare examples into the admin client's transfer folder.
 
-The hello-pt-tb application requires a few dependencies to be installed.  As in the installation section, we can install these in the Python virtual environment by running:
+Once the server and clients are connected, the admin client can be used to deploy and run any of these applications.
+
+The hello-pt-tb application requires a few dependencies to be installed.
+
+As in the installation section, we can install these in the Python virtual environment by running:
 
 .. code-block:: shell
 
