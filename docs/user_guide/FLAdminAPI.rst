@@ -10,12 +10,12 @@ Initialization
 It is recommended to use the :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` to
 initialize the API, or use it as a guide to write your own code to use the FLAdminAPI.
 
-Compared to before NVIDIA FLARE 2.1.0, the FLAdminAPI now requires an overseer_agent to be provided, and this is automatically
+Compared to before NVIDIA FLARE 2.1, the FLAdminAPI now requires an overseer_agent to be provided, and this is automatically
 created by the :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` with the
 information in ``fed_admin.json`` in the provided admin_dir's startup directory.
 
-Logging in is now automatically handled, and when there is a server cutover, the overseer_agent will provide the new SP
-endpoint information for the active server and the FLAdminAPI will reauthenticate so the commands will be sent to the
+Logging in is now automatically handled, and when there is a server cut-over, the overseer_agent will provide the new SP
+endpoint information for the active server and the FLAdminAPI will re-authenticate so the commands will be sent to the
 new active server.
 
 ``logout()`` function can be called to log out. Both ``login()`` and ``logout()`` are
