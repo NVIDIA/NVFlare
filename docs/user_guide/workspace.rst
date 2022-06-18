@@ -7,14 +7,31 @@ under folders with the name of the ``job_id``.
 
 The following is the workspace folder structure when running NVIDIA FLARE for the server and clients.
 
+.. _server_workspace:
+
 ******
 Server
 ******
 
-
 .. code-block:: shell
 
-    server/
+    /some_path_on_fl_server/fl_server_workspace_root/
+        admin_audit.log
+        log.txt
+        startup/
+            authorization.json
+            fed_server.json
+            log.config
+            readme.txt
+            rootCA.pem
+            server_context.tenseal
+            server.crt
+            server.key
+            signature.pkl
+            start.sh
+            stop_fl.sh
+            sub_start.sh
+        transfer/
         aefdb0a3-6fbb-4c53-a677-b6951d6845a6/
             app_server/
                 ...
@@ -28,12 +45,6 @@ Server
                     config_fed_server.json
             fl_app.txt
             log.txt
-        startup/
-            fed_server.json
-            log.config
-            start.sh
-            sub_start.sh
-        log.txt
 
 In each ``job_id`` folder, there is the ``app_server`` folder that contains the :ref:`application` that is running
 on the server for this ``job_id``.
@@ -63,13 +74,29 @@ The downloaded workspace will be in ``[DOWNLOAD_DIR]/[JOB_ID]/workspace/``.
     If you issue ``download_job`` before the job is finished, the workspace folder will be empty.
 
 
+.. _client_workspace:
+
 ******
 Client
 ******
 
 .. code-block:: shell
 
-    clientA/
+    /some_path_on_fl_client/fl_client_workspace_root/
+        log.txt
+        startup/
+            client_context.tenseal
+            client.crt
+            client.key
+            fed_client.json
+            log.config
+            readme.txt
+            rootCA.pem
+            signature.pkl
+            start.sh
+            stop_fl.sh
+            sub_start.sh
+        transfer/
         aefdb0a3-6fbb-4c53-a677-b6951d6845a6/
             app_clientA/
                 ...
@@ -83,12 +110,6 @@ Client
                     config_fed_client.json
             fl_app.txt
             log.txt
-        startup/
-            fed_client.json
-            log.config
-            start.sh
-            sub_start.sh
-        log.txt
 
 In each ``job_id`` folder, there is the ``app_clientname`` folder that contains the :ref:`application` that is running
 on the client for this ``job_id``.
