@@ -16,8 +16,8 @@ In NVIDIA FLARE 2.1.0, to be able to run multiple experiments in parallel, the s
 as to when to run which experiments.
 
 To be able to do this, the system now has to know everything about the experiment: which app(s)
-go to which clients or server, what are the resource requirements for this experiment, etc. The total definition of such
-needed information is called a Job.
+go to which clients or server, what are the resource requirements for this experiment, etc.
+The total definition of such needed information is called a Job.
 
 Many underlying assumptions about the operation of the system changed, with the admin now submitting a job and letting the
 system manage the rest, instead of before when the admin uploaded apps, set the run number, deployed, then started the app

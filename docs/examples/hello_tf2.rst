@@ -81,7 +81,7 @@ let's put this preparation stage into one method ``setup``:
 
 .. literalinclude:: ../../examples/hello-tf2/custom/trainer.py
    :language: python
-   :lines: 41-73
+   :lines: 41-71
    :lineno-start: 41
    :linenos:
 
