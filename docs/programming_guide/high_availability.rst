@@ -3,9 +3,9 @@
 #####################################
 High Availability and Server Failover
 #####################################
-Previously in NVIDIA FLARE 2.0 and before, the FL server was the single point of failure for the system. Starting with
-NVIDIA FLARE 2.1.0, a high availability (HA) solution has been implemented to support multiple FL servers with
-automatic cutover when the currently active server becomes unavailable.
+Previously in NVIDIA FLARE 2.0 and before, the FL server was the single point of failure for the system.
+Starting with NVIDIA FLARE 2.1, a high availability (HA) solution has been implemented to support
+multiple FL servers with automatic cut-over when the currently active server becomes unavailable.
 
 The following areas were enhanced for supporting HA:
 
@@ -40,8 +40,8 @@ moment, there is at most one hot server.
 
 The endpoint of the Overseer is provisioned and its configuration information is included in the startup kit of each entity.
 
-For security reasons, the Overseer must only accept authenticated communications. In NVIDIA FLARE 2.1.0, the Overseer is
-implemented with mTLS authentication.
+For security reasons, the Overseer must only accept authenticated communications.
+In NVIDIA FLARE 2.1, the Overseer is implemented with mTLS authentication.
 
 Overseers maintain a service session id (SSID), which changes whenever any hot SP switch-over occurs, either by admin
 commands or automatically.  The following are cases associated with SP switch-over and SSID:

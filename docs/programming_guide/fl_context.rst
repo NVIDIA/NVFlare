@@ -80,8 +80,8 @@ ClientEngineSpec for services they provide.
 
 Job ID (fl_ctx.get_job_id())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-FL application is always running within a RUN, which has a unique ID number. From NVIDIA FLARE version 2.1.0, job ID is
-used as the run number, and it no longer has to be an integer.
+FL application is always running within a RUN, which has a unique ID number.
+From NVIDIA FLARE version 2.1, job ID is used as the run number, and it no longer has to be an integer.
 
 Identity Name (fl_ctx.get_identity_name())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -203,7 +203,7 @@ The following diagram shows the lifecycle of the FL context for each iteration.
 .. image:: ../resources/FL_Context.png
     :height: 600px
 
-In the Peer Context, following props from the Server are available (job ID is used as the run number in version 2.1.0+):
+In the Peer Context, following props from the Server are available (job ID is used as the run number in version 2.1+):
     - Run Number: peer_ctx.get_job_id())
 
 Server Side FL Context

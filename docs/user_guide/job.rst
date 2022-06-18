@@ -3,7 +3,7 @@
 ###########################################
 Jobs: Defining Jobs and Multi-Job Execution
 ###########################################
-Newly introduced in NVIDIA FLARE 2.1.0, Jobs now organize and streamline the running of apps to allow for multi-job
+Newly introduced in NVIDIA FLARE 2.1, Jobs now organize and streamline the running of apps to allow for multi-job
 execution and the running of multiple experiments in parallel.
 
 ********
@@ -12,12 +12,12 @@ Concepts
 
 Job
 ===
-In NVIDIA FLARE 2.1.0, to be able to run multiple experiments in parallel, the system needs to be able to make decisions
+In NVIDIA FLARE 2.1, to be able to run multiple experiments in parallel, the system needs to be able to make decisions
 as to when to run which experiments.
 
 To be able to do this, the system now has to know everything about the experiment: which app(s)
-go to which clients or server, what are the resource requirements for this experiment, etc. The total definition of such
-needed information is called a Job.
+go to which clients or server, what are the resource requirements for this experiment, etc.
+The total definition of such needed information is called a Job.
 
 Many underlying assumptions about the operation of the system changed, with the admin now submitting a job and letting the
 system manage the rest, instead of before when the admin uploaded apps, set the run number, deployed, then started the app
@@ -91,7 +91,7 @@ Resources
 =========
 For a job to be runnable, the system must have sufficient resources: all relevant sites of the job must be able to
 support the job’s specified resource requirements. Since resource is a generic concept - anything could be regarded
-as a resource - NVIDIA FLARE 2.1.0 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
+as a resource - NVIDIA FLARE 2.1 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
 framework for resource definition and interpretation.
 
 .. _deploy_map:
@@ -99,7 +99,7 @@ framework for resource definition and interpretation.
 Deploy Map
 ==========
 The ``deploy_map`` is a map of which apps in the job being uploaded will be deployed to which FL client sites. Back in
-NVIDIA FLARE before 2.1.0, the admin command "deploy_app" was used to manually perform app deployment with the option
+NVIDIA FLARE before 2.1, the admin command "deploy_app" was used to manually perform app deployment with the option
 to specify which sites to deploy to. Because the JobRunner now automatically picks up and handles the deployment and
 running of apps, it needs information about which sites each app should be deployed to, and it gets it from the
 ``deploy_map`` section of meta.json.

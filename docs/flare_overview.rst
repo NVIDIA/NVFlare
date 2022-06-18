@@ -4,36 +4,53 @@
 NVIDIA FLARE Overview
 #####################
 
-**NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflow to a federated paradigm. 
+**NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
+extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflow to a federated paradigm.
 
-With Nvidia FLARE platform developers can build a secure, privacy preserving offering for a distributed multi-party collaboration. 
+With Nvidia FLARE platform developers can build a secure, privacy preserving offering
+for a distributed multi-party collaboration.
 
-NVIDIA FLARE SDK is built for robust, production scale for real-world federated learning deployments. It includes: 
+NVIDIA FLARE SDK is built for robust, production scale for real-world federated learning deployments.
 
-  * A runtime environment enabling data scientists and researchers to easily carry out FL experiments in a real-world scenario. Nvidia FLARE supports multiple task execution, maximizing data scientist's productivity. 
+It includes:
+
+  * A runtime environment enabling data scientists and researchers to easily carry out FL experiments in a
+    real-world scenario. Nvidia FLARE supports multiple task execution, maximizing data scientist's productivity.
   
-  * System capabilities to stand up Federated learning with high availability infrastructure, eliminating FL server being a single point of failue. 
+  * System capabilities to start up federated learning with high availability infrastructure.
   
   * Built-in implementations of:
 
-    * Federated Training workflows (scatter-gather, Cyclic);  
-    * Federated Evaluation workflows (global model evaluation, cross site model evalidation);  
-    * Learning algorithms (FedAvg, FedOpt, FedProx) and  
-    * Privacy preserving algorithms (homomorphic encryption, differential privacy) 
+    * Federated training workflows (scatter-and-gather, Cyclic)
+    * Federated evaluation workflows (global model evaluation, cross site model validation);
+    * Learning algorithms (FedAvg, FedOpt, FedProx)
+    * Privacy preserving algorithms (homomorphic encryption, differential privacy)
+
   * Extensible management tools for:
 
-    * Secure provisioning (SSL certificates), 
+    * Secure provisioning (SSL certificates)
     * Orchestration (Admin Console) | (Admin APIs) 
-    * Monitoring of Federated learning experiments. (Aux APIs; Tensorboard visualization) 
+    * Monitoring of federated learning experiments (Aux APIs; Tensorboard visualization)
   
-  * A rich set of programmable APIs allowing researchers to create new federated workflows, learning & privacy preserving algorithms. 
+  * A rich set of programmable APIs allowing researchers to create new federated workflows,
+    learning & privacy preserving algorithms.
 
 
 High-level System Architecture
 ==============================
-As outlined above, NVIDIA FLARE includes components that allow researchers and developers to build and deploy end-to-end federated learning applications.  The high-level architecture is shown in the diagram below.  This includes the foundational components of the NVIDIA FLARE API and tools for Privacy Preservation and Secure Management of the platform.  On top of this foundation are the building blocks for federated learning applications, with a set of Federation Workflows and Learning Algorithms.
+As outlined above, NVIDIA FLARE includes components that allow researchers and developers to build and deploy
+end-to-end federated learning applications.
 
-Alongside this central stack are tools that allow experimentation and proof-of-concept development with the FL Simulator (POC mode), along with a set of tools used to deploy and manage production workflows.
+The high-level architecture is shown in the diagram below.
+
+This includes the foundational components of the NVIDIA FLARE API and tools for privacy preservation and
+secure management of the platform.
+
+On top of this foundation are the building blocks for federated learning applications,
+with a set of federation workflows and learning algorithms.
+
+Alongside this central stack are tools that allow experimentation and proof-of-concept development
+with the FL Simulator (POC mode), along with a set of tools used to deploy and manage production workflows.
 
 .. image:: resources/FL_stack.png
     :height: 300px
@@ -65,7 +82,7 @@ in a way that allows others to easily customize and extend.
 Every component and API is specification-based, so that alternative implementations can be
 constructed by following the spec.  This allows pretty much every component to be customized.
 
-We strive to be unopinionated in reference implementations, encouraging developers and end-users
+We strive to be open-minded in reference implementations, encouraging developers and end-users
 to extend and customize to meet the needs of their specific workflows.
 
 
@@ -81,7 +98,7 @@ problems in a straightforward way.
 
 We design ths system to be general purpose, to enable different "federated" computing use cases.
 We carefully package the components into different layers with minimal dependencies between layers.
-In this way, implementations for specific use cases should not demand modificastions to the
+In this way, implementations for specific use cases should not demand modifications to the
 underlying system core.
 
 
