@@ -256,23 +256,6 @@ Server side folder and file structure
             stop_fl.sh
             sub_start.sh
         transfer/
-        run_1/
-            mmar_server/
-                config/
-                models/
-                resources/
-            mmar_client1/
-                config/
-                models/
-                resources/
-            mmar_client2/
-                config/
-                models/
-                resources/
-            ...
-            cross_validation/
-        run_2/
-            ......
 
 Client side folder and file structure
 =====================================
@@ -293,20 +276,6 @@ Client side folder and file structure
             stop_fl.sh
             sub_start.sh
         transfer/
-        run_1/
-            mmar_client1/
-                config/
-                cross_validation/
-                models/
-                resources/
-        run_2/
-            mmar_client1/
-                config/
-                cross_validation/
-                models/
-                resources/
-        run_3/
-            ......
 
 Administrator side folder and file structure
 ============================================
