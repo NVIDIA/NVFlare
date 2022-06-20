@@ -15,15 +15,58 @@
 # limitations under the License.
 #
 
-set -ex
+# Argument(s):
+#   BUILD_TYPE:   all/specific_test_name, tests to execute
 
-## Integration Tests
-pip install -r requirements-dev.txt
-testFolder="tests/integration_test"
-export PYTHONPATH=$PWD
-rm -rf /tmp/snapshot-storage
-pushd ${testFolder}
-./run_integration_tests.sh
-popd
-rm -rf /tmp/snapshot-storage
+set -ex
+BUILD_TYPE=all
+
+if [[ $# -eq 1 ]]; then
+    BUILD_TYPE=$1
+
+elif [[ $# -gt 1 ]]; then
+    echo "ERROR: too many parameters are provided"
+    exit 1
+fi
+
+init_pipenv() {
+    echo "initializing pip environment: $1"
+    pipenv install -r $1
+    export PYTHONPATH=$PWD
+}
+
+remove_pipenv() {
+    echo "removing pip environment"
+    pipenv --rm
+    rm Pipfile Pipfile.lock
+}
+
+integration_test() {
+    echo "Run integration test..."
+    init_pipenv requirements-dev.txt
+    testFolder="tests/integration_test"
+    rm -rf /tmp/snapshot-storage
+    pushd ${testFolder}
+    pipenv run ./run_integration_tests.sh
+    popd
+    rm -rf /tmp/snapshot-storage
+    remove_pipenv
+}
+
+case $BUILD_TYPE in
+
+    all)
+        echo "Run all tests..."
+        integration_test
+        ;;
+
+    integration_test)
+        integration_test
+        ;;
+
+    *)
+        echo "ERROR: unknown parameter: $BUILD_TYPE"
+        ;;
+esac
+
 
