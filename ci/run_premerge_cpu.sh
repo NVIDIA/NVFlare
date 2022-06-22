@@ -15,15 +15,64 @@
 # limitations under the License.
 #
 
+# Argument(s):
+#   BUILD_TYPE:   all/specific_test_name, tests to execute
+
 set -ex
+BUILD_TYPE=all
 
-## Unit Tests
-pip install -r requirements-dev.txt
-export PYTHONPATH=$PWD
-./runtest.sh
+if [[ $# -eq 1 ]]; then
+    BUILD_TYPE=$1
 
-## Wheel Build
-# TODO: move the steps to a script
-pip install -r requirements-dev.txt
-pip install build twine torch torchvision
-python3 -m build --wheel
+elif [[ $# -gt 1 ]]; then
+    echo "ERROR: too many parameters are provided"
+    exit 1
+fi
+
+init_pipenv() {
+    echo "initializing pip environment: $1"
+    pipenv install -r $1
+    export PYTHONPATH=$PWD
+}
+
+remove_pipenv() {
+    echo "removing pip environment"
+    pipenv --rm
+    rm Pipfile Pipfile.lock
+}
+
+unit_test() {
+    echo "Run unit test..."
+    init_pipenv requirements-dev.txt
+    pipenv run ./runtest.sh
+    remove_pipenv
+}
+
+wheel_build() {
+    echo "Run wheel build..."
+    init_pipenv requirements-dev.txt
+    pipenv install build twine torch torchvision
+    pipenv run python -m build --wheel
+    remove_pipenv
+}
+
+case $BUILD_TYPE in
+
+    all)
+        echo "Run all tests..."
+        unit_test
+        wheel_build
+        ;;
+
+    unit_test)
+        unit_test
+        ;;
+
+    wheel_build )
+        wheel_build
+        ;;
+
+    *)
+        echo "ERROR: unknown parameter: $BUILD_TYPE"
+        ;;
+esac

@@ -235,78 +235,8 @@ For examples of using the commands to operate a FL system, see the examples in t
 Internal folder and file structures for NVIDIA FLARE
 ****************************************************
 
-Server side folder and file structure
-=====================================
-::
-
-    /some_path_on_fl_server/fl_server_workspace_root/
-        admin_audit.log
-        log.txt
-        startup/
-            authorization.json
-            fed_server.json
-            log.config
-            readme.txt
-            rootCA.pem
-            server_context.tenseal
-            server.crt
-            server.key
-            signature.pkl
-            start.sh
-            stop_fl.sh
-            sub_start.sh
-        transfer/
-        run_1/
-            mmar_server/
-                config/
-                models/
-                resources/
-            mmar_client1/
-                config/
-                models/
-                resources/
-            mmar_client2/
-                config/
-                models/
-                resources/
-            ...
-            cross_validation/
-        run_2/
-            ......
-
-Client side folder and file structure
-=====================================
-::
-
-    /some_path_on_fl_client/fl_client_workspace_root/
-        log.txt
-        startup/
-            client_context.tenseal
-            client.crt
-            client.key
-            fed_client.json
-            log.config
-            readme.txt
-            rootCA.pem
-            signature.pkl
-            start.sh
-            stop_fl.sh
-            sub_start.sh
-        transfer/
-        run_1/
-            mmar_client1/
-                config/
-                cross_validation/
-                models/
-                resources/
-        run_2/
-            mmar_client1/
-                config/
-                cross_validation/
-                models/
-                resources/
-        run_3/
-            ......
+Please refer to :ref:`server workspace <server_workspace>` and :ref:`client workspace <client_workspace>`
+for the folder and file structures on the server/client side.
 
 Administrator side folder and file structure
 ============================================
