@@ -37,7 +37,6 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.zip_utils import (
     convert_legacy_zip,
-    split_path,
     unzip_all_from_bytes,
     unzip_single_file_from_bytes,
     zip_directory_to_bytes,
