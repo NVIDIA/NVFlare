@@ -210,6 +210,12 @@ class FileTransferModule(CommandModule):
                     handler_func=self.download_job,
                 ),
                 CommandSpec(
+                    name="download_job_single_file",
+                    description="download single specified file from the specified job in the job store",
+                    usage="download_job_single_file job_id file_path",
+                    handler_func=self.download_job_single_file,
+                ),
+                CommandSpec(
                     name="info",
                     description="show folder setup info",
                     usage="info",
@@ -313,6 +319,21 @@ class FileTransferModule(CommandModule):
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_job job_id"}
         job_id = args[1]
         parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB), job_id]
+        command = join_args(parts)
+        reply_processor = _DownloadFolderProcessor(self.download_dir)
+        return api.server_execute(command, reply_processor)
+
+    def download_job_single_file(self, args, api: AdminAPISpec):
+        if len(args) != 3:
+            return {
+                "status": APIStatus.ERROR_SYNTAX,
+                "details": "usage: download_job_single_file job_id "
+                "file_path\nWhere file_path starts with job or "
+                "workspace.",
+            }
+        job_id = args[1]
+        file = args[2]
+        parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE), job_id, file]
         command = join_args(parts)
         reply_processor = _DownloadFolderProcessor(self.download_dir)
         return api.server_execute(command, reply_processor)

@@ -138,6 +138,37 @@ def zip_directory_to_bytes(root_dir: str, folder_name: str) -> bytes:
     return bio.getvalue()
 
 
+def ls_zip_from_bytes(zip_data: bytes):
+    """Returns info of a zip.
+
+    Args:
+        zip_data: the input zip data
+    """
+    with ZipFile(io.BytesIO(zip_data), "r") as z:
+        return z.infolist()
+
+
+def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_path: str):
+    """Decompresses a zip and extracts single specified file to the specified output directory.
+
+    Args:
+        zip_data: the input zip data
+        output_dir_name: the output directory for extracted content
+        file_path: file path to file to unzip
+    """
+    path_to_file, _ = split_path(file_path)
+    output_dir_name = os.path.join(output_dir_name, path_to_file)
+    os.makedirs(output_dir_name)
+    if not os.path.exists(output_dir_name):
+        raise FileNotFoundError(f'output directory "{output_dir_name}" does not exist')
+
+    if not os.path.isdir(output_dir_name):
+        raise NotADirectoryError(f'"{output_dir_name}" is not a valid directory')
+
+    with ZipFile(io.BytesIO(zip_data), "r") as z:
+        z.extract(file_path, path=output_dir_name)
+
+
 def unzip_all_from_bytes(zip_data: bytes, output_dir_name: str):
     """Decompresses a zip and extracts all files to the specified output directory.
 
