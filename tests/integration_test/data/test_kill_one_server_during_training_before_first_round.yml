@@ -14,17 +14,17 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job np_sag" ]
         "result_state": { }
-      - "trigger": {
+      - "trigger":
           "type": "run_state"
-          "data": {
-            "workflows": {
-              "ScatterAndGather": {
-                "phase": "train",
-                "current_round": 0
+          "data":
+            {
+              "workflows": {
+                "ScatterAndGather": {
+                  "phase": "train",
+                  "current_round": 0
+                }
               }
             }
-          }
-        }
         "actions": [
           "kill server 0",
           "sleep 30",
