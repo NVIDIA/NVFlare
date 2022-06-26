@@ -1,7 +1,6 @@
 n_servers: 1
 n_clients: 3
 jobs_root_dir: ../unit_test/data/jobs
-single_app_as_job: False
 cleanup: True
 
 

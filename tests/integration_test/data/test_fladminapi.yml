@@ -1,8 +1,7 @@
 n_servers: 1
 n_clients: 2
 ha: True
-apps_root_dir: ./data/apps
-single_app_as_job: True
+jobs_root_dir: ./data/apps
 cleanup: True
 
 

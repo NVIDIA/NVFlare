@@ -320,11 +320,11 @@ class AdminController:
 
         # parse stats
         if (
-                stats
-                and "status" in stats
-                and stats["status"] == APIStatus.SUCCESS
-                and "details" in stats
-                and "message" in stats["details"]
+            stats
+            and "status" in stats
+            and stats["status"] == APIStatus.SUCCESS
+            and "details" in stats
+            and "message" in stats["details"]
         ):
             run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"])
 
@@ -421,6 +421,8 @@ class AdminController:
             elif command == "test":
                 if args[0] == "admin_commands":
                     run_admin_api_tests(self.admin_api)
+            elif command == "no_op":
+                pass
             else:
                 raise RuntimeError(f"Command {command} is not supported.")
 

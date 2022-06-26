@@ -15,20 +15,14 @@ tests:
         "result_state": { }
       - "trigger":
           "type": "run_state"
-          "data": {
-            "run_finished": True
-          }
+          "data": { "run_finished": True }
         "actions": [
           "kill server",
           "sleep 40",
           "start server",
           "sleep 15",
         ]
-        "result_state": {
-          "data": {
-            "run_finished": True
-          }
-        }
+        "result_state": { "run_finished": True }
 
     validators:
       - path: tests.integration_test.validators.NumpySAGResultValidator

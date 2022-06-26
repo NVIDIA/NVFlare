@@ -192,9 +192,7 @@ class TestSystem:
                         job_result=job_result,
                         client_props=list(site_launcher.client_properties.values()),
                     )
-                    print(
-                        f"Test {test_name}, Validator {job_validator.__class__.__name__}, Result: {job_validate_res}"
-                    )
+                    print(f"Test {test_name}, Validator {job_validator.__class__.__name__}, Result: {job_validate_res}")
                     validate_result = validate_result and job_validate_res
 
                 test_validate_results.append((test_name, validate_result))
