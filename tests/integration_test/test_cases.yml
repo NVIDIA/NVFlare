@@ -1,6 +1,6 @@
 test_configs:
-#   - ./data/test_example_apps.yml
-#   - ./data/test_internal_apps.yml
+   - ./data/test_example_apps.yml
+   - ./data/test_internal_apps.yml
    - ./data/test_kill_one_server_during_training_after_first_round.yml
    - ./data/test_kill_one_server_during_training_before_first_round.yml
    - ./data/test_kill_server_after_training_complete.yml
