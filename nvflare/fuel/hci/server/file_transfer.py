@@ -359,14 +359,14 @@ class FileTransferModule(CommandModule, CommandUtil):
             shutil.rmtree(job_id_dir)
         os.mkdir(job_id_dir)
         if file.startswith(TopDir.JOB):
-            file = file[len(TopDir.JOB):]
+            file = file[len(TopDir.JOB) :]
             file = file.lstrip("/")
             data_bytes = job_data[JobDataKey.JOB_DATA.value]
             dl_to_dir = os.path.join(job_id_dir, TopDir.JOB)
             unzip_single_file_from_bytes(data_bytes, dl_to_dir, file)
             return os.path.relpath(dl_to_dir, self.download_dir)
         elif file.startswith(TopDir.WORKSPACE):
-            file = file[len(TopDir.WORKSPACE):]
+            file = file[len(TopDir.WORKSPACE) :]
             file = file.lstrip("/")
             workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
             dl_to_dir = os.path.join(job_id_dir, TopDir.WORKSPACE)
