@@ -21,7 +21,7 @@ from typing import List
 from zipfile import ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.job_def import JobDataKey, JobMetaKey
+from nvflare.apis.job_def import JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.common_utils import get_size
 from nvflare.fuel.hci.base64_utils import (
@@ -313,12 +313,12 @@ class FileTransferModule(CommandModule, CommandUtil):
         os.mkdir(job_id_dir)
 
         data_bytes = job_data[JobDataKey.JOB_DATA.value]
-        job_dir = os.path.join(job_id_dir, "job")
+        job_dir = os.path.join(job_id_dir, TopDir.JOB)
         os.mkdir(job_dir)
         unzip_all_from_bytes(data_bytes, job_dir)
 
         workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
-        workspace_dir = os.path.join(job_id_dir, "workspace")
+        workspace_dir = os.path.join(job_id_dir, TopDir.WORKSPACE)
         os.mkdir(workspace_dir)
         if workspace_bytes is not None:
             unzip_all_from_bytes(workspace_bytes, workspace_dir)
@@ -358,18 +358,18 @@ class FileTransferModule(CommandModule, CommandUtil):
         if os.path.exists(job_id_dir):
             shutil.rmtree(job_id_dir)
         os.mkdir(job_id_dir)
-        if file.startswith("job"):
-            file = file[3:]
+        if file.startswith(TopDir.JOB):
+            file = file[len(TopDir.JOB):]
             file = file.lstrip("/")
             data_bytes = job_data[JobDataKey.JOB_DATA.value]
-            dl_to_dir = os.path.join(job_id_dir, "job")
+            dl_to_dir = os.path.join(job_id_dir, TopDir.JOB)
             unzip_single_file_from_bytes(data_bytes, dl_to_dir, file)
             return os.path.relpath(dl_to_dir, self.download_dir)
-        elif file.startswith("workspace"):
-            file = file[9:]
+        elif file.startswith(TopDir.WORKSPACE):
+            file = file[len(TopDir.WORKSPACE):]
             file = file.lstrip("/")
             workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
-            dl_to_dir = os.path.join(job_id_dir, "workspace")
+            dl_to_dir = os.path.join(job_id_dir, TopDir.WORKSPACE)
             unzip_single_file_from_bytes(workspace_bytes, dl_to_dir, file)
             return os.path.relpath(dl_to_dir, self.download_dir)
         else:

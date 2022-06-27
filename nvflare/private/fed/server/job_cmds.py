@@ -18,7 +18,7 @@ import logging
 import traceback
 from typing import Dict, List
 
-from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
@@ -73,11 +73,11 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
                     authz_func=self.authorize_job,
                 ),
                 CommandSpec(
-                    name="ls_job",
+                    name="list_files",
                     description="list contents of a finished job in the job store",
-                    usage="ls_job job_id [file/folder path]",
-                    handler_func=self.ls_job,
-                    authz_func=self.authorize_ls_job,
+                    usage="list_files job_id [file/folder path, starting with job or workspace as top dir]",
+                    handler_func=self.list_files,
+                    authz_func=self.authorize_list_files,
                 ),
             ],
         )
@@ -211,7 +211,7 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
             return
         conn.append_success("")
 
-    def authorize_ls_job(self, conn: Connection, args: List[str]):
+    def authorize_list_files(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing job_id")
             return False, None
@@ -222,7 +222,7 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
 
         return self.authorize_job(conn=conn, args=args[:2])
 
-    def ls_job(self, conn: Connection, args: List[str]):
+    def list_files(self, conn: Connection, args: List[str]):
         job_id = conn.get_prop(self.JOB_ID)
 
         if len(args) == 2:
@@ -240,13 +240,13 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
                 )
             with engine.new_context() as fl_ctx:
                 job_data = job_def_manager.get_job_data(job_id, fl_ctx)
-                if file.startswith("job"):
-                    file = file[3:]
+                if file.startswith(TopDir.JOB):
+                    file = file[len(TopDir.JOB) :]
                     file = file.lstrip("/")
                     data_bytes = job_data[JobDataKey.JOB_DATA.value]
                     ls_info = ls_zip_from_bytes(data_bytes)
-                elif file.startswith("workspace"):
-                    file = file[9:]
+                elif file.startswith(TopDir.WORKSPACE):
+                    file = file[len(TopDir.WORKSPACE) :]
                     file = file.lstrip("/")
                     workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
                     ls_info = ls_zip_from_bytes(workspace_bytes)
