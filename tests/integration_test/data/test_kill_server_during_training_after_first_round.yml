@@ -14,7 +14,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job np_sag" ]
-        "result_state": { }
+        "result":
+          "type": "run_state"
+          "data": { }
       - "trigger":
           "type": "run_state"
           "data":
@@ -31,14 +33,17 @@ tests:
           "sleep 40",
           "start server",
         ]
-        "result_state": {
-          "workflows": {
-            "ScatterAndGather": {
-              "phase": "train",
-              "current_round": 1
+        "result":
+          "type": "run_state"
+          "data":
+            {
+              "workflows": {
+                "ScatterAndGather": {
+                  "phase": "train",
+                  "current_round": 1
+                }
+              }
             }
-          }
-        }
 
     validators:
       - path: tests.integration_test.validators.NumpySAGResultValidator

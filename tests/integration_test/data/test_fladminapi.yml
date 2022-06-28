@@ -13,9 +13,13 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job np_sag" ]
-        "result_state": { }
+        "result":
+          "type": "run_state"
+          "data": { }
       - "trigger":
           "type": "server_job_log"
           "data": "sent task assignment to client"
         "actions": [ "test admin_commands" ]
-        "result_state": { }
+        "result":
+          "type": "run_state"
+          "data": { }

@@ -111,8 +111,10 @@ class AdminController:
         self.download_root_dir = download_root_dir
         self.admin_api = None
         self.admin_user_name = ""
+        self.admin_api_response = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.test_done = False
         self.job_id = None
         self.last_job_name = ""
 
@@ -225,13 +227,12 @@ class AdminController:
             return response["details"]
         return None
 
-    def submit_job(self, job_name: str) -> bool:
+    def submit_job(self, job_name: str):
         response = self.admin_api.submit_job(job_name)
-        if response["status"] != APIStatus.SUCCESS:
-            raise RuntimeError(f"submit_job failed: {response}")
-        self.job_id = response["details"]["job_id"]
-        self.last_job_name = job_name
-        return True
+        self.admin_api_response = response["raw"]["data"]
+        if response["status"] == APIStatus.SUCCESS:
+            self.job_id = response["details"]["job_id"]
+            self.last_job_name = job_name
 
     def _check_job_done(self, job_id: str):
         response = self.admin_api.check_status(target_type=TargetType.SERVER)
@@ -346,8 +347,8 @@ class AdminController:
         # whether event has been successfully triggered
         event_triggered = [False for _ in range(len(event_sequence))]
 
-        training_done = False
-        while not training_done:
+        self.test_done = False
+        while not self.test_done:
             job_run_statuses = self._get_job_run_statuses()
             self.logger.debug(f"job run status: {job_run_statuses}")
 
@@ -370,14 +371,18 @@ class AdminController:
                 elif event_trigger["type"] == "client_log":
                     client_logs = self._get_site_log(target=event_trigger["args"]["target"])
                     strings_to_check = "\n".join(client_logs)
-
-                if self.job_id:
-                    if event_trigger["type"] == "server_job_log":
-                        server_logs = self._get_job_log(target=TargetType.SERVER, job_id=self.job_id)
-                        strings_to_check = "\n".join(server_logs)
-                    elif event_trigger["type"] == "client_job_log":
-                        client_logs = self._get_job_log(target=event_trigger["args"]["target"], job_id=self.job_id)
-                        strings_to_check = "\n".join(client_logs)
+                elif event_trigger["type"] == "server_job_log":
+                    if not self.job_id:
+                        raise RuntimeError("No submitted jobs.")
+                    server_logs = self._get_job_log(target=TargetType.SERVER, job_id=self.job_id)
+                    strings_to_check = "\n".join(server_logs)
+                elif event_trigger["type"] == "client_job_log":
+                    if not self.job_id:
+                        raise RuntimeError("No submitted jobs.")
+                    client_logs = self._get_job_log(target=event_trigger["args"]["target"], job_id=self.job_id)
+                    strings_to_check = "\n".join(client_logs)
+                elif event_trigger["type"] != "run_state":
+                    raise RuntimeError(f"This trigger type {event_trigger['type']} is not supported.")
 
                 trigger_data = event_trigger["data"]
                 if _check_event_trigger(
@@ -387,17 +392,23 @@ class AdminController:
                     event_triggered[event_idx] = True
                     self.execute_actions(site_launcher, event_sequence[event_idx]["actions"])
 
-            # check result state only when server is up and running
-            if self.server_status():
-                # compare run_state to expected result_state from the test case
-                if event_idx < len(event_sequence) and event_triggered[event_idx]:
-                    result_state = event_sequence[event_idx]["result_state"]
-                    if any(list(run_state.values())):
-                        _check_run_state(state=run_state, expected_state=result_state)
-                        event_idx += 1
+            if event_idx < len(event_sequence) and event_triggered[event_idx]:
+                result = event_sequence[event_idx]["result"]
+                if result["type"] == "run_state":
+                    # check result state only when server is up and running
+                    if self.server_status():
+                        # compare run_state to expected result data from the test case
+                        if any(list(run_state.values())):
+                            _check_run_state(state=run_state, expected_state=result["data"])
+                            event_idx += 1
+                elif result["type"] == "admin_api_response":
+                    if not self.admin_api_response:
+                        raise RuntimeError("Missing admin_api_response.")
+                    assert self.admin_api_response == result["data"]
+                    event_idx += 1
 
             if self.job_id:
-                training_done = self._check_job_done(job_id=self.job_id)
+                self.test_done = self._check_job_done(job_id=self.job_id)
             time.sleep(self.poll_period)
 
         assert all(event_triggered), "Test failed: not all test events were triggered"
@@ -417,14 +428,16 @@ class AdminController:
             elif command == "kill":
                 _handle_kill(args, self.admin_api, site_launcher)
             elif command == "start":
-                self._handle_start(args, self.admin_api, site_launcher)
+                self._handle_start(args, site_launcher)
             elif command == "test":
                 if args[0] == "admin_commands":
                     run_admin_api_tests(self.admin_api)
             elif command == "no_op":
                 pass
+            elif command == "mark_test_done":
+                self.test_done = True
             else:
-                raise RuntimeError(f"Command {command} is not supported.")
+                raise RuntimeError(f"Action {command} is not supported.")
 
     def finalize(self):
         if self.job_id:
@@ -433,7 +446,7 @@ class AdminController:
         self.admin_api.shutdown(target_type=TargetType.ALL)
         time.sleep(10)
 
-    def _handle_start(self, args, admin_api, site_launcher):
+    def _handle_start(self, args, site_launcher):
         if args[0] == "server":
             if len(args) == 2:
                 # if server id is provided
@@ -443,7 +456,7 @@ class AdminController:
                 server_ids = list(site_launcher.server_properties.keys())
             for sid in server_ids:
                 site_launcher.start_server(sid)
-            admin_api.login(username=self.admin_user_name)
+            self.admin_api.login(username=self.admin_user_name)
         elif args[0] == "client":
             if len(args) == 2:
                 # if client id is provided

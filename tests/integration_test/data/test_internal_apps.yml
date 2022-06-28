@@ -11,7 +11,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job global_model_eval" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.GlobalModelEvalValidator
         args: { server_model_names: ["server"] }
@@ -23,7 +25,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job pt" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.PTModelValidator
     setup:
@@ -36,7 +40,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job cross_val_one_client" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.CrossValSingleClientResultValidator
         args: { server_model_names: ["server"] }
@@ -48,7 +54,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job cross_val" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.CrossValResultValidator
         args: { server_model_names: ["server"] }
@@ -60,7 +68,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job np_sag" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
@@ -70,7 +80,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job np_sag_weights_diff" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
@@ -80,7 +92,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job filters" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.NumpyModelValidator
   - test_name: "run tb_streaming"
@@ -89,7 +103,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job tb_streaming" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.TBResultValidator
   - test_name: "run tf"
@@ -98,7 +114,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job tf" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.TFModelValidator
   - test_name: "run cyclic"
@@ -107,6 +125,8 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job cyclic" ]
-        "result_state": {}
+        "result":
+          "type": "run_state"
+          "data": { }
     validators:
       - path: tests.integration_test.validators.TFModelValidator

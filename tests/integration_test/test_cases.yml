@@ -8,3 +8,4 @@ test_configs:
    - ./data/test_kill_server_during_training_before_first_round.yml
    - ./data/test_kill_server_during_training_sending_model.yml
    - ./data/test_fladminapi.yml
+   - ./data/test_diff_job_config.yml

@@ -128,7 +128,7 @@ def setup_and_teardown_system(request):
             test_cases.append(
                 (
                     x["test_name"],
-                    x["validators"],
+                    x.get("validators"),
                     x.get("setup", []),
                     x.get("teardown", []),
                     x.get("event_sequence", ""),
@@ -197,7 +197,7 @@ class TestSystem:
 
                 test_validate_results.append((test_name, validate_result))
             else:
-                print("No validators provided so results can't be checked.")
+                print("No validators provided so results won't be checked.")
 
             print(f"Finished running {test_name} in {time.time() - start_time} seconds.")
             for command in teardown:

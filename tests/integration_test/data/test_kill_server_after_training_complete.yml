@@ -12,7 +12,9 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job np_sag" ]
-        "result_state": { }
+        "result":
+          "type": "run_state"
+          "data": { }
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -22,7 +24,9 @@ tests:
           "start server",
           "sleep 15",
         ]
-        "result_state": { "run_finished": True }
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
 
     validators:
       - path: tests.integration_test.validators.NumpySAGResultValidator
