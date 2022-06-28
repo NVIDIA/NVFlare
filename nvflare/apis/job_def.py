@@ -62,6 +62,11 @@ class JobMetaKey(str, Enum):
         return self.value
 
 
+class TopDir(object):
+    JOB = "job"
+    WORKSPACE = "workspace"
+
+
 class Job:
     def __init__(
         self,
