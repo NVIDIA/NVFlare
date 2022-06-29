@@ -41,8 +41,19 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
+modify_hosts() {
+    echo "adding DNS config to hosts"
+    localhost0="127.0.0.1       localhost0"
+    localhost1="127.0.0.1       localhost1"
+    cp /etc/hosts /etc/hosts_bak
+    sed -i "1a ${localhost0}" /etc/hosts
+    sed -i "1a ${localhost1}" /etc/hosts
+    cat /etc/hosts
+}
+
 integration_test() {
     echo "Run integration test..."
+    modify_hosts
     init_pipenv requirements-dev.txt
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
