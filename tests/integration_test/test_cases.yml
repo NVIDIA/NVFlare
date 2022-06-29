@@ -1,7 +1,11 @@
 test_configs:
-  - ./data/single_app_as_job/test_example_apps.yml
-  - ./data/single_app_as_job/test_internal_apps.yml
-  # - ./data/single_app_as_job/test_ha.yml
-  # - ./data/single_app_as_job/test_ha_2_servers_before_first_round.yml
-  # - ./data/single_app_as_job/test_ha_2_servers_after_first_round.yml
-  # - ./data/single_app_as_job/test_fladminapi.yml
+   - ./data/test_example_apps.yml
+   - ./data/test_internal_apps.yml
+   - ./data/test_kill_one_server_during_training_after_first_round.yml
+   - ./data/test_kill_one_server_during_training_before_first_round.yml
+   - ./data/test_kill_server_after_training_complete.yml
+   - ./data/test_kill_server_during_training_after_first_round.yml
+   - ./data/test_kill_server_during_training_before_first_round.yml
+   - ./data/test_kill_server_during_training_sending_model.yml
+   - ./data/test_fladminapi.yml
+   - ./data/test_diff_job_config.yml

@@ -22,8 +22,11 @@ from nvflare.ha.overseer_agent import HttpOverseerAgent
 
 
 class OALauncher:
+    """Overseer and overseer agent launcher."""
+
     def __init__(self):
         self._agent_dict = dict(server=dict(), client=dict())
+        self._overseer_process = None
 
     def start_overseer(self):
         new_env = os.environ.copy()
@@ -44,7 +47,7 @@ class OALauncher:
         agent = self._agent_dict["client"].get(agent_id)
         if agent is not None:
             return agent
-        raise ValueError(f"{agent_id} not found in currnet agent list")
+        raise ValueError(f"{agent_id} not found in current agent list")
 
     def start_servers(self, number):
         agent_id_list = list()

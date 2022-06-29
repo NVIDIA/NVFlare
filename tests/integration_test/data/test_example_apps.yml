@@ -1,0 +1,89 @@
+n_servers: 1
+n_clients: 2
+jobs_root_dir: ../../examples
+cleanup: True
+
+
+tests:
+  - test_name: "run hello-numpy-sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-numpy-sag" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+    validators:
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run hello-cyclic"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-cyclic" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator
+  - test_name: "run hello-numpy-cross-val"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-numpy-cross-val" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+    validators:
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run hello-pt"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-pt" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+    validators:
+      - path: tests.integration_test.validators.PTModelValidator
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: [ "server" ] }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+    teardown:
+      - rm -rf ~/data
+  - test_name: "run hello-pt-tb"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-pt-tb" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+    validators:
+      - path: tests.integration_test.validators.PTModelValidator
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: [ "FL_global_model.pt" ] }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+    teardown:
+      - rm -rf ~/data
+  - test_name: "run hello-tf2"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-tf2" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator

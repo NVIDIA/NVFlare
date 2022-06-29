@@ -17,7 +17,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import List
 
-from tests.integration_test.site_launcher import SiteProperties
+from tests.integration_test.src import SiteProperties
 
 
 class JobResultValidator(ABC):
