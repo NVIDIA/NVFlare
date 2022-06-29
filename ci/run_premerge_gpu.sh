@@ -43,12 +43,17 @@ remove_pipenv() {
 
 modify_hosts() {
     echo "adding DNS config to hosts"
+    cp /etc/hosts /etc/hosts_bak
     localhost0="127.0.0.1       localhost0"
     localhost1="127.0.0.1       localhost1"
-    cp /etc/hosts /etc/hosts_bak
-    sed -i "1a ${localhost0}" /etc/hosts
-    sed -i "1a ${localhost1}" /etc/hosts
+    sed -i "\$a\\${localhost0}" /etc/hosts
+    sed -i "\$a\\${localhost1}" /etc/hosts
     cat /etc/hosts
+}
+
+revert_hosts() {
+    echo 'reverting hosts file'
+    cp /etc/hosts_bak /etc/hosts
 }
 
 integration_test() {
