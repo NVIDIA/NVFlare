@@ -44,8 +44,7 @@ remove_pipenv() {
 add_dns_entries() {
     echo "adding dns entries for HA test cases"
     cp /etc/hosts temphost
-    echo "localhost0" | tee -a /etc/hosts > /dev/null
-    echo "localhost1" | tee -a /etc/hosts > /dev/null
+    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
 }
 
 remove_dns_entries() {
