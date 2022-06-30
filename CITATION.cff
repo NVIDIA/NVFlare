@@ -1,0 +1,23 @@
+# YAML 1.2
+# Metadata for citation of this software according to the CFF format (https://citation-file-format.github.io/)
+#
+---
+title: "Nvidia FLARE"
+abstract: "Nvidia FLARE is an SDK designed to enable federated learning amongst different parties using
+their local secure protected data for client-side training, at the same time it includes capabilities to
+coordinate and exchange progressing of results across all sites to achieve better global model while
+preserving data privacy."
+authors:
+  - name: "Nvidia Corporation"
+date-released: 2022-06-29
+version: "2.1.2"
+identifiers:
+  - description: "This DOI represents all versions of Nvidia FLARE, and will always resolve to the latest one."
+    type: doi
+    value: "10.5281/zenodo.6780567"
+license: "Apache-2.0"
+repository-code: "https://github.com/NVIDIA/nvflare"
+url: "https://nvflare.readthedocs.io"
+cff-version: "1.2.0"
+message: "If you use this software, please cite it using these metadata."
+...
