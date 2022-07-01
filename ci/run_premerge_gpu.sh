@@ -47,7 +47,7 @@ integration_test() {
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m pytorch
+    pipenv run ./run_integration_tests.sh -m "${1}"
     popd
     rm -rf /tmp/snapshot-storage
     remove_pipenv
@@ -57,11 +57,18 @@ case $BUILD_TYPE in
 
     all)
         echo "Run all tests..."
-        integration_test
+        integration_test tensorflow
+        integration_test pytorch
         ;;
 
-    integration_test)
-        integration_test
+    tensorflow)
+        echo "Run TF tests..."
+        integration_test tensorflow
+        ;;
+
+    pytorch)
+        echo "Run PT tests..."
+        integration_test pytorch
         ;;
 
     *)
