@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 #
@@ -41,43 +41,15 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
-unit_test() {
-    echo "Run unit test..."
-    init_pipenv requirements-dev.txt
-    pipenv run ./runtest.sh
-    remove_pipenv
-}
-
-wheel_build() {
-    echo "Run wheel build..."
-    init_pipenv requirements-dev.txt
-    pipenv install build twine torch torchvision
-    pipenv run python -m build --wheel
-    remove_pipenv
-}
-
-add_dns_entries() {
-    echo "adding dns entries for HA test cases"
-    cp /etc/hosts temphost
-    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
-}
-
-remove_dns_entries() {
-    echo "restoring original /etc/hosts file"
-    mv temphost /etc/hosts
-}
-
 integration_test() {
     echo "Run integration test..."
     init_pipenv requirements-dev.txt
-    add_dns_entries
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m numpy
+    pipenv run ./run_integration_tests.sh -m tensorflow
     popd
     rm -rf /tmp/snapshot-storage
-    remove_dns_entries
     remove_pipenv
 }
 
@@ -85,24 +57,16 @@ case $BUILD_TYPE in
 
     all)
         echo "Run all tests..."
-        unit_test
         integration_test
-        wheel_build
-        ;;
-
-    unit_test)
-        unit_test
         ;;
 
     integration_test)
         integration_test
         ;;
 
-    wheel_build )
-        wheel_build
-        ;;
-
     *)
         echo "ERROR: unknown parameter: $BUILD_TYPE"
         ;;
 esac
+
+

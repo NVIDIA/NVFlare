@@ -41,28 +41,15 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
-add_dns_entries() {
-    echo "adding dns entries for HA test cases"
-    cp /etc/hosts temphost
-    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
-}
-
-remove_dns_entries() {
-    echo "restoring original /etc/hosts file"
-    mv temphost /etc/hosts
-}
-
 integration_test() {
     echo "Run integration test..."
     init_pipenv requirements-dev.txt
-    add_dns_entries
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh
+    pipenv run ./run_integration_tests.sh -m pytorch
     popd
     rm -rf /tmp/snapshot-storage
-    remove_dns_entries
     remove_pipenv
 }
 
