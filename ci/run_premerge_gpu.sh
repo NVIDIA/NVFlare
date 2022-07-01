@@ -59,7 +59,7 @@ integration_test_tf() {
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}
-    sh "run_integration_tests.sh -m tensorflow"
+    run ./run_integration_tests.sh -m tensorflow
     popd
     rm -rf /tmp/snapshot-storage
 }
