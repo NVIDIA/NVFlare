@@ -57,14 +57,14 @@ wheel_build() {
 }
 
 add_dns_entries() {
-    echo "adding dns entries for HA test cases"
-    cp /etc/hosts temphost
+    echo "adding DNS entries for HA test cases"
+    cp /etc/hosts /etc/hosts_bak
     echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
 }
 
 remove_dns_entries() {
     echo "restoring original /etc/hosts file"
-    mv temphost /etc/hosts
+    cp /etc/hosts_bak /etc/hosts
 }
 
 integration_test() {
