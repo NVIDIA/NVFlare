@@ -55,7 +55,9 @@ integration_test_pt() {
 
 integration_test_tf() {
     echo "Run TF integration test..."
+    # not using pipenv because we need tensorflow package from the container
     python -m pip install -r requirements-dev.txt
+    export PYTHONPATH=$PWD
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}

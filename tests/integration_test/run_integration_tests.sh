@@ -54,7 +54,7 @@ run_pytorch()
 {
     echo "Running integration tests using pytorch related jobs."
     cmd="$prefix $cmd system_test.py"
-    python -m pip install torch torchvision
+    python -m pip install tensorboard torch torchvision
     python -c "import torch; print('PyTorch version is ' + torch.__version__)"
     echo "$cmd"
     eval "$cmd"
