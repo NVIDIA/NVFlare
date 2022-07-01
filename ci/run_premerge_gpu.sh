@@ -16,10 +16,10 @@
 #
 
 # Argument(s):
-#   BUILD_TYPE:   all/specific_test_name, tests to execute
+#   BUILD_TYPE:   pytorch | tensorflow, tests to execute
 
 set -ex
-BUILD_TYPE=all
+BUILD_TYPE=pytorch
 
 if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
@@ -41,34 +41,39 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
-integration_test() {
-    echo "Run integration test..."
+integration_test_pt() {
+    echo "Run PT integration test..."
     init_pipenv requirements-dev.txt
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m "${1}"
+    pipenv run ./run_integration_tests.sh -m pytorch
     popd
     rm -rf /tmp/snapshot-storage
     remove_pipenv
 }
 
-case $BUILD_TYPE in
+integration_test_tf() {
+    echo "Run TF integration test..."
+    python -m pip install -r requirements-dev.txt
+    testFolder="tests/integration_test"
+    rm -rf /tmp/snapshot-storage
+    pushd ${testFolder}
+    sh "run_integration_tests.sh -m tensorflow"
+    popd
+    rm -rf /tmp/snapshot-storage
+}
 
-    all)
-        echo "Run all tests..."
-        integration_test tensorflow
-        integration_test pytorch
-        ;;
+case $BUILD_TYPE in
 
     tensorflow)
         echo "Run TF tests..."
-        integration_test tensorflow
+        integration_test_tf
         ;;
 
     pytorch)
         echo "Run PT tests..."
-        integration_test pytorch
+        integration_test_pt
         ;;
 
     *)
