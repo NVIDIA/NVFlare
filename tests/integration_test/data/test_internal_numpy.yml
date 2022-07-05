@@ -1,39 +1,44 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples
+jobs_root_dir: ./data/apps
 cleanup: True
 
 
 tests:
-  - test_name: "run hello-numpy-sag"
+  - test_name: "run global_model_eval"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-sag" ]
-        "result":
-          "type": "run_state"
-          "data": {}
-    validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
-  - test_name: "run hello-cyclic"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-cyclic" ]
+        "actions": [ "submit_job global_model_eval" ]
         "result":
           "type": "run_state"
           "data": { }
     validators:
-      - path: tests.integration_test.validators.TFModelValidator
-  - test_name: "run hello-numpy-cross-val"
+      - path: tests.integration_test.validators.GlobalModelEvalValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run cross_val_one_client"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-cross-val" ]
+        "actions": [ "submit_job cross_val_one_client" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+    validators:
+      - path: tests.integration_test.validators.CrossValSingleClientResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run cross_val"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job cross_val" ]
         "result":
           "type": "run_state"
           "data": { }
@@ -42,48 +47,38 @@ tests:
         args: { server_model_names: ["server"] }
       - path: tests.integration_test.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
-  - test_name: "run hello-pt"
+  - test_name: "run np_sag"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-pt" ]
+        "actions": [ "submit_job np_sag" ]
         "result":
           "type": "run_state"
           "data": { }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
-      - path: tests.integration_test.validators.CrossValResultValidator
-        args: { server_model_names: [ "server" ] }
-    setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
-    teardown:
-      - rm -rf ~/data
-  - test_name: "run hello-pt-tb"
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run np_sag_weights_diff"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-pt-tb" ]
+        "actions": [ "submit_job np_sag_weights_diff" ]
         "result":
           "type": "run_state"
           "data": { }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
-      - path: tests.integration_test.validators.CrossValResultValidator
-        args: { server_model_names: [ "FL_global_model.pt" ] }
-    setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
-    teardown:
-      - rm -rf ~/data
-  - test_name: "run hello-tf2"
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run filters"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-tf2" ]
+        "actions": [ "submit_job filters" ]
         "result":
           "type": "run_state"
           "data": { }
     validators:
-      - path: tests.integration_test.validators.TFModelValidator
+      - path: tests.integration_test.validators.NumpyModelValidator

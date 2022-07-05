@@ -37,31 +37,6 @@ def generate_meta(job_name: str, clients: List[str]):
     return meta
 
 
-def generate_job_dir_for_single_app_job(
-    app_root_folder: str, app_name: str, clients: List[str], destination: str, app_as_job: bool = True
-):
-    app_folder = os.path.join(app_root_folder, app_name)
-    if not os.path.exists(app_folder):
-        raise RuntimeError(f"App folder {app_folder} does not exist.")
-    if not os.path.isdir(app_folder):
-        raise RuntimeError(f"App folder {app_folder} is not a folder.")
-
-    job_folder = os.path.join(destination, app_name)
-    if os.path.exists(job_folder):
-        shutil.rmtree(job_folder)
-    if app_as_job:
-        shutil.copytree(app_folder, job_folder)
-    else:
-        os.makedirs(job_folder)
-        shutil.copytree(app_folder, os.path.join(job_folder, app_name))
-
-        meta = generate_meta(job_name=app_name, clients=clients)
-        with open(os.path.join(job_folder, "meta.json"), "w") as f:
-            json.dump(meta, f, indent=2)
-
-    return job_folder
-
-
 def read_yaml(yaml_file_path):
     if not os.path.exists(yaml_file_path):
         raise RuntimeError(f"Yaml file doesnt' exist at {yaml_file_path}")

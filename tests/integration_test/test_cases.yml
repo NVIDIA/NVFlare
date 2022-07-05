@@ -1,11 +1,18 @@
 test_configs:
-   - ./data/test_example_apps.yml
-   - ./data/test_internal_apps.yml
-   - ./data/test_kill_one_server_during_training_after_first_round.yml
-   - ./data/test_kill_one_server_during_training_before_first_round.yml
-   - ./data/test_kill_server_after_training_complete.yml
-   - ./data/test_kill_server_during_training_after_first_round.yml
-   - ./data/test_kill_server_during_training_before_first_round.yml
-   - ./data/test_kill_server_during_training_sending_model.yml
-   - ./data/test_fladminapi.yml
-   - ./data/test_diff_job_config.yml
+  numpy:
+    - ./data/test_diff_job_config.yml
+    - ./data/test_hello_numpy.yml
+    - ./data/test_internal_numpy.yml
+    - ./data/test_kill_one_server_during_training_after_first_round.yml
+    - ./data/test_kill_one_server_during_training_before_first_round.yml
+    - ./data/test_kill_server_after_training_complete.yml
+    - ./data/test_kill_server_during_training_after_first_round.yml
+    - ./data/test_kill_server_during_training_before_first_round.yml
+    - ./data/test_kill_server_during_training_sending_model.yml
+    - ./data/test_fladminapi.yml
+  tensorflow:
+    - ./data/test_hello_tf.yml
+    - ./data/test_internal_tf.yml
+  pytorch:
+    - ./data/test_hello_pt.yml
+    - ./data/test_internal_pt.yml

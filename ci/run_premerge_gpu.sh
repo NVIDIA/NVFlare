@@ -16,10 +16,10 @@
 #
 
 # Argument(s):
-#   BUILD_TYPE:   all/specific_test_name, tests to execute
+#   BUILD_TYPE:   pytorch | tensorflow, tests to execute
 
 set -ex
-BUILD_TYPE=all
+BUILD_TYPE=pytorch
 
 if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
@@ -41,40 +41,41 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
-add_dns_entries() {
-    echo "adding dns entries for HA test cases"
-    cp /etc/hosts temphost
-    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
-}
-
-remove_dns_entries() {
-    echo "restoring original /etc/hosts file"
-    mv temphost /etc/hosts
-}
-
-integration_test() {
-    echo "Run integration test..."
+integration_test_pt() {
+    echo "Run PT integration test..."
     init_pipenv requirements-dev.txt
-    add_dns_entries
     testFolder="tests/integration_test"
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh
+    pipenv run ./run_integration_tests.sh -m pytorch
     popd
     rm -rf /tmp/snapshot-storage
-    remove_dns_entries
     remove_pipenv
+}
+
+integration_test_tf() {
+    echo "Run TF integration test..."
+    # not using pipenv because we need tensorflow package from the container
+    python -m pip install -r requirements-dev.txt
+    export PYTHONPATH=$PWD
+    testFolder="tests/integration_test"
+    rm -rf /tmp/snapshot-storage
+    pushd ${testFolder}
+    ./run_integration_tests.sh -m tensorflow
+    popd
+    rm -rf /tmp/snapshot-storage
 }
 
 case $BUILD_TYPE in
 
-    all)
-        echo "Run all tests..."
-        integration_test
+    tensorflow)
+        echo "Run TF tests..."
+        integration_test_tf
         ;;
 
-    integration_test)
-        integration_test
+    pytorch)
+        echo "Run PT tests..."
+        integration_test_pt
         ;;
 
     *)

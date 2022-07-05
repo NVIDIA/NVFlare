@@ -24,7 +24,6 @@ import pytest
 from tests.integration_test.src import AdminController, POCSiteLauncher, ProvisionSiteLauncher
 from tests.integration_test.utils import (
     cleanup_path,
-    generate_job_dir_for_single_app_job,
     get_job_store_path_from_poc,
     get_snapshot_path_from_poc,
     read_yaml,
@@ -76,11 +75,17 @@ def _cleanup(additional_paths=None, site_launcher=None):
 
 
 test_configs = read_yaml("./test_cases.yml")
+framework = os.environ.get("NVFLARE_TEST_FRAMEWORK", "numpy")
+if framework not in ["numpy", "tensorflow", "pytorch"]:
+    print(f"Framework {framework} is not supported, using default numpy.")
+    framework = "numpy"
+print(f"Testing framework {framework}")
+test_configs = test_configs["test_configs"][framework]
 
 
 @pytest.fixture(
     scope="class",
-    params=test_configs["test_configs"],
+    params=test_configs,
 )
 def setup_and_teardown_system(request):
     yaml_path = os.path.join(os.path.dirname(__file__), request.param)

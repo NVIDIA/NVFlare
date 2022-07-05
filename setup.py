@@ -73,15 +73,17 @@ setup(
     long_description_content_type="text/markdown",
     python_requires=">=3.7,<3.9",
     install_requires=[
-        "PyYAML",
-        "psutil",
-        "numpy",
-        "grpcio",
-        "google-api-python-client",
         "cryptography>=36.0.0",
+        "Flask==2.1.2",
+        "google-api-python-client==2.49.0",
+        "grpcio==1.46.3",
+        "gunicorn==20.1.0",
+        "numpy",
+        "protobuf==3.20.1"
+        "psutil==5.9.1",
+        "PyYAML==6.0",
+        "six>=1.15.0",
         "tenseal==0.3.0",
-        "gunicorn",
-        "flask",
     ],
     entry_points={
         "console_scripts": [
