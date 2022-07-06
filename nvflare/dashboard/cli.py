@@ -17,12 +17,10 @@ import os
 import signal
 
 import docker
-import requests
-
 from nvflare.lighter.utils import generate_password
 
 
-def start(port, folder, app_url, app_dest_filename, dashboard_image):
+def start(port, folder, dashboard_image):
     if not folder:
         folder = os.getcwd()
     environment = dict()
@@ -34,25 +32,16 @@ def start(port, folder, app_url, app_dest_filename, dashboard_image):
         pwd = generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
-    if app_url and app_dest_filename:
-        images_folder = os.path.join(folder, "images")
-        if not os.path.exists(images_folder):
-            os.makedirs(images_folder)
-        dest_file = os.path.join(images_folder, app_dest_filename)
-        print(f"downloding {app_url} to {dest_file}")
-        with open(dest_file, "wb") as out_file:
-            content = requests.get(app_url, stream=True).content
-            out_file.write(content)
     client = docker.from_env()
     try:
         container_obj = client.containers.run(
             dashboard_image,
-            entrypoint=["/usr/local/bin/python3", "nvflare/web/wsgi.py"],
+            entrypoint=["/usr/local/bin/python3", "nvflare/dashboard/wsgi.py"],
             detach=True,
             auto_remove=True,
             name="nvflare-dashboard",
             ports={8443: port},
-            volumes={folder: {"bind": "/var/tmp/nvflare/web", "model": "rw"}},
+            volumes={folder: {"bind": "/var/tmp/nvflare/dashboard", "model": "rw"}},
             environment=environment,
         )
     except docker.errors.APIError as e:
@@ -88,24 +77,16 @@ def dashboard():
         "-f", "--folder", type=str, help="folder containing necessary info (default: current working directory)"
     )
     parser.add_argument(
-        "-u",
-        "--app_url",
-        help="URL of the application.  The application will be copied to the folder available to dashboard to run.",
-    )
-    parser.add_argument("-d", "--app_dest_filename", type=str, help="filename of downloaded application")
-    parser.add_argument(
         "-i", "--dashboard_image", default="nvflare/nvflare", help="container image for running dashboard"
     )
     args = parser.parse_args()
     port = args.port
     folder = args.folder
-    app_url = args.app_url
-    app_dest_filename = args.app_dest_filename
     dashboard_image = args.dashboard_image
     if args.stop:
         stop()
     elif args.start:
-        start(port, folder, app_url, app_dest_filename, dashboard_image)
+        start(port, folder, dashboard_image)
 
 
 if __name__ == "__main__":

@@ -112,7 +112,11 @@ class DistributionBuilder(Builder):
             ctx (dict): the provision context
         """
         wip_dir = self.get_wip_dir(ctx)
-        dirs = [name for name in os.listdir(wip_dir) if os.path.isdir(os.path.join(wip_dir, name))]
+        dirs = [
+            name
+            for name in os.listdir(wip_dir)
+            if os.path.isdir(os.path.join(wip_dir, name)) and "nvflare_" not in name
+        ]
         for dir in dirs:
             dest_zip_file = os.path.join(wip_dir, f"{dir}")
             if self.zip_password:
