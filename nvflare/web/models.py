@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
-from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
@@ -42,6 +42,7 @@ class Resource(CommonMixin, db.Model):
 class Client(CommonMixin, db.Model):
     resource = db.Column(db.Integer, db.ForeignKey("resource.id"), nullable=False)
     organization = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
+    approval_state = db.Column(db.Integer, default=0)
 
 
 class User(CommonMixin, db.Model):
