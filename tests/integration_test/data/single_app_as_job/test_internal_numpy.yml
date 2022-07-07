@@ -11,13 +11,6 @@ tests:
         args: { server_model_names: ["server"] }
       - path: tests.integration_test.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
-  - app_name: pt
-    validators:
-      - path: tests.integration_test.validators.PTModelValidator
-    setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/cifar10_data
   - app_name: cross_val_one_client
     validators:
       - path: tests.integration_test.validators.CrossValSingleClientResultValidator
@@ -41,12 +34,3 @@ tests:
   - app_name: filters
     validators:
       - path: tests.integration_test.validators.NumpyModelValidator
-  - app_name: tb_streaming
-    validators:
-      - path: tests.integration_test.validators.TBResultValidator
-  - app_name: tf
-    validators:
-      - path: tests.integration_test.validators.TFModelValidator
-  - app_name: cyclic
-    validators:
-      - path: tests.integration_test.validators.TFModelValidator

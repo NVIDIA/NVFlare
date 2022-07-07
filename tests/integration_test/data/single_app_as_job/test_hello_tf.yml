@@ -1,0 +1,13 @@
+system_setup: ./data/system/1_server_2_clients.yml
+apps_root_dir: ../../examples
+single_app_as_job: True
+cleanup: True
+
+
+tests:
+  - app_name: hello-cyclic
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator
+  - app_name: hello-tf2
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator
