@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import os
 import shutil
-import datetime
 
 from setuptools import find_packages, setup
 
@@ -79,7 +79,7 @@ setup(
         "grpcio==1.46.3",
         "gunicorn==20.1.0",
         "numpy",
-        "protobuf==3.20.1"
+        "protobuf==3.20.1",
         "psutil==5.9.1",
         "PyYAML==6.0",
         "six>=1.15.0",
