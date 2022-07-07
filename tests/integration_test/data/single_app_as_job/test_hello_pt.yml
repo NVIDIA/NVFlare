@@ -5,19 +5,6 @@ cleanup: True
 
 
 tests:
-  - app_name: hello-cyclic
-    validators:
-      - path: tests.integration_test.validators.TFModelValidator
-  - app_name: hello-numpy-cross-val
-    validators:
-      - path: tests.integration_test.validators.CrossValResultValidator
-        args: { server_model_names: ["server"] }
-      - path: tests.integration_test.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
-  - app_name: hello-numpy-sag
-    validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - app_name: hello-pt
     validators:
       - path: tests.integration_test.validators.PTModelValidator
@@ -36,6 +23,3 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
     teardown:
       - rm -rf ~/data
-  - app_name: hello-tf2
-    validators:
-      - path: tests.integration_test.validators.TFModelValidator
