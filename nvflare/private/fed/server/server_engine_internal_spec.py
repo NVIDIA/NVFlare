@@ -13,13 +13,16 @@
 # limitations under the License.
 
 import time
-from abc import ABC
+from abc import ABC, abstractmethod
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 
+from .job_runner import JobRunner
 from .run_manager import RunInfo, RunManager
 from .server_json_config import ServerJsonConfigurator
 
@@ -30,7 +33,7 @@ class EngineInfo(object):
         self.start_time = time.time()
         self.status = MachineStatus.STOPPED
 
-        self.app_name = "?"
+        self.app_names = {}
 
 
 class ServerEngineInternalSpec(ServerEngineSpec, ABC):
@@ -41,6 +44,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
     def get_run_info(self) -> RunInfo:
         pass
 
+    @abstractmethod
     def get_staging_path_of_app(self, app_name: str) -> str:
         """Get the staging path of the app waiting to be deployed.
 
@@ -52,12 +56,14 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def deploy_app_to_server(self, app_name: str, app_staging_path: str) -> str:
+    @abstractmethod
+    def deploy_app_to_server(self, job_id: str, app_name: str, app_staging_path: str) -> str:
         """Deploy the specified app to the server.
 
         Copy the app folder tree from staging area to the server's RUN area
 
         Args:
+            job_id: job id of the app to be deployed
             app_name: name of the app to be deployed
             app_staging_path: the full path to the app folder in staging area
 
@@ -66,20 +72,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def prepare_deploy_app_to_client(self, app_name: str, app_staging_path: str, client_name: str) -> str:
-        """Prepare to deploy the specified app to the specified client name.
-
-        Copy the app folder tree from staging area to the client's RUN area on Server
-        Args:
-            app_name: name of the app
-            app_staging_path: the full path to the app folder in staging area
-            client_name: name of the client
-
-        Returns:
-            An error message. An empty string if successful.
-        """
-        pass
-
+    @abstractmethod
     def get_app_data(self, app_name: str) -> (str, object):
         """Get data for deploying the app.
 
@@ -91,38 +84,31 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def get_run_number(self) -> str:
-        """Get the current run_number of the engine.
+    @abstractmethod
+    def get_app_run_info(self, job_id) -> RunInfo:
+        """Get the app RunInfo from the child process.
 
         Returns:
-            run_number
+            App RunInfo
+
         """
         pass
 
-    def set_run_number(self, run_num: int) -> str:
-        """Set the run number for the next RUN.
-
-        Args:
-            run_num: run number
-
-        Returns:
-            An error message. An empty string if successful.
-        """
-        pass
-
-    def delete_run_number(self, run_num: int) -> str:
+    @abstractmethod
+    def delete_job_id(self, job_id: str) -> str:
         """Delete specified RUN.
 
         The Engine must do status check before the run can be deleted.
         Args:
-            run_num: run number
+            job_id: job id
 
         Returns:
             An error message. An empty string if successful.
         """
         pass
 
-    def start_app_on_server(self) -> str:
+    @abstractmethod
+    def start_app_on_server(self, job_idber: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
         """Start the FL app on Server.
 
         Returns:
@@ -130,7 +116,8 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
-    def check_app_start_readiness(self) -> str:
+    @abstractmethod
+    def check_app_start_readiness(self, job_id: str) -> str:
         """Check whether the app is ready to start.
 
         Returns:
@@ -138,14 +125,17 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def abort_app_on_clients(self, clients: [str]):
         """Abort the application on the specified clients."""
         pass
 
-    def abort_app_on_server(self):
+    @abstractmethod
+    def abort_app_on_server(self, job_id: str):
         """Abort the application on the server."""
         pass
 
+    @abstractmethod
     def shutdown_server(self) -> str:
         """Shutdown the server.
 
@@ -160,6 +150,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def remove_clients(self, clients: [str]) -> str:
         """Remove specified clients.
 
@@ -171,6 +162,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def restart_server(self) -> str:
         """Restart the server.
 
@@ -182,6 +174,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def set_run_manager(self, run_manager: RunManager):
         """Set the RunManager for server.
 
@@ -190,6 +183,17 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
+    def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
+        """Set the JobRunner for server.
+
+        Args:
+            job_runner: A JobRunner object
+            job_manager: A JobDefManagerSpec object
+        """
+        pass
+
+    @abstractmethod
     def set_configurator(self, conf: ServerJsonConfigurator):
         """Set the configurator for server.
 
@@ -198,6 +202,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def build_component(self, config_dict):
         """Build a component from the config_dict.
 
@@ -206,6 +211,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
     def get_client_name_from_token(self, token: str) -> str:
         """Get the registered client name from communication token.
 
@@ -217,10 +223,36 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         """
         pass
 
+    @abstractmethod
+    def get_client_from_name(self, client_name: str) -> Client:
+        """Get the registered client token from client_name.
+
+        Args:
+            client_name: client name
+
+        Returns: registered client
+
+        """
+        pass
+
+    @abstractmethod
+    def get_job_clients(self, client_sites) -> {}:
+        """To get the participating clients for the job
+
+        Args:
+            client_sites: clients with the dispatching info
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
     def ask_to_stop(self):
         """Ask the engine to stop the current run."""
         pass
 
+    @abstractmethod
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         """Send a request to client(s) via the auxiliary channel.
 
@@ -238,5 +270,31 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         of the reply Shareable.
 
         If a reply is not received from a client, do not put it into the reply dict.
+        """
+        pass
+
+    @abstractmethod
+    def show_stats(self, job_id):
+        """Show_stats of the server.
+
+        Args:
+            job_id: current job_id
+
+        Returns:
+            Component stats of the server
+
+        """
+        pass
+
+    @abstractmethod
+    def get_errors(self, job_id):
+        """Get the errors of the server components.
+
+        Args:
+            job_id: current job_id
+
+        Returns:
+            Server components errors.
+
         """
         pass

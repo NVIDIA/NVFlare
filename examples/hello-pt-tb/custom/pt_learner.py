@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,44 +15,56 @@
 import os.path
 
 import torch
+from pt_constants import PTConstants
+from simple_network import SimpleNetwork
 from torch import nn
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader
-from torchvision.datasets import CIFAR10
-from torchvision.transforms import ToTensor, Normalize, Compose
 from torch.utils.tensorboard import SummaryWriter
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import Compose, Normalize, ToTensor
 
-from nvflare.apis.dxo import from_shareable, DXO, DataKind, MetaKey
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ReservedKey
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable, model_learnable_to_dxo
 from nvflare.app_common.abstract.learner_spec import Learner
+from nvflare.app_common.abstract.model import (
+    ModelLearnable,
+    ModelLearnableKey,
+    make_model_learnable,
+    model_learnable_to_dxo,
+)
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
-from pt_constants import PTConstants
-from simple_network import SimpleNetwork
 
 
 class PTLearner(Learner):
-
-    def __init__(
-        self,
-        lr=0.01,
-        epochs=5,
-        exclude_vars=None,
-        analytic_sender_id="analytic_sender"
-    ):
+    def __init__(self, data_path="~/data", lr=0.01, epochs=5, exclude_vars=None, analytic_sender_id="analytic_sender"):
         """Simple PyTorch Learner that trains and validates a simple network on the CIFAR10 dataset.
 
         Args:
             lr (float, optional): Learning rate. Defaults to 0.01
             epochs (int, optional): Epochs. Defaults to 5
             exclude_vars (list): List of variables to exclude during model loading.
-            analytic_sender_id: id of `AnalyticsSender` if configured as a client component. If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
+            analytic_sender_id: id of `AnalyticsSender` if configured as a client component.
+                If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
         """
         super().__init__()
+        self.writer = None
+        self.persistence_manager = None
+        self.default_train_conf = None
+        self.test_loader = None
+        self.test_data = None
+        self.n_iterations = None
+        self.train_loader = None
+        self.train_dataset = None
+        self.optimizer = None
+        self.loss = None
+        self.device = None
+        self.model = None
+        self.data_path = data_path
         self.lr = lr
         self.epochs = epochs
         self.exclude_vars = exclude_vars
@@ -66,25 +78,27 @@ class PTLearner(Learner):
         self.loss = nn.CrossEntropyLoss()
         self.optimizer = SGD(self.model.parameters(), lr=self.lr, momentum=0.9)
 
-        # Create Cifar10 dataset for training.
-        transforms = Compose([
-            ToTensor(),
-            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ])
-        self.train_dataset = CIFAR10(root='~/data', transform=transforms,
-                                      download=True, train=True)
+        # Create CIFAR10 dataset for training.
+        transforms = Compose(
+            [
+                ToTensor(),
+                Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ]
+        )
+        self.train_dataset = CIFAR10(root=self.data_path, transform=transforms, download=True, train=True)
         self.train_loader = DataLoader(self.train_dataset, batch_size=32, shuffle=True)
         self.n_iterations = len(self.train_loader)
 
-        # Create Cifar10 dataset for validation.
-        self.test_data = CIFAR10(root='~/data', train=False, transform=transforms)
+        # Create CIFAR10 dataset for validation.
+        self.test_data = CIFAR10(root=self.data_path, train=False, transform=transforms)
         self.test_loader = DataLoader(self.test_data, batch_size=32, shuffle=False)
 
-        # Setup the persistence manager to save PT model.
+        # Set up the persistence manager to save PT model.
         # The default training configuration is used by persistence manager in case no initial model is found.
         self.default_train_conf = {"train": {"model": type(self.model).__name__}}
         self.persistence_manager = PTModelPersistenceFormatManager(
-            data=self.model.state_dict(), default_train_conf=self.default_train_conf)
+            data=self.model.state_dict(), default_train_conf=self.default_train_conf
+        )
 
         # Tensorboard streaming setup
         self.writer = parts.get(self.analytic_sender_id)  # user configuration from config_fed_client.json
@@ -106,7 +120,9 @@ class PTLearner(Learner):
 
         # Convert weights to tensor. Run training
         torch_weights = {k: torch.as_tensor(v) for k, v in dxo.data.items()}
-        self.local_train(fl_ctx, torch_weights, abort_signal)
+        # Set the model weights
+        self.model.load_state_dict(state_dict=torch_weights)
+        self.local_train(fl_ctx, abort_signal)
 
         # Check the abort_signal after training.
         # local_train returns early if abort_signal is triggered.
@@ -120,14 +136,12 @@ class PTLearner(Learner):
         new_weights = self.model.state_dict()
         new_weights = {k: v.cpu().numpy() for k, v in new_weights.items()}
 
-        outgoing_dxo = DXO(data_kind=DataKind.WEIGHTS, data=new_weights,
-                            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self.n_iterations})
+        outgoing_dxo = DXO(
+            data_kind=DataKind.WEIGHTS, data=new_weights, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self.n_iterations}
+        )
         return outgoing_dxo.to_shareable()
 
-    def local_train(self, fl_ctx, weights, abort_signal):
-        # Set the model weights
-        self.model.load_state_dict(state_dict=weights)
-
+    def local_train(self, fl_ctx, abort_signal):
         # Basic training
         for epoch in range(self.epochs):
             self.model.train()
@@ -144,10 +158,11 @@ class PTLearner(Learner):
                 cost.backward()
                 self.optimizer.step()
 
-                running_loss += (cost.cpu().detach().numpy()/images.size()[0])
+                running_loss += cost.cpu().detach().numpy() / images.size()[0]
                 if i % 3000 == 0:
-                    self.log_info(fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, "
-                                          f"Loss: {running_loss/3000}")
+                    self.log_info(
+                        fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, " f"Loss: {running_loss/3000}"
+                    )
                     running_loss = 0.0
 
                 # Stream training loss at each step
@@ -155,18 +170,19 @@ class PTLearner(Learner):
                 self.writer.add_scalar("train_loss", cost.item(), current_step)
 
             # Stream validation accuracy at the end of each epoch
-            metric = self.local_validate(self.test_loader, abort_signal)
+            metric = self.local_validate(abort_signal)
             self.writer.add_scalar("validation_accuracy", metric, epoch)
 
     def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
-        run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
+        run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
         models_dir = os.path.join(run_dir, PTConstants.PTModelsDir)
         if not os.path.exists(models_dir):
             return None
         model_path = os.path.join(models_dir, PTConstants.PTLocalModelName)
 
-        self.persistence_manager = PTModelPersistenceFormatManager(data=torch.load(model_path),
-                                                                   default_train_conf=self.default_train_conf)
+        self.persistence_manager = PTModelPersistenceFormatManager(
+            data=torch.load(model_path), default_train_conf=self.default_train_conf
+        )
         ml = self.persistence_manager.to_model_learnable(exclude_vars=self.exclude_vars)
 
         # Get the model parameters and create dxo from it
@@ -197,20 +213,24 @@ class PTLearner(Learner):
             self.model.load_state_dict(weights)
 
             # Get validation accuracy
-            val_accuracy = self.local_validate(weights, abort_signal)
+            val_accuracy = self.local_validate(abort_signal)
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
 
-            self.log_info(fl_ctx, f"Accuracy when validating {model_owner}'s model on"
-                                    f" {fl_ctx.get_identity_name()}"f's data: {val_accuracy}')
+            self.log_info(
+                fl_ctx,
+                f"Accuracy when validating {model_owner}'s model on"
+                f" {fl_ctx.get_identity_name()}"
+                f"s data: {val_accuracy}",
+            )
 
-            dxo = DXO(data_kind=DataKind.METRICS, data={'val_acc': val_accuracy})
+            dxo = DXO(data_kind=DataKind.METRICS, data={"val_acc": val_accuracy})
             return dxo.to_shareable()
         except:
             self.log_exception(fl_ctx, f"Exception in validating model from {model_owner}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def local_validate(self, weights, abort_signal):
+    def local_validate(self, abort_signal):
         self.model.eval()
         correct = 0
         total = 0
@@ -226,7 +246,7 @@ class PTLearner(Learner):
 
                 correct += (pred_label == labels).sum().item()
                 total += images.size()[0]
-            metric = correct/float(total)
+            metric = correct / float(total)
         return metric
 
     def save_local_model(self, fl_ctx: FLContext):

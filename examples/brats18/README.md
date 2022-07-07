@@ -1,12 +1,10 @@
-# Federated Learning with Differential Privacy for BraTS18 segmentation
+# Federated Learning with Differential Privacy for BraTS18 Segmentation
 
 ## Introduction to MONAI, BraTS and Differential Privacy
-
 ### MONAI
-This example shows how to use NVFlare for medical image applications.
-It uses a python package [MONAI](https://github.com/Project-MONAI/MONAI),
-which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of PyTorch Ecosystem.
-
+This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on medical image applications.
+It uses [MONAI](https://github.com/Project-MONAI/MONAI),
+which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 ### BraTS
 The application shown in this example is volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs based on BraTS 2018 data.
 It uses a deep network model published by [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
@@ -19,18 +17,11 @@ The model is trained to segment 3 nested subregions of primary brain tumors (gli
 - The TC describes the bulk of the tumor, which is what is typically resected. The TC entails the ET, as well as the necrotic (fluid-filled) and the non-enhancing (solid) parts of the tumor. 
 - The WT describes the complete extent of the disease, as it entails the TC and the peritumoral edema (ED), which is typically depicted by hyper-intense signal in FLAIR.
 
-To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/sbia/brats2018/data.html) [2-6]. We will refer to the downloaded data as `dataset_base_dir`. It should have a subfolder `${dataset_base_dir}/training`.
-
+To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/sbia/brats2018/data.html) [2-6]. Please download the data to [./dataset_brats18/dataset](./dataset_brats18/dataset). It should result in a sub-folder `./dataset_brats18/dataset/training`.
+In this example, we split BraTS18 dataset into [4 subsets](./dataset_brats18/datalist) for 4 clients. Each client requires at least a 12 GB GPU to run. 
 ### Differential Privacy (DP)
 [Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
-This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a filter in `config_fed_client.json`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvidia.github.io/NVFlare/apidocs/nvflare.app_common.filters.html#nvflare.app_common.filters.svt_privacy.SVTPrivacy) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
-
-[Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] split BraTS18 dataset into 13 datasets for 13 clients.
-Each client requires at least a 12 GB GPU to run. Thus, we need 13 12 GB GPUs to reproduce the results shown [here](https://arxiv.org/abs/1910.00962) [7]
-
-In this readme, we will first go through the process of running 2 clients for users to try it when GPU resources are limited. 
-Then we will show the training results for 13 clients, which follows the same settings in the original [paper](https://arxiv.org/abs/1910.00962) [7].
-
+This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a filter in `config_fed_client.json`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
 
 ## (Optional) 1. Set up a virtual environment
 ```
@@ -47,129 +38,148 @@ source ./virtualenv/set_env.sh
 ```
 install required packages for training
 ```
-pip install --upgrade pip
-pip install -r ./virtualenv/min-requirements.txt
+pip3 install --upgrade pip
+pip3 install -r ./virtualenv/min-requirements.txt
+```
+(optional) if you would like to plot the TensorBoard event files as shown below, please also install
+```
+pip install -r ./virtualenv/plot-requirements.txt
 ```
 
-## 2. Create your FL workspace 
-
+## 2. Create your FL workspace
 ### 2.1 POC ("proof of concept") workspace
-To run FL experiments in POC mode, create your local FL workspace the below command. 
-In the following experiments, we will be using 2 clients. Press y and enter when prompted. 
-The [create_poc_workpace.sh](./create_poc_workpace.sh) script follows this pattern:
+In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
+The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
 ```
-./create_poc_workpace.sh [n_clients]
+./create_poc_workspace.sh.sh [n_clients]
 ```
-For example, to create workspace for 2 clients:
+In the following experiments, we will be using 4 clients. 
 ```
-./create_poc_workpace.sh 2
+./create_poc_workspace.sh 4
 ```
-
+Press y and enter when prompted.
 ### 2.2 (Optional) Secure FL workspace
 We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
-
 > **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
 > with different amounts of clients.
 > It doesn't need any advanced configurations while provisioning the startup kits for the server and clients. 
 >
-> The **secure** workspace on the other hand is needed to run experiments that require encryption keys such as the 
-> homomorphic encryption (HE) one shown below. These startup kits allow secure deployment of FL in real-world scenarios 
+> The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
+### 2.3 GPU resource and Multi-tasking
+In this example, we assume four local GPUs with at least 12GB of memory are available. 
 
+As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
+
+To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB GPUs), we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value 1). Please adjust this properly according to resource available and task demand. 
+
+(Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1, 2, 3]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
+
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
 
 ## 3. Run automated experiments
-
-### 3.1 FedAvg with and without differential privacy
-
-#### 3.1.1 Test FedAvg with and without differential privacy on 2 clients and GPUs
-Next, FL training will start automatically. 
-
-The [run_poc.sh](./run_poc.sh) script follows this pattern:
+The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
+### 3.1 Prepare local configs
+First, we add the image and datalist directory roots to `config_train.json` files for generating the absolute path to the dataset by replacing the `DATASET_ROOT` and  `DATALIST_ROOT` placeholders. In the current folder structure, it will be `${PWD}/dataset_brats18/dataset` for `DATASET_ROOT` and  `${PWD}/dataset_brats18/datalist` for `DATALIST_ROOT` but you can update the below `sed` commands if the data locates somewhere else.
 ```
-./run_poc.sh [n_clients] [config] [run] [dataset_base_dir] [datalist_json_path]
+for alg in brats_central brats_fedavg brats_fedavg_dp
+do
+  sed -i "s|DATASET_ROOT|${PWD}/dataset_brats18/dataset|g" configs/${alg}/config/config_train.json
+  sed -i "s|DATALIST_ROOT|${PWD}/dataset_brats18/datalist|g" configs/${alg}/config/config_train.json
+done
 ```
+### 3.2 Start the FL system and submit jobs
+Next, we will start the FL system and submit jobs to start FL training automatically.
 
-`[run]` is the run number for nvflare experiment. You need to assign a unique `[run]` for each experiment.
-`[datalist_json_path]` is the path for datalist json files, chosen from the subfolders in `./datalists/brats/`.
-
-For example, 
-to run brats FL without differential privacy:
+Start the FL system with either 1 client for centralized training, or 4 clients for federated learning by running
 ```
-./run_poc.sh 2 brats18_fedavg 1 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+bash start_fl_poc.sh "All"
 ```
-To run brats FL with differential privacy:
+or
 ```
-./run_poc.sh 2 brats18_fedavg_dp 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+bash start_fl_poc.sh "1 2 3 4"
 ```
+This script will start the FL server and clients automatically to run FL experiments on localhost. 
+Each client will be alternately assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [start_fl_poc.sh](./start_fl_poc.sh). 
+In this example, we run each client on a single GPU: 4 clients on 4 GPUs with 12 GB memory.
 
-These scripts will start the FL server and `[n_clients]` clients automatically to run FL experiments on localhost. 
-Each client can be assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [run_poc.sh](./run_poc.sh). 
-Here we test it on 2 clients, each on one GPU with 12 GB memory.
-
-The commands above will use the data split in `./datalists/brats/brats_13clients` to simulate each client having different data distributions.
-The `[config]` argument controls which experiment to run. The respective folder under `[configs]` will be selected and 
-uploaded to the server for distribution to each client using the admin API with [run_fl.py](./run_fl.py). 
-The run will time out if not completed in 36 hours. You can adjust this within the `run()` call of the customized admin API script in [run_fl.py](./run_fl.py). 
-
-#### 3.1.2 Reproduce FedAvg with and without differential privacy on 13 clients and GPUs
-[Li et al. 2019](https://arxiv.org/abs/1910.00962) split BraTS18 dataset into [13 datasets](./datalists/brats/brats_13clients) for 13 clients.
-To reproduce [Li et al. 2019](https://arxiv.org/abs/1910.00962), we will run the following cmd:
+Then FL training will be run with an automatic script utilizing the FLAdminAPI functionality.    
+The [submit_job.sh](./submit_job.sh) script follows the pattern:
 ```
-./create_poc_workpace.sh 13
-./run_poc.sh 13 brats18_fedavg 1 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
-./run_poc.sh 13 brats18_fedavg_dp 2 /dataset/brats18/ ${PWD}/datalists/brats/brats_13clients
+bash ./submit_job.sh [config]
 ```
-In [run_poc.sh](./run_poc.sh), the default server's IP address is `servername="localhost"`. It works when your server and clients run on the same machine. However, if you need to run server and clients on different machines, you would start the server first, then change `servername` to connect clients to the server's IP address. The IP address can be found by `echo "The server starts on IP address: $(hostname --all-ip-addresses)"` and is already in [run_poc.sh](./run_poc.sh).
+`[config]` is the experiment job that will be submitted for the FL training, in this example, this includes `brats_central`, `brats_fedavg`, and `brats_fedavg_dp`.  
 
-
-> **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
-  using `abort all`. If the admin API script is running, the FL system will automatically shut down using
-  the current setting defined in [run_fl.py](./run_fl.py). An automatic shutdown is useful here for development as code changes 
-> in your FL components will only be picked up on a restart of the FL system. 
-> For real-world deployments, the system should be kept running but the admin restart command can be used, 
-> see [here](https://nvidia.github.io/NVFlare/user_guide/admin_commands.html).
-
-> To log into the POC workspace admin console, use username "admin" and password "admin". 
-> For the secure workspace admin console, use username "admin@nvidia.com"
-
-After training, the final global and the global best model, as selected by `IntimeModelSelectionHandler` (in `config_fed_server.json`) will be used for evaluation at each client. The results can be shown with
-for example
+Note that in order to make it working under most system resource conditions, the current config set `"cache_dataset": 0.0`, which could be slow. If resource permits, it will make the training much faster by caching the dataset. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
+For reference, with `"cache_dataset": 0.5` setting (cache half the data), the centralized training for 100 round, 1 epoch per round takes around 24.5 hours on a 12GB NVIDIA TITAN Xp GPU. 
+### 3.3 Centralized training
+To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
 ```
-cat ./workspaces/poc_workspace/server/run_2/cross_site_val/global_val.json
+bash start_fl_poc.sh "All"
+bash submit_job.sh brats_central
 ```
-
-### 3.2 Centralized training
-
-To simulate a centralized training baseline, we run FL with 1 client using [all the training data](./datalists/brats/brats_1clients). 
+### 3.4 Federated learning
+Start 4 FL clients
 ```
-./run_poc.sh 1 brats18_central 3 /dataset/brats18/ ${PWD}/datalists/brats/brats_1clients
+bash start_fl_poc.sh "1 2 3 4"
 ```
-You can visualize the training progress by running `tensorboard --logdir=[workspace]/.`
+To run FL with [FedAvg](https://arxiv.org/abs/1602.05629), we use
+```
+bash submit_job.sh brats_fedavg
+``` 
+To run FL with differential privacy, we use
+```
+bash submit_job.sh brats_fedavg_dp 
+```
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
+> To log into the POC workspace admin console no username is required 
+> (use "admin" for commands requiring conformation with username). 
 
-
-### 3.3 Running all examples
-
-You can use `./run_experiments.sh` to execute all above-mentioned experiments sequentially if preferred.
-
-## 4. Results on 13 clients for FedAvg vs. FedAvg with DP vs. Central
-
+## 4. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
+In this example, only the global model gets evaluated at each round, and saved as the final model. 
 ### 4.1 Validation curve 
-Let's summarize the result of the experiments run above. First, we will compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the
+We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the
 same BraTS validation set. 
 
-The TensorBoard curves for validation Dice scores of the global model for 600 training epochs:
-
+We provide a script for plotting the tensorboard records, running
+```
+python3 ./result_stat/plot_tensorboard_events.py
+```
+The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 epochs (600 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/nvflare_brats18.png)
 
-### 4.2 Best model
-Next, we compare the best achieved models. One can see that FedAvg with DP can achieve a similar performance compared with FedAvg while adding privacy to the aggregation step.
+As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/config/config_fed_client.json). Different DP settings will have different impacts over the performance. 
 
-| Config	| Val Overall Dice|  	Val TC Dice	|  	Val WT Dice	|  	Val ET Dice	| 
-| ----------- | ----------- |----------- |----------- |----------- |  
-| brats18_fedavg  	| 	0.84375	| 0.84313	| 0.89811	| 0.78647	| 
-| brats18_fedavg_dp | 	0.84871	| 0.85726	| 0.90016	| 0.78327	|
-| brats18_central 	| 	0.85442	| 	0.86723	| 0.90317	| 0.78958	| 
+### 4.2 Validation score
+We also provide a script for performing standalone validation on the data split based on the best global model for Central/FedAvg/FedAvg_DP. 
+
+To get the model after training, the results can be downloaded and shown with the admin console using
+```
+  download_job [JOB_ID]
+```
+where `[JOB_ID]` is the ID assigned by the system when submitting the job.
+
+The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+You should see the best global model at
+```
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths and job_ids to the testing script, and run
+```
+cd ./result_stat
+bash testing_models_3d.sh
+```
+The accuracy metrics under each settings are:
+
+| Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
+| ----------- |------------------|---------------|---------------|---------------|  
+| brats18_central 	| 	0.8558	         | 	0.8648	      | 0.9070	       | 0.7894	       | 
+| brats18_fedavg  	| 	0.8573	         | 0.8687	       | 0.9088	       | 0.7879	       | 
+| brats18_fedavg_dp | 	0.8209	    | 0.8282	       | 0.8818	       | 0.7454	       |
 
 
 

@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import re
+from functools import wraps
 
 type_pattern_mapping = {
     "server": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
+    "overseer": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
+    "sp_end_point": r"^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]):[0-9]*:[0-9]*)$",
     "client": r"^[A-Za-z0-9-_]+$",
     "admin": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "email": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
@@ -31,3 +35,27 @@ def name_check(name: str, entity_type: str):
         return False, "name={} passed on regex_pattern={} check".format(name, regex_pattern)
     else:
         return True, "name={} is ill-formatted based on regex_pattern={}".format(name, regex_pattern)
+
+
+def validate_class_methods_args(cls):
+    for name, method in inspect.getmembers(cls, inspect.isfunction):
+        if name != "__init_subclass__":
+            setattr(cls, name, validate_args(method))
+    return cls
+
+
+def validate_args(method):
+    signature = inspect.signature(method)
+
+    @wraps(method)
+    def wrapper(*args, **kwargs):
+        bound_arguments = signature.bind(*args, **kwargs)
+        for name, value in bound_arguments.arguments.items():
+            annotation = signature.parameters[name].annotation
+            if not (annotation is inspect.Signature.empty or isinstance(value, annotation)):
+                raise TypeError(
+                    "argument '{}' of {} must be {} but got {}".format(name, method, annotation, type(value))
+                )
+        return method(*args, **kwargs)
+
+    return wrapper

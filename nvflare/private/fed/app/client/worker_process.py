@@ -15,15 +15,23 @@
 """Provides a command line interface for a federated client trainer."""
 
 import argparse
+import logging
 import os
 import sys
 import threading
 import time
+<<<<<<< HEAD
 import traceback
 
 import psutil
 
 from nvflare.apis.fl_constant import FLContextKey
+=======
+
+import psutil
+
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+>>>>>>> upstream/main
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -34,6 +42,18 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+
+
+def check_parent_alive(parent_pid, stop_event: threading.Event):
+    while True:
+        if stop_event.is_set():
+            break
+        if not psutil.pid_exists(parent_pid):
+            # if parent is not alive, kill its worker process
+            os.killpg(os.getpgid(os.getpid()), 9)
+            break
+        time.sleep(1)
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
@@ -52,6 +72,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
+<<<<<<< HEAD
+=======
+    parser.add_argument("--token", "-t", type=str, help="token", required=True)
+    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
+    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
+    parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
+
+>>>>>>> upstream/main
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
     )
@@ -84,11 +114,28 @@ def main():
         os.remove(restart_file)
     print("starting the client .....")
 
-    deployer = None
-    command_agent = None
-
     startup = os.path.join(args.workspace, "startup")
     SecurityContentService.initialize(content_folder=startup)
+
+    thread = None
+    stop_event = threading.Event()
+    deployer = None
+    command_agent = None
+    federated_client = None
+
+    startup = args.startup
+    app_root = os.path.join(
+        args.workspace,
+        WorkspaceConstants.WORKSPACE_PREFIX + str(args.job_id),
+        WorkspaceConstants.APP_PREFIX + args.client_name,
+    )
+
+    logging_setup(app_root, args, config_folder, startup)
+
+    log_file = os.path.join(args.workspace, args.job_id, "log.txt")
+    add_logfile_handler(log_file)
+    logger = logging.getLogger("worker_process")
+    logger.info("Worker_process started.")
 
     federated_client = None
     thread = None
@@ -97,6 +144,7 @@ def main():
         # start parent process checking thread
         thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
         thread.start()
+<<<<<<< HEAD
         token_file = os.path.join(args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
         with open(token_file, "r") as f:
             token = f.readline().strip()
@@ -117,23 +165,27 @@ def main():
             args.log_config = app_log_config
         else:
             args.log_config = os.path.join(startup, "log.config")
+=======
+>>>>>>> upstream/main
 
         conf = FLClientStarterConfiger(
             app_root=startup,
             client_config_file_name=args.fed_client,
             log_config_file_name=args.log_config,
             kv_list=args.set,
+            logging_config=False,
         )
         conf.configure()
 
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client()
+        federated_client = deployer.create_fed_client(args, args.sp_target)
         federated_client.status = ClientStatus.STARTING
 
-        federated_client.token = token
-        federated_client.client_name = client_name
-        federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
-        federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)
+        federated_client.token = args.token
+        federated_client.ssid = args.ssid
+        federated_client.client_name = args.client_name
+        federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
+        federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
         client_config_file_name = os.path.join(app_root, args.client_config)
@@ -142,10 +194,10 @@ def main():
         )
         conf.configure()
 
-        workspace = Workspace(args.workspace, client_name, config_folder)
+        workspace = Workspace(args.workspace, args.client_name, config_folder)
         run_manager = ClientRunManager(
-            client_name=client_name,
-            run_num=int(run_number),
+            client_name=args.client_name,
+            job_id=args.job_id,
             workspace=workspace,
             client=federated_client,
             components=conf.runner_config.components,
@@ -155,35 +207,34 @@ def main():
         federated_client.run_manager = run_manager
 
         with run_manager.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=False)
-            fl_ctx.set_prop(EngineConstant.FL_TOKEN, token, private=False)
+            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
+            fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
             fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
 
-            client_runner = ClientRunner(config=conf.runner_config, run_num=int(run_number), engine=run_manager)
+            client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 
-            # # Start the thread for responding the inquire
-            # federated_client.stop_listen = False
-            # thread = threading.Thread(target=listen_command, args=[federated_client, int(listen_port), client_runner])
-            # thread.start()
             # Start the command agent
-            command_agent = CommandAgent(federated_client, int(listen_port), client_runner)
+            command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
             command_agent.start(fl_ctx)
 
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
     except BaseException as e:
-        traceback.print_exc()
-        print("FL client execution exception: " + str(e))
+        logger.error(f"FL client execution exception: {e}", exc_info=True)
+        raise e
     finally:
+<<<<<<< HEAD
         # if federated_client:
         #     federated_client.stop_listen = True
         #     thread.join()
+=======
+>>>>>>> upstream/main
         stop_event.set()
         if command_agent:
             command_agent.shutdown()
@@ -194,9 +245,21 @@ def main():
         if thread and thread.is_alive():
             thread.join()
 
+<<<<<<< HEAD
         # address = ('localhost', 6000)
         # conn_client = Client(address, authkey='client process secret password'.encode())
         # conn_client.send('bye')
+=======
+
+def logging_setup(app_root, args, config_folder, startup):
+    app_log_config = os.path.join(app_root, config_folder, "log.config")
+    if os.path.exists(app_log_config):
+        args.log_config = app_log_config
+    else:
+        args.log_config = os.path.join(startup, "log.config")
+    log_config_file_path = os.path.join(app_root, args.log_config)
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+>>>>>>> upstream/main
 
 
 def remove_restart_file(args):

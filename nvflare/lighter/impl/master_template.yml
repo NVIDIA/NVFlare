@@ -63,15 +63,23 @@ readme_fs: |
 
   Please always safeguard the server.key.
 
+gunicorn_conf_py: |
+  bind="{~~hostname~~}:{~~port~~}"
+  cert_reqs=2
+  do_handshake_on_connect=True
+  timeout=30
+  worker_class="nvflare.ha.overseer.worker.ClientAuthWorker"
+  workers=1
+  wsgi_app="nvflare.ha.overseer.overseer:app"
+
 fed_client: |
   {
-    "format_version": 1,
+    "format_version": 2,
     "enable_byoc": false,
     "servers": [
         {
             "name": "spleen_segmentation",
             "service": {
-                "target": "localhost:8002",
                 "options": [
                     ["grpc.max_send_message_length",    2147483647],
                     ["grpc.max_receive_message_length", 2147483647]
@@ -90,7 +98,7 @@ fed_client: |
 
 fed_server: |
   {
-    "format_version": 1,
+    "format_version": 2,
     "enable_byoc": false,
     "servers": [
         {
@@ -111,9 +119,27 @@ fed_server: |
             "max_num_clients": 100,
             "heart_beat_timeout": 600,
             "num_server_workers": 4,
+            "download_job_url": "http://download.server.com/",
             "compression": "Gzip"
         }
     ] 
+  }
+
+fed_admin: |
+  {
+    "format_version": 1,
+    "admin": {
+      "with_file_transfer": true,
+      "upload_dir": "transfer",
+      "download_dir": "transfer",
+      "with_login": true,
+      "with_ssl": true,
+      "cred_type": "cert",
+      "client_key": "client.key",
+      "client_cert": "client.crt",
+      "ca_cert": "rootCA.pem",
+      "prompt": "> "
+    }
   }
 
 authz_def: |
@@ -130,19 +156,6 @@ authz_def: |
       }
     },
     "rights": {
-      "upload_app": {
-        "desc": "upload app",
-        "default": true
-      },
-      "deploy_self": {
-        "desc": "deploy app to own site",
-        "default": false,
-        "precond": "selfOrg"
-      },
-      "deploy_all": {
-        "desc": "deploy app to all sites",
-        "default": false
-      },
       "train_self": {
         "desc": "do training operations on own site",
         "default": false,
@@ -177,7 +190,7 @@ fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   mkdir -p $DIR/../transfer
-  python3 -m nvflare.fuel.hci.tools.admin --host {~~cn~~} --port {~~admin_port~~} --prompt "> " --with_file_transfer --upload_dir=$DIR/../transfer --download_dir=$DIR/../transfer --with_shell --with_login --with_ssl --cred_type cert --ca_cert=$DIR/rootCA.pem --client_cert=$DIR/client.crt --client_key=$DIR/client.key
+  python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json
 
 log_config: |
   [loggers]
@@ -208,6 +221,11 @@ log_config: |
   [formatter_fullFormatter]
   format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
+start_ovsr_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  NVFL_OVERSEER_HEARTBEAT_TIMEOUT=10 AUTHZ_FILE=$DIR/privilege.yml gunicorn -c $DIR/gunicorn.conf.py --keyfile $DIR/overseer.key --certfile $DIR/overseer.crt --ca-certs $DIR/rootCA.pem
+
 start_cln_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -221,24 +239,22 @@ start_svr_sh: |
 stop_fl_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  echo "Shutdown request created.  Wait for local FL process to shutdown."
-  touch $DIR/../shutdown.fl
-  sleep 5
-  if [[ ! -f "$DIR/../pid.fl" ]]; then
-    echo "No pid.fl.  No need to kill process."
-    exit
-  fi
-  pid=`cat $DIR/../pid.fl`
-  kill -0 ${pid} 2> /dev/null 1>&2
-  if [[ $? -ne 0 ]]; then
-    echo "Process already terminated"
-    exit
-  fi
-  kill -9 $pid
-  pid=`cat $DIR/../tee.fl`
-  kill -9 $pid
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
-  echo "Shutdown process finished."
+  echo "Please use FL admin console to issue shutdown client command to properly stop this client."
+  echo "This stop_fl.sh script can only be used as the last resort to stop this client."
+  echo "It will not properly deregister the client to the server."
+  echo "The client status on the server after this shell script will be incorrect."
+  read -n1 -p "Would you like to continue (y/N)? " answer
+  case $answer in
+    y|Y)
+      echo
+      echo "Shutdown request created.  Wait for local FL process to shutdown."
+      touch $DIR/../shutdown.fl
+      ;;
+    n|N|*)
+      echo
+      echo "Not continue"
+      ;;
+  esac
 
 sub_start_cln_sh: |
   #!/usr/bin/env bash
@@ -263,7 +279,7 @@ sub_start_cln_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | (tee -a $DIR/../log.txt & echo $! >&4 ) 4>$DIR/../tee.fl )
+  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -281,9 +297,7 @@ sub_start_cln_sh: |
       return
     fi
     kill -9 $pid
-    pid=`cat $DIR/../tee.fl`
-    kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
   }
     
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
@@ -329,7 +343,7 @@ sub_start_cln_sh: |
     fi
   done
 
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
 
 sub_start_svr_sh: |
   #!/usr/bin/env bash
@@ -352,7 +366,7 @@ sub_start_svr_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | (tee -a $DIR/../log.txt & echo $! >&4 ) 4>$DIR/../tee.fl )
+  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -370,9 +384,7 @@ sub_start_svr_sh: |
       return
     fi
     kill -9 $pid
-    pid=`cat $DIR/../tee.fl`
-    kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
   }
     
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
@@ -418,7 +430,7 @@ sub_start_svr_sh: |
     fi
   done
 
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
 
 docker_cln_sh: |
   #!/usr/bin/env bash

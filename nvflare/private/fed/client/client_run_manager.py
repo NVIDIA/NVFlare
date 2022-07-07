@@ -33,13 +33,13 @@ from .fed_client import FederatedClient
 
 
 class ClientRunInfo(object):
-    def __init__(self, run_number):
+    def __init__(self, job_id):
         """To init the ClientRunInfo.
 
         Args:
-            run_number: run number
+            job_id: job id
         """
-        self.run_number = run_number
+        self.job_id = job_id
         self.current_task_name = ""
         self.start_time = None
         # self.status = MachineStatus.STOPPED
@@ -51,7 +51,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def __init__(
         self,
         client_name: str,
-        run_num: int,
+        job_id: str,
         workspace: Workspace,
         client: FederatedClient,
         components: Dict[str, FLComponent],
@@ -62,7 +62,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         Args:
             client_name: client name
-            run_num: run numbre
+            job_id: job id
             workspace: workspacee
             client: FL client object
             components: available FL components
@@ -80,10 +80,10 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.conf = conf
 
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, run_num=run_num, public_stickers={}, private_stickers={}
+            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers={}
         )
 
-        self.run_info = ClientRunInfo(run_number=run_num)
+        self.run_info = ClientRunInfo(job_id=job_id)
 
         self.widgets = {WidgetID.INFO_COLLECTOR: InfoCollector(), WidgetID.FED_EVENT_RUNNER: ClientFedEventRunner()}
         for _, widget in self.widgets.items():
@@ -157,7 +157,10 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
-    def abort_app(self, run_number: int, fl_ctx: FLContext):
+    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        return self.send_aux_request(topic, request, 0.0, fl_ctx)
+
+    def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)
         if isinstance(runner, ClientRunner):
             runner.abort()

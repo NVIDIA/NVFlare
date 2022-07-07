@@ -243,6 +243,6 @@ class InfoCollector(Widget):
         """Gets the error category information."""
         return self.get_category(self.CATEGORY_ERROR)
 
-    def reset_errors(self):
+    def reset_errors(self, job_id):
         """Resets the error category information."""
         self.reset_category(self.CATEGORY_ERROR)

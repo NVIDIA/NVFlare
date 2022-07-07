@@ -53,12 +53,16 @@ class TrainingTopic(object):
     SHUTDOWN = "train.shutdown"
     RESTART = "train.restart"
     CHECK_STATUS = "train.check_status"
-    SET_RUN_NUMBER = "train.set_run_number"
+    SET_JOB_ID = "train.set_job_id"
+    CHECK_RESOURCE = "scheduler.check_resource"
+    ALLOCATE_RESOURCE = "scheduler.allocate_resource"
+    CANCEL_RESOURCE = "scheduler.cancel_resource"
+    START_JOB = "train.start_job"
 
 
 class RequestHeader(object):
 
-    RUN_NUM = "run_number"
+    JOB_ID = "job_id"
     APP_NAME = "app_name"
     CONTROL_COMMAND = "control_command"
     CALL_NAME = "call_name"
@@ -84,7 +88,30 @@ class ControlCommandName(object):
 
 class ClientStatusKey(object):
 
-    RUN_NUM = "run_number"
+    JOB_ID = "job_id"
     CURRENT_TASK = "current_task"
     STATUS = "status"
     APP_NAME = "app_name"
+    CLIENT_NAME = "client_name"
+    RUNNING_JOBS = "running_jobs"
+
+
+# TODO:: Remove some of these constants
+class AppFolderConstants:
+    """hard coded file names inside the app folder."""
+
+    CONFIG_TRAIN = "config_train.json"
+    CONFIG_ENV = "environment.json"
+    CONFIG_FED_SERVER = "config_fed_server.json"
+    CONFIG_FED_CLIENT = "config_fed_client.json"
+
+
+class SSLConstants:
+    """hard coded names related to SSL."""
+
+    CERT = "ssl_cert"
+    PRIVATE_KEY = "ssl_private_key"
+    ROOT_CERT = "ssl_root_cert"
+
+
+ERROR_MSG_PREFIX = "NVFLARE_ERROR"

@@ -1,0 +1,7 @@
+test_configs:
+  - ./data/single_app_as_job/test_example_apps.yml
+  - ./data/single_app_as_job/test_internal_apps.yml
+  # - ./data/single_app_as_job/test_ha.yml
+  # - ./data/single_app_as_job/test_ha_2_servers_before_first_round.yml
+  # - ./data/single_app_as_job/test_ha_2_servers_after_first_round.yml
+  # - ./data/single_app_as_job/test_fladminapi.yml

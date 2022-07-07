@@ -16,6 +16,10 @@ import glob
 import os
 
 import numpy as np
+<<<<<<< HEAD
+=======
+from analysis_constants import SupportedTasks
+>>>>>>> upstream/main
 from monai.data import ITKReader, load_decathlon_datalist
 from monai.transforms import LoadImage
 
@@ -27,10 +31,13 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 
 
+<<<<<<< HEAD
 class SupportedTasks(object):
     HISTOGRAM = "histogram"
 
 
+=======
+>>>>>>> upstream/main
 class AnalysisExecutor(Executor):
     def __init__(
         self,
@@ -40,6 +47,10 @@ class AnalysisExecutor(Executor):
         n_bins: int = 256,
         range_min: float = 0.0,
         range_max: float = 255.0,  # assumes BMP/PNG/JPEGSs as input
+<<<<<<< HEAD
+=======
+        supported_task: str = SupportedTasks.HISTOGRAM,
+>>>>>>> upstream/main
     ):
         """Executor for federated analysis.
 
@@ -49,8 +60,13 @@ class AnalysisExecutor(Executor):
             min_images: minimum number of images needed to compute histogram (if less images are included in the computation, no statistics will be sent to the server).
             n_bins: number of bins for the histogram.
             range_min: minimum intensity value to include in the histogram.
+<<<<<<< HEAD
             range_max: maximum intensity value to include in the histogram
 
+=======
+            range_max: maximum intensity value to include in the histogram.
+            supported_task: task name for histogram computation.
+>>>>>>> upstream/main
         Returns:
             a Shareable with the computed statistics after `execute()`
         """
@@ -63,6 +79,11 @@ class AnalysisExecutor(Executor):
         self.range_min = range_min
         self.range_max = range_max
 
+<<<<<<< HEAD
+=======
+        self.supported_task = supported_task
+
+>>>>>>> upstream/main
         self.data_list = None
 
         self._min_images = min_images
@@ -93,7 +114,11 @@ class AnalysisExecutor(Executor):
                 self.log_error(fl_ctx, f"Reading data list for client {client_name} failed!")
                 return make_reply(ReturnCode.ERROR)
 
+<<<<<<< HEAD
             if task_name == SupportedTasks.HISTOGRAM:
+=======
+            if task_name == self.supported_task:
+>>>>>>> upstream/main
                 result_dict = self._compute_histo(fl_ctx, abort_signal)
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)

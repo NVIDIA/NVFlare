@@ -55,6 +55,13 @@ class Sender(object):
         """
         pass
 
+    def close(self):
+        """Call to close the sender.
+
+        Returns:
+
+        """
+
 
 class RequestProcessor(object):
     """The RequestProcessor is responsible for processing a request."""
@@ -74,7 +81,7 @@ class RequestProcessor(object):
             req: request message
             app_ctx: application context
 
-        Returns: repely message
+        Returns: reply message
 
         """
         pass
@@ -208,6 +215,8 @@ class FedAdminAgent(object):
 
         if self.process_req_thread and self.process_req_thread.is_alive():
             self.process_req_thread.join()
+
+        self.sender.close()
 
 
 def _start_retriever(agent: FedAdminAgent):

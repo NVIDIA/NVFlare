@@ -1,0 +1,26 @@
+description: "upload a job, kill the server after we start training but no round is completed in SAG, restart it should pick up the work"
+events: [
+  {
+    "trigger": {
+      "workflows": {
+        "ScatterAndGather": {
+          "phase": "train",
+          "current_round": 0
+        }
+      }
+    },
+    "actions": [
+      "kill server",
+      "sleep 40",
+      "start server",
+    ],
+    "result_state": {
+      "workflows": {
+        "ScatterAndGather": {
+          "phase": "train",
+          "current_round": 0
+        }
+      }
+    },
+  }
+]

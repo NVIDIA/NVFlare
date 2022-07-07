@@ -18,6 +18,11 @@ __pycache__
 fedanalysis
 
 # data
+<<<<<<< HEAD
 dataset
 dataset*
 *results*
+=======
+data/archive
+data/*.json
+>>>>>>> upstream/main

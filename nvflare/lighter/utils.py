@@ -45,8 +45,18 @@ def sign_all(content_folder, signing_pri_key):
     return signatures
 
 
+<<<<<<< HEAD
 def load_yaml(file_name):
     return yaml.safe_load(open(file_name, "r"))
+=======
+def load_yaml(file):
+    if isinstance(file, str):
+        return yaml.safe_load(open(file, "r"))
+    elif isinstance(file, bytes):
+        return yaml.safe_load(file)
+    else:
+        return None
+>>>>>>> upstream/main
 
 
 def sh_replace(src, mapping_dict):

@@ -1,38 +1,97 @@
-api_version: 2
+api_version: 3
 name: secure_project
-description: NVFlare sample project yaml file
+description: NVIDIA FLARE sample project yaml file for CIFAR-10 example
+
+client_components: &cln_comps
+  resource_manager:    # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
+    args:
+      resources:
+        gpu: [0, 1]
+  resource_consumer:    # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
+    args:
+      gpu_resource_key: gpu
+
+server_components: &svr_comps
+  job_scheduler:  # This id is reserved by system.  Do not change it.
+    path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
+    args:
+      max_jobs: 2
+  job_manager:    # This id is reserved by system.  Do not change it.
+    path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
+    args:
+      uri_root: /tmp/nvflare/jobs-storage
+      job_store_id: job_store
+  job_store:
+    path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
 
 participants:
+  # change overseer.example.com to the FQDN of the overseer (does not need to exist as dummy is used below)
+  - name: overseer.example.com
+    type: overseer
+    org: nvidia
+    protocol: https
+    api_root: /api/v1
+    port: 8443
   # change example.com to the FQDN of the server
   - name: localhost
     type: server
     org: nvidia
     fed_learn_port: 8002
     admin_port: 8003
+    # enable_byoc loads python codes in app.  Default is false.
+    enable_byoc: false
+    components:
+      <<: *svr_comps
   - name: site-1
     type: client
     org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-2
     type: client
     org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-3
     type: client
     org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-4
     type: client
     org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-5
     type: client
     org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-6
     type: client
-    org: nvidia                    
+    org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-7
     type: client
     org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: site-8
     type: client
-    org: nvidia    
+    org: nvidia
+    enable_byoc: false
+    components:
+      <<: *cln_comps
   - name: admin@nvidia.com
     type: admin
     org: nvidia
@@ -47,10 +106,36 @@ builders:
   - path: nvflare.lighter.impl.template.TemplateBuilder
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
-      # config_folder can be set to inform NVFlare where to get configuration
+      # config_folder can be set to inform NVIDIA FLARE where to get configuration
       config_folder: config
+
+      # app_validator is used to verify if uploaded app has proper structures
+      # if not set, no app_validator is included in fed_server.json
+      # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
+
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
       # docker_image:
+
+      overseer_agent:
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        # if overseer_exists is true, args here are ignored.  Provisioning
+        #   tool will fill role, name and other local parameters automatically.
+        # if overseer_exists is false, args in this section will be used.
+        overseer_exists: false
+        args:
+           sp_end_point: localhost:8002:8003
+           heartbeat_interval: 6
+
+      snapshot_persistor:
+        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
+        args:
+          uri_root: /
+          storage:
+            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+            args:
+              root_dir: /tmp/nvflare/snapshot-storage
+              uri_root: /
+
   - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
     args:
       orgs:
@@ -58,22 +143,18 @@ builders:
           - relaxed
       roles:
         super: super user of system
-      groups: 
-        relaxed: 
+      groups:
+        relaxed:
           desc: org group with relaxed policies
-          rules: 
-            allow_byoc: true
-            allow_custom_datalist: true
+          rules:
+            allow_byoc: false
+            allow_custom_datalist: false
       disabled: false
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.he.HEBuilder
     args:
-      poly_modulus_degree: 8192 
+      poly_modulus_degree: 8192
       coeff_mod_bit_sizes: [60, 40, 40]
       scale_bits: 40
       scheme: CKKS
   - path: nvflare.lighter.impl.signature.SignatureBuilder
-  - path: nvflare.lighter.impl.workspace.DistributionBuilder
-    args:
-      zip_password: true
-

@@ -1,0 +1,15 @@
+{
+  "name": "sag",
+  "resource_spec": {
+    "site-a": {
+      "gpu": 1
+    },
+    "site-b": {
+      "gpu": 1
+    }
+  },
+  "deploy_map": {
+    "sag1": ["@All"],
+    "sag2": []
+  }
+}

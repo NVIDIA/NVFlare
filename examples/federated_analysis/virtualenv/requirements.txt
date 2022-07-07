@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 nvflare
+=======
+nvflare>=2.1
+>>>>>>> upstream/main
 numpy
 itk-io
 monai

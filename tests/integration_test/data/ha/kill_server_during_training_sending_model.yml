@@ -1,0 +1,19 @@
+description: "upload a job, kill the server during sending models to clients, restart it should pick up the work"
+events: [
+  {
+    "trigger": "sent task assignment to client",
+    "actions": [
+      "kill server",
+      "sleep 40",
+      "start server"
+    ],
+    "result_state": {
+      "workflows": {
+        "ScatterAndGather": {
+          "phase": "train",
+          "current_round": 0
+        }
+      }
+    },
+  },
+]

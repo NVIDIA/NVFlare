@@ -10,4 +10,4 @@ fi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo $DIR
 mkdir -p $DIR/../transfer
-python3 -m nvflare.fuel.hci.tools.admin --host ${server} --port 8003 --prompt "> " --with_file_transfer --upload_dir=$DIR/../transfer --download_dir=$DIR/../transfer --with_shell --with_login
+python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json

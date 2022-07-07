@@ -98,7 +98,7 @@ class ClientAuxRunner(AuxRunner):
         rc = reply.get_return_code()
         if rc == ReturnCode.RUN_MISMATCH:
             self.log_info(fl_ctx, "got RUN_MISMATCH - asked engine to abort app")
-            engine.abort_app(run_number=self.run_num, fl_ctx=fl_ctx)
+            engine.abort_app(job_id=self.run_num, fl_ctx=fl_ctx)
 
         return reply
 
@@ -123,7 +123,7 @@ class ClientAuxRunner(AuxRunner):
                 bulk.set_peer_props(fl_ctx.get_all_public_props())
                 with self.fnf_lock:
                     bulk[self.DATA_KEY_BULK] = self.fnf_requests
-                    reply = self.engine.aux_send(topic=topic, request=bulk, timeout=1.0, fl_ctx=fl_ctx)
+                    reply = self.engine.aux_send(topic=topic, request=bulk, timeout=15.0, fl_ctx=fl_ctx)
                     rc = reply.get_return_code()
                     if rc != ReturnCode.COMMUNICATION_ERROR:
                         # if communication error we'll retry

@@ -1,0 +1,15 @@
+description: "upload a job, execute a chain of admin commands through FLAdminAPI to test for expected functionality"
+events: [
+  {
+    "trigger": "sent task assignment to client",
+    "actions": ["test admin_commands"],
+    "result_state": {
+      "workflows": {
+        "ScatterAndGather": {
+          "phase": "train",
+          "current_round": 0
+        }
+      }
+    },
+  },
+]

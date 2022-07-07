@@ -1,0 +1,53 @@
+{
+  "name": "cifar10_fedprox",
+  "resource_spec": {
+    "site-1": {
+      "gpu": 1
+    },
+    "site-2": {
+      "gpu": 1
+    },
+    "site-3": {
+      "gpu": 1
+    },
+    "site-4": {
+      "gpu": 1
+    },
+    "site-5": {
+      "gpu": 1
+    },
+    "site-6": {
+      "gpu": 1
+    },
+    "site-7": {
+      "gpu": 1
+    },
+    "site-8": {
+      "gpu": 1
+    }
+  },
+  "deploy_map": {
+    "cifar10_fedprox": [
+      "server",
+      "site-1",
+      "site-2",
+      "site-3",
+      "site-4",
+      "site-5",
+      "site-6",
+      "site-7",
+      "site-8"
+    ]
+  },
+  "min_clients": 8,
+  "mandatory_clients": [
+    "site-1",
+    "site-2",
+    "site-3",
+    "site-4",
+    "site-5",
+    "site-6",
+    "site-7",
+    "site-8"
+  ]
+}

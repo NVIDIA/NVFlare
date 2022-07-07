@@ -5,7 +5,11 @@ n_clients=$1
 
 if test -z "${n_clients}"
 then
+<<<<<<< HEAD
       echo "Usage: ./create_poc_workspace.sh [n_clients], e.g. ./create_poc_workspace.sh 4"
+=======
+      echo "Usage: ./create_poc_workspace.sh [n_clients], e.g. ./create_poc_workspace.sh 8"
+>>>>>>> upstream/main
       exit 1
 fi
 

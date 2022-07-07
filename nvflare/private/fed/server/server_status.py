@@ -18,12 +18,14 @@ class ServerStatus(object):
     STARTING = 1
     STARTED = 2
     STOPPED = 3
+    SHUTDOWN = 4
 
     status_messages = {
         NOT_STARTED: "app server not started",
         STARTING: "app server starting",
         STARTED: "app server started",
         STOPPED: "app server stopped",
+        SHUTDOWN: "FL server shutdown",
     }
 
 

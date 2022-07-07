@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any, Dict, Union
+
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -21,22 +23,50 @@ from nvflare.app_common.aggregators.dxo_aggregator import DXOAggregator
 from nvflare.app_common.app_constant import AppConstants
 
 
+def _is_nested_aggregation_weights(aggregation_weights):
+    if not aggregation_weights:
+        return False
+    if not isinstance(aggregation_weights, dict):
+        return False
+    first_value = next(iter(aggregation_weights.items()))[1]
+    if not isinstance(first_value, dict):
+        return False
+    return True
+
+
+def _get_missing_keys(ref_dict: dict, dict_to_check: dict):
+    result = []
+    for k in ref_dict:
+        if k not in dict_to_check:
+            result.append(k)
+    return result
+
+
 class InTimeAccumulateWeightedAggregator(Aggregator):
-    def __init__(self, exclude_vars=None, aggregation_weights=None, expected_data_kind=DataKind.WEIGHT_DIFF):
-        """Perform accumulated weighted aggregation
-        It parses the shareable and aggregates the contained DXO(s).
+    def __init__(
+        self,
+        exclude_vars: Union[str, Dict[str, str], None] = None,
+        aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
+        expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
+    ):
+        """Perform accumulated weighted aggregation.
+
+        This is often used as the default aggregation method and can be used for FedAvg. It parses the shareable and
+        aggregates the contained DXO(s).
 
         Args:
-            exclude_vars ([type], optional): regex to match excluded vars during aggregation. Defaults to None.
-                                Can be one string or a dict of keys with regex strings corresponding to each aggregated
-                                DXO when processing a DXO of `DataKind.COLLECTION`.
-            aggregation_weights ([type], optional): dictionary to map contributor name to its aggregation weights.
-                                Defaults to None.
-                                Can be one dict or a dict of dicts corresponding to each aggregated DXO
-                                when processing DXO of `DataKind.COLLECTION`.
-            expected_data_kind: DataKind or dict of keys and matching DataKind entries
-                                when processing DXO of `DataKind.COLLECTION`.
-                                Only the keys in the dict will be processed.
+            exclude_vars (Union[str, Dict[str, str]], optional):
+                Regular expression string to match excluded vars during aggregation. Defaults to None.
+                Can be one string or a dict of {dxo_name: regex strings} corresponding to each aggregated DXO
+                when processing a DXO of `DataKind.COLLECTION`.
+            aggregation_weights (Union[Dict[str, Any], Dict[str, Dict[str, Any]]], optional):
+                Aggregation weight for each contributor. Defaults to None.
+                Can be one dict of {contrib_name: aggr_weight} or a dict of dicts corresponding to each aggregated DXO
+                when processing a DXO of `DataKind.COLLECTION`.
+            expected_data_kind (Union[DataKind, Dict[str, DataKind]]):
+                DataKind for DXO. Defaults to DataKind.WEIGHT_DIFF
+                Can be one DataKind or a dict of {dxo_name: DataKind} corresponding to each aggregated DXO
+                when processing a DXO of `DataKind.COLLECTION`. Only the keys in this dict will be processed.
         """
         super().__init__()
         self.logger.debug(f"exclude vars: {exclude_vars}")
@@ -49,22 +79,38 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         if isinstance(expected_data_kind, dict):
             for k, v in expected_data_kind.items():
                 if v not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
-                    raise ValueError(f"expected_data_kind[{k}] = {v} not in WEIGHT_DIFF or WEIGHTS")
+                    raise ValueError(
+                        f"expected_data_kind[{k}] = {v} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}"
+                    )
             self.expected_data_kind = expected_data_kind
         else:
             if expected_data_kind not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
-                raise ValueError(f"expected_data_kind={expected_data_kind} not in WEIGHT_DIFF or WEIGHTS")
+                raise ValueError(
+                    f"expected_data_kind = {expected_data_kind} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}"
+                )
             self.expected_data_kind = {self._single_dxo_key: expected_data_kind}
 
         # Check exclude_vars
+        if exclude_vars:
+            if not isinstance(exclude_vars, dict) and not isinstance(exclude_vars, str):
+                raise ValueError(
+                    f"exclude_vars = {exclude_vars} should be a regex string but got {type(exclude_vars)}."
+                )
+            if isinstance(exclude_vars, dict):
+                missing_keys = _get_missing_keys(expected_data_kind, exclude_vars)
+                if len(missing_keys) != 0:
+                    raise ValueError(
+                        "A dict exclude_vars should specify exclude_vars for every key in expected_data_kind. "
+                        f"But missed these keys: {missing_keys}"
+                    )
+
         exclude_vars_dict = dict()
         for k in self.expected_data_kind.keys():
             if isinstance(exclude_vars, dict):
                 if k in exclude_vars:
                     if not isinstance(exclude_vars[k], str):
                         raise ValueError(
-                            f"exclude_vars[{k}] = {exclude_vars[k]} not a string but {type(exclude_vars[k])}! "
-                            f"Expected type regex string."
+                            f"exclude_vars[{k}] = {exclude_vars[k]} should be a regex string but got {type(exclude_vars[k])}."
                         )
                     exclude_vars_dict[k] = exclude_vars[k]
             else:
@@ -75,6 +121,14 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.exclude_vars = exclude_vars_dict
 
         # Check aggregation weights
+        if _is_nested_aggregation_weights(aggregation_weights):
+            missing_keys = _get_missing_keys(expected_data_kind, aggregation_weights)
+            if len(missing_keys) != 0:
+                raise ValueError(
+                    "A dict of dict aggregation_weights should specify aggregation_weights "
+                    f"for every key in expected_data_kind. But missed these keys: {missing_keys}"
+                )
+
         aggregation_weights = aggregation_weights or {}
         aggregation_weights_dict = dict()
         for k in self.expected_data_kind.keys():
@@ -83,8 +137,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             else:
                 # assume same aggregation weights for each entry of DXO collection.
                 aggregation_weights_dict[k] = aggregation_weights
-        if self._single_dxo_key in self.expected_data_kind:
-            aggregation_weights_dict[self._single_dxo_key] = aggregation_weights
         self.aggregation_weights = aggregation_weights_dict
 
         # Set up DXO aggregators

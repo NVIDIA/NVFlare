@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 host=$1
+sp=$2
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "WORKSPACE set to $DIR/.."
 mkdir -p $DIR/../transfer 
+export PYTHONPATH=/local/custom:$PYTHONPATH
+echo "PYTHONPATH is $PYTHONPATH"
 
 SECONDS=0
 lst=-400
@@ -20,7 +23,7 @@ start_fl() {
     exit
   fi
   lst=$SECONDS
-((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=false config_folder=config host=${host} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
+((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=false config_folder=config host=${host} sp=${sp} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
   pid=`cat $DIR/../pid.fl`
 }
 
@@ -33,7 +36,7 @@ stop_fl() {
   sleep 10
   kill -0 ${pid} 2> /dev/null 1>&2
   if [[ $? -ne 0 ]]; then
-    echo "Process alreday terminated"
+    echo "Process already terminated"
     return
   fi
   kill -9 $pid

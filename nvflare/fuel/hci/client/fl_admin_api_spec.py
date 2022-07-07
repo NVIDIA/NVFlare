@@ -39,7 +39,7 @@ class FLAdminAPIResponse(dict):
             raw: raw response from server
         """
         super().__init__()
-        self["status"] = status
+        self["status"] = status  # todo: status.value but it may break existing code
         if details:
             self["details"] = details
         if raw:
@@ -77,11 +77,13 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def set_run_number(self, run_number: int) -> FLAdminAPIResponse:
-        """Sets a current run number.
+    def submit_job(self, job_folder: str) -> FLAdminAPIResponse:
+        """Submit a job.
+
+        Assumes job folder is in the upload_dir set in API init.
 
         Args:
-            run_number: run number in order to set for the current experiment, must be integer greater than 0
+            job_folder (str): name of the job folder in upload_dir to submit
 
         Returns: FLAdminAPIResponse
 
@@ -89,14 +91,11 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def delete_run_number(self, run_number: int) -> FLAdminAPIResponse:
-        """Deletes a specified run number.
-
-        This deletes the run folder corresponding to the run number on the server and
-        all connected clients. This is not reversible.
+    def clone_job(self, job_id: str) -> FLAdminAPIResponse:
+        """Clone a job that exists by copying the job contents and providing a new job_id.
 
         Args:
-            run_number: run number for the run folder to delete
+            job_id (str): job id of the job to clone
 
         Returns: FLAdminAPIResponse
 
@@ -104,13 +103,11 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def upload_app(self, app: str) -> FLAdminAPIResponse:
-        """Uploads specified app to the upload directory of FL server.
-
-        Currently assumes app is in the upload_dir set in API init.
+    def list_jobs(self, options: str = None) -> FLAdminAPIResponse:
+        """List the jobs in the system.
 
         Args:
-            app: name of the folder in upload_dir to upload
+            options (str): the options string as provided to the list_jobs command for admin client.
 
         Returns: FLAdminAPIResponse
 
@@ -118,15 +115,11 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def deploy_app(self, app: str, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
-        """Issues a command to deploy the specified app to the specified target for the current run number.
-
-        The app must be already uploaded and available on the server.
+    def download_job(self, job_id: str) -> FLAdminAPIResponse:
+        """Download the specified job in the system.
 
         Args:
-            app: name of app to deploy
-            target_type: server | client | all
-            targets: if target_type is client, targets can optionally be a list of client names
+            job_id (str): Job id for the job to download
 
         Returns: FLAdminAPIResponse
 
@@ -134,12 +127,11 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def start_app(self, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
-        """Issue a command to start the deployed app for the current run number at the specified target.
+    def abort_job(self, job_id: str) -> FLAdminAPIResponse:
+        """Abort a job that is running.
 
         Args:
-            target_type: server | client | all
-            targets: if target_type is client, targets can optionally be a list of client names
+            job_id (str): the job id to abort
 
         Returns: FLAdminAPIResponse
 
@@ -147,10 +139,23 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def abort(self, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
+    def delete_job(self, job_id: str) -> FLAdminAPIResponse:
+        """Delete the specified job and workspace from the permanent store.
+
+        Args:
+            job_id (str): the job id to delete
+
+        Returns: FLAdminAPIResponse
+
+        """
+        pass
+
+    @abstractmethod
+    def abort(self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
         """Issue a command to abort training.
 
         Args:
+            job_id (str): job id
             target_type: server | client
             targets: if target_type is client, targets can optionally be a list of client names
 
@@ -193,7 +198,9 @@ class FLAdminAPISpec(ABC):
     def remove_client(self, targets: List[str]) -> FLAdminAPIResponse:
         """Issue a command to remove a specific FL client or FL clients.
 
-        Note that the targets will not be able to start with an API command after shutting down.
+        Note that the targets will not be able to start with an API command after shutting down. Also, you will not be
+        able to issue admin commands through the server to that client until the client is restarted (this includes
+        being able to issue the restart command through the API).
 
         Args:
             targets: a list of client names
@@ -205,10 +212,43 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def set_timeout(self, timeout: float) -> FLAdminAPIResponse:
-        """Sets the timeout for admin commands on the server.
+        """Sets the timeout for admin commands on the server in seconds.
+
+        This timeout is the maximum amount of time the server will wait for replies from clients. If the timeout is too
+        short, the server may not receive a response because clients may not have a chance to reply.
 
         Args:
-            timeout: timeout of admin commands to set on the server
+            timeout: timeout in seconds of admin commands to set on the server
+
+        Returns: FLAdminAPIResponse
+
+        """
+        pass
+
+    @abstractmethod
+    def list_sp(self) -> FLAdminAPIResponse:
+        """Gets the information on the available servers (service providers).
+
+        Returns: FLAdminAPIResponse
+
+        """
+        pass
+
+    @abstractmethod
+    def get_active_sp(self) -> FLAdminAPIResponse:
+        """Gets the active server (service provider).
+
+        Returns: FLAdminAPIResponse
+
+        """
+        pass
+
+    @abstractmethod
+    def promote_sp(self, sp_end_point: str) -> FLAdminAPIResponse:
+        """Sends command through overseer_agent to promote the specified sp_end_point to become the active server.
+
+        Args:
+            sp_end_point: service provider end point to promote to active in the form of server:fl_port:admin_port like example.com:8002:8003
 
         Returns: FLAdminAPIResponse
 
@@ -221,15 +261,18 @@ class FLAdminAPISpec(ABC):
 
     @abstractmethod
     def ls_target(self, target: str, options: str = None, path: str = None) -> FLAdminAPIResponse:
-        """Issue ls command.
+        """Issue ls command to retrieve the contents of the path.
 
         Sends the shell command to get the directory listing of the target allowing for options that the ls command
-        of admin client allows.
+        of admin client allows. If no path is specified, the contents of the working directory are returned. The target
+        can be "server" or a specific client name for example "site2". The allowed options are: "-a" for all, "-l" to
+        use a long listing format, "-t" to sort by modification time newest first, "-S" to sort by file size largest
+        first, "-R" to list subdirectories recursively, "-u" with -l to show access time otherwise sort by access time.
 
         Args:
-            target:  either server or single client's client name.
-            options: the options string as provided to the ls command for admin client.
-            path:    optionally, the path to specify
+            target (str):  either server or single client's client name.
+            options (str): the options string as provided to the ls command for admin client.
+            path (str):    optionally, the path to specify (relative to the working directory of the specified target)
 
         Returns: FLAdminAPIResponse
 
@@ -241,12 +284,15 @@ class FLAdminAPISpec(ABC):
         """Issue cat command.
 
         Sends the shell command to get the contents of the target's specified file allowing for options that the cat
-        command of admin client allows.
+        command of admin client allows. The target can be "server" or a specific client name for example "site2". The
+        file is required and should contain the relative path to the file from the working directory of the target. The
+        allowed options are "-n" to number all output lines, "-b" to number nonempty output lines, "-s" to suppress
+        repeated empty output lines, and "-T" to display TAB characters as ^I.
 
         Args:
-            target:  either server or single client's client name.
-            options: the options string as provided to the ls command for admin client.
-            file:    the path to the file to return the contents of
+            target (str):  either server or single client's client name.
+            options (str): the options string as provided to the ls command for admin client.
+            file (str):    the path to the file to return the contents of
 
         Returns: FLAdminAPIResponse
 
@@ -257,9 +303,12 @@ class FLAdminAPISpec(ABC):
     def tail_target_log(self, target: str, options: str = None) -> FLAdminAPIResponse:
         """Returns the end of target's log allowing for options that the tail of admin client allows.
 
+        The option "-n" can be used to specify the number of lines for example "-n 100", or "-c" can specify the
+        number of bytes.
+
         Args:
-            target:  either server or single client's client name.
-            options: the options string as provided to the tail command for admin client. For this command, "-n" can be
+            target (str):  either server or single client's client name.
+            options (str): the options string as provided to the tail command for admin client. For this command, "-n" can be
                      used to specify the number of lines for example "-n 100", or "-c" can specify the number of bytes.
 
         Returns: FLAdminAPIResponse
@@ -272,7 +321,7 @@ class FLAdminAPISpec(ABC):
         """Get the environment variables of the specified target.
 
         Args:
-            target:  either server or single client's client name.
+            target (str):  either server or single client's client name.
 
         Returns: FLAdminAPIResponse
 
@@ -284,7 +333,7 @@ class FLAdminAPISpec(ABC):
         """Gets the workspace root directory of the specified target.
 
         Args:
-            target:  either server or single client's client name.
+            target (str):  either server or single client's client name.
 
         Returns: FLAdminAPIResponse
 
@@ -298,13 +347,16 @@ class FLAdminAPISpec(ABC):
         """Issue grep command.
 
         Sends the shell command to grep the contents of the target's specified file allowing for options that the grep
-        command of admin client allows.
+        command of admin client allows. The target can be "server" or a specific client name for example "site2". The
+        file is required and should contain the relative path to the file from the working directory of the target. The
+        pattern is also required. The allowed options are "-n" to print line number with output lines, "-i" to ignore
+        case distinctions, and "-b" to print the byte offset with output lines.
 
         Args:
-            target:  either server or single client's client name.
-            options: the options string as provided to the grep command for admin client.
-            pattern: the pattern to search for
-            file:    the path to the file to grep
+            target (str):  either server or single client's client name.
+            options (str): the options string as provided to the grep command for admin client.
+            pattern (str): the pattern to search for
+            file (str):    the path to the file to grep
 
         Returns: FLAdminAPIResponse
 
@@ -312,24 +364,41 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def show_stats(self) -> FLAdminAPIResponse:
+    def show_stats(
+        self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None
+    ) -> FLAdminAPIResponse:
         """Gets and shows stats from the Info Collector.
 
+        Args:
+            job_id (str): job id
+            target_type: server | client
+            targets: if target_type is client, targets can optionally be a list of client names
+
         Returns: FLAdminAPIResponse
 
         """
 
     @abstractmethod
-    def show_errors(self) -> FLAdminAPIResponse:
+    def show_errors(
+        self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None
+    ) -> FLAdminAPIResponse:
         """Gets and shows errors from the Info Collector.
 
+        Args:
+            job_id (str): job id
+            target_type: server | client
+            targets: if target_type is client, targets can optionally be a list of client names
+
         Returns: FLAdminAPIResponse
 
         """
 
     @abstractmethod
-    def reset_errors(self) -> FLAdminAPIResponse:
+    def reset_errors(self, job_id: str) -> FLAdminAPIResponse:
         """Resets the collector errors.
+
+        Args:
+            job_id (str): job id
 
         Returns: FLAdminAPIResponse
 
@@ -365,11 +434,11 @@ class FLAdminAPISpec(ABC):
         in a state where the callback never returns True.
 
         Args:
-            interval: in seconds, the time between consecutive checks of the server
-            timeout: if set, the amount of time this function will run until before returning a response message
+            interval (int): in seconds, the time between consecutive checks of the server
+            timeout (int): if set, the amount of time this function will run until before returning a response message
             callback: the reply from check_status_server() will be passed to the callback, along with any additional kwargs
             which can go on to perform additional logic.
-            fail_attempts: number of consecutive failed attempts of getting the server status before returning with ERROR_RUNTIME.
+            fail_attempts (int): number of consecutive failed attempts of getting the server status before returning with ERROR_RUNTIME.
 
         Returns: FLAdminAPIResponse
 

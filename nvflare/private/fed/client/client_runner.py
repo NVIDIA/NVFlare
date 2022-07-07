@@ -55,7 +55,7 @@ class ClientRunner(FLComponent):
     def __init__(
         self,
         config: ClientRunnerConfig,
-        run_num: int,
+        job_id,
         engine: ClientEngineSpec,
         task_fetch_interval: int = 5,  # fetch task every 5 secs
     ):
@@ -63,7 +63,7 @@ class ClientRunner(FLComponent):
 
         Args:
             config: ClientRunnerConfig
-            run_num: run number
+            job_id: job id
             engine: ClientEngine object
             task_fetch_interval:  fetch task interval
         """
@@ -72,7 +72,7 @@ class ClientRunner(FLComponent):
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
 
-        self.run_num = run_num
+        self.job_id = job_id
         self.engine = engine
         self.task_fetch_interval = task_fetch_interval
         self.run_abort_signal = Signal()
@@ -115,9 +115,9 @@ class ClientRunner(FLComponent):
             return make_reply(ReturnCode.BAD_PEER_CONTEXT)
 
         task.data.set_peer_props(peer_ctx.get_all_public_props())
-        peer_run_num = peer_ctx.get_run_number()
-        if peer_run_num != self.run_num:
-            self.log_error(fl_ctx, "bad task assignment: not for the same run_number")
+        peer_job_id = peer_ctx.get_job_id()
+        if peer_job_id != self.job_id:
+            self.log_error(fl_ctx, "bad task assignment: not for the same job_id")
             return make_reply(ReturnCode.RUN_MISMATCH)
 
         executor = self.task_table.get(task.name)
@@ -244,10 +244,10 @@ class ClientRunner(FLComponent):
 
                 # reset to default fetch interval
                 task_fetch_interval = self.task_fetch_interval
-                self.log_info(fl_ctx, "fetching task from server ...")
+                self.log_debug(fl_ctx, "fetching task from server ...")
                 task = self.engine.get_task_assignment(fl_ctx)
                 if not task:
-                    self.log_info(fl_ctx, "no task received - will try in {} secs".format(task_fetch_interval))
+                    self.log_debug(fl_ctx, "no task received - will try in {} secs".format(task_fetch_interval))
                     continue
 
                 if task.name == SpecialTaskName.END_RUN:
@@ -258,7 +258,9 @@ class ClientRunner(FLComponent):
                     task_data = task.data
                     if task_data and isinstance(task_data, Shareable):
                         task_fetch_interval = task_data.get(TaskConstant.WAIT_TIME, self.task_fetch_interval)
-                    self.log_info(fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval))
+                    self.log_debug(
+                        fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval)
+                    )
                     continue
 
                 self.log_info(fl_ctx, "got task assignment: name={}, id={}".format(task.name, task.task_id))
@@ -393,7 +395,7 @@ class ClientRunner(FLComponent):
                     current_task_name = "None"
                 collector.set_info(
                     group_name="ClientRunner",
-                    info={"run_number": self.run_num, "current_task_name": current_task_name, "status": "started"},
+                    info={"job_id": self.job_id, "current_task_name": current_task_name, "status": "started"},
                 )
         elif event_type == EventType.FATAL_TASK_ERROR:
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")

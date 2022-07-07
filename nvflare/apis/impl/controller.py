@@ -226,18 +226,25 @@ class Controller(Responder, ControllerSpec, ABC):
                     self._engine.ask_to_stop()
                     self.log_exception(
                         fl_ctx,
-                        "processing error in before_task_sent_cb on task {}:{}".format(
-                            client_task_to_send.task.name, client_task_to_send.id
+                        "processing error in before_task_sent_cb on task {} ({}): {}".format(
+                            client_task_to_send.task.name, client_task_to_send.id, ex
                         ),
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
                 except BaseException as ex:
+                    self.log_exception(
+                        fl_ctx,
+                        "processing error in before_task_sent_cb on task {} ({}): {}".format(
+                            client_task_to_send.task.name, client_task_to_send.id, ex
+                        ),
+                    )
                     # this task cannot proceed anymore
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
 
             self.logger.debug("before_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
+            self.logger.debug(f"task completion status is {task.completion_status}")
 
             if task.completion_status is not None:
                 can_send_task = False
@@ -254,14 +261,19 @@ class Controller(Responder, ControllerSpec, ABC):
                     self._engine.ask_to_stop()
                     self.log_exception(
                         fl_ctx,
-                        "processing error in after_task_sent_cb on task {}:{}".format(
-                            client_task_to_send.task.name, client_task_to_send.id
+                        "processing error in after_task_sent_cb on task {} ({}): {}".format(
+                            client_task_to_send.task.name, client_task_to_send.id, ex
                         ),
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
                 except BaseException as ex:
-                    # this task cannot proceed anymore
+                    self.log_exception(
+                        fl_ctx,
+                        "processing error in after_task_sent_cb on task {} ({}): {}".format(
+                            client_task_to_send.task.name, client_task_to_send.id, ex
+                        ),
+                    )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
 
@@ -360,7 +372,7 @@ class Controller(Responder, ControllerSpec, ABC):
                     self._engine.ask_to_stop()
                     self.log_exception(
                         fl_ctx,
-                        "processing error in result_received_cb on task {}:{}".format(task_name, task_id),
+                        "processing error in result_received_cb on task {}({}): {}".format(task_name, task_id, ex),
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
@@ -369,7 +381,7 @@ class Controller(Responder, ControllerSpec, ABC):
                     # this task cannot proceed anymore
                     self.log_exception(
                         fl_ctx,
-                        "processing error in result_received_cb on task {}:{}".format(task_name, task_id),
+                        "processing error in result_received_cb on task {}({}): {}".format(task_name, task_id, ex),
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = ex
@@ -841,13 +853,14 @@ class Controller(Responder, ControllerSpec, ABC):
                             self._engine.ask_to_stop()
                             self.log_exception(
                                 fl_ctx,
-                                "processing task_done_cb() error on task {}".format(exit_task.name),
+                                "processing error in task_done_cb error on task {}: {}".format(exit_task.name, ex),
                             )
                             task.completion_status = TaskCompletionStatus.ERROR
                             task.exception = ex
                         except BaseException as ex:
                             self.log_exception(
-                                fl_ctx, "Exception {} raised in task_done_cb on task={}".format(ex, exit_task)
+                                fl_ctx,
+                                "processing error in task_done_cb error on task {}: {}".format(exit_task.name, ex),
                             )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = ex

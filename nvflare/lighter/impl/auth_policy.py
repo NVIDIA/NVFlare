@@ -15,7 +15,7 @@
 import json
 import os
 
-from nvflare.lighter.spec import Builder, Study
+from nvflare.lighter.spec import Builder, Project
 
 
 class AuthPolicyBuilder(Builder):
@@ -39,33 +39,34 @@ class AuthPolicyBuilder(Builder):
         self.groups = groups
         self.disabled = disabled
 
-    def build(self, study: Study, ctx: dict):
+    def build(self, project: Project, ctx: dict):
         authz = {"version": "1.0"}
         authz["roles"] = self.roles
         authz["groups"] = self.groups
         users = dict()
-        for admin in study.get_participants_by_type("admin", first_only=False):
+        for admin in project.get_participants_by_type("admin", first_only=False):
             if admin.org not in self.orgs:
                 raise ValueError(f"Admin {admin.name}'s org {admin.org} not defined in AuthPolicy")
             if self.disabled:
                 users[admin.name] = {"org": admin.org, "roles": ["super"]}
             else:
-                for role in admin.props.get("roles"):
+                for role in admin.props.get("roles", {}):
                     if role not in self.roles:
                         raise ValueError(f"Admin {admin.name}'s role {role} not defined in AuthPolicy")
                 users[admin.name] = {"org": admin.org, "roles": admin.props.get("roles")}
         authz["users"] = users
         authz["orgs"] = self.orgs
-        server = study.get_participants_by_type("server")
-        if server.org not in self.orgs:
-            raise ValueError(f"Server {server.name}'s org {server.org} not defined in AuthPolicy")
-        sites = {"server": server.org}
-        for client in study.get_participants_by_type("client", first_only=False):
-            if client.org not in self.orgs:
-                raise ValueError(f"client {client.name}'s org {client.org} not defined in AuthPolicy")
-            sites[client.name] = client.org
-        authz["sites"] = sites
-        authz.update(ctx.get("authz_def"))
-        dest_dir = self.get_kit_dir(server, ctx)
-        with open(os.path.join(dest_dir, "authorization.json"), "wt") as f:
-            f.write(json.dumps(authz))
+        servers = project.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            if server.org not in self.orgs:
+                raise ValueError(f"Server {server.name}'s org {server.org} not defined in AuthPolicy")
+            sites = {"server": server.org}
+            for client in project.get_participants_by_type("client", first_only=False):
+                if client.org not in self.orgs:
+                    raise ValueError(f"client {client.name}'s org {client.org} not defined in AuthPolicy")
+                sites[client.name] = client.org
+            authz["sites"] = sites
+            authz.update(ctx.get("authz_def"))
+            dest_dir = self.get_kit_dir(server, ctx)
+            with open(os.path.join(dest_dir, "authorization.json"), "wt") as f:
+                f.write(json.dumps(authz))

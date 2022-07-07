@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "persistor",
-      "name": "PTFileModelPersistor",
+      "path": "nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": {
           "path": "simple_network.SimpleNetwork"

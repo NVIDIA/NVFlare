@@ -13,22 +13,33 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.shareable import Shareable
 from nvflare.widgets.widget import Widget
 
 from .client import Client
 from .fl_context import FLContext
+from .fl_snapshot import RunSnapshot
 from .workspace import Workspace
 
 
 class ServerEngineSpec(ABC):
+    @abstractmethod
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         pass
 
     @abstractmethod
     def get_clients(self) -> List[Client]:
+        pass
+
+    @abstractmethod
+    def sync_clients_from_main_process(self):
+        """To fetch the participating clients from the main parent process
+
+        Returns: clients
+
+        """
         pass
 
     @abstractmethod
@@ -106,4 +117,74 @@ class ServerEngineSpec(ABC):
         Returns: the widget or None if not found
 
         """
+        pass
+
+    @abstractmethod
+    def persist_components(self, fl_ctx: FLContext, completed: bool):
+        """To persist the FL running components
+
+        Args:
+            fl_ctx: FLContext
+            completed: flag to indicate where the run is complete
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
+    def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
+        """To restore the FL components from the saved snapshot
+
+        Args:
+            snapshot: RunSnapshot
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
+    def start_client_job(self, job_id, client_sites):
+        """To send the start client run commands to the clients
+
+        Args:
+            client_sites: client sites
+            job_id: job_id
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
+    def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
+        """Sends the check_client_resources requests to the clients.
+
+        Args:
+            resource_reqs: A dict of {client_name: resource requirements dict}
+
+        Returns:
+            A dict of {client_name: client_check_result} where client_check_result
+                is a tuple of {client check OK, resource reserve token if any}
+        """
+        pass
+
+    @abstractmethod
+    def cancel_client_resources(
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+    ):
+        """Cancels the request resources for the job.
+
+        Args:
+            resource_check_results: A dict of {client_name: client_check_result}
+                where client_check_result is a tuple of {client check OK, resource reserve token if any}
+            resource_reqs: A dict of {client_name: resource requirements dict}
+        """
+        pass
+
+    @abstractmethod
+    def get_client_name_from_token(self, token: str) -> str:
+        """Gets client name from a client login token."""
         pass

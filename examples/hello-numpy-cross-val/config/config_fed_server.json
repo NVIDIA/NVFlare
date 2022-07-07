@@ -8,7 +8,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "np_model_persistor.NPModelPersistor",
+      "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
       "args": {}
     },
     {
@@ -25,12 +25,17 @@
     },
     {
       "id": "model_locator",
-      "path": "np_model_locator.NPModelLocator",
+      "path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
       "args": {}
     },
     {
       "id": "formatter",
-      "path": "np_formatter.NPFormatter",
+      "path": "nvflare.app_common.np.np_formatter.NPFormatter",
+      "args": {}
+    },
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
       "args": {}
     }
   ],

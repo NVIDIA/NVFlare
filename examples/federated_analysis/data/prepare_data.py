@@ -26,7 +26,11 @@ def create_datasets(root, subdirs, extension, shuffle, seed):
 
     data_lists = []
     for subdir in subdirs:
+<<<<<<< HEAD
         search_string = os.path.join(root, "**", subdir, "*" + extension)
+=======
+        search_string = os.path.join(root, "**", subdir, "images", "*" + extension)
+>>>>>>> upstream/main
         data_list = glob.glob(search_string, recursive=True)
 
         assert (
@@ -56,7 +60,11 @@ def save_data_list(data, data_list_file, data_root, key="data"):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_dir", type=str, required=True, help="Location of image files")
+<<<<<<< HEAD
     parser.add_argument("--input_ext", type=str, default=".png", help="Search extions")
+=======
+    parser.add_argument("--input_ext", type=str, default=".png", help="Search extension")
+>>>>>>> upstream/main
     parser.add_argument("--output_dir", type=str, default="./data", help="Output location of data lists")
     parser.add_argument(
         "--subdirs",

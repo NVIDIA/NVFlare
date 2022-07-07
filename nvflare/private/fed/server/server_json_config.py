@@ -111,7 +111,11 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if cid in self._get_all_workflows_ids():
                 raise ConfigError('duplicate workflow id "{}"'.format(cid))
 
+            if cid in self.components:
+                raise ConfigError('duplicate component id "{}"'.format(cid))
+
             self.workflows.append(WorkFlow(cid, workflow))
+            self.components[cid] = workflow
             return
 
     def _get_all_workflows_ids(self):

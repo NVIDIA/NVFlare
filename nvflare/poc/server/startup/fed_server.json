@@ -1,1 +1,75 @@
-{"format_version": 1, "servers": [{"name": "example_project", "service": {"target": "localhost:8002", "options": [["grpc.max_send_message_length", 2147483647], ["grpc.max_receive_message_length", 2147483647]]}, "admin_host": "localhost", "admin_port": 8003, "ssl_private_key": "server.key", "ssl_cert": "server.crt", "ssl_root_cert": "rootCA.pem", "max_num_clients": 100, "heart_beat_timeout": 600, "num_server_workers": 4, "compression": "Gzip", "admin_storage": "transfer", "min_num_clients": 1}] }
+{
+  "format_version": 2,
+  "servers": [
+    {
+      "name": "example_project",
+      "service": {
+        "target": "localhost:8002",
+        "options": [
+          [
+            "grpc.max_send_message_length",
+            2147483647
+          ],
+          [
+            "grpc.max_receive_message_length",
+            2147483647
+          ]
+        ]
+      },
+      "admin_host": "localhost",
+      "admin_port": 8003,
+      "ssl_private_key": "server.key",
+      "ssl_cert": "server.crt",
+      "ssl_root_cert": "rootCA.pem",
+      "max_num_clients": 100,
+      "heart_beat_timeout": 600,
+      "num_server_workers": 4,
+      "compression": "Gzip",
+      "admin_storage": "transfer",
+      "download_job_url": "http://download.server.com/",
+      "min_num_clients": 1
+    }
+  ],
+  "snapshot_persistor": {
+    "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
+    "args": {
+      "storage": {
+        "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+        "args": {
+          "root_dir": "/tmp/nvflare/snapshot-storage",
+          "uri_root": "/"
+        }
+      },
+      "uri_root": "/"
+    }
+  },
+  "overseer_agent": {
+    "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+    "args": {
+      "sp_end_point": "localhost:8002:8003",
+      "heartbeat_interval": 6
+    }
+  },
+  "components": [
+    {
+      "id": "job_scheduler",
+      "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
+      "args": {
+        "max_jobs": 1
+      }
+    },
+    {
+      "id": "job_manager",
+      "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+      "args": {
+        "uri_root": "/tmp/nvflare/jobs-storage",
+        "job_store_id": "job_store"
+      }
+    },
+    {
+      "id": "job_store",
+      "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+      "args": {}
+    }
+  ]
+}

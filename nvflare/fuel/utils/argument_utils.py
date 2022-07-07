@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import argparse
+import io
 from distutils.util import strtobool
 
 
@@ -64,3 +65,16 @@ def parse_vars(items):
                         pass
                         d[key] = value
     return d
+
+
+class SafeArgumentParser(argparse.ArgumentParser):
+    """Safe version of ArgumentParser which doesn't exit on error"""
+
+    def __init__(self, **kwargs):
+        kwargs["add_help"] = False
+        super().__init__(**kwargs)
+
+    def error(self, message):
+        writer = io.StringIO()
+        self.print_help(writer)
+        raise ValueError(message + "\n" + writer.getvalue())

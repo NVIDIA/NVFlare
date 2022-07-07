@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 from pt.networks.cifar10_nets import ModerateCNN
+from pt.utils.cifar10_data_splitter import CIFAR10_ROOT
 from pt.utils.cifar10_dataset import CIFAR10_Idx
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
@@ -37,7 +38,7 @@ from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
     def __init__(
         self,
-        dataset_root: str = "./dataset",
+        train_idx_root: str = "./dataset",
         aggregation_epochs: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
@@ -45,11 +46,13 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         fedproxloss_mu: float = 0.0,
         central: bool = False,
         analytic_sender_id: str = "analytic_sender",
+        batch_size: int = 64,
+        num_workers: int = 0,
     ):
         """Simple CIFAR-10 Trainer.
 
         Args:
-            dataset_root: directory with CIFAR-10 data.
+            train_idx_root: directory with site training indices for CIFAR-10 data.
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
             submit_model_task_name: name of the task to submit the best local model.
@@ -57,6 +60,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
             fedproxloss_mu: weight for FedProx loss. Float number. Defaults to 0.0 (no FedProx).
             central: Bool. Whether to simulate central training. Default False.
             analytic_sender_id: id of `AnalyticsSender` if configured as a client component. If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
+            batch_size: batch size for training and validation.
+            num_workers: number of workers for data loaders.
 
         Returns:
             a Shareable with the updated local model after running `execute()`
@@ -65,7 +70,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         super().__init__()
         # trainer init happens at the very beginning, only the basic info regarding the trainer is set here
         # the actual run has not started at this point
-        self.dataset_root = dataset_root
+        self.train_idx_root = train_idx_root
         self.aggregation_epochs = aggregation_epochs
         self.train_task_name = train_task_name
         self.lr = lr
@@ -73,6 +78,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self.submit_model_task_name = submit_model_task_name
         self.best_acc = 0.0
         self.central = central
+        self.batch_size = batch_size
+        self.num_workers = num_workers
 
         self.writer = None
         self.analytic_sender_id = analytic_sender_id
@@ -81,7 +88,31 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self.epoch_of_start_time = 0
         self.epoch_global = 0
 
+        # following will be created in initialize() or later
+        self.app_root = None
+        self.client_id = None
+        self.local_model_file = None
+        self.best_local_model_file = None
+        self.writer = None
+        self.device = None
+        self.model = None
+        self.optimizer = None
+        self.criterion = None
+        self.criterion_prox = None
+        self.transform_train = None
+        self.transform_valid = None
+        self.train_dataset = None
+        self.valid_dataset = None
+        self.train_loader = None
+        self.valid_loader = None
+
     def initialize(self, parts: dict, fl_ctx: FLContext):
+        """
+        Note: this code assumes a FL simulation setting
+        Datasets will be initialized in train() and validate() when calling self._create_datasets()
+        as we need to make sure that the server has already downloaded and split the data.
+        """
+
         # when the run starts, this is where the actual settings get initialized for trainer
 
         # Set the paths according to fl_ctx
@@ -100,17 +131,6 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self.writer = parts.get(self.analytic_sender_id)  # user configured config_fed_client.json for streaming
         if not self.writer:  # use local TensorBoard writer only
             self.writer = SummaryWriter(self.app_root)
-
-        # Set datalist, here the path and filename are hard-coded, can also be fed as an argument
-        site_idx_file_name = os.path.join(self.dataset_root, self.client_id + ".npy")
-        self.log_info(fl_ctx, f"IndexList Path: {site_idx_file_name}")
-        if os.path.exists(site_idx_file_name):
-            self.log_info(fl_ctx, "Loading subset index")
-            site_idx = np.load(site_idx_file_name).tolist()
-        else:
-            self.system_panic(f"No subset index found! File {site_idx_file_name} does not exist!", fl_ctx)
-            return
-        self.log_info(fl_ctx, f"Client subset size: {len(site_idx)}")
 
         # set the training-related parameters
         # can be replaced by a config-style block
@@ -145,25 +165,45 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
             ]
         )
 
-        # Set dataset
-        self.train_dataset = CIFAR10_Idx(
-            root=self.dataset_root,
-            # use whole dataset if self.central=True, otherwise, the site's dataset
-            data_idx=None if self.central else site_idx,
-            train=True,
-            download=True,
-            transform=self.transform_train,
-        )
-        self.valid_dataset = datasets.CIFAR10(
-            root=self.dataset_root,
-            train=False,
-            download=True,
-            transform=self.transform_valid,
-        )
+    def _create_datasets(self, fl_ctx: FLContext):
+        """To be called only after Cifar10DataSplitter downloaded the data and computed splits"""
 
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=64, shuffle=True, num_workers=2)
+        if self.train_dataset is None or self.train_loader is None:
+            if not self.central:
+                # Set datalist, here the path and filename are hard-coded, can also be fed as an argument
+                site_idx_file_name = os.path.join(self.train_idx_root, self.client_id + ".npy")
+                self.log_info(fl_ctx, f"IndexList Path: {site_idx_file_name}")
+                if os.path.exists(site_idx_file_name):
+                    self.log_info(fl_ctx, "Loading subset index")
+                    site_idx = np.load(site_idx_file_name).tolist()  # TODO: get from fl_ctx/shareable?
+                else:
+                    self.system_panic(f"No subset index found! File {site_idx_file_name} does not exist!", fl_ctx)
+                    return
+                self.log_info(fl_ctx, f"Client subset size: {len(site_idx)}")
+            else:
+                site_idx = None  # use whole training dataset if self.central=True
 
-        self.valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=64, shuffle=False, num_workers=2)
+            self.train_dataset = CIFAR10_Idx(
+                root=CIFAR10_ROOT,
+                data_idx=site_idx,
+                train=True,
+                download=False,
+                transform=self.transform_train,
+            )
+            self.train_loader = torch.utils.data.DataLoader(
+                self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers
+            )
+
+        if self.valid_dataset is None or self.valid_loader is None:
+            self.valid_dataset = datasets.CIFAR10(
+                root=CIFAR10_ROOT,
+                train=False,
+                download=False,
+                transform=self.transform_valid,
+            )
+            self.valid_loader = torch.utils.data.DataLoader(
+                self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers
+            )
 
     def finalize(self, fl_ctx: FLContext):
         # collect threads, close files here
@@ -177,6 +217,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
             epoch_len = len(train_loader)
             self.epoch_global = self.epoch_of_start_time + epoch
             self.log_info(fl_ctx, f"Local epoch {self.client_id}: {epoch + 1}/{self.aggregation_epochs} (lr={self.lr})")
+            avg_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader):
                 if abort_signal.triggered:
                     return
@@ -195,10 +236,12 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
                 loss.backward()
                 self.optimizer.step()
                 current_step = epoch_len * self.epoch_global + i
-                self.writer.add_scalar("train_loss", loss.item(), current_step)
+                avg_loss += loss.item()
+            self.writer.add_scalar("train_loss", avg_loss / len(train_loader), current_step)
             if val_freq > 0 and epoch % val_freq == 0:
                 acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model", fl_ctx=fl_ctx)
                 if acc > self.best_acc:
+                    self.best_acc = acc
                     self.save_model(is_best=True)
 
     def save_model(self, is_best=False):
@@ -212,6 +255,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
             torch.save(save_dict, self.local_model_file)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        self._create_datasets(fl_ctx)
+
         # Check abort signal
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -271,6 +316,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         # save model
         self.save_model(is_best=False)
         if acc > self.best_acc:
+            self.best_acc = acc
             self.save_model(is_best=True)
 
         # compute delta model, global model has the primary key set
@@ -331,6 +377,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         return metric
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        self._create_datasets(fl_ctx)
+
         # Check abort signal
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)

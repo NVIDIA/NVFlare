@@ -21,6 +21,9 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import make_session_token
 from nvflare.fuel.utils.time_utils import time_to_string
 
+LIST_SESSIONS_CMD_NAME = "list_sessions"
+CHECK_SESSION_CMD_NAME = "_check_session"
+
 
 class Session(object):
     def __init__(self):
@@ -120,21 +123,29 @@ class SessionManager(CommandModule):
             name="sess",
             cmd_specs=[
                 CommandSpec(
-                    name="list_sessions",
+                    name=LIST_SESSIONS_CMD_NAME,
                     description="list user sessions",
                     usage="list_sessions",
                     handler_func=self.handle_list_sessions,
                     visible=True,
-                )
+                ),
+                CommandSpec(
+                    name=CHECK_SESSION_CMD_NAME,
+                    description="check if session is active",
+                    usage="check_session",
+                    handler_func=self.handle_check_session,
+                    visible=False,
+                ),
             ],
         )
 
     def handle_list_sessions(self, conn: Connection, args: List[str]):
         """Lists sessions and the details in a table.
 
-        Not registered by default but can be registered in FedAdminServer with ``cmd_reg.register_module(sess_mgr)``.
+        Registered in the FedAdminServer with ``cmd_reg.register_module(sess_mgr)``.
         """
-        sess_list = list(self.sessions.values())
+        with self.sess_update_lock:
+            sess_list = list(self.sessions.values())
         sess_list.sort(key=lambda x: x.user_name, reverse=False)
         table = conn.append_table(["User", "Session ID", "Start", "Last Active", "Idle"])
         for s in sess_list:
@@ -146,4 +157,22 @@ class SessionManager(CommandModule):
                     time_to_string(s.last_active_time),
                     "{}".format(time.time() - s.last_active_time),
                 ]
+            )
+
+    def handle_check_session(self, conn: Connection, args: List[str]):
+        token = None
+        data = conn.request["data"]
+        for item in data:
+            it = item["type"]
+            if it == "token":
+                token = item["data"]
+                break
+
+        sess = self.get_session(token)
+        if sess:
+            conn.append_string("OK")
+        else:
+            conn.append_error("session_inactive")
+            conn.append_string(
+                "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
             )

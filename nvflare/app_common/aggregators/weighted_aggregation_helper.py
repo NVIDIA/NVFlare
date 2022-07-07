@@ -13,20 +13,15 @@
 # limitations under the License.
 
 import re
+from typing import Optional
 
 
 class WeightedAggregationHelper(object):
-    def __init__(self, exclude_vars=None):
-        """Perform weighted aggregation
-        It computes
-        weighted_sum = sum(dict*weight)
-
-        in accept function
-        The aggregate function returns
-        weighted_sum / sum_of_weights
+    def __init__(self, exclude_vars: Optional[str] = None):
+        """Perform weighted aggregation.
 
         Args:
-            exclude_vars ([type], optional): regex to match excluded vars during aggregation. Defaults to None.
+            exclude_vars (str, optional): regex string to match excluded vars during aggregation. Defaults to None.
         """
         super().__init__()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
@@ -40,7 +35,8 @@ class WeightedAggregationHelper(object):
         self.counts = {}
         self.history = []
 
-    def add(self, data, weight, contributor_name, contribution_round) -> bool:
+    def add(self, data, weight, contributor_name, contribution_round):
+        """Compute weighted sum and sum of weights."""
         for k, v in data.items():
             if self.exclude_vars is not None and self.exclude_vars.search(k):
                 continue
@@ -61,6 +57,7 @@ class WeightedAggregationHelper(object):
         )
 
     def get_result(self):
+        """Divide weighted sum by sum of weights."""
         aggregated_dict = {k: v / self.counts[k] for k, v in self.total.items()}
         self.reset_stats()
         return aggregated_dict

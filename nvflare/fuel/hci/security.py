@@ -64,7 +64,7 @@ def make_session_token():
     return str(t)
 
 
-def get_certificate_common_name(cert):
+def get_certificate_common_name(cert: dict):
     """Gets the common name of the provided certificate.
 
     Args:

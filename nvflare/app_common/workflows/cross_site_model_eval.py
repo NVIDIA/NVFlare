@@ -133,7 +133,7 @@ class CrossSiteModelEval(Controller):
 
         # Create shareable dirs for models and results
         workspace: Workspace = engine.get_workspace()
-        run_dir = workspace.get_run_dir(fl_ctx.get_run_number())
+        run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
         cross_val_path = os.path.join(run_dir, self._cross_val_dir)
         self._cross_val_models_dir = os.path.join(cross_val_path, AppConstants.CROSS_VAL_MODEL_DIR_NAME)
         self._cross_val_results_dir = os.path.join(cross_val_path, AppConstants.CROSS_VAL_RESULTS_DIR_NAME)
@@ -186,7 +186,7 @@ class CrossSiteModelEval(Controller):
             engine = fl_ctx.get_engine()
             start_time = time.time()
             while not self._participating_clients:
-                self._participating_clients = engine.get_clients()
+                self._participating_clients = [c.name for c in engine.get_clients()]
                 if time.time() - start_time > self._wait_for_clients_timeout:
                     self.log_info(fl_ctx, "No clients available - quit model validation.")
                     return
