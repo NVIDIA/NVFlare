@@ -233,7 +233,6 @@ class ScatterAndGather(Controller):
                 self._current_round += 1
 
                 # Call the self._engine to persist the snapshot of all the FLComponents
-                self._engine = fl_ctx.get_self._engine()
                 self._engine.persist_components(fl_ctx, completed=False)
 
             self._phase = AppConstants.PHASE_FINISHED

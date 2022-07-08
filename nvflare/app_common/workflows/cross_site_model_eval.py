@@ -264,7 +264,7 @@ class CrossSiteModelEval(Controller):
         try:
             model_dxo: DXO = self._load_validation_content(model_name, self._cross_val_models_dir, fl_ctx)
         except ValueError as v_e:
-            reason = f"Error in loading model shareable for {model_name}. CrossSiteValidator exiting."
+            reason = f"Error in loading model shareable for {model_name}: {v_e}. CrossSiteModelEval exiting."
             self.log_error(fl_ctx, reason)
             self.system_panic(reason, fl_ctx)
             return
@@ -272,7 +272,7 @@ class CrossSiteModelEval(Controller):
         if not model_dxo:
             self.system_panic(
                 f"Model contents for {model_name} not found in {self._cross_val_models_dir}. "
-                "CrossSiteValidator exiting",
+                "CrossSiteModelEval exiting",
                 fl_ctx=fl_ctx,
             )
             return
@@ -453,7 +453,7 @@ class CrossSiteModelEval(Controller):
         Args:
             name (str): Name of shareable
             save_dir (str): Relative path to directory in which to save
-            shareable (Shareable): Shareable object
+            dxo (DXO): DXO object
             fl_ctx (FLContext): FLContext object
 
         Returns:
@@ -481,7 +481,6 @@ class CrossSiteModelEval(Controller):
     def _load_validation_content(self, name: str, load_dir: str, fl_ctx: FLContext) -> Union[DXO, None]:
         # Load shareable from disk
         shareable_filename = os.path.join(load_dir, name)
-        dxo: DXO = None
 
         # load shareable
         try:
