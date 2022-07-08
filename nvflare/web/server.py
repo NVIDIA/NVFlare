@@ -18,46 +18,87 @@ from datetime import datetime
 from flask import jsonify, request, send_from_directory
 
 from nvflare.web.app import app
-from nvflare.web.models import create_client, get_clients, get_client, patch_client, delete_client, init_db
+from nvflare.web.models import Store
 
 privilege_dict = {"admin@nvidia.com": "super"}
+
+store = Store()
 
 
 @app.route("/api/v1/init", methods=["GET"])
 def init():
-    init_db()
-    return jsonify({})
+    store.init_db()
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/v1/clients", methods=["POST"])
 def create_one_client():
     req = request.json
-    client = create_client(req)
-    return jsonify(client)
+    result = store.create_client(req)
+    return jsonify(result)
 
 
 @app.route("/api/v1/clients", methods=["GET"])
 def get_all_clients():
-    client_list = get_clients()
-    return jsonify(client_list)
+    result = store.get_clients()
+    return jsonify(result)
 
 
 @app.route("/api/v1/clients/<id>", methods=["GET", "PATCH", "DELETE"])
-def client(id):
+def update_client(id):
     if request.method == "GET":
-        client = get_client(id)
-        return jsonify(client)
+        result = store.get_client(id)
     elif request.method == "PATCH":
         req = request.json
-        client = patch_client(id, req)
-        return jsonify(client)
+        result = store.patch_client(id, req)
     elif request.method == "DELETE":
-        delete_client(id)
-        return jsonify(client)
+        result = store.delete_client(id)
+    else:
+        result = {"status": "error"}
+    return jsonify(result)
 
 
 @app.route("/api/v1/clients/<id>/blob", methods=["GET"])
 def client_blob(id):
+    return send_from_directory(directory=os.getcwd(), path="hello.zip", as_attachment=True)
+
+
+@app.route("/api/v1/users", methods=["POST"])
+def create_one_user():
+    req = request.json
+    result = store.create_user(req)
+    return jsonify(result)
+
+
+@app.route("/api/v1/users", methods=["GET"])
+def get_all_users():
+    result = store.get_users()
+    return jsonify(result)
+
+
+@app.route("/api/v1/users/<id>", methods=["GET", "PATCH", "DELETE"])
+def update_user(id):
+    if request.method == "GET":
+        result = store.get_user(id)
+    elif request.method == "PATCH":
+        req = request.json
+        result = store.patch_user(id, req)
+    elif request.method == "DELETE":
+        result = store.delete_user(id)
+    else:
+        result = {"status": "error"}
+    return jsonify(result)
+
+
+@app.route("/api/v1/users/<id>/auth", methods=["POST"])
+def auth_user(id):
+    pw = request.json.get("password")
+    result = store.auth_user(id, pw)
+    return jsonify(result)
+
+
+@app.route("/api/v1/users/<id>/blob", methods=["GET"])
+def user_blob(id):
     return send_from_directory(directory=os.getcwd(), path="hello.zip", as_attachment=True)
 
 

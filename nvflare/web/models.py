@@ -1,5 +1,6 @@
 import os
-
+import hashlib
+import random
 from flask_sqlalchemy import SQLAlchemy
 
 from .app import app
@@ -35,7 +36,7 @@ from datetime import datetime, timezone
 
 class CommonMixin(object):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(25))
+    name = db.Column(db.String(25), default="")
     description = db.Column(db.String(256), default="")
     created_at = db.Column(db.Float, nullable=False, default=datetime.now(timezone.utc).timestamp)
     updated_at = db.Column(
@@ -54,8 +55,6 @@ class Role(CommonMixin, db.Model):
 
 
 class Resource(CommonMixin, db.Model):
-    resource = db.Column(db.String(128), default="")
-
     def asdict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
@@ -69,19 +68,27 @@ class Client(CommonMixin, db.Model):
 
     def asdict(self):
         table_dict = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        table_dict.update({"organization": self.organization.asdict(), "resource": self.resource.asdict()})
+        table_dict.update({"organization": self.organization.name, "resource": self.resource.name})
         if self.approval_state > 100:
             table_dict.update({"download_url": f"./clients/{self.id}/blob"})
         return table_dict
 
 
 class User(CommonMixin, db.Model):
-    email = db.Column(db.String(128))
+    email = db.Column(db.String(128), unique=True)
     hashed_pw = db.Column(db.String(128))
-    role = db.Column(db.Integer, db.ForeignKey("role.id"), nullable=False)
-    organization = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey("role.id"), nullable=False)
+    role = db.relationship("Role", backref="users")
+    organization_id = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
+    organization = db.relationship("Organization", backref="users")
     approval_state = db.Column(db.Integer, default=0)
-    gender = db.Column(db.String(10))
+
+    def asdict(self):
+        table_dict = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        table_dict.update({"organization": self.organization.name, "role": self.role.name})
+        if self.approval_state > 100:
+            table_dict.update({"download_url": f"./users/{self.id}/blob"})
+        return table_dict
 
 
 def _dict_or_empty(item):
@@ -99,47 +106,121 @@ def get_or_create(session, model, **kwargs):
         return instance
 
 
-def init_db():
-    db.drop_all()
-    db.create_all()
+def add_ok(obj):
+    obj.update({"status": "ok"})
+    return obj
 
 
-def create_client(req):
-    name = req.get("name")
-    organization = req.get("organization")
-    resource = req.get("resource")
-    description = req.get("description", "")
-    org = get_or_create(db.session, Organization, name=organization)
-    res = get_or_create(db.session, Resource, resource=resource)
-    client = Client(name=name, description=description)
-    client.organization_id = org.id
-    client.resource_id = res.id
-    db.session.add(client)
-    db.session.commit()
-    return _dict_or_empty(client)
+class Store(object):
+    def init_db(self):
+        db.drop_all()
+        db.create_all()
+        return add_ok({})
 
+    def create_client(self, req):
+        name = req.get("name")
+        organization = req.get("organization")
+        resource_name = req.get("resource")
+        description = req.get("description", "")
+        org = get_or_create(db.session, Organization, name=organization)
+        res = get_or_create(db.session, Resource, name=resource_name)
+        client = Client(name=name, description=description)
+        client.organization_id = org.id
+        client.resource_id = res.id
+        db.session.add(client)
+        db.session.commit()
+        return add_ok({"client": _dict_or_empty(client)})
 
-def get_clients():
-    all_clients = Client.query.all()
-    return [_dict_or_empty(client) for client in all_clients]
+    def get_clients(self):
+        all_clients = Client.query.all()
+        return add_ok({"client_list": [_dict_or_empty(client) for client in all_clients]})
 
+    def get_client(self, id):
+        client = Client.query.get(id)
+        return add_ok({"client": _dict_or_empty(client)})
 
-def get_client(id):
-    client = Client.query.get(id)
-    return _dict_or_empty(client)
+    def patch_client(self, id, req):
+        client = Client.query.get(id)
+        organization = req.pop("organization", None)
+        if organization is not None:
+            org = get_or_create(db.session, Organization, name=organization)
+            client.organization_id = org.id
+        resource_name = req.pop("resource", None)
+        if resource_name is not None:
+            res = get_or_create(db.session, Resource, name=resource_name)
+            client.resource_id = res.id
+        for k, v in req.items():
+            setattr(client, k, v)
+        db.session.add(client)
+        db.session.commit()
+        return add_ok({"client": _dict_or_empty(client)})
 
+    def delete_client(self, id):
+        Client.query.get(id).delete()
+        return add_ok({})
 
-def patch_client(id, req):
-    print(id)
-    print(req)
-    client = Client.query.get(id)
-    for k, v in req.items():
-        setattr(client, k, v)
-    db.session.add(client)
-    db.session.commit()
-    return _dict_or_empty(client)
+    def create_user(self, req):
+        name = req.get("name")
+        email = req.get("email")
+        password = req.get("password", "")
+        salt = os.urandom(16)
+        md = hashlib.sha1(salt)
+        md.update(password.encode("utf-8"))
+        hashed_pw = salt.hex() + md.hexdigest()
+        organization = req.get("organization")
+        role_name = req.get("role")
+        description = req.get("description", "")
+        org = get_or_create(db.session, Organization, name=organization)
+        role = get_or_create(db.session, Role, name=role_name)
+        user = User(email=email, name=name, hashed_pw=hashed_pw, description=description)
+        user.organization_id = org.id
+        user.role_id = role.id
+        db.session.add(user)
+        db.session.commit()
+        return add_ok({"user": _dict_or_empty(user)})
 
+    def get_users(self):
+        all_users = User.query.all()
+        return add_ok({"user_list": [_dict_or_empty(client) for client in all_users]})
 
-def delete_client(id):
-    Client.query.filter_by(id=id).delete()
-    return True
+    def get_user(self, id):
+        user = User.query.get(id)
+        return add_ok({"user": _dict_or_empty(user)})
+
+    def patch_user(self, id, req):
+        user = User.query.get(id)
+        organization = req.pop("organization", None)
+        if organization is not None:
+            org = get_or_create(db.session, Organization, name=organization)
+            user.organization_id = org.id
+        role_name = req.pop("role", None)
+        if role_name is not None:
+            role = get_or_create(db.session, Role, name=role_name)
+            user.role_id = role.id
+        password = req.pop("password", None)
+        if password is not None:
+            salt = os.urandom(16)
+            md = hashlib.sha1(salt)
+            md.update(password.encode("utf-8"))
+            hashed_pw = salt.hex() + md.hexdigest()
+            user.hashed_pw = hashed_pw
+        for k, v in req.items():
+            setattr(user, k, v)
+        db.session.add(user)
+        db.session.commit()
+        return add_ok({"user": _dict_or_empty(user)})
+
+    def auth_user(self, id, pw):
+        user = User.query.get(id)
+        mixed_hashed_pw = user.hashed_pw
+        salt = bytes.fromhex(mixed_hashed_pw[:32])
+        md = hashlib.sha1(salt)
+        md.update(pw.encode("utf-8"))
+        if md.hexdigest() == mixed_hashed_pw[32:]:
+            return add_ok({})
+        else:
+            return {"status": "error"}
+
+    def delete_user(self, id):
+        User.query.get(id).delete()
+        return add_ok({})
