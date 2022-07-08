@@ -121,18 +121,13 @@ class CrossSiteModelEval(Controller):
         self._model_locator = None
 
     def start_controller(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        if not engine:
-            self.system_panic("Engine not found. Workflow exiting.", fl_ctx)
-            return
-
         # If the list of participating clients is not provided, include all clients currently available.
         if not self._participating_clients:
-            clients = engine.get_clients()
+            clients = self._engine.get_clients()
             self._participating_clients = [c.name for c in clients]
 
         # Create shareable dirs for models and results
-        workspace: Workspace = engine.get_workspace()
+        workspace: Workspace = self._engine.get_workspace()
         run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
         cross_val_path = os.path.join(run_dir, self._cross_val_dir)
         self._cross_val_models_dir = os.path.join(cross_val_path, AppConstants.CROSS_VAL_MODEL_DIR_NAME)
@@ -155,7 +150,7 @@ class CrossSiteModelEval(Controller):
 
         # Get components
         if self._model_locator_id:
-            self._model_locator = engine.get_component(self._model_locator_id)
+            self._model_locator = self._engine.get_component(self._model_locator_id)
             if not isinstance(self._model_locator, ModelLocator):
                 self.system_panic(
                     reason="bad model locator {}: expect ModelLocator but got {}".format(
@@ -166,7 +161,7 @@ class CrossSiteModelEval(Controller):
                 return
 
         if self._formatter_id:
-            self._formatter = engine.get_component(self._formatter_id)
+            self._formatter = self._engine.get_component(self._formatter_id)
             if not isinstance(self._formatter, Formatter):
                 self.system_panic(
                     reason=f"formatter {self._formatter_id} is not an instance of Formatter.", fl_ctx=fl_ctx
@@ -183,10 +178,9 @@ class CrossSiteModelEval(Controller):
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
             # wait until there are some clients
-            engine = fl_ctx.get_engine()
             start_time = time.time()
             while not self._participating_clients:
-                self._participating_clients = [c.name for c in engine.get_clients()]
+                self._participating_clients = [c.name for c in self._engine.get_clients()]
                 if time.time() - start_time > self._wait_for_clients_timeout:
                     self.log_info(fl_ctx, "No clients available - quit model validation.")
                     return

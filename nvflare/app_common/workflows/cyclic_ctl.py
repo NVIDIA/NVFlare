@@ -69,8 +69,8 @@ class CyclicController(Controller):
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_debug(fl_ctx, "starting controller")
-        self.persistor = fl_ctx.get_engine().get_component(self.persistor_id)
-        self.shareable_generator = fl_ctx.get_engine().get_component(self.shareable_generator_id)
+        self.persistor = self._engine.get_component(self.persistor_id)
+        self.shareable_generator = self._engine.get_component(self.shareable_generator_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.system_panic(
                 f"Persistor {self.persistor_id} must be a Persistor instance, but got {type(self.persistor)}", fl_ctx
@@ -99,7 +99,6 @@ class CyclicController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
-            engine = fl_ctx.get_engine()
             self.log_debug(fl_ctx, "Cyclic starting.")
 
             for self._current_round in range(self._start_round, self._end_round):
@@ -110,7 +109,7 @@ class CyclicController(Controller):
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
 
                 # Task for one cyclic
-                targets = engine.get_clients()
+                targets = self._engine.get_clients()
                 random.shuffle(targets)
                 targets_names = [t.name for t in targets]
                 self.log_debug(fl_ctx, f"Relay on {targets_names}")
@@ -134,7 +133,7 @@ class CyclicController(Controller):
                 )
                 self.persistor.save(self._last_learnable, fl_ctx)
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
-                engine.persist_components(fl_ctx, completed=False)
+                self._engine.persist_components(fl_ctx, completed=False)
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:
