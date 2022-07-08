@@ -15,15 +15,17 @@ import datetime
 import io
 import json
 import logging
+import traceback
 from typing import Dict, List
 
-from nvflare.apis.job_def import Job, JobMetaKey
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
+from nvflare.fuel.hci.zip_utils import ls_zip_from_bytes
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.security.security import Action
@@ -69,6 +71,13 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
                     usage="clone_job job_id",
                     handler_func=self.clone_job,
                     authz_func=self.authorize_job,
+                ),
+                CommandSpec(
+                    name="list_files",
+                    description="list contents of a finished job in the job store",
+                    usage="list_files job_id [file/folder path, starting with job or workspace as top dir]",
+                    handler_func=self.list_files,
+                    authz_func=self.authorize_list_files,
                 ),
             ],
         )
@@ -199,6 +208,60 @@ class JobCommandModule(TrainingCommandModule, CommandUtil):
                 conn.append_string("Cloned job {} as: {}".format(job_id, meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
             conn.append_error("Exception occurred trying to clone job: " + str(e))
+            return
+        conn.append_success("")
+
+    def authorize_list_files(self, conn: Connection, args: List[str]):
+        if len(args) < 2:
+            conn.append_error("syntax error: missing job_id")
+            return False, None
+
+        if len(args) > 3:
+            conn.append_error("syntax error: too many arguments")
+            return False, None
+
+        return self.authorize_job(conn=conn, args=args[:2])
+
+    def list_files(self, conn: Connection, args: List[str]):
+        job_id = conn.get_prop(self.JOB_ID)
+
+        if len(args) == 2:
+            conn.append_string("job\nworkspace\n\nSpecify the job or workspace dir to see detailed contents.")
+            return
+        else:
+            file = args[2]
+
+        engine = conn.app_ctx
+        try:
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                job_data = job_def_manager.get_job_data(job_id, fl_ctx)
+                if file.startswith(TopDir.JOB):
+                    file = file[len(TopDir.JOB) :]
+                    file = file.lstrip("/")
+                    data_bytes = job_data[JobDataKey.JOB_DATA.value]
+                    ls_info = ls_zip_from_bytes(data_bytes)
+                elif file.startswith(TopDir.WORKSPACE):
+                    file = file[len(TopDir.WORKSPACE) :]
+                    file = file.lstrip("/")
+                    workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
+                    ls_info = ls_zip_from_bytes(workspace_bytes)
+                else:
+                    conn.append_error("syntax error: top level directory must be job or workspace")
+                    return
+                return_string = "%-46s %19s %12s\n" % ("File Name", "Modified    ", "Size")
+                for zinfo in ls_info:
+                    date = "%d-%02d-%02d %02d:%02d:%02d" % zinfo.date_time[:6]
+                    if zinfo.filename.startswith(file):
+                        return_string += "%-46s %s %12d\n" % (zinfo.filename, date, zinfo.file_size)
+                conn.append_string(return_string)
+        except Exception as e:
+            traceback.print_exc()
+            conn.append_error("Exception occurred trying to get job from store: " + str(e))
             return
         conn.append_success("")
 

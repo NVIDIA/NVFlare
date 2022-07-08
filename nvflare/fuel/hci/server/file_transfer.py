@@ -21,7 +21,7 @@ from typing import List
 from zipfile import ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.job_def import JobDataKey, JobMetaKey
+from nvflare.apis.job_def import JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.common_utils import get_size
 from nvflare.fuel.hci.base64_utils import (
@@ -35,7 +35,12 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.hci.zip_utils import (
+    convert_legacy_zip,
+    unzip_all_from_bytes,
+    unzip_single_file_from_bytes,
+    zip_directory_to_bytes,
+)
 from nvflare.private.fed.server.cmd_utils import CommandUtil
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.security.security import Action
@@ -117,6 +122,13 @@ class FileTransferModule(CommandModule, CommandUtil):
                     description="download a job",
                     usage="download_job job_id",
                     handler_func=self.download_job,
+                    visible=False,
+                ),
+                CommandSpec(
+                    name=ftd.SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE,
+                    description="download a single file from a completed job in the job store",
+                    usage="download_job_single_file job_id file_path",
+                    handler_func=self.download_job_single_file,
                     visible=False,
                 ),
                 CommandSpec(
@@ -301,15 +313,67 @@ class FileTransferModule(CommandModule, CommandUtil):
         os.mkdir(job_id_dir)
 
         data_bytes = job_data[JobDataKey.JOB_DATA.value]
-        job_dir = os.path.join(job_id_dir, "job")
+        job_dir = os.path.join(job_id_dir, TopDir.JOB)
         os.mkdir(job_dir)
         unzip_all_from_bytes(data_bytes, job_dir)
 
         workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
-        workspace_dir = os.path.join(job_id_dir, "workspace")
+        workspace_dir = os.path.join(job_id_dir, TopDir.WORKSPACE)
         os.mkdir(workspace_dir)
         if workspace_bytes is not None:
             unzip_all_from_bytes(workspace_bytes, workspace_dir)
+
+    def download_job_single_file(self, conn: Connection, args: List[str]):
+        if len(args) != 3:
+            conn.append_error("syntax error: job ID and the path to the file to download are required")
+            return
+
+        job_id = args[1]
+        file = args[2]
+
+        engine = conn.app_ctx
+        try:
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                job_data = job_def_manager.get_job_data(job_id, fl_ctx)
+                self._unzip_single_file_from_data(job_data, job_id, file)
+        except Exception as e:
+            traceback.print_exc()
+            conn.append_error("Exception occurred trying to get job from store: " + str(e))
+            return
+        try:
+            data = zip_directory_to_bytes(self.download_dir, job_id)
+            b64str = bytes_to_b64str(data)
+            conn.append_string(b64str)
+        except BaseException:
+            traceback.print_exc()
+            conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))
+
+    def _unzip_single_file_from_data(self, job_data, job_id, file):
+        job_id_dir = os.path.join(self.download_dir, job_id)
+        if os.path.exists(job_id_dir):
+            shutil.rmtree(job_id_dir)
+        os.mkdir(job_id_dir)
+        if file.startswith(TopDir.JOB):
+            file = file[len(TopDir.JOB) :]
+            file = file.lstrip("/")
+            data_bytes = job_data[JobDataKey.JOB_DATA.value]
+            dl_to_dir = os.path.join(job_id_dir, TopDir.JOB)
+            unzip_single_file_from_bytes(data_bytes, dl_to_dir, file)
+            return os.path.relpath(dl_to_dir, self.download_dir)
+        elif file.startswith(TopDir.WORKSPACE):
+            file = file[len(TopDir.WORKSPACE) :]
+            file = file.lstrip("/")
+            workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
+            dl_to_dir = os.path.join(job_id_dir, TopDir.WORKSPACE)
+            unzip_single_file_from_bytes(workspace_bytes, dl_to_dir, file)
+            return os.path.relpath(dl_to_dir, self.download_dir)
+        else:
+            raise SyntaxError("file_path should start with job or workspace.")
 
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))

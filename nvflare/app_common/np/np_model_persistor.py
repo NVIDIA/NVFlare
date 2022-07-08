@@ -52,7 +52,7 @@ class NPModelPersistor(ModelPersistor):
             # try loading previous model
             data = np.load(model_path)
         except Exception as e:
-            self.log_exception(
+            self.log_info(
                 fl_ctx,
                 f"Unable to load model from {model_path}: {e}. Using default data instead.",
                 fire_event=False,

@@ -6,7 +6,7 @@
         "train"
       ],
       "executor": {
-        "path": "tests.integration_test.np.np_trainer.NPTrainer",
+        "path": "nvflare.app_common.np.np_trainer.NPTrainer",
         "args": {}
       }
     }

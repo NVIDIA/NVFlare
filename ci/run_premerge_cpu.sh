@@ -56,16 +56,46 @@ wheel_build() {
     remove_pipenv
 }
 
+add_dns_entries() {
+    echo "adding DNS entries for HA test cases"
+    cp /etc/hosts /etc/hosts_bak
+    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
+}
+
+remove_dns_entries() {
+    echo "restoring original /etc/hosts file"
+    cp /etc/hosts_bak /etc/hosts
+}
+
+integration_test() {
+    echo "Run integration test..."
+    init_pipenv requirements-dev.txt
+    add_dns_entries
+    testFolder="tests/integration_test"
+    rm -rf /tmp/snapshot-storage
+    pushd ${testFolder}
+    pipenv run ./run_integration_tests.sh -m numpy
+    popd
+    rm -rf /tmp/snapshot-storage
+    remove_dns_entries
+    remove_pipenv
+}
+
 case $BUILD_TYPE in
 
     all)
         echo "Run all tests..."
         unit_test
+        integration_test
         wheel_build
         ;;
 
     unit_test)
         unit_test
+        ;;
+
+    integration_test)
+        integration_test
         ;;
 
     wheel_build )
