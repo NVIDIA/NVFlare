@@ -1,0 +1,38 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "workflows": [
+    {
+      "id": "fed_stats_controller",
+      "path": "nvflare.app_commons.workflow.GlobalStatistics",
+      "args": {
+        "bins": 10,
+        "bin_range_min": 0,
+        "bin_range_max": 255,
+        "metrics_names": [
+          "stats_count",
+          "stats_mean",
+          "stats_sum",
+          "stats_var",
+          "stats_stddev",
+          "stats_histogram"
+        ],
+        "min_count": 5,
+
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "stats_writer",
+      "path": "nvflare.app_common.statistics.stats_file_persistor.StatsFileWriter",
+      "args": {
+        "root_dir": "{workspace_dir}/statistics/"
+      }
+    }
+  ]
+}

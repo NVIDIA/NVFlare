@@ -1,0 +1,18 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": ["fed_stats"],
+      "executor": {
+        "path": "df_stats_executor.StatisticsExecutor",
+        "args": {
+            "data_path" : "{workspace_dir}/{client_name}/data.csv",
+            "min_count" : 5
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": []
+}

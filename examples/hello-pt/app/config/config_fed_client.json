@@ -19,6 +19,14 @@
         "args": {
         }
       }
+    },
+    {
+      "tasks": ["stats"],
+      "executor": {
+        "path": "myStatsExecutor",
+        "args": {
+        }
+      }
     }
   ],
   "task_result_filters": [

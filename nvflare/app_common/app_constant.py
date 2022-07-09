@@ -14,7 +14,6 @@
 
 
 class ExecutorTasks:
-
     TRAIN = "train"
     VALIDATE = "validate"
     CROSS_VALIDATION = "__cross_validation"
@@ -23,7 +22,6 @@ class ExecutorTasks:
 
 
 class AppConstants(object):
-
     CONFIG_PATH = "config_path"
     MODEL_NETWORK = "model_network"
     MULTI_GPU = "multi_gpu"
@@ -119,25 +117,21 @@ class AppConstants(object):
 
 
 class EnvironmentKey(object):
-
     CHECKPOINT_DIR = "APP_CKPT_DIR"
     CHECKPOINT_FILE_NAME = "APP_CKPT"
 
 
 class DefaultCheckpointFileName(object):
-
     GLOBAL_MODEL = "FL_global_model.pt"
     BEST_GLOBAL_MODEL = "best_FL_global_model.pt"
 
 
 class ModelName(object):
-
     BEST_MODEL = "best_model"
     FINAL_MODEL = "final_model"
 
 
 class ModelFormat(object):
-
     PT_CHECKPOINT = "pt_checkpoint"
     TORCH_SCRIPT = "torch_script"
     PT_ONNX = "pt_onnx"
@@ -146,13 +140,39 @@ class ModelFormat(object):
 
 
 class ValidateType(object):
-
     BEFORE_TRAIN_VALIDATE = "before_train_validate"
     MODEL_VALIDATE = "model_validate"
 
 
 class AlgorithmConstants(object):
-
     SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
     SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
     SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"
+
+
+class StatisticsConstants(AppConstants):
+    STATS_COUNT = "stats_count"
+    STATS_MEAN = "stats_mean"
+    STATS_SUM = "stats_sum"
+    STATS_VAR = "stats_var"
+    STATS_STDDEV = "stats_stddev"
+    STATS_HISTOGRAM = "stats_histogram"
+    FEATURE_DATA_TYPE = "feature_data_type"
+
+    STATS_GLOBAL_MEAN = "global_mean"
+    STATS_GLOBAL_COUNT = "global_count"
+    STATS_BINS = "bins"
+    STATS_BIN_RANGE = "bin_range"
+    STATS_TARGET_METRICS = "metrics"
+
+    FED_STATS_TASK = "fed_stats"
+    METRIC_TASK_KEY = "fed_stats_metric"
+    STATS_1st_METRICS = "fed_stats_1st_metric"
+    STATS_2nd_METRICS = "fed_stats_2nd_metric"
+
+    GLOBAL_DATASET_NAME_PREFIX = "Global"
+
+    ordered_metrics = {
+        STATS_1st_METRICS: [STATS_COUNT, STATS_SUM, STATS_MEAN, STATS_HISTOGRAM],
+        STATS_2nd_METRICS: [STATS_VAR, STATS_STDDEV]
+    }

@@ -61,6 +61,15 @@
         "args": {
           "model_locator_id": "model_locator"
         }
+      },
+     {
+      "id": "stats_id",
+      "name": "FedStatsController",
+      "args": {
+        "bin_min": 10,
+        "bin_max":100,
+        "bins": 10
       }
+    }
   ]
 }
