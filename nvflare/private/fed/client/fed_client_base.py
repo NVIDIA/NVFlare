@@ -108,7 +108,8 @@ class FederatedClientBase:
                     prv_key_path=client_args["ssl_private_key"],
                 )
 
-        self.overseer_agent.start(self.overseer_callback)
+        if self.overseer_agent:
+            self.overseer_agent.start(self.overseer_callback)
 
     def _init_agent(self, args=None):
         kv_list = parse_vars(args.set)

@@ -276,9 +276,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # Additional fields for CurrentTask meta_data in GetModel API.
         self.current_model_meta_data = {}
 
-        self.engine = ServerEngine(
-            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
-        )
+        self.engine = self._create_server_engine(args, snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
 
@@ -292,6 +290,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.overseer_agent = overseer_agent
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
+
+    def _create_server_engine(self, args, snapshot_persistor):
+        return ServerEngine(
+            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
+        )
 
     def get_current_model_meta_data(self):
         """Get the model metadata, which usually contains additional fields."""
