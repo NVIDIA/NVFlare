@@ -1,0 +1,25 @@
+system_setup: ./data/system/1_server_2_clients.yml
+apps_root_dir: ../../examples
+single_app_as_job: True
+cleanup: True
+
+
+tests:
+  - app_name: hello-pt
+    validators:
+      - path: tests.integration_test.validators.PTModelValidator
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: [ "server" ] }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+    teardown:
+      - rm -rf ~/data
+  - app_name: hello-pt-tb
+    validators:
+      - path: tests.integration_test.validators.PTModelValidator
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: [ "FL_global_model.pt" ] }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+    teardown:
+      - rm -rf ~/data
