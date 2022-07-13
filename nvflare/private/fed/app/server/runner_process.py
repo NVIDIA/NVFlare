@@ -18,16 +18,14 @@ import argparse
 import logging
 import os
 
-from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
-from nvflare.private.fed.server.server_engine import ServerEngine
-from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
 
@@ -57,7 +55,6 @@ def main():
     # TODO:: remove env and train config since they are not core
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.config_folder = config_folder
-    logger = logging.getLogger()
     args.log_config = None
     args.snapshot = kv_list.get("restore_snapshot")
 
@@ -107,7 +104,8 @@ def main():
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
 
-            start_server_app(server, args, args.app_root, args.job_id, snapshot, logger)
+            server_app_runner = ServerAppRunner()
+            server_app_runner.start_server_app(server, args, args.app_root, args.job_id, snapshot, logger)
         finally:
             if command_agent:
                 command_agent.shutdown()
@@ -122,39 +120,6 @@ def main():
 def logging_setup(startup):
     log_config_file_path = os.path.join(startup, WorkspaceConstants.LOGGING_CONFIG)
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-
-
-def start_server_app(server, args, app_root, job_id, snapshot, logger):
-
-    try:
-        server_config_file_name = os.path.join(app_root, args.server_config)
-
-        conf = ServerJsonConfigurator(
-            config_file_name=server_config_file_name,
-        )
-        conf.configure()
-
-        set_up_run_config(server, conf)
-
-        if not isinstance(server.engine, ServerEngine):
-            raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
-        server.engine.create_parent_connection(int(args.conn))
-        server.engine.sync_clients_from_main_process()
-
-        server.start_run(job_id, app_root, conf, args, snapshot)
-    except BaseException as e:
-        logger.exception(f"FL server execution exception: {e}", exc_info=True)
-        raise e
-    finally:
-        server.status = ServerStatus.STOPPED
-        server.engine.engine_info.status = MachineStatus.STOPPED
-        server.stop_training()
-
-
-def set_up_run_config(server, conf):
-    server.heart_beat_timeout = conf.heartbeat_timeout
-    server.runner_config = conf.runner_config
-    server.handlers = conf.handlers
 
 
 if __name__ == "__main__":

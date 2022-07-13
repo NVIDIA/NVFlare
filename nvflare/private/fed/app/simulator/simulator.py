@@ -61,6 +61,8 @@ def main():
     logger = logging.getLogger()
     args.log_config = None
     args.config_folder = "config"
+    args.job_id = "simulate_job"
+    args.client_config = os.path.join(args.config_folder, "config_fed_client.json")
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
 
     # for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
@@ -113,6 +115,12 @@ def main():
             services.deploy(args, grpc_args=simulator_server)
 
             federated_client = deployer.create_fl_client(args)
+            sender = None
+            client_engine = ClientEngine(federated_client, federated_client.token, sender, args, 0)
+            federated_client.set_client_engine(client_engine)
+
+            client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
+
             # federated_client.register()
             # federated_client.start_heartbeat()
             # servers = [{t["name"]: t["service"]} for t in deployer.server_config]
@@ -125,7 +133,7 @@ def main():
 
             simulator_runner = SimulatorRunner()
 
-            simulator_runner.run(simulator_root, args, logger, services)
+            simulator_runner.run(simulator_root, args, logger, services, federated_client)
 
             # first_server = sorted(conf.config_data["servers"])[0]
             # allow command to overwrite the admin_host
