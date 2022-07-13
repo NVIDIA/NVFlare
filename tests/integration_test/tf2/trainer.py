@@ -85,8 +85,8 @@ class SimpleTrainer(Executor):
 
         Args:
             task_name: dispatched task
-            shareable: the `Shareable` object acheived from server.
-            fl_ctx: the `FLContext` object achieved from server.
+            shareable: the `Shareable` object received from server.
+            fl_ctx: the `FLContext` object received from server.
             abort_signal: if triggered, the training will be aborted.
 
         Returns:
