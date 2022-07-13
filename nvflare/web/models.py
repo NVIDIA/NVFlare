@@ -1,19 +1,3 @@
-import os
-import hashlib
-import random
-from flask_sqlalchemy import SQLAlchemy
-
-from .app import app
-
-app.config.from_mapping(
-    SECRET_KEY=os.environ.get("SECRET_KEY") or "dev_key",
-    SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL")
-    or "sqlite:///" + os.path.join(os.getcwd(), "webserver.sqlite"),
-    SQLALCHEMY_TRACK_MODIFICATIONS=False,
-)
-db = SQLAlchemy(app)
-
-
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,47 +12,65 @@ db = SQLAlchemy(app)
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .refresh import db
+# from .refresh import db
 
 # from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
+import json
+import os
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_sqlalchemy import SQLAlchemy
+
+from .app import app
+
+app.config.from_mapping(
+    SECRET_KEY=os.environ.get("SECRET_KEY") or "dev_key",
+    SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL")
+    or "sqlite:///" + os.path.join(os.getcwd(), "webserver.sqlite"),
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+)
+db = SQLAlchemy(app)
 
 
 class CommonMixin(object):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(25), default="")
-    description = db.Column(db.String(256), default="")
-    created_at = db.Column(db.Float, nullable=False, default=datetime.now(timezone.utc).timestamp)
-    updated_at = db.Column(
-        db.Float, default=datetime.now(timezone.utc).timestamp, onupdate=datetime.now(timezone.utc).timestamp
-    )
+    name = db.Column(db.String(512), default="")
+    description = db.Column(db.String(512), default="")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def asdict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class Organization(CommonMixin, db.Model):
-    def asdict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+    pass
 
 
 class Role(CommonMixin, db.Model):
-    def asdict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+    pass
 
 
-class Resource(CommonMixin, db.Model):
+class Capacity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    capacity = db.Column(db.String(1024), default="")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     def asdict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class Client(CommonMixin, db.Model):
-    resource_id = db.Column(db.Integer, db.ForeignKey("resource.id"), nullable=False)
+    capacity_id = db.Column(db.Integer, db.ForeignKey("capacity.id"), nullable=False)
     organization_id = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
-    resource = db.relationship("Resource", backref="clients")
+    capacity = db.relationship("Capacity", backref="clients")
     organization = db.relationship("Organization", backref="clients")
     approval_state = db.Column(db.Integer, default=0)
 
     def asdict(self):
         table_dict = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        table_dict.update({"organization": self.organization.name, "resource": self.resource.name})
+        table_dict.update({"organization": self.organization.name, "capacity": json.loads(self.capacity.capacity)})
         if self.approval_state > 100:
             table_dict.update({"download_url": f"./clients/{self.id}/blob"})
         return table_dict
@@ -76,7 +78,7 @@ class Client(CommonMixin, db.Model):
 
 class User(CommonMixin, db.Model):
     email = db.Column(db.String(128), unique=True)
-    hashed_pw = db.Column(db.String(128))
+    password_hash = db.Column(db.String(128))
     role_id = db.Column(db.Integer, db.ForeignKey("role.id"), nullable=False)
     role = db.relationship("Role", backref="users")
     organization_id = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
@@ -86,6 +88,7 @@ class User(CommonMixin, db.Model):
     def asdict(self):
         table_dict = {c.name: getattr(self, c.name) for c in self.__table__.columns}
         table_dict.update({"organization": self.organization.name, "role": self.role.name})
+        # table_dict.pop("password_hash")
         if self.approval_state > 100:
             table_dict.update({"download_url": f"./users/{self.id}/blob"})
         return table_dict
@@ -119,14 +122,15 @@ class Store(object):
 
     def create_client(self, req):
         name = req.get("name")
-        organization = req.get("organization")
-        resource_name = req.get("resource")
+        organization = req.get("organization", "")
+        capacity = req.get("capacity")
         description = req.get("description", "")
         org = get_or_create(db.session, Organization, name=organization)
-        res = get_or_create(db.session, Resource, name=resource_name)
+        if capacity is not None:
+            cap = get_or_create(db.session, Capacity, capacity=json.dumps(capacity))
         client = Client(name=name, description=description)
         client.organization_id = org.id
-        client.resource_id = res.id
+        client.capacity_id = cap.id
         db.session.add(client)
         db.session.commit()
         return add_ok({"client": _dict_or_empty(client)})
@@ -145,10 +149,11 @@ class Store(object):
         if organization is not None:
             org = get_or_create(db.session, Organization, name=organization)
             client.organization_id = org.id
-        resource_name = req.pop("resource", None)
-        if resource_name is not None:
-            res = get_or_create(db.session, Resource, name=resource_name)
-            client.resource_id = res.id
+        capacity = req.pop("capacity", None)
+        if capacity is not None:
+            capacity = json.dumps(capacity)
+            cap = get_or_create(db.session, Capacity, capacity=capacity)
+            client.capacity_id = cap.id
         for k, v in req.items():
             setattr(client, k, v)
         db.session.add(client)
@@ -163,16 +168,13 @@ class Store(object):
         name = req.get("name")
         email = req.get("email")
         password = req.get("password", "")
-        salt = os.urandom(16)
-        md = hashlib.sha1(salt)
-        md.update(password.encode("utf-8"))
-        hashed_pw = salt.hex() + md.hexdigest()
+        password_hash = generate_password_hash(password)
         organization = req.get("organization")
         role_name = req.get("role")
         description = req.get("description", "")
         org = get_or_create(db.session, Organization, name=organization)
         role = get_or_create(db.session, Role, name=role_name)
-        user = User(email=email, name=name, hashed_pw=hashed_pw, description=description)
+        user = User(email=email, name=name, password_hash=password_hash, description=description)
         user.organization_id = org.id
         user.role_id = role.id
         db.session.add(user)
@@ -199,11 +201,8 @@ class Store(object):
             user.role_id = role.id
         password = req.pop("password", None)
         if password is not None:
-            salt = os.urandom(16)
-            md = hashlib.sha1(salt)
-            md.update(password.encode("utf-8"))
-            hashed_pw = salt.hex() + md.hexdigest()
-            user.hashed_pw = hashed_pw
+            password_hash = generate_password_hash(password)
+            user.password_hash = password_hash
         for k, v in req.items():
             setattr(user, k, v)
         db.session.add(user)
@@ -212,11 +211,9 @@ class Store(object):
 
     def auth_user(self, id, pw):
         user = User.query.get(id)
-        mixed_hashed_pw = user.hashed_pw
-        salt = bytes.fromhex(mixed_hashed_pw[:32])
-        md = hashlib.sha1(salt)
-        md.update(pw.encode("utf-8"))
-        if md.hexdigest() == mixed_hashed_pw[32:]:
+        password_hash = user.password_hash
+        result = check_password_hash(password_hash, pw)
+        if result:
             return add_ok({})
         else:
             return {"status": "error"}
