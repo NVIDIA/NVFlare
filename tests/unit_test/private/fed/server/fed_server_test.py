@@ -26,7 +26,6 @@ class TestFederatedServer:
                 project_name="project_name",
                 min_num_clients=1,
                 max_num_clients=100,
-                wait_after_min_clients=60,
                 cmd_modules=None,
                 heart_beat_timeout=600,
                 args=MagicMock(),

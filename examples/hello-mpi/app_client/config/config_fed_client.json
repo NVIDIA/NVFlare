@@ -1,0 +1,16 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "mpi_train"
+      ],
+      "executor": {
+        "path": "mpi_execute.MPIExecutor",
+        "args": {}
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": []
+}
