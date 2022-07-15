@@ -33,6 +33,7 @@ class SimpleTrainer(Executor):
         self.train_images, self.train_labels = None, None
         self.test_images, self.test_labels = None, None
         self.model = None
+        self.var_list = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -85,8 +86,8 @@ class SimpleTrainer(Executor):
 
         Args:
             task_name: dispatched task
-            shareable: the `Shareable` object acheived from server.
-            fl_ctx: the `FLContext` object achieved from server.
+            shareable: the `Shareable` object received from server.
+            fl_ctx: the `FLContext` object received from server.
             abort_signal: if triggered, the training will be aborted.
 
         Returns:
