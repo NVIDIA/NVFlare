@@ -1,18 +1,42 @@
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from typing import Optional, List
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandKey, ServerCommandNames
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReturnCode, make_reply, Shareable
+from nvflare.private.fed.server.server_state import HotState
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
-from nvflare.private.fed.server.server_state import HotState
 
 
 class SimulatorServerEngine(ServerEngine):
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
         pass
+
+    def sync_clients_from_main_process(self):
+        pass
+
+    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+        replies = self.aux_send(
+            targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
+        )
+
+        return replies
 
 
 class SimulatorServer(FederatedServer):
@@ -24,6 +48,14 @@ class SimulatorServer(FederatedServer):
                          heart_beat_timeout, handlers, args, secure_train, enable_byoc, snapshot_persistor,
                          overseer_agent)
 
+        self.engine.run_processes["simulate_job"] = {
+                RunProcessKey.LISTEN_PORT: None,
+                RunProcessKey.CONNECTION: None,
+                RunProcessKey.CHILD_PROCESS: None,
+                RunProcessKey.JOB_ID: "simulate_job",
+                # RunProcessKey.PARTICIPANTS: job_clients,
+            }
+
         self.server_state = HotState()
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx: FLContext):
@@ -33,26 +65,19 @@ class SimulatorServer(FederatedServer):
 
         return shareable, task_id, taskname
 
-    def _submit_update(self, data, fl_ctx: FLContext):
-        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        client = data.get_header(ServerCommandKey.FL_CLIENT)
-        fl_ctx.set_peer_context(shared_fl_ctx)
-        contribution_task_name = data.get_header(ServerCommandKey.TASK_NAME)
-        task_id = data.get_cookie(FLContextKey.TASK_ID)
-        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
+    def _submit_update(self, shareable, shared_fl_context):
+        with self.engine.new_context() as fl_ctx:
+            client = shareable.get_header(ServerCommandKey.FL_CLIENT)
+            fl_ctx.set_peer_context(shared_fl_context)
+            contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
+            task_id = shareable.get_cookie(FLContextKey.TASK_ID)
+            server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+            server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
-    def _aux_communicate(self, fl_ctx, data, shared_fl_context, topic):
+    def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:
             with self.engine.lock:
-                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
-                shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-                topic = data.get_header(ServerCommandKey.TOPIC)
-                shareable = data.get_header(ServerCommandKey.SHAREABLE)
-                fl_ctx.set_peer_context(shared_fl_ctx)
-
-                engine = fl_ctx.get_engine()
-                reply = engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+                reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
             reply = make_reply(ReturnCode.COMMUNICATION_ERROR)

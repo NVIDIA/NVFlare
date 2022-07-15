@@ -1,15 +1,36 @@
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from nvflare.apis.event_type import EventType
-from .server_deployer import ServerDeployer
-from .base_client_deployer import BaseClientDeployer
-from nvflare.private.fed.simulator.simulator_server import SimulatorServer
+from nvflare.apis.utils.common_utils import get_open_ports
+
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
-from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
-# from nvflare.private.fed.simulator.simulator_job_runner import SimulatorJobRunner
+from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
+from nvflare.private.fed.simulator.simulator_server import SimulatorServer
+from .base_client_deployer import BaseClientDeployer
+from .server_deployer import ServerDeployer
+from ..server.server_train import create_admin_server
 
 
 class SimulatorDeploy(ServerDeployer):
+    def __init__(self):
+        super().__init__()
+        self.open_ports = get_open_ports(2)
+
     def create_fl_server(self, args, secure_train=False):
         simulator_server = self._create_simulator_server_config()
 
@@ -17,10 +38,6 @@ class SimulatorDeploy(ServerDeployer):
         heart_beat_timeout = 600
         if simulator_server["heart_beat_timeout"]:
             heart_beat_timeout = simulator_server["heart_beat_timeout"]
-
-        if self.host:
-            target = simulator_server["service"].get("target", None)
-            simulator_server["service"]["target"] = self.host + ":" + target.split(":")[1]
 
         services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
@@ -35,10 +52,20 @@ class SimulatorDeploy(ServerDeployer):
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
         )
+
+        admin_server = create_admin_server(
+            services,
+            server_conf=simulator_server,
+            args=args,
+            secure_train=False,
+        )
+        admin_server.start()
+        services.set_admin_server(admin_server)
+
         return simulator_server, services
 
-    def create_fl_client(self, args):
-        client_config, build_ctx = self._create_simulator_client_config()
+    def create_fl_client(self, client_name, args):
+        client_config, build_ctx = self._create_simulator_client_config(client_name)
 
         deployer = BaseClientDeployer()
         deployer.build(build_ctx)
@@ -62,7 +89,7 @@ class SimulatorDeploy(ServerDeployer):
             server_args=server_args,
             secure=False,
         )
-        client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
+        client_engine = SimulatorClientEngine(federated_client, federated_client.token, sender, args, rank)
         admin_agent = FedAdminAgent(
             client_name="admin_agent",
             sender=sender,
@@ -70,17 +97,18 @@ class SimulatorDeploy(ServerDeployer):
         )
         admin_agent.app_ctx.set_agent(admin_agent)
         federated_client.set_client_engine(client_engine)
+        for processor in ClientRequestProcessors.request_processors:
+            admin_agent.register_processor(processor)
 
         client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
         return admin_agent
 
-    @staticmethod
-    def _create_simulator_server_config():
+    def _create_simulator_server_config(self):
         simulator_server = {
             "name": "simulator",
             "service": {
-                "target": "localhost:6002",
+                "target": "localhost:" + str(self.open_ports[0]),
                 "options": [
                     [
                         "grpc.max_send_message_length",
@@ -93,7 +121,7 @@ class SimulatorDeploy(ServerDeployer):
                 ]
             },
             "admin_host": "localhost",
-            "admin_port": 6003,
+            "admin_port": self.open_ports[1],
             "max_num_clients": 100,
             "heart_beat_timeout": 600,
             "num_server_workers": 4,
@@ -104,14 +132,13 @@ class SimulatorDeploy(ServerDeployer):
         }
         return simulator_server
 
-    @staticmethod
-    def _create_simulator_client_config():
+    def _create_simulator_client_config(self, client_name):
         client_config = {
             "servers": [
                 {
                     "name": "simulator",
                     "service": {
-                        "target": "localhost:6002",
+                        "target": "localhost:" + str(self.open_ports[0]),
                         "options": [
                             [
                                 "grpc.max_send_message_length",
@@ -132,7 +159,7 @@ class SimulatorDeploy(ServerDeployer):
         }
 
         build_ctx = {
-            "client_name": "client1",
+            "client_name": client_name,
             "server_config": client_config.get("servers", []),
             "client_config": client_config["client"],
             "server_host": None,
@@ -144,8 +171,4 @@ class SimulatorDeploy(ServerDeployer):
         }
 
         return client_config, build_ctx
-
-    # def create_job_runner(self, args):
-    #     job_runner = SimulatorJobRunner(workspace_root=args.workspace)
-    #     return job_runner
 

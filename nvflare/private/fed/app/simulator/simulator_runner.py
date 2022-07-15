@@ -36,15 +36,6 @@ class SimulatorRunner:
         threading.Thread(target=self.start_client, args=[simulator_root, args, federated_client, meta]).start()
 
     def start_server(self, simulator_root, args, logger, services, meta):
-        # jid = str(uuid.uuid4())
-        # meta[JobMetaKey.JOB_ID.value] = jid
-        # meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
-        # meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
-        #     datetime.datetime.fromtimestamp(meta[JobMetaKey.SUBMIT_TIME]).astimezone().isoformat()
-        # )
-        # meta[JobMetaKey.START_TIME.value] = ""
-        # meta[JobMetaKey.DURATION.value] = "N/A"
-        # meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
         app_server_root = os.path.join(simulator_root, "app_server")
         for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
             for p in participants:
