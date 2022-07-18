@@ -475,3 +475,62 @@ docker_adm_sh: |
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
   docker run --rm -it --name=fladmin -v $DIR/..:/workspace/ -w /workspace/ $DOCKER_IMAGE /bin/bash
+
+compose_yaml: |
+  services:
+    __overseer__:
+      build: ./nvflare
+      image: nvflare-service
+      volumes:
+        - .:/workspace
+      command: ["/workspace/startup/start.sh"]
+      ports:
+        - "8443:8443"
+
+    __flserver__:
+      image: nvflare-service
+      ports:
+        - "8002:8002"
+        - "8003:8003"
+      volumes:
+        - .:/workspace
+        - nvflare_svc_persist:/tmp/nvflare/
+      command: ["/usr/local/bin/python3",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.server.server_train",
+            "-m",
+            "/workspace",
+            "-s",
+            "fed_server.json",
+            "--set",
+            "secure_train=true",
+            "config_folder=config",
+          ]
+
+    __flclient__:
+      image: nvflare-service
+      volumes:
+        - .:/workspace
+      command: ["/usr/local/bin/python3",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.client.client_train",
+            "-m",
+            "/workspace",
+            "-s",
+            "fed_client.json",
+            "--set",
+            "secure_train=true",
+            "uid=__flclient__",
+            "config_folder=config",
+          ]
+
+  volumes:
+    nvflare_svc_persist:
+
+dockerfile: |
+  RUN pip install -U pip
+  RUN pip install nvflare
+  COPY requirements.txt requirements.txt
+  RUN pip install -r requirements.txt
