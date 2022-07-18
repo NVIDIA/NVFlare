@@ -22,6 +22,7 @@ class SimulatorClientEngine(ClientEngine):
 
     def send_aux_command(self, shareable: Shareable, job_id):
         run_manager = self.client.run_manager
-        with run_manager.new_context() as fl_ctx:
-            topic = shareable.get_header(ReservedHeaderKey.TOPIC)
-            return run_manager.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+        if run_manager:
+            with run_manager.new_context() as fl_ctx:
+                topic = shareable.get_header(ReservedHeaderKey.TOPIC)
+                return run_manager.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)

@@ -73,12 +73,14 @@ def main():
             simulator_server, services = deployer.create_fl_server(args)
             services.deploy(args, grpc_args=simulator_server)
 
-            # Deploy the FL client
-            client_name = "client1"
-            federated_client = deployer.create_fl_client(client_name, args)
+            # Deploy the FL clients
+            federated_clients = []
+            for i in range(args.clients):
+                client_name = "client" + str(i)
+                federated_clients.append(deployer.create_fl_client(client_name, args))
 
             simulator_runner = SimulatorRunner()
-            simulator_runner.run(simulator_root, args, logger, services, federated_client)
+            simulator_runner.run(simulator_root, args, logger, services, federated_clients)
 
         finally:
             deployer.close()

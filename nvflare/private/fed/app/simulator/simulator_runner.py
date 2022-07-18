@@ -25,7 +25,7 @@ from nvflare.private.fed.simulator.simulator_client_app_runner import SimulatorC
 
 class SimulatorRunner:
 
-    def run(self, simulator_root, args, logger, services, federated_client):
+    def run(self, simulator_root, args, logger, services, federated_clients):
         meta_file = os.path.join(args.job_folder, "meta.json")
         with open(meta_file, "rb") as f:
             meta_data = f.read()
@@ -33,7 +33,7 @@ class SimulatorRunner:
 
         threading.Thread(target=self.start_server, args=[simulator_root, args, logger, services, meta]).start()
 
-        threading.Thread(target=self.start_client, args=[simulator_root, args, federated_client, meta]).start()
+        threading.Thread(target=self.start_client, args=[simulator_root, args, federated_clients[0], meta]).start()
 
     def start_server(self, simulator_root, args, logger, services, meta):
         app_server_root = os.path.join(simulator_root, "app_server")
