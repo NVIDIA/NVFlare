@@ -42,7 +42,7 @@ class DockerBuilder(Builder):
         admin_port = server.props.get("admin_port", 8003)
 
         info_dict = copy.deepcopy(self.services["__flserver__"])
-        info_dict["volumes"] = [f"./{server.name}:/workspace"]
+        info_dict["volumes"][0] = f"./{server.name}:/workspace"
         info_dict["ports"] = [f"{fed_learn_port}:{fed_learn_port}", f"{admin_port}:{admin_port}"]
         for i in range(len(info_dict["command"])):
             if info_dict["command"][i] == "flserver":
