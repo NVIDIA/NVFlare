@@ -174,7 +174,9 @@ class BaseServer(ABC):
                 root_certificates=root_ca,
                 require_client_auth=True,
             )
-            self.grpc_server.add_secure_port(target, server_credentials)
+            port = target.split(":")[1]
+            tmp_target = f"0.0.0.0:{port}"
+            self.grpc_server.add_secure_port(tmp_target, server_credentials)
             self.logger.info("starting secure server at %s", target)
         else:
             self.grpc_server.add_insecure_port(target)
