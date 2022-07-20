@@ -91,3 +91,8 @@ class SimulatorServer(FederatedServer):
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+
+    def stop_training(self):
+        self.engine.run_processes.clear()
+        super().stop_training()
+
