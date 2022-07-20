@@ -28,14 +28,14 @@ server_components: &svr_comps
 
 participants:
   # change overseer.example.com to the FQDN of the overseer
-  - name: overseer.example.com
+  - name: overseer
     type: overseer
     org: nvidia
     protocol: https
     api_root: /api/v1
     port: 8443
   # change example.com to the FQDN of the server
-  - name: server1.example.com
+  - name: server1
     type: server
     org: nvidia
     fed_learn_port: 8002
@@ -44,7 +44,7 @@ participants:
     enable_byoc: true
     components:
       <<: *svr_comps
-  - name: server2.example.com
+  - name: server2
     type: server
     org: nvidia
     fed_learn_port: 8102
@@ -87,6 +87,9 @@ builders:
     args:
       base_image: python:3.8
       requirements_file: docker_compose_requirements.txt
+  - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
+    args:
+      docker_image: localhost:32000/nvfl-min:0.0.1
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
