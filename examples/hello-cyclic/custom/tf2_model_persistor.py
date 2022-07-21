@@ -101,11 +101,10 @@ class TF2ModelPersistor(ModelPersistor):
             self._initialize(fl_ctx)
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
-        """
-            persist the Model object
+        """Saves model.
 
         Args:
-            model: Model object
+            model_learnable: ModelLearnable object
             fl_ctx: FLContext
         """
         model_learnable_info = {k: str(type(v)) for k, v in model_learnable.items()}

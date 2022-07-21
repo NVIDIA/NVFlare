@@ -35,7 +35,7 @@ participants:
     api_root: /api/v1
     port: 8443
   # change example.com to the FQDN of the server
-  - name: example1.com
+  - name: server1.example.com
     type: server
     org: nvidia
     fed_learn_port: 8002
@@ -44,11 +44,11 @@ participants:
     enable_byoc: true
     components:
       <<: *svr_comps
-  - name: example2.com
+  - name: server2.example.com
     type: server
     org: nvidia
-    fed_learn_port: 8002
-    admin_port: 8003
+    fed_learn_port: 8102
+    admin_port: 8103
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
     components:
@@ -83,6 +83,10 @@ builders:
     args:
       template_file: master_template.yml
   - path: nvflare.lighter.impl.template.TemplateBuilder
+  - path: nvflare.lighter.impl.docker.DockerBuilder
+    args:
+      base_image: python:3.8
+      requirements_file: docker_compose_requirements.txt
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
