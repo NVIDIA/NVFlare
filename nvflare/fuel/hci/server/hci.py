@@ -107,7 +107,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
             server_key: server's private key file
             accepted_client_cns: list of accepted Common Names from client, if specified
         """
-        socketserver.TCPServer.__init__(self, (host, port), _MsgHandler, False)
+        socketserver.TCPServer.__init__(self, ("0.0.0.0", port), _MsgHandler, False)
 
         self.use_ssl = False
         if ca_cert and server_cert:
