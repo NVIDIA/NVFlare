@@ -25,6 +25,30 @@ from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.spec import Participant, Project, Provisioner
 from nvflare.lighter.utils import load_yaml
 
+adding_client_error_msg = """
+name: $SITE-NAME
+type: client
+org: $ORGANIZATION_NAME
+enable_byoc: $BOOLEAN
+components:
+    resource_manager:    # This id is reserved by system.  Do not change it.
+        path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
+        args:
+        resources:
+            gpu: [0, 1, 2, 3]
+    resource_consumer:    # This id is reserved by system.  Do not change it.
+        path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
+        args:
+        gpu_resource_key: gpu
+"""
+
+adding_user_error_msg = """
+name: $USER_EMAIL_ADDRESS
+org: $ORGANIZATION_NAME
+roles:
+    - $ROLE
+"""
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -37,6 +61,8 @@ def main():
         action="store_true",
         help="Run provisioning UI tool to generate project.yml file",
     )
+    parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
+    parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
 
     args = parser.parse_args()
 
@@ -86,6 +112,27 @@ def main():
     participants = list()
     for p in project_dict.get("participants"):
         participants.append(Participant(**p))
+    if args.add_user:
+        try:
+            extra = load_yaml(os.path.join(current_path, args.add_user))
+            extra.update({"type": "admin"})
+            participants.append(Participant(**extra))
+        except BaseException:
+            print("** Error during adding user **")
+            print("The yaml file format is")
+            print(adding_user_error_msg)
+            exit(0)
+    if args.add_client:
+        try:
+            extra = load_yaml(os.path.join(current_path, args.add_client))
+            extra.update({"type": "client"})
+            participants.append(Participant(**extra))
+        except BaseException as e:
+            print("** Error during adding client **")
+            print("The yaml file format is")
+            print(adding_client_error_msg)
+            exit(0)
+
     project = Project(name=project_name, description=project_description, participants=participants)
 
     n_servers = len(project.get_participants_by_type("server", first_only=False))
