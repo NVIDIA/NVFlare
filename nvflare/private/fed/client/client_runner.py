@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -56,7 +57,7 @@ class ClientRunner(FLComponent):
         self,
         config: ClientRunnerConfig,
         job_id,
-        engine: ClientEngineSpec,
+        engine: ClientEngineExecutorSpec,
         task_fetch_interval: int = 5,  # fetch task every 5 secs
     ):
         """To init the ClientRunner.
@@ -84,6 +85,9 @@ class ClientRunner(FLComponent):
         self.end_run_fired = False
         self.end_run_lock = threading.Lock()
 
+        self._register_aux_message_handler(engine)
+
+    def _register_aux_message_handler(self, engine):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
@@ -242,13 +246,14 @@ class ClientRunner(FLComponent):
                     self.log_info(fl_ctx, "run abort signal received")
                     break
 
-                task_fetch_interval = self.run_one_round(fl_ctx)
+                task_fetch_interval, _ = self.run_one_round(fl_ctx)
 
     def run_one_round(self, fl_ctx):
         # reset to default fetch interval
         task_fetch_interval = self.task_fetch_interval
         self.log_debug(fl_ctx, "fetching task from server ...")
         task = self.engine.get_task_assignment(fl_ctx)
+        task_processed = False
         if not task:
             self.log_debug(fl_ctx, "no task received - will try in {} secs".format(task_fetch_interval))
             # continue
@@ -299,7 +304,8 @@ class ClientRunner(FLComponent):
                 )
             self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
             self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
-        return task_fetch_interval
+            task_processed = True
+        return task_fetch_interval, task_processed
 
     def run(self, app_root, args):
         self.init_run(app_root, args)
