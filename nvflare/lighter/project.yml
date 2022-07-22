@@ -28,27 +28,27 @@ server_components: &svr_comps
 
 participants:
   # change overseer.example.com to the FQDN of the overseer
-  - name: overseer.example.com
+  - name: overseer
     type: overseer
     org: nvidia
     protocol: https
     api_root: /api/v1
-    port: 30443
+    port: 8443
   # change example.com to the FQDN of the server
-  - name: server1.example.com
+  - name: server1
     type: server
     org: nvidia
-    fed_learn_port: 30002
-    admin_port: 30003
+    fed_learn_port: 8002
+    admin_port: 8003
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
     components:
       <<: *svr_comps
-  - name: server2.example.com
+  - name: server2
     type: server
     org: nvidia
-    fed_learn_port: 30102
-    admin_port: 30103
+    fed_learn_port: 8102
+    admin_port: 8103
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
     components:

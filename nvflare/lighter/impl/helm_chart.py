@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import os
-import shutil
 
 import yaml
 
@@ -36,7 +34,7 @@ class HelmChartBuilder(Builder):
         port = overseer.props.get("port", default_port)
         self.deployment_overseer["spec"]["template"]["spec"]["volumes"][0]["hostPath"][
             "path"
-        ] = "{{ .Values.hostpath }}"
+        ] = "{{ .Values.workspace }}"
         self.deployment_overseer["spec"]["template"]["spec"]["containers"][0]["ports"][0]["containerPort"] = port
         self.deployment_overseer["spec"]["template"]["spec"]["containers"][0]["image"] = self.docker_image
         self.deployment_overseer["spec"]["template"]["spec"]["containers"][0]["command"][
@@ -46,7 +44,7 @@ class HelmChartBuilder(Builder):
             yaml.dump(self.deployment_overseer, f)
 
         self.service_overseer["spec"]["ports"][0]["port"] = port
-        self.service_overseer["spec"]["ports"][0]["nodePort"] = port
+        self.service_overseer["spec"]["ports"][0]["targetPort"] = port
         with open(os.path.join(self.helm_chart_templates_directory, "service_overseer.yaml"), "wt") as f:
             yaml.dump(self.service_overseer, f)
 
@@ -55,20 +53,18 @@ class HelmChartBuilder(Builder):
         admin_port = server.props.get("admin_port", 30003)
         idx = ctx["index"]
 
-        self.deployment_server["metadata"]["name"] = f"server{idx}"
-        self.deployment_server["metadata"]["labels"]["system"] = f"server{idx}"
+        self.deployment_server["metadata"]["name"] = f"{server.name}"
+        self.deployment_server["metadata"]["labels"]["system"] = f"{server.name}"
 
-        self.deployment_server["spec"]["selector"]["matchLabels"]["system"] = f"server{idx}"
+        self.deployment_server["spec"]["selector"]["matchLabels"]["system"] = f"{server.name}"
 
-        self.deployment_server["spec"]["template"]["metadata"]["labels"]["system"] = f"server{idx}"
-        self.deployment_server["spec"]["template"]["spec"]["volumes"][0]["hostPath"]["path"] = "{{ .Values.hostpath }}"
-        self.deployment_server["spec"]["template"]["spec"]["containers"][0]["name"] = f"server{idx}"
+        self.deployment_server["spec"]["template"]["metadata"]["labels"]["system"] = f"{server.name}"
+        self.deployment_server["spec"]["template"]["spec"]["volumes"][0]["hostPath"]["path"] = "{{ .Values.workspace }}"
+        self.deployment_server["spec"]["template"]["spec"]["containers"][0]["name"] = f"{server.name}"
         self.deployment_server["spec"]["template"]["spec"]["containers"][0]["image"] = self.docker_image
-        self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"][0]["name"] = "fl-port"
         self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"][0][
             "containerPort"
         ] = fed_learn_port
-        self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"][1]["name"] = "admin-port"
         self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"][1]["containerPort"] = admin_port
         cmd_args = self.deployment_server["spec"]["template"]["spec"]["containers"][0]["args"]
         for i, item in enumerate(cmd_args):
@@ -78,15 +74,17 @@ class HelmChartBuilder(Builder):
         with open(os.path.join(self.helm_chart_templates_directory, f"deployment_server{idx}.yaml"), "wt") as f:
             yaml.dump(self.deployment_server, f)
 
-        self.service_server["metadata"]["name"] = f"server{idx}"
+        self.service_server["metadata"]["name"] = f"{server.name}"
+        self.service_server["metadata"]["labels"]["system"] = f"{server.name}"
+
+        self.service_server["spec"]["selector"]["system"] = f"{server.name}"
         self.service_server["spec"]["ports"][0]["name"] = "fl-port"
         self.service_server["spec"]["ports"][0]["port"] = fed_learn_port
-        self.service_server["spec"]["ports"][0]["targetPort"] = "fl-port"
-        self.service_server["spec"]["ports"][0]["nodePort"] = fed_learn_port
+        self.service_server["spec"]["ports"][0]["targetPort"] = fed_learn_port
         self.service_server["spec"]["ports"][1]["name"] = "admin-port"
         self.service_server["spec"]["ports"][1]["port"] = admin_port
-        self.service_server["spec"]["ports"][1]["targetPort"] = "admin-port"
-        self.service_server["spec"]["ports"][1]["nodePort"] = admin_port
+        self.service_server["spec"]["ports"][1]["targetPort"] = admin_port
+
         with open(os.path.join(self.helm_chart_templates_directory, f"service_server{idx}.yaml"), "wt") as f:
             yaml.dump(self.service_server, f)
 
