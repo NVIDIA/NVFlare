@@ -70,7 +70,6 @@ class ServerDeployer:
         """
         # We only deploy the first server right now .....
         first_server = sorted(self.server_config)[0]
-        wait_after_min_clients = first_server.get("wait_after_min_clients", 10)
         heart_beat_timeout = 600
         if first_server["heart_beat_timeout"]:
             heart_beat_timeout = first_server["heart_beat_timeout"]
@@ -83,7 +82,6 @@ class ServerDeployer:
             project_name=first_server.get("name", ""),
             min_num_clients=first_server.get("min_num_clients", 1),
             max_num_clients=first_server.get("max_num_clients", 100),
-            wait_after_min_clients=wait_after_min_clients,
             cmd_modules=self.cmd_modules,
             heart_beat_timeout=heart_beat_timeout,
             args=args,
@@ -91,6 +89,7 @@ class ServerDeployer:
             enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
+            collective_command_timeout=first_server.get("collective_command_timeout", 600.0),
         )
         return first_server, services
 

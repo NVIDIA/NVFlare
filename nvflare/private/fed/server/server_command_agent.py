@@ -34,8 +34,6 @@ class ServerCommandAgent(object):
         self.thread = None
         self.asked_to_stop = False
 
-        self.commands = ServerCommands.commands
-
     def start(self, engine):
         self.thread = threading.Thread(
             target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
