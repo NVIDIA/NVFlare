@@ -33,13 +33,13 @@ participants:
     org: nvidia
     protocol: https
     api_root: /api/v1
-    port: 8443
+    port: 30443
   # change example.com to the FQDN of the server
   - name: server1.example.com
     type: server
     org: nvidia
-    fed_learn_port: 8002
-    admin_port: 8003
+    fed_learn_port: 30002
+    admin_port: 30003
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
     components:
@@ -47,8 +47,8 @@ participants:
   - name: server2.example.com
     type: server
     org: nvidia
-    fed_learn_port: 8102
-    admin_port: 8103
+    fed_learn_port: 30102
+    admin_port: 30103
     # enable_byoc loads python codes in app.  Default is false.
     enable_byoc: true
     components:
@@ -87,6 +87,9 @@ builders:
     args:
       base_image: python:3.8
       requirements_file: docker_compose_requirements.txt
+  - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
+    args:
+      docker_image: localhost:32000/nvfl-min:0.0.1
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration

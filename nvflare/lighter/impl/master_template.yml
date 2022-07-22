@@ -599,7 +599,7 @@ helm_chart_deployment_overseer: |
         volumes:
           - name: directory
             hostPath:
-              path: {{ .Values.hostpath }}
+              path:
               type: Directory
         containers:
           - name: overseer
@@ -633,9 +633,9 @@ helm_chart_deployment_server: |
         volumes:
           - name: workspace
             hostPath:
-              path: {{ .Values.hostpath }}
+              path:
               type: Directory
-          - name: nvflare_svc_persist
+          - name: svc-persist
             hostPath:
               path: /tmp/nvflare
               type: Directory
@@ -646,7 +646,7 @@ helm_chart_deployment_server: |
             volumeMounts:
               - name: workspace
                 mountPath: /workspace
-              - name: nvflare_svc_persist
+              - name: svc-persist
                 mountPath: /tmp/nvflare
             command: ["/usr/local/bin/python3"]
             args:
@@ -669,3 +669,6 @@ helm_chart_deployment_server: |
               - name: admin-port
                 containerPort: 30003
                 protocol: TCP
+helm_chart_values: |
+  hostpath: /home/nvflare
+
