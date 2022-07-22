@@ -1,0 +1,11 @@
+{
+  "name": "hello-numpy-sag",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "app": [
+      "server",
+      "@ALL"
+    ]
+  }
+}

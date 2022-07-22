@@ -36,34 +36,23 @@ class ExcludeVars(Filter):
         self.exclude_vars = exclude_vars
         self.skip = False
         if self.exclude_vars is not None:
-            if not (
-                isinstance(self.exclude_vars, list)
-                or isinstance(self.exclude_vars, str)
-            ):
+            if not (isinstance(self.exclude_vars, list) or isinstance(self.exclude_vars, str)):
                 self.skip = True
-                self.logger.debug(
-                    "Need to provide a list of layer names or a string for regex matching"
-                )
+                self.logger.debug("Need to provide a list of layer names or a string for regex matching")
                 return
 
             if isinstance(self.exclude_vars, list):
                 for var in self.exclude_vars:
                     if not isinstance(var, str):
                         self.skip = True
-                        self.logger.debug(
-                            "encrypt_layers needs to be a list of layer names to encrypt."
-                        )
+                        self.logger.debug("encrypt_layers needs to be a list of layer names to encrypt.")
                         return
                 self.logger.debug(f"Excluding {self.exclude_vars} from shareable")
             elif isinstance(self.exclude_vars, str):
-                self.exclude_vars = (
-                    re.compile(self.exclude_vars) if self.exclude_vars else None
-                )
+                self.exclude_vars = re.compile(self.exclude_vars) if self.exclude_vars else None
                 if self.exclude_vars is None:
                     self.skip = True
-                self.logger.debug(
-                    f'Excluding all layers based on regex matches with "{self.exclude_vars}"'
-                )
+                self.logger.debug(f'Excluding all layers based on regex matches with "{self.exclude_vars}"')
         else:
             self.logger.debug("Not excluding anything")
             self.skip = True
@@ -100,15 +89,11 @@ class ExcludeVars(Filter):
                     self.exclude_vars.append(var_name)
             self.log_debug(fl_ctx, f"Regex found {self.exclude_vars} matching layers.")
             if len(self.exclude_vars) == 0:
-                self.log_warning(
-                    fl_ctx, f"No matching layers found with regex {re_pattern}"
-                )
+                self.log_warning(fl_ctx, f"No matching layers found with regex {re_pattern}")
 
         # remove variables
         n_excluded = 0
-        var_names = list(
-            weights.keys()
-        )  # needs to recast to list to be used in for loop
+        var_names = list(weights.keys())  # needs to recast to list to be used in for loop
         n_vars = len(var_names)
         for var_name in var_names:
             # self.logger.info(f"Checking {var_name}")
