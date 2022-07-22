@@ -1,0 +1,10 @@
+{
+  "name": "hello-cyclic",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "server",
+      "@ALL"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "hello-tf2",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "app": [
+      "server",
+      "@ALL"
+    ]
+  }
+}
