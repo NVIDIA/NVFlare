@@ -1,0 +1,22 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": ["train"],
+      "executor": {
+        "path": "monai_trainer.MONAIBundleTrainer",
+        "args": {
+          "aggregation_epochs": 10,
+          "val_interval": 10,
+          "bundle_path": "config/spleen_ct_segmentation"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+  "components": [
+  ]
+}
