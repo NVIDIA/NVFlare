@@ -38,7 +38,7 @@ class ServerProperties(SiteProperties):
 
 def kill_process(site_prop: SiteProperties):
     os.killpg(site_prop.process.pid, signal.SIGTERM)
-    p = run_command_in_subprocess(f"kill -9 -f {str(site_prop.process.pid)}")
+    p = run_command_in_subprocess(f"kill -9 {str(site_prop.process.pid)}")
     p.wait()
     p = run_command_in_subprocess(f"pkill -9 -f {site_prop.root_dir}")
     p.wait()
