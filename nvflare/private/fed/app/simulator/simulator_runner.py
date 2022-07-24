@@ -154,9 +154,18 @@ def start_client(simulator_runner, federated_clients, run_client_index, lock):
         time.sleep(interval)
         with lock:
             client = federated_clients[run_client_index]
+
+            if run_client_index != last_run_client_index and last_run_client_index != -1:
+                last_run_client = federated_clients[last_run_client_index]
+                with last_run_client.run_manager.new_context() as fl_ctx:
+                    fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
+                    last_run_client.run_manager = None
+                    client_runner.fire_event(EventType.END_RUN, fl_ctx)
+
+            last_run_client_index = run_client_index
             run_client_index = (run_client_index + 1) % len(federated_clients)
 
-        if last_run_client_index != run_client_index:
+        if client.run_manager is None:
             simulator_runner.create_client_runner(client)
         with client.run_manager.new_context() as fl_ctx:
             client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
@@ -164,10 +173,7 @@ def start_client(simulator_runner, federated_clients, run_client_index, lock):
             task_processed = False
             while not task_processed:
                 interval, task_processed = client_runner.run_one_round(fl_ctx)
-                if last_run_client_index != run_client_index:
-                    client_runner.fire_event(EventType.END_RUN, fl_ctx)
 
-                last_run_client_index = run_client_index
                 # if any client got the END_RUN event, stop the simulator run.
                 if client_runner.end_run_fired or client_runner.asked_to_stop:
                     stop_run = True
