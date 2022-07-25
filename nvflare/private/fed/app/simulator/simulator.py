@@ -38,6 +38,7 @@ def main():
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
     parser = argparse.ArgumentParser()
     parser.add_argument("job_folder")
+    parser.add_argument("--data_path", "-i", type=str, help="Input data_path")
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--clients", "-n", type=int, help="number of clients", required=True)
     parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
@@ -45,6 +46,9 @@ def main():
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
     args = parser.parse_args()
+
+    if args.threads > args.clients:
+        raise "The number of threads to run can not be larger then the number of clients."
 
     log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
     assert os.path.isfile(log_config_file_path), "missing log config file {}".format(log_config_file_path)
@@ -70,22 +74,25 @@ def main():
 
         try:
             # Deploy the FL server
+            logger.info("Create the Simulator Server.")
             simulator_server, services = deployer.create_fl_server(args)
             services.deploy(args, grpc_args=simulator_server)
 
             # Deploy the FL clients
+            logger.info("Create the simulate clients.")
             federated_clients = []
             for i in range(args.clients):
                 client_name = "client" + str(i)
                 federated_clients.append(deployer.create_fl_client(client_name, args))
 
+            logger.info("Start the Simulator Run.")
             simulator_runner = SimulatorRunner()
             simulator_runner.run(simulator_root, args, logger, services, federated_clients)
 
         finally:
             deployer.close()
 
-        logger.info("Server started")
+        logger.info("Simulator run completed.")
 
     except ConfigError as ex:
         print("ConfigError:", str(ex))

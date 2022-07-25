@@ -33,6 +33,10 @@ from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.simulator.simulator_client_app_runner import SimulatorServerAppRunner
 
+# global index to indicate which client to run, each client running thread is going to
+# run one client at a time.
+run_client_index = -1
+
 
 class SimulatorRunner(FLComponent):
 
@@ -46,17 +50,19 @@ class SimulatorRunner(FLComponent):
             meta_data = f.read()
         meta = json.loads(meta_data)
 
+        self.logger.info("Deploy and start the Server App.")
         threading.Thread(target=self.start_server, args=[simulator_root, args, logger, services, meta]).start()
 
         time.sleep(5.0)
 
-        self.create_client_run_managers(simulator_root, args, federated_clients, meta)
+        self.logger.info("Deploy Client Apps.")
+        self.deploy_client_apps(simulator_root, args, federated_clients, meta)
 
+        self.logger.info("Start the clients run simulation.")
         executor = ThreadPoolExecutor(max_workers=args.threads)
-        run_client_index = 0
         lock = threading.Lock()
         for i in range(args.threads):
-            executor.submit(lambda p: start_client(*p), [self, federated_clients, run_client_index, lock])
+            executor.submit(lambda p: start_client(*p), [self, federated_clients, lock, self.logger])
             # threading.Thread(target=self.start_client, args=[simulator_root, args, federated_clients[0], meta]).start()
 
     def start_server(self, simulator_root, args, logger, services, meta):
@@ -75,7 +81,7 @@ class SimulatorRunner(FLComponent):
         snapshot = None
         server_app_runner.start_server_app(services, args, app_server_root, args.job_id, snapshot, logger)
 
-    def create_client_run_managers(self, simulator_root, args, federated_clients, meta):
+    def deploy_client_apps(self, simulator_root, args, federated_clients, meta):
         for client in federated_clients:
             app_client_root = os.path.join(simulator_root, "app_" + client.client_name)
 
@@ -89,6 +95,12 @@ class SimulatorRunner(FLComponent):
             client.status = ClientStatus.STARTED
 
     def create_client_runner(self, client):
+        """Create the ClientRunner for the client to run the ClientApp.
+
+        Args:
+            client: the client to run
+
+        """
         app_client_root = client.app_client_root
         args = client.args
         client_config_file_name = os.path.join(app_client_root, args.client_config)
@@ -132,41 +144,37 @@ class SimulatorRunner(FLComponent):
         # if client_name not in the deployment map, return the last app
         return app_name
 
-    # def start_client(self, simulator_root, args, federated_client, meta):
-    #     for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
-    #         for p in participants:
-    #             if p != "server":
-    #                 app_client_root = os.path.join(simulator_root, "app_" + p)
-    #                 app = os.path.join(args.job_folder, app_name)
-    #                 shutil.copytree(app, app_client_root)
-    #
-    #                 args.client_name = p
-    #                 args.token = federated_client.token
-    #                 client_app_runner = SimulatorClientAppRunner()
-    #                 client_app_runner.start_run(app_client_root, args, args.config_folder, federated_client, False)
 
-
-def start_client(simulator_runner, federated_clients, run_client_index, lock):
+def start_client(simulator_runner, federated_clients, lock, logger):
+    global run_client_index         # global client_index showing which client to run in this thread.
     stop_run = False
     interval = 0
-    last_run_client_index = -1
+    last_run_client_index = -1        # indicates the last run client index
+
     while not stop_run:
         time.sleep(interval)
         with lock:
+            run_client_index = (run_client_index + 1) % len(federated_clients)
             client = federated_clients[run_client_index]
+            logger.info(f"Simulate Run client: {client.client_name}")
 
+            # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
+            # release the memory and resources.
             if run_client_index != last_run_client_index and last_run_client_index != -1:
                 last_run_client = federated_clients[last_run_client_index]
                 with last_run_client.run_manager.new_context() as fl_ctx:
                     fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
                     last_run_client.run_manager = None
                     client_runner.fire_event(EventType.END_RUN, fl_ctx)
+                logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
             last_run_client_index = run_client_index
-            run_client_index = (run_client_index + 1) % len(federated_clients)
 
+        # Create the ClientRunManager and ClientRunner for the new client to run
         if client.run_manager is None:
             simulator_runner.create_client_runner(client)
+            logger.info(f"Initialize ClientRunner for client: {client.client_name}")
+
         with client.run_manager.new_context() as fl_ctx:
             client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
 
@@ -177,4 +185,5 @@ def start_client(simulator_runner, federated_clients, run_client_index, lock):
                 # if any client got the END_RUN event, stop the simulator run.
                 if client_runner.end_run_fired or client_runner.asked_to_stop:
                     stop_run = True
+                    logger.info("End the Simulator run.")
                     break
