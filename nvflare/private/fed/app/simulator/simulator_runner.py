@@ -92,6 +92,7 @@ class SimulatorRunner(FLComponent):
             client.app_client_root = app_client_root
             client.args = args
             # self.create_client_runner(client)
+            client.simulate_running = False
             client.status = ClientStatus.STARTED
 
     def create_client_runner(self, client):
@@ -158,8 +159,8 @@ def start_client(simulator_runner, federated_clients, lock, logger):
             while True:
                 run_client_index = (run_client_index + 1) % len(federated_clients)
                 client = federated_clients[run_client_index]
-                if not client.running:
-                    client.running = True
+                if not client.simulate_running:
+                    client.simulate_running = True
                     break
             logger.info(f"Simulate Run client: {client.client_name}")
 
@@ -192,4 +193,4 @@ def start_client(simulator_runner, federated_clients, lock, logger):
                     stop_run = True
                     logger.info("End the Simulator run.")
                     break
-            client.running = False
+            client.simulate_running = False
