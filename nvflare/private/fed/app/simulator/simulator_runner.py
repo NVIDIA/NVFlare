@@ -154,8 +154,13 @@ def start_client(simulator_runner, federated_clients, lock, logger):
     while not stop_run:
         time.sleep(interval)
         with lock:
-            run_client_index = (run_client_index + 1) % len(federated_clients)
-            client = federated_clients[run_client_index]
+            # Find the next client which is not currently running
+            while True:
+                run_client_index = (run_client_index + 1) % len(federated_clients)
+                client = federated_clients[run_client_index]
+                if not client.running:
+                    client.running = True
+                    break
             logger.info(f"Simulate Run client: {client.client_name}")
 
             # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
@@ -187,3 +192,4 @@ def start_client(simulator_runner, federated_clients, lock, logger):
                     stop_run = True
                     logger.info("End the Simulator run.")
                     break
+            client.running = False
