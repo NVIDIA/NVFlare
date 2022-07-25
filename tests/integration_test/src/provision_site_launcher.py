@@ -14,7 +14,6 @@
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 
@@ -58,7 +57,8 @@ class ProvisionSiteLauncher(SiteLauncher):
             # Kill the process
             if self.overseer_properties:
                 kill_process(self.overseer_properties)
-                subprocess.call(["pkill", "-9", "-f", "gunicorn"])
+                process = run_command_in_subprocess("pkill -9 -f gunicorn")
+                process.wait()
             else:
                 print("No overseer process.")
         except Exception as e:
@@ -97,5 +97,6 @@ class ProvisionSiteLauncher(SiteLauncher):
         super().stop_client(client_id)
 
     def cleanup(self):
-        subprocess.call(["pkill", "-9", "-f", PROD_FOLDER_NAME])
+        process = run_command_in_subprocess(f"pkill -9 -f {PROD_FOLDER_NAME}")
+        process.wait()
         shutil.rmtree(WORKSPACE)
