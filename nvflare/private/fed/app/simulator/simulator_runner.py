@@ -51,7 +51,7 @@ class SimulatorRunner(FLComponent):
         meta = json.loads(meta_data)
 
         self.logger.info("Deploy and start the Server App.")
-        server_thread = threading.Thread(target=self.start_server, args=[simulator_root, args, logger, services, meta])
+        server_thread = threading.Thread(target=self.start_server_app, args=[simulator_root, args, logger, services, meta])
         server_thread.start()
 
         # wait for the server app is started
@@ -65,14 +65,13 @@ class SimulatorRunner(FLComponent):
         executor = ThreadPoolExecutor(max_workers=args.threads)
         lock = threading.Lock()
         for i in range(args.threads):
-            executor.submit(lambda p: start_client(*p), [self, args.threads, federated_clients, lock, self.logger])
-            # threading.Thread(target=self.start_client, args=[simulator_root, args, federated_clients[0], meta]).start()
+            executor.submit(lambda p: run_client_thread(*p), [self, args.threads, federated_clients, lock, self.logger])
 
         # wait for the server and client running thread to finish.
         executor.shutdown()
         server_thread.join()
 
-    def start_server(self, simulator_root, args, logger, services, meta):
+    def start_server_app(self, simulator_root, args, logger, services, meta):
         app_server_root = os.path.join(simulator_root, "app_server")
         for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
             for p in participants:
@@ -153,7 +152,7 @@ class SimulatorRunner(FLComponent):
         return app_name
 
 
-def start_client(simulator_runner, num_of_threads, federated_clients, lock, logger):
+def run_client_thread(simulator_runner, num_of_threads, federated_clients, lock, logger):
     global run_client_index         # global client_index showing which client to run in this thread.
     stop_run = False
     interval = 0
