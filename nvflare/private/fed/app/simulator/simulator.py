@@ -48,7 +48,8 @@ def main():
     args = parser.parse_args()
 
     if args.threads > args.clients:
-        raise "The number of threads to run can not be larger then the number of clients."
+        logging.error("The number of threads to run can not be larger then the number of clients.")
+        sys.exit(-1)
 
     log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
     assert os.path.isfile(log_config_file_path), "missing log config file {}".format(log_config_file_path)

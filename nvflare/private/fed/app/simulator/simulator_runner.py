@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.private.defs import AppFolderConstants
@@ -54,7 +54,9 @@ class SimulatorRunner(FLComponent):
         server_thread = threading.Thread(target=self.start_server, args=[simulator_root, args, logger, services, meta])
         server_thread.start()
 
-        time.sleep(5.0)
+        # wait for the server app is started
+        while services.engine.engine_info.status != MachineStatus.STARTED:
+            time.sleep(1.0)
 
         self.logger.info("Deploy Client Apps.")
         self.deploy_client_apps(simulator_root, args, federated_clients, meta)
@@ -161,23 +163,12 @@ def start_client(simulator_runner, num_of_threads, federated_clients, lock, logg
         time.sleep(interval)
         with lock:
             if num_of_threads != len(federated_clients) or last_run_client_index == -1:
-                # Find the next client which is not currently running
-                while True:
-                    run_client_index = (run_client_index + 1) % len(federated_clients)
-                    client = federated_clients[run_client_index]
-                    if not client.simulate_running:
-                        break
-                logger.info(f"Simulate Run client: {client.client_name}")
+                client = get_next_run_client(federated_clients, logger)
 
                 # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
                 # release the memory and resources.
                 if run_client_index != last_run_client_index and last_run_client_index != -1:
-                    last_run_client = federated_clients[last_run_client_index]
-                    with last_run_client.run_manager.new_context() as fl_ctx:
-                        fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
-                        last_run_client.run_manager = None
-                        client_runner.fire_event(EventType.SWAP_OUT, fl_ctx)
-                    logger.info(f"Clean up ClientRunner for : {last_run_client.client_name} ")
+                    release_last_run_resources(client_runner, federated_clients, last_run_client_index, logger)
 
                 last_run_client_index = run_client_index
 
@@ -201,3 +192,24 @@ def start_client(simulator_runner, num_of_threads, federated_clients, lock, logg
                 logger.info("End the Simulator run.")
                 # break
             client.simulate_running = False
+
+
+def release_last_run_resources(client_runner, federated_clients, last_run_client_index, logger):
+    last_run_client = federated_clients[last_run_client_index]
+    with last_run_client.run_manager.new_context() as fl_ctx:
+        fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
+        last_run_client.run_manager = None
+        client_runner.fire_event(EventType.SWAP_OUT, fl_ctx)
+    logger.info(f"Clean up ClientRunner for : {last_run_client.client_name} ")
+
+
+def get_next_run_client(federated_clients, logger):
+    global run_client_index
+    # Find the next client which is not currently running
+    while True:
+        run_client_index = (run_client_index + 1) % len(federated_clients)
+        client = federated_clients[run_client_index]
+        if not client.simulate_running:
+            break
+    logger.info(f"Simulate Run client: {client.client_name}")
+    return client
