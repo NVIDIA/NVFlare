@@ -61,43 +61,40 @@ def main():
     args.client_config = os.path.join(args.config_folder, "config_fed_client.json")
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
 
+    os.chdir(args.workspace)
+    AuthorizationService.initialize(EmptyAuthorizer())
+    AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+
+    simulator_root = os.path.join(args.workspace, "simulate_job")
+    if os.path.exists(simulator_root):
+        shutil.rmtree(simulator_root)
+
+    deployer = SimulatorDeploy()
+    services = None
+
     try:
-        os.chdir(args.workspace)
-        AuthorizationService.initialize(EmptyAuthorizer())
-        AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+        # Deploy the FL server
+        logger.info("Create the Simulator Server.")
+        simulator_server, services = deployer.create_fl_server(args)
+        services.deploy(args, grpc_args=simulator_server)
 
-        simulator_root = os.path.join(args.workspace, "simulate_job")
-        if os.path.exists(simulator_root):
-            shutil.rmtree(simulator_root)
+        # Deploy the FL clients
+        logger.info("Create the simulate clients.")
+        federated_clients = []
+        for i in range(args.clients):
+            client_name = "client" + str(i)
+            federated_clients.append(deployer.create_fl_client(client_name, args))
 
-        deployer = SimulatorDeploy()
+        logger.info("Start the Simulator Run.")
+        simulator_runner = SimulatorRunner()
+        simulator_runner.run(simulator_root, args, logger, services, federated_clients)
 
-        try:
-            # Deploy the FL server
-            logger.info("Create the Simulator Server.")
-            simulator_server, services = deployer.create_fl_server(args)
-            services.deploy(args, grpc_args=simulator_server)
-
-            # Deploy the FL clients
-            logger.info("Create the simulate clients.")
-            federated_clients = []
-            for i in range(args.clients):
-                client_name = "client" + str(i)
-                federated_clients.append(deployer.create_fl_client(client_name, args))
-
-            logger.info("Start the Simulator Run.")
-            simulator_runner = SimulatorRunner()
-            simulator_runner.run(simulator_root, args, logger, services, federated_clients)
-
-        finally:
-            deployer.close()
-
-        logger.info("Simulator run completed.")
-
-    except ConfigError as ex:
-        print("ConfigError:", str(ex))
     finally:
-        pass
+        deployer.close()
+        if services:
+            services.close()
+
+    logger.info("Simulator run completed.")
 
 
 if __name__ == "__main__":

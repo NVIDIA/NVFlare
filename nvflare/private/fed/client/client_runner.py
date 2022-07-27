@@ -246,9 +246,9 @@ class ClientRunner(FLComponent):
                     self.log_info(fl_ctx, "run abort signal received")
                     break
 
-                task_fetch_interval, _ = self.run_one_round(fl_ctx)
+                task_fetch_interval, _ = self.run_one_task(fl_ctx)
 
-    def run_one_round(self, fl_ctx):
+    def run_one_task(self, fl_ctx):
         # reset to default fetch interval
         task_fetch_interval = self.task_fetch_interval
         self.log_debug(fl_ctx, "fetching task from server ...")
