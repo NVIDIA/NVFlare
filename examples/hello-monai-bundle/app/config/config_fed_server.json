@@ -32,12 +32,8 @@
     },
     {
       "id": "aggregator",
-      "name": "AccumulateWeightedAggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
-        "aggregation_weights": {
-          "org1-a": 1.0,
-          "org1-b": 0.5
-        },
         "expected_data_kind": "WEIGHTS"
       }
     }
