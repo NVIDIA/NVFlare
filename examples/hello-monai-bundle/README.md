@@ -28,7 +28,7 @@ current_path/
 ### 3. Download Spleen Bundle
 
 ```
-python -m monai.bundle download --name "spleen_ct_segmentation_v0.1.0" --bundle_dir hello-monai-bundle/config/
+python -m monai.bundle download --name "spleen_ct_segmentation_v0.1.0" --bundle_dir hello-monai-bundle/app/config/
 mkdir -p poc/admin/transfer
 cp -rf hello-monai-bundle poc/admin/transfer
 ```
