@@ -21,6 +21,7 @@ from nvflare.apis.impl.controller import Controller, Task, ClientTask
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.statistics.metic_config import MetricConfig
 from nvflare.app_common.statistics.numeric_stats import get_global_stats, get_global_dataset_stats, \
     get_client_dataset_stats, get_global_feature_data_types
 from nvflare.app_common.statistics.stats_def import (
@@ -32,17 +33,15 @@ from nvflare.app_common.statistics.stats_file_persistor import StatsFileWriter, 
 
 class GlobalStatistics(Controller):
 
-    def __init__(self, bin_range_min, bin_range_max, bins, metric_names, min_count, writer_id: str):
+    def __init__(self, metric_configs: Dict[str, dict], min_count, writer_id: str):
         super().__init__()
-        self.bin_range = BinRange(bin_range_min, bin_range_max)
-        self.bins = bins
-        self.metric_names = metric_names
+        self.metric_configs: Dict[str, dict] = metric_configs
         self.min_count = min_count
         self.writer_id = writer_id
         self.task_name = StC.FED_STATS_TASK
         self.client_metrics = {}
         self.global_metrics = {}
-        self.client_feature_dts = {}
+        self.client_features = {}
 
         self.result_callback_fns: Dict[str, Callable] = {
             StC.STATS_1st_METRICS: self.results_cb,
@@ -122,8 +121,9 @@ class GlobalStatistics(Controller):
             for metric in metrics:
                 self.client_metrics[metric] = {client_name: metrics[metric]}
 
-            feature_dts = dxo.data[StC.FEATURE_DATA_TYPE]
-            self.client_feature_dts[StC.FEATURE_DATA_TYPE] = {client_name: feature_dts}
+            ds_features = result.get_header(StC.STATS_FEATURES)
+            if ds_features:
+                self.client_features = {client_name: ds_features}
 
         else:
             self.log_info(
@@ -136,16 +136,16 @@ class GlobalStatistics(Controller):
 
     def post_fn(self, task_name: str, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"post processing for task {task_name}")
-        # todo handle more than one data sets
         self.global_metrics = get_global_stats(self.client_metrics)
 
         ds_stats: List[DatasetStatistics] = []
-        feature_data_types = get_global_feature_data_types(self.client_feature_dts)
-        global_dataset_name = StC.GLOBAL_DATASET_NAME_PREFIX
-        global_ds_stats = get_global_dataset_stats(global_dataset_name, self.global_metrics, feature_data_types)
-        ds_stats.append(global_ds_stats)
+        feature_data_types = get_global_feature_data_types(self.client_features)
+        global_dataset_prefix = StC.GLOBAL_DATASET_NAME_PREFIX
 
-        client_ds_stats = get_client_dataset_stats(self.client_metrics, self.client_feature_dts)
+        global_ds_stats = get_global_dataset_stats(global_dataset_prefix, self.global_metrics, feature_data_types)
+        ds_stats = global_ds_stats
+
+        client_ds_stats = get_client_dataset_stats(self.client_metrics, self.client_features)
         for stat in client_ds_stats:
             ds_stats.append(stat)
 
@@ -154,29 +154,39 @@ class GlobalStatistics(Controller):
         writer: StatsFileWriter = fl_ctx.get_engine().get_component(self.writer_id)
         writer.save("stats.json", ds_stats, file_format=FileFormat.JSON, overwrite_existing=True, fl_ctx=fl_ctx)
 
-    def _get_target_metrics(self, ordered_metrics):
+    def _get_target_metrics(self, ordered_metrics) -> List[MetricConfig]:
         # make sure the execution order of the metrics calculation
-        targets = [metric for metric in ordered_metrics if (metric in self.metric_names)]
+        targets = []
+        if self.metric_configs:
+            for metric in self.metric_configs:
+                # if target metric has histogram, we are not in 2nd Metric task
+                # we only need to calculate min/max if we have histogram metric,
+                # and we only calculate in 1st metric task
+                if metric == StC.STATS_HISTOGRAM and metric not in ordered_metrics:
+                    targets.append(MetricConfig(StC.STATS_MIN, {}))
+                    targets.append(MetricConfig(StC.STATS_MAX, {}))
+
+                for rm in ordered_metrics:
+                    if rm == metric:
+                        targets.append(MetricConfig(metric, self.metric_configs[metric]))
         return targets
 
     def _prepare_inputs(self, metric_task: str) -> Shareable:
         inputs = Shareable()
+        target_metrics: List[MetricConfig] = self._get_target_metrics(StC.ordered_metrics[metric_task])
 
-        target_metrics = self._get_target_metrics(StC.ordered_metrics[metric_task])
+        for tm in target_metrics:
+            if tm.name == StC.STATS_HISTOGRAM:
+                inputs[StC.STATS_MIN] = self.global_metrics[StC.STATS_MIN]
+                inputs[StC.STATS_MAX] = self.global_metrics[StC.STATS_MAX]
+                inputs[StC.STATS_BINS] = tm.config[StC.STATS_BINS]
 
-        if StC.STATS_SUM in target_metrics:
-            inputs[StC.FEATURE_DATA_TYPE] = "true"
-
-        if StC.STATS_HISTOGRAM in target_metrics:
-            inputs[StC.STATS_BIN_RANGE] = self.bin_range
-            inputs[StC.STATS_BINS] = self.bins
-
-        if StC.STATS_VAR in target_metrics:
-            inputs[StC.STATS_GLOBAL_COUNT] = self.global_metrics[StC.STATS_GLOBAL_COUNT]
-            inputs[StC.STATS_GLOBAL_MEAN] = self.global_metrics[StC.STATS_GLOBAL_MEAN]
+            if tm.name == StC.STATS_VAR:
+                inputs[StC.STATS_GLOBAL_COUNT] = self.global_metrics[StC.STATS_GLOBAL_COUNT]
+                inputs[StC.STATS_GLOBAL_MEAN] = self.global_metrics[StC.STATS_GLOBAL_MEAN]
 
         inputs[StC.METRIC_TASK_KEY] = metric_task
-        inputs[StC.STATS_TARGET_METRICS] = target_metrics
+        inputs[StC.STATS_TARGET_METRICS] = [mc.name for mc in target_metrics]
 
         return inputs
 

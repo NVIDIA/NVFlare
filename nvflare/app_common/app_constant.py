@@ -157,7 +157,9 @@ class StatisticsConstants(AppConstants):
     STATS_VAR = "stats_var"
     STATS_STDDEV = "stats_stddev"
     STATS_HISTOGRAM = "stats_histogram"
-    FEATURE_DATA_TYPE = "feature_data_type"
+    STATS_MAX = "stats_max"
+    STATS_MIN = "stats_min"
+    STATS_FEATURES = "stats_features"
 
     STATS_GLOBAL_MEAN = "global_mean"
     STATS_GLOBAL_COUNT = "global_count"
@@ -173,6 +175,6 @@ class StatisticsConstants(AppConstants):
     GLOBAL_DATASET_NAME_PREFIX = "Global"
 
     ordered_metrics = {
-        STATS_1st_METRICS: [STATS_COUNT, STATS_SUM, STATS_MEAN, STATS_HISTOGRAM],
-        STATS_2nd_METRICS: [STATS_VAR, STATS_STDDEV]
+        STATS_1st_METRICS: [STATS_COUNT, STATS_SUM, STATS_MEAN],
+        STATS_2nd_METRICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV]
     }

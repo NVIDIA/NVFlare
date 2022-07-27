@@ -10,20 +10,18 @@
       "id": "fed_stats_controller",
       "path": "nvflare.app_commons.workflow.GlobalStatistics",
       "args": {
-        "bins": 10,
-        "bin_range_min": 0,
-        "bin_range_max": 255,
-        "metrics_names": [
-          "stats_count",
-          "stats_mean",
-          "stats_sum",
-          "stats_var",
-          "stats_stddev",
-          "stats_histogram"
-        ],
-        "min_count": 5,
-
-      }
+        "metrics_names": {
+          "stats_count": {},
+          "stats_mean": {},
+          "stats_sum": {},
+          "stats_var": {},
+          "stats_stddev": {},
+          "stats_histogram": { "bins": 10}
+        }
+      },
+      "min_count": 5,
+      "writer_id": "stats_writer"
+    }
     }
   ],
   "components": [

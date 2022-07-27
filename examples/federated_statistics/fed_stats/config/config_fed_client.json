@@ -4,15 +4,25 @@
     {
       "tasks": ["fed_stats"],
       "executor": {
-        "path": "df_stats_executor.StatisticsExecutor",
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.statistics_executor2.StatisticsExecutor2",
         "args": {
-            "data_path" : "{workspace_dir}/{client_name}/data.csv",
-            "min_count" : 5
-        }
-      }
+          "generator_id": "df_stats_generator",
+          "min_count" : 5,
+          "min_random": 0.1,
+          "max_random": 0.3
+        },
     }
   ],
   "task_result_filters": [],
   "task_data_filters": [],
-  "components": []
+  "components": [
+      {
+        "id": "df_stats_generator",
+        "path": "df_stats_generator.DFStatistics",
+        "args": {
+          "data_path" : "{workspace_dir}/{client_name}/data.csv",
+        }
+      }
+
 }

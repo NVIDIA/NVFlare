@@ -11,169 +11,183 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import random
+from typing import Optional, List, Dict
 
-from abc import ABC, abstractmethod
-
-from nvflare.apis.fl_constant import ReservedKey
+from nvflare.apis.dxo import DataKind, DXO
+from nvflare.apis.event_type import EventType
+from nvflare.apis.executor import Executor
+from nvflare.apis.fl_constant import ReturnCode, ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.executors.statistics.base_statistics_executor import BaseStatsExecutor
+from nvflare.app_common.abstract.statistics_spec import Statistics
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.stats_def import Histogram
+from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
+from nvflare.app_common.statistics.stats_def import Feature
 from nvflare.app_common.validation_exception import ValidationException
-from typing import Dict
 
 
-class StatisticsExecutor(BaseStatsExecutor, ABC):
-    def __init__(self,
-                 data_path,
-                 min_count
-                 ):
+class StatisticsExecutor(Executor):
+    def __init__(
+            self,
+            generator_id: str,
+            min_count: int,
+            min_random: float,
+            max_random: float,
+    ):
         super().__init__()
-        self.data_path = data_path
+        self.generator_id = generator_id
         self.min_count = min_count
-        self.counts: Dict[str, int] = {}
-        self.sums: Dict[str, int] = {}
+        self.stats_generator: Optional[Statistics] = None
+        self.max_random = max_random
+        self.min_random = min_random
 
     def metric_functions(self) -> dict:
         return \
-            {StC.STATS_COUNT: self.get_counts,
-             StC.STATS_SUM: self.get_sums,
-             StC.STATS_MEAN: self.get_means,
-             StC.STATS_STDDEV: self.get_stddevs,
-             StC.STATS_VAR: self.get_variances_with_mean,
-             StC.STATS_HISTOGRAM: self.get_histograms}
+            {StC.STATS_COUNT: self.stats_generator.get_count,
+             StC.STATS_SUM: self.stats_generator.get_sum,
+             StC.STATS_MEAN: self.stats_generator.get_mean,
+             StC.STATS_STDDEV: self.stats_generator.get_stddev,
+             StC.STATS_VAR: self.stats_generator.get_variance_with_mean,
+             StC.STATS_HISTOGRAM: self.stats_generator.get_histogram,
+             StC.STATS_MAX: self._get_max_value,
+             StC.STATS_MIN: self._get_min_value,
+             }
 
-    @abstractmethod
-    def get_counts(self, shareable: Shareable, fl_cxt: FLContext) -> Dict[str, int]:
-        """
-            get count based on input data (self.data) and other input information
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            self.initialize(fl_ctx)
+        elif event_type == EventType.ABORT_TASK:
+        # do nothing
+        elif event_type == EventType.END_RUN:
+            self.finalize(fl_ctx)
 
-        :param shareable: contains the input information, mostly from server
-        :param accum_result: the results available so far based on previous metrics calculation
-        :param fl_cxt:
-        :return: dictionary of the feature name and count value
-        """
-        if len(self.counts) > 0:
-            return self.counts
-        else:
-            raise NotImplemented
+    def initialize(self, fl_ctx: FLContext):
+        try:
+            engine = fl_ctx.get_engine()
+            self.stats_generator = engine.get_component(self.generator_id)
+            if not isinstance(self.stats_generator, Statistics):
+                raise TypeError(
+                    f"statistics generator must implement Statistics type. Got: {type(self.stats_generator)}")
+            self.stats_generator.initialize(engine.get_all_components(), fl_ctx)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"learner initialize exception: {e}")
 
-    @abstractmethod
-    def get_sums(self, inputs: Shareable, fl_ctx: FLContext) -> Dict[str, float]:
-        """
-            get local sums based on input data (self.data) and other input information
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
+        try:
+            result = self.client_exec(task_name, shareable, fl_ctx, abort_signal)
+            if abort_signal.triggered:
+                return make_reply(ReturnCode.TASK_ABORTED)
+            if result:
+                dxo = DXO(data_kind=DataKind.ANALYTIC, data=result)
+                return dxo.to_shareable()
+            else:
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        :param inputs: contains the input information, mostly from server
-        :param accum_result: the results available so far based on previous metrics calculation
-        :param fl_ctx: FLContext
-        :return: dictionary of the feature name and sum value
-        """
-        if len(self.sums) > 0:
-            return self.sums
-        else:
-            raise NotImplemented
-
-    def get_means(self, inputs: Shareable, fl_ctx: FLContext) -> Dict[str, float]:
-        """
-            get local means based on input data (self.data) and other input information
-
-        :param inputs: contains the input information, mostly from server
-        :param fl_ctx: FLContext
-        :return: dictionary of the feature name and mean value
-        """
-        counts = self.get_counts(inputs, fl_ctx)
-        sums = self.get_sums(inputs, fl_ctx)
-        results = {}
-        for feature in counts:
-            results[feature] = sums[feature] / counts[feature]
-
-        return results
-
-    @abstractmethod
-    def get_stddevs(self, inputs: Shareable, fl_ctx: FLContext) -> Dict[str, float]:
-        """
-          get local stddev value based on input data (self.data) and other input information
-
-        :param inputs: contains the input information, mostly from server
-        :param fl_ctx: FLContext
-        :return: dictionary of the feature name and stddev value
-        """
-        raise NotImplemented
-
-    @abstractmethod
-    def get_variances_with_mean(self, inputs: Shareable, fl_ctx: FLContext) -> Dict[str, float]:
-        """
-            calculate the variance with the given mean value from input sharable
-            based on input data (self.data) and other input information.
-            This is not local variance based on the local mean values.
-            The calculation should be
-            m = global mean
-            N = global Count
-            variance = (sum ( x - m)^2))/ (N-1)
-
-        :param inputs: contains the input information, mostly from server
-        :param fl_ctx: FLContext
-        :return: dictionary of the feature name and variance value
-        """
-        raise NotImplemented
-
-    @abstractmethod
-    def get_histograms(self, inputs: Shareable, fl_ctx: FLContext) -> Dict[str, Histogram]:
-        """
-            get local histograms based on given numbers of bins, and range of the bins.
-            we will get inputs:
-                number of bins
-                bin_range
-            bins = inputs[StatsConstant.STATISTICS_NUMBER_BINS]
-            bin_range = inputs[StatsConstant.STATISTICS_BIN_RANGE]
-
-        :param inputs: contains the input information, mostly from server
-        :param fl_ctx: FLContext
-        :return: dictionary of the feature name and histogram value
-        """
-        raise NotImplemented
-
-    @abstractmethod
-    def client_data_validate(self, client_name: str, shareable: Shareable, fl_ctx: FLContext):
-        """
-            client_data_validate is called after the load_data(), at begining of the client_exec()
-        :param client_name: client name
-        :param shareable:  shareable
-        :param fl_ctx:  FLContext
-        :return: None
-        """
-        pass
+        except BaseException as e:
+            self.log_exception(fl_ctx, f"Task {task_name} failed. Exception: {e.__str__()}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
-        self._validate(client_name, shareable, fl_ctx)
-
         metrics_result = {}
         if task_name == StC.FED_STATS_TASK:
+            ds_features = self.get_numeric_features(fl_ctx)
+            self._validate(client_name, ds_features, shareable, fl_ctx)
             metric_task = shareable.get(StC.METRIC_TASK_KEY)
             metrics = shareable.get(StC.STATS_TARGET_METRICS)
             for metric in metrics:
                 fn = self.metric_functions()[metric]
-                metrics_result[metric] = fn(shareable, result, fl_ctx)
+                metrics_result[metric] = {}
+                for ds_name in ds_features:
+                    metrics_result[metric][ds_name] = {}
+                    features: List[Feature] = ds_features[ds_name]
+                    for feature in features:
+                        metrics_result[metric][ds_name][feature.feature_name] = \
+                            fn(ds_name, feature.feature_name, shareable, fl_ctx)
 
             result.set_header(StC.METRIC_TASK_KEY, metric_task)
+            if metric_task == StC.STATS_1st_METRICS:
+                result.set_header(StC.STATS_FEATURES, ds_features)
+
             result[metric_task] = metrics_result
 
         return result
 
-    def _validate(self, client_name: str, shareable: Shareable, fl_ctx: FLContext):
-        self.client_data_validate(client_name, shareable, fl_ctx)
-        self._validate_counts(client_name, shareable, fl_ctx)
+    def get_numeric_features(self, fl_ctx) -> Dict[str, List[Feature]]:
+        ds_features: Dict[str, List[Feature]] = self.stats_generator.get_features(fl_ctx)
+        return filter_numeric_features(ds_features)
 
-    def _validate_counts(self, client_name: str, shareable: Shareable, fl_ctx: FLContext):
-        self.counts = self.get_counts(shareable, fl_ctx)
-        for feature in self.counts:
-            count = self.counts[feature]
-            if count < self.min_count:
-                raise ValidationException(
-                    f"feature {feature} item count is "
-                    f"less than required minimum count {self.min_count} for client {client_name} ")
+    def _validate(self, client_name: str, ds_features: Dict[str, List[Feature]], shareable: Shareable, fl_ctx: FLContext):
+        for ds_name in ds_features:
+            features = ds_features[ds_name]
+            for feature in features:
+                feature_name = feature.feature_name
+                count = self.stats_generator.get_count(ds_name, feature.feature_name, shareable, fl_ctx)
+                if count < self.min_count:
+                    raise ValidationException(
+                        f" dataset {ds_name} feature{feature_name} item count is "
+                        f"less than required minimum count {self.min_count} for client {client_name} ")
+
+
+    def _get_max_value(self,
+                      dataset_name: str,
+                      feature_name: str,
+                      inputs: Shareable,
+                      fl_ctx: FLContext) -> float:
+        """
+           get randomized max value
+        """
+        client_max_value = self.stats_generator.get_max_value(dataset_name, feature_name, inputs, fl_ctx)
+
+        if client_max_value == 0  :
+           max_value = 1
+        elif 0 < client_max_value < 1e-3:
+            max_value = 1
+        elif 0 > client_max_value and abs(client_max_value) < 1e-3:
+            max_value = 0
+        else:
+            r = random.uniform(self.max_random, self.max_random)
+            if client_max_value > 0:
+                max_value = client_max_value * (1 + r)
+            else:
+                max_value = client_max_value * (1 - r)
+
+        return max_value
+
+    def _get_min_value(self,
+                      dataset_name: str,
+                      feature_name: str,
+                      inputs: Shareable,
+                      fl_ctx: FLContext) -> float:
+        """
+           get randomized min value
+        """
+        client_min_value = self.stats_generator.get_min_value(dataset_name, feature_name, inputs, fl_ctx)
+
+        if client_min_value == 0  :
+            min_value = -1
+        elif 0 < client_min_value < 1e-3:
+            min_value = 0
+        elif 0 > client_min_value and abs(client_min_value) < 1e-3:
+            min_value = -1
+        else:
+            r = random.uniform(self.max_random, self.max_random)
+            if client_min_value > 0:
+                min_value = client_min_value * (1 - r)
+            else:
+                min_value = client_min_value * (1 + r)
+
+        return min_value
+
+    def finalize(self, fl_ctx: FLContext):
+        try:
+            if self.stats_generator:
+                self.stats_generator.finalize(fl_ctx)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"Statistics generator finalize exception: {e}")

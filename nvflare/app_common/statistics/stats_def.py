@@ -13,7 +13,15 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Dict, List, NamedTuple, Optional
+from typing import (
+    List,
+    Optional,
+    TypeVar,
+    NamedTuple,
+    Generic,
+    Dict
+)
+T = TypeVar('T')
 
 
 class DataType(Enum):
@@ -81,3 +89,8 @@ class DatasetStatistics(NamedTuple):
     name: str
     num_examples: int
     features: List[FeatureStatistics]
+
+
+class Feature(NamedTuple):
+    feature_name: str
+    data_type: DataType

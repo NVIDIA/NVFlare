@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,27 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from typing import (
-    Generic,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    TypeVar,
-    Union
-)
-
-T = TypeVar('T')
+from typing import NamedTuple
 
 
-class Data(Generic[T]):
-    r"""A class representing a :class:`Data`.
-    """
-    def __init__(self, data: T):
-        self.data = data
-
-    def get_data(self) -> T:
-        return self.data
+class MetricConfig(NamedTuple):
+    name: str
+    config: dict
