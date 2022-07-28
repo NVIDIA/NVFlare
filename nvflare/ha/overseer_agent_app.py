@@ -64,7 +64,7 @@ def main():
             overseer_agent.end()
             break
         elif normalized_answer == "D":
-            pprint(overseer_agent._overseer_info)
+            pprint(overseer_agent.overseer_info)
         elif normalized_answer == "":
             continue
         elif normalized_answer[0] == "S":
@@ -75,7 +75,7 @@ def main():
                 print("expect sp index but got nothing.  Please provide the sp index to be promoted")
                 continue
             try:
-                sp = overseer_agent._overseer_info.get("sp_list")[sp_index]
+                sp = overseer_agent.overseer_info.get("sp_list")[sp_index]
             except IndexError:
                 print("index out of range")
             else:
