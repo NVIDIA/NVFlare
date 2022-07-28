@@ -355,7 +355,8 @@ class FederatedClientBase:
     def close(self):
         """Quit the remote federated server, close the local session."""
         self.logger.info("Shutting down client")
-        self.overseer_agent.end()
+        if self.overseer_agent:
+            self.overseer_agent.end()
 
         return 0
 

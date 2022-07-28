@@ -96,7 +96,3 @@ class SimulatorServer(FederatedServer):
         self.engine.run_processes.clear()
         super().stop_training()
 
-    def close(self):
-        self.shutdown = True
-        return super(FederatedServer, self).close()
-

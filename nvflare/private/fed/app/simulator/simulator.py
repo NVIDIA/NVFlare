@@ -22,7 +22,6 @@ import shutil
 import sys
 
 from nvflare.apis.fl_constant import WorkspaceConstants
-from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.defs import AppFolderConstants
@@ -72,6 +71,7 @@ def main():
 
     deployer = SimulatorDeploy()
     services = None
+    federated_clients = []
 
     try:
         # Deploy the FL server
@@ -81,7 +81,6 @@ def main():
 
         # Deploy the FL clients
         logger.info("Create the simulate clients.")
-        federated_clients = []
         for i in range(args.clients):
             client_name = "client" + str(i)
             federated_clients.append(deployer.create_fl_client(client_name, args))
@@ -92,6 +91,8 @@ def main():
 
     finally:
         deployer.close()
+        for client in federated_clients:
+            client.engine.shutdown()
         if services:
             services.close()
 
@@ -104,3 +105,5 @@ if __name__ == "__main__":
     """
 
     main()
+    os._exit(0)
+
