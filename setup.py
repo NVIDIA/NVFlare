@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import os
 import shutil
-import datetime
 
 from setuptools import find_packages, setup
 
@@ -73,15 +73,17 @@ setup(
     long_description_content_type="text/markdown",
     python_requires=">=3.7,<3.9",
     install_requires=[
-        "PyYAML",
-        "psutil",
+        "PyYAML==6.0",
+        "psutil==5.9.1",
         "numpy",
-        "grpcio",
-        "google-api-python-client",
+        "grpcio==1.46.3",
+        "protobuf==3.20.1",
+        "google-api-python-client==2.49.0",
         "cryptography>=36.0.0",
+        "Flask==2.1.2",
+        "gunicorn==20.1.0",
+        "six>=1.15.0",
         "tenseal==0.3.0",
-        "gunicorn",
-        "flask",
     ],
     entry_points={
         "console_scripts": [
