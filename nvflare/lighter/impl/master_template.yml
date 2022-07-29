@@ -64,7 +64,7 @@ readme_fs: |
   Please always safeguard the server.key.
 
 gunicorn_conf_py: |
-  bind="{~~hostname~~}:{~~port~~}"
+  bind="0.0.0.0:{~~port~~}"
   cert_reqs=2
   do_handshake_on_connect=True
   timeout=30
@@ -534,3 +534,138 @@ dockerfile: |
   RUN pip install nvflare
   COPY requirements.txt requirements.txt
   RUN pip install -r requirements.txt
+
+helm_chart_chart: |
+  apiVersion: v2
+  name: nvflare
+  description: A Helm chart for NVFlare overseer and servers
+  type: application
+  version: 0.1.0
+  appVersion: "2.2.0"
+
+helm_chart_service_overseer: |
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: overseer
+  spec:
+    selector:
+      system: overseer
+    ports:
+      - protocol: TCP
+        port: 8443
+        targetPort: overseer-port
+
+helm_chart_service_server: |
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: server
+    labels:
+      system: server
+  spec:
+    selector:
+      system: server
+    ports:
+      - name: fl-port
+        protocol: TCP
+        port: 8002
+        targetPort: fl-port
+      - name: admin-port
+        protocol: TCP
+        port: 8003
+        targetPort: admin-port
+
+helm_chart_deployment_overseer: |
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: overseer
+    labels:
+      system: overseer
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        system: overseer
+    template:
+      metadata:
+        labels:
+          system: overseer
+      spec:
+        volumes:
+          - name: workspace
+            hostPath:
+              path:
+              type: Directory
+        containers:
+          - name: overseer
+            image: nvflare-min:2.2.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+            command: ["/workspace/overseer/startup/start.sh"]
+            ports:
+              - name: overseer-port
+                containerPort: 8443
+                protocol: TCP
+helm_chart_deployment_server: |
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: server
+    labels:
+      system: server
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        system: server
+    template:
+      metadata:
+        labels:
+          system: server
+      spec:
+        volumes:
+          - name: workspace
+            hostPath:
+              path:
+              type: Directory
+          - name: persist
+            hostPath:
+              path: /tmp/nvflare
+              type: Directory
+        containers:
+          - name: server1
+            image: nvflare-min:2.2.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+              - name: persist
+                mountPath: /tmp/nvflare
+            command: ["/usr/local/bin/python3"]
+            args:
+              [
+                "-u",
+                "-m",
+                "nvflare.private.fed.app.server.server_train",
+                "-m",
+                "/workspace/server",
+                "-s",
+                "fed_server.json",
+                "--set",
+                "secure_train=true",
+                "config_folder=config",
+              ]
+            ports:
+              - containerPort: 8002
+                protocol: TCP
+              - containerPort: 8003
+                protocol: TCP
+helm_chart_values: |
+  workspace: /home/nvflare
+  persist: /home/nvflare
+
+
