@@ -98,8 +98,8 @@ class SimulatorDeploy(ServerDeployer):
         )
         admin_agent.app_ctx.set_agent(admin_agent)
         federated_client.set_client_engine(client_engine)
-        for processor in ClientRequestProcessors.request_processors:
-            admin_agent.register_processor(processor)
+        # for processor in ClientRequestProcessors.request_processors:
+        #     admin_agent.register_processor(processor)
 
         client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 

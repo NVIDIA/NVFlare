@@ -90,11 +90,9 @@ def main():
         simulator_runner.run(simulator_root, args, logger, services, federated_clients)
 
     finally:
-        deployer.close()
         for client in federated_clients:
             client.engine.shutdown()
-        if services:
-            services.close()
+        deployer.close()
 
     logger.info("Simulator run completed.")
 
