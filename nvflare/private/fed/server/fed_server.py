@@ -127,6 +127,8 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
+            if self.admin_server:
+                self.admin_server.stop()
             if self.grpc_server:
                 self.grpc_server.stop(0)
         finally:

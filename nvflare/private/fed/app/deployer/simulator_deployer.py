@@ -17,7 +17,6 @@ from nvflare.apis.utils.common_utils import get_open_ports
 
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
-from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
@@ -39,7 +38,7 @@ class SimulatorDeploy(ServerDeployer):
         if simulator_server["heart_beat_timeout"]:
             heart_beat_timeout = simulator_server["heart_beat_timeout"]
 
-        services = SimulatorServer(
+        self.services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
             min_num_clients=simulator_server.get("min_num_clients", 1),
             max_num_clients=simulator_server.get("max_num_clients", 100),
@@ -54,15 +53,15 @@ class SimulatorDeploy(ServerDeployer):
         )
 
         admin_server = create_admin_server(
-            services,
+            self.services,
             server_conf=simulator_server,
             args=args,
             secure_train=False,
         )
         admin_server.start()
-        services.set_admin_server(admin_server)
+        self.services.set_admin_server(admin_server)
 
-        return simulator_server, services
+        return simulator_server, self.services
 
     def create_fl_client(self, client_name, args):
         client_config, build_ctx = self._create_simulator_client_config(client_name)
