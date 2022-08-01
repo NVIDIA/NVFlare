@@ -1,0 +1,20 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "path": "xgboost_trainer.XGBoostTrainer",
+        "args": {
+          "trees_per_round": 1,
+          "site_num": 5
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": []
+
+}
