@@ -70,7 +70,6 @@ def main():
         shutil.rmtree(simulator_root)
 
     deployer = SimulatorDeploy()
-    services = None
     federated_clients = []
 
     try:

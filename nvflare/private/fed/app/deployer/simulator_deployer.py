@@ -17,6 +17,7 @@ from nvflare.apis.utils.common_utils import get_open_ports
 
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
+from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
@@ -97,8 +98,8 @@ class SimulatorDeploy(ServerDeployer):
         )
         admin_agent.app_ctx.set_agent(admin_agent)
         federated_client.set_client_engine(client_engine)
-        # for processor in ClientRequestProcessors.request_processors:
-        #     admin_agent.register_processor(processor)
+        for processor in ClientRequestProcessors.request_processors:
+            admin_agent.register_processor(processor)
 
         client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
