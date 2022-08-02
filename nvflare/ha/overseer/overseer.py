@@ -30,12 +30,7 @@ from nvflare.ha.overseer.utils import (
 )
 
 privilege_dict = load_privilege()
-debug_mode = app.config["DEBUG"]
-if debug_mode:
-    print(
-        "Overseer running in debug mode.  This is only intended for POC.  Overseer does not perform authorization check on its APIs.  This message may appear many times due to dynamic loading of FLASK."
-    )
-elif not privilege_dict:
+if not privilege_dict:
     print("Privilege file is tampered.  Privileged API disabled.")
 
 heartbeat_timeout = os.environ.get("NVFL_OVERSEER_HEARTBEAT_TIMEOUT", "10")
