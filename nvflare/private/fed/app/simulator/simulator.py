@@ -41,14 +41,26 @@ def main():
     parser.add_argument("job_folder")
     parser.add_argument("--data_path", "-i", type=str, help="Input data_path")
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--clients", "-n", type=int, help="number of clients", required=True)
+    parser.add_argument("--clients", "-n", type=int, help="number of clients")
+    parser.add_argument("--client_file", "-f", type=str, help="client names file")
     parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
     args = parser.parse_args()
 
-    if args.threads > args.clients:
+    client_names = []
+    if args.client_file:
+        with open(args.client_file, "r") as f:
+            client_names = f.read().split()
+    elif args.clients:
+        for i in range(args.clients):
+            client_names.append("client" + str(i))
+    else:
+        logging.error("Please provide a simulate client names file, or the number of clients")
+        sys.exit()
+
+    if args.threads > len(client_names):
         logging.error("The number of threads to run can not be larger then the number of clients.")
         sys.exit(-1)
 
@@ -75,6 +87,7 @@ def main():
     federated_clients = []
 
     try:
+        # Validate the simulate job
         job_name = split_path(args.job_folder)[1]
         data_bytes = zip_directory_to_bytes("", args.job_folder)
         job_validator = JobMetaValidator()
@@ -89,8 +102,7 @@ def main():
 
         # Deploy the FL clients
         logger.info("Create the simulate clients.")
-        for i in range(args.clients):
-            client_name = "client" + str(i)
+        for client_name in client_names:
             federated_clients.append(deployer.create_fl_client(client_name, args))
 
         logger.info("Start the Simulator Run.")
