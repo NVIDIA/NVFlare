@@ -23,10 +23,12 @@ import sys
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.server.authz import AuthorizationService
+from nvflare.fuel.hci.zip_utils import split_path, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploy
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -73,6 +75,13 @@ def main():
     federated_clients = []
 
     try:
+        job_name = split_path(args.job_folder)[1]
+        data_bytes = zip_directory_to_bytes("", args.job_folder)
+        job_validator = JobMetaValidator()
+        valid, error, _ = job_validator.validate(job_name, data_bytes)
+        if not valid:
+            raise RuntimeError(error)
+
         # Deploy the FL server
         logger.info("Create the Simulator Server.")
         simulator_server, services = deployer.create_fl_server(args)
@@ -88,6 +97,8 @@ def main():
         simulator_runner = SimulatorRunner()
         simulator_runner.run(simulator_root, args, logger, services, federated_clients)
 
+    except BaseException as error:
+        logger.error(error)
     finally:
         for client in federated_clients:
             client.engine.shutdown()

@@ -16,12 +16,12 @@ import json
 import os
 import shutil
 import sys
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
@@ -42,8 +42,6 @@ class SimulatorRunner(FLComponent):
         self.run_client_index = -1
 
     def run(self, simulator_root, args, logger, services, federated_clients):
-        # TODO: Add a job validator to check the job validation.
-
         meta_file = os.path.join(args.job_folder, "meta.json")
         with open(meta_file, "rb") as f:
             meta_data = f.read()
