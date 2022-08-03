@@ -228,14 +228,9 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
-        components = client.props.get("components", [])
-        config["components"] = list()
-        for comp in components:
-            temp_dict = {"id": comp}
-            temp_dict.update(components[comp])
-            config["components"].append(temp_dict)
-
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
+        sys_cap = client.props.get("capacity", {})
+        self._write(os.path.join(dest_dir, "site.json"), json.dumps(sys_cap, indent=2), "t")
         if self.docker_image:
             self._write(
                 os.path.join(dest_dir, "docker.sh"),

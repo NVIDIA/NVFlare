@@ -2,17 +2,6 @@ api_version: 3
 name: example_project
 description: NVIDIA FLARE sample project yaml file
 
-client_components: &cln_comps
-  resource_manager:    # This id is reserved by system.  Do not change it.
-    path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
-    args:
-      resources:
-        gpu: [0, 1, 2, 3]
-  resource_consumer:    # This id is reserved by system.  Do not change it.
-    path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
-    args:
-      gpu_resource_key: gpu
-  
 server_components: &svr_comps
   job_scheduler:  # This id is reserved by system.  Do not change it.
     path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
@@ -25,6 +14,9 @@ server_components: &svr_comps
       job_store_id: job_store
   job_store:
     path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+
+client_capacity: &cln_cap
+  gpus: 4
 
 participants:
   # change overseer.example.com to the FQDN of the overseer
@@ -57,20 +49,14 @@ participants:
     type: client
     org: nvidia
     enable_byoc: true
-    components:
-      <<: *cln_comps
+    capacity:
+      <<: *cln_cap
   - name: site-2
     type: client
     org: nvidia
     enable_byoc: false
-    components:
-      <<: *cln_comps
-      # You can also override one component with a different one
-      resource_manager:    # This id is reserved by system.  Do not change it.
-        path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
-        args:
-          resources:
-            gpu: [0, 1]
+    capacity:
+      <<: *cln_cap
   - name: admin@nvidia.com
     type: admin
     org: nvidia
