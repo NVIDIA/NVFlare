@@ -1,20 +1,32 @@
 {
   "format_version": 2,
+
   "executors": [
     {
       "tasks": [
         "train"
       ],
       "executor": {
-        "path": "xgboost_trainer.XGBoostTrainer",
+        "id": "Executor",
+        "name": "LearnerExecutor",
         "args": {
-          "trees_per_round": 1,
-          "site_num": 5
+          "learner_id": "xgboost-learner"
         }
       }
     }
   ],
-  "task_result_filters": [],
-  "task_data_filters": []
 
+  "task_result_filters": [],
+  "task_data_filters": [],
+
+  "components": [
+    {
+      "id": "xgboost-learner",
+      "path": "xgboost_higgs_learner.XGBoostHiggsLearner",
+      "args": {
+        "train_config_filename": "config_train.json",
+        "trees_per_round": 1
+      }
+    }
+  ]
 }

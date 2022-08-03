@@ -12,17 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import pickle
 import json
+import os
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable
+from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.abstract.model import make_model_learnable
 
 
 class XGBoostModelPersistor(ModelPersistor):
@@ -56,7 +53,7 @@ class XGBoostModelPersistor(ModelPersistor):
                 model_learnable = json.load(json_file)
         else:
             self.logger.info(f"Initializing server model as None")
-            var_dict = None #{"Tree": []}
+            var_dict = None
             model_learnable = make_model_learnable(var_dict, dict())
         return model_learnable
 
@@ -73,8 +70,6 @@ class XGBoostModelPersistor(ModelPersistor):
             fl_ctx: FLContext
         """
         self.logger.info(f"Saving received model")
-        #print("-------------------------------------------------------------------")
-        #print(model_learnable)
         if model_learnable:
-            with open(self.save_path, 'w') as f:
+            with open(self.save_path, "w") as f:
                 json.dump(model_learnable, f)
