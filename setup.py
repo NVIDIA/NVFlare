@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
 import os
 import shutil
+import datetime
 
 from setuptools import find_packages, setup
 
@@ -89,6 +89,7 @@ setup(
         "console_scripts": [
             "provision=nvflare.lighter.provision:main",
             "poc=nvflare.lighter.poc:main",
+            "nvflare=nvflare.lighter.nvflare:main",
             "authz_preview=nvflare.fuel.hci.tools.authz_preview:main",
         ],
     },
