@@ -83,6 +83,7 @@ class ReservedKey(object):
     EVENT_SCOPE = "__event_scope__"
     RUN_ABORT_SIGNAL = "__run_abort_signal__"
     SHAREABLE = "__shareable__"
+    SHARED_FL_CONTEXT = "__shared_fl_context__"
     ARGS = "__args__"
     WORKSPACE_OBJECT = "__workspace_object__"
     RANK_NUMBER = "__rank_number__"

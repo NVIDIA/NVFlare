@@ -11,30 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fuel.utils.fobs.decomposer import Decomposer
+from nvflare.fuel.utils.fobs.fobs import (
+    deserialize,
+    deserialize_stream,
+    num_decomposers,
+    register,
+    register_folder,
+    serialize,
+    serialize_stream,
+)
 
-# from __future__ import annotations
-from nvflare.fuel.utils import fobs
-
-
-class Learnable(dict):
-    def to_bytes(self) -> bytes:
-        """Method to serialize the Learnable object into bytes.
-
-        Returns:
-            object serialized in bytes.
-
-        """
-        return fobs.dumps(self)
-
-    @classmethod
-    def from_bytes(cls, data: bytes):
-        """Method to convert the object bytes into Learnable object.
-
-        Args:
-            data: a bytes object
-
-        Returns:
-            an object loaded by FOBS from data
-
-        """
-        return fobs.loads(data)
+# aliases for compatibility to Pickle/json
+load = deserialize_stream
+loads = deserialize
+dump = serialize_stream
+dumps = serialize
