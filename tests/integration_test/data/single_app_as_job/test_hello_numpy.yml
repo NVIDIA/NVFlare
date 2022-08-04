@@ -1,0 +1,17 @@
+system_setup: ./data/system/1_server_2_clients.yml
+apps_root_dir: ../../examples
+single_app_as_job: True
+cleanup: True
+
+
+tests:
+  - app_name: hello-numpy-cross-val
+    validators:
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - app_name: hello-numpy-sag
+    validators:
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }

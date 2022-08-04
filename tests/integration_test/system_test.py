@@ -87,11 +87,17 @@ def get_test_config(test_config_yaml: str):
 
 
 test_configs = read_yaml("./test_cases.yml")
+framework = os.environ.get("NVFLARE_TEST_FRAMEWORK", "numpy")
+if framework not in ["numpy", "tensorflow", "pytorch"]:
+    print(f"Framework {framework} is not supported, using default numpy.")
+    framework = "numpy"
+print(f"Testing framework {framework}")
+test_configs = test_configs["test_configs"][framework]
 
 
 @pytest.fixture(
     scope="class",
-    params=test_configs["test_configs"],
+    params=test_configs,
 )
 def setup_and_teardown(request):
     yaml_path = os.path.join(os.path.dirname(__file__), request.param)
