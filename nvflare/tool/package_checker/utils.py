@@ -16,13 +16,17 @@ import os
 import shlex
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
 import time
 from typing import Any, Dict, Optional
 
+import grpc
 from requests import Request, RequestException, Response, Session, codes
 from requests.adapters import HTTPAdapter
+
+from nvflare.fuel.hci.conn import ALL_END
 
 
 def try_write(path: str):
@@ -92,19 +96,33 @@ def _prepare_data(args: dict):
     return data
 
 
+def get_ca_cert_file_name():
+    return "rootCA.pem"
+
+
+def get_cert_file_name(role: str):
+    if role == "server":
+        return "server.crt"
+    return "client.crt"
+
+
+def get_prv_key_file_name(role: str):
+    if role == "server":
+        return "server.key"
+    return "client.key"
+
+
 def check_overseer_running(startup: str, overseer_agent_conf: dict, role: str, retry: int = 3) -> Optional[Response]:
     """Checks if overseer is running."""
-    cert_file = "server.crt" if role == "server" else "client.crt"
-    prv_key_file = "server.key" if role == "server" else "client.key"
     required_args = ["overseer_end_point", "role", "project", "name"]
     if role == "server":
         required_args.extend(["fl_port", "admin_port"])
 
     overseer_agent_args = _parse_overseer_agent(overseer_agent_conf, required_args)
     session = _create_http_session(
-        ca_path=os.path.join(startup, "rootCA.pem"),
-        cert_path=os.path.join(startup, cert_file),
-        prv_key_path=os.path.join(startup, prv_key_file),
+        ca_path=os.path.join(startup, get_ca_cert_file_name()),
+        cert_path=os.path.join(startup, get_cert_file_name(role)),
+        prv_key_path=os.path.join(startup, get_prv_key_file_name(role)),
     )
     data = _prepare_data(overseer_agent_args)
     try_count = 0
@@ -129,6 +147,54 @@ def check_response(resp: Response) -> bool:
     if not resp:
         return False
     if resp.status_code != codes.ok:
+        return False
+    return True
+
+
+def check_socket_server_running(startup: str, host: str, port: int) -> bool:
+    try:
+        # SSL communication
+        ctx = ssl.create_default_context()
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        ctx.check_hostname = False
+
+        ctx.load_verify_locations(os.path.join(startup, get_ca_cert_file_name()))
+        ctx.load_cert_chain(
+            certfile=os.path.join(startup, get_cert_file_name("client")),
+            keyfile=os.path.join(startup, get_prv_key_file_name("client")),
+        )
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            with ctx.wrap_socket(sock) as secure_sock:
+                secure_sock.connect((host, port))
+                secure_sock.sendall(bytes(f"hello{ALL_END}", "utf-8"))
+                secure_sock.recv()
+    except Exception as e:
+        print(e)
+        return False
+    return True
+
+
+def check_grpc_server_running(startup: str, host: str, port: int) -> bool:
+    with open(os.path.join(startup, get_ca_cert_file_name()), "rb") as f:
+        trusted_certs = f.read()
+    with open(os.path.join(startup, get_prv_key_file_name("client")), "rb") as f:
+        private_key = f.read()
+    with open(os.path.join(startup, get_cert_file_name("client")), "rb") as f:
+        certificate_chain = f.read()
+
+    call_credentials = grpc.metadata_call_credentials(
+        lambda context, callback: callback((("x-custom-token", self.client_name),), None)
+    )
+    credentials = grpc.ssl_channel_credentials(
+        certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
+    )
+
+    composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
+    channel = grpc.secure_channel(target=f"{host}:{port}", credentials=composite_credentials)
+    try:
+        grpc.channel_ready_future(channel).result(timeout=10)
+    except grpc.FutureTimeoutError:
         return False
     return True
 

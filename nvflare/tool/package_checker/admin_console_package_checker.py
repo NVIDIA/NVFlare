@@ -11,57 +11,38 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
+
 import os
 import signal
 from subprocess import TimeoutExpired
 
-from .package_checker import PackageChecker
-from .utils import check_overseer_running, check_response, run_command_in_subprocess
-
-ADMIN_NVF_CONFIG = "fed_admin.json"
+from .client_package_checker import ClientPackageChecker
+from .utils import run_command_in_subprocess
 
 
-class AdminConsolePackageChecker(PackageChecker):
-    def should_be_checked(self, package_path) -> bool:
-        """Check if this package should be checked by this checker."""
-        startup = os.path.join(package_path, "startup")
-        if os.path.exists(os.path.join(startup, ADMIN_NVF_CONFIG)):
-            return True
-        return False
+class AdminConsolePackageChecker(ClientPackageChecker):
+    NVF_CONFIG = "fed_admin.json"
+
+    def _check_dry_run(self, package_path: str):
+        command = os.path.join(package_path, "startup", "fl_admin.sh")
+        process = run_command_in_subprocess(command)
+        try:
+            out, _ = process.communicate(timeout=5)
+            self.add_report(
+                package_path,
+                f"Can't start admin console successfully: \n{out}",
+                "Please check the error message of dry run.",
+            )
+        except TimeoutExpired:
+            os.killpg(process.pid, signal.SIGTERM)
 
     def check(self, package_path):
         """Checks if the package is runnable on the current system."""
-        startup = os.path.join(package_path, "startup")
-        fed_config_file = os.path.join(startup, ADMIN_NVF_CONFIG)
-        with open(fed_config_file, "r") as f:
-            fed_config = json.load(f)
+        self._check_overseer_and_service_provider_running_and_accessible(package_path=package_path, role="admin")
 
-        # check overseer
-        resp = check_overseer_running(
-            startup=startup, overseer_agent_conf=fed_config["admin"]["overseer_agent"], role="admin"
-        )
-        if not check_response(resp):
-            self.add_report(package_path, "Can't connect to overseer", "Please check if overseer is up.")
-        else:
-            data = resp.json()
-            psp = data.get("primary_sp")
-            if not psp:
-                self.add_report(package_path, "Can't get primary sp from overseer", "Please check if server is up.")
-
-        # check if it can start successfully
+        # check if client can run
         if len(self.report[package_path]) == 0:
-            command = os.path.join(package_path, "startup", "fl_admin.sh")
-            process = run_command_in_subprocess(command)
-            try:
-                out, _ = process.communicate(timeout=5)
-                self.add_report(
-                    package_path,
-                    f"Can't start admin console successfully: \n{out}",
-                    "Please check the error message of dry run.",
-                )
-            except TimeoutExpired:
-                os.killpg(process.pid, signal.SIGTERM)
+            self._check_dry_run(package_path=package_path)
 
     def dry_run(self, package_path):
         command = os.path.join(package_path, "startup", "fl_admin.sh")
