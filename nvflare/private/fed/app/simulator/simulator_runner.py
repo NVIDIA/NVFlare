@@ -12,26 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import os
 import shutil
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus
-from nvflare.apis.fl_constant import WorkspaceConstants
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.server.authz import AuthorizationService
-from nvflare.fuel.hci.zip_utils import split_path, zip_directory_to_bytes
+from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.private.defs import AppFolderConstants
-from nvflare.private.defs import EngineConstant
+from nvflare.private.defs import AppFolderConstants, EngineConstant
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploy
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -43,7 +41,6 @@ from nvflare.security.security import EmptyAuthorizer
 
 
 class SimulatorRunner(FLComponent):
-
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -57,9 +54,8 @@ class SimulatorRunner(FLComponent):
 
     def setup(self):
         client_names = []
-        if self.args.client_file:
-            with open(self.args.client_file, "r") as f:
-                client_names = f.read().split()
+        if self.args.client_list:
+            client_names = self.args.client_list.strip().split(",")
         elif self.args.clients:
             for i in range(self.args.clients):
                 client_names.append("client" + str(i))
@@ -93,11 +89,15 @@ class SimulatorRunner(FLComponent):
         try:
             # Validate the simulate job
             job_name = split_path(self.args.job_folder)[1]
-            data_bytes = zip_directory_to_bytes("", self.args.job_folder)
+            data = zip_directory_to_bytes("", self.args.job_folder)
+            data_bytes = convert_legacy_zip(data)
             job_validator = JobMetaValidator()
-            valid, error, _ = job_validator.validate(job_name, data_bytes)
+            valid, error, meta = job_validator.validate(job_name, data_bytes)
+
             if not valid:
                 raise RuntimeError(error)
+
+            self._validate_client_names(meta, client_names)
 
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
@@ -109,34 +109,60 @@ class SimulatorRunner(FLComponent):
             for client_name in client_names:
                 self.federated_clients.append(self.deployer.create_fl_client(client_name, self.args))
 
-            self._deploy_apps()
+            self.logger.info("Deploy the Apps.")
+            self._deploy_apps(job_name, data_bytes, meta)
+
+            self.logger.info("Set the client status ready.")
+            self._set_client_status()
             return True
 
         except BaseException as error:
             self.logger.error(error)
             return False
 
-    def _deploy_apps(self):
-        meta_file = os.path.join(self.args.job_folder, "meta.json")
-        with open(meta_file, "rb") as f:
-            meta_data = f.read()
-        meta = json.loads(meta_data)
+    def _validate_client_names(self, meta, client_names):
+        no_app_clients = []
+        for name in client_names:
+            name_matched = False
+            for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
+                if len(participants) == 1 and participants[0].upper() == ALL_SITES:
+                    name_matched = True
+                    break
+                if name in participants:
+                    name_matched = True
+                    break
+            if not name_matched:
+                no_app_clients.append(name)
+        if no_app_clients:
+            raise RuntimeError(f"The job does not have App to run for clients: {no_app_clients}")
 
-        app_server_root = os.path.join(self.simulator_root, "app_server")
-        for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
-            for p in participants:
-                if p == "server":
-                    app = os.path.join(self.args.job_folder, app_name)
-                    shutil.copytree(app, app_server_root)
+    def _deploy_apps(self, job_name, data_bytes, meta):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            os.mkdir(temp_dir)
+            unzip_all_from_bytes(data_bytes, temp_dir)
+            temp_job_folder = os.path.join(temp_dir, job_name)
 
-        self.logger.info("Deploy Client Apps.")
-        self.deploy_client_apps(meta)
+            app_server_root = os.path.join(self.simulator_root, "app_server")
+            for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
+                if len(participants) == 1 and participants[0].upper() == ALL_SITES:
+                    participants = ["server"]
+                    participants.extend([client.client_name for client in self.federated_clients])
+
+                for p in participants:
+                    if p == "server":
+                        app = os.path.join(temp_job_folder, app_name)
+                        shutil.copytree(app, app_server_root)
+                    else:
+                        app_client_root = os.path.join(self.simulator_root, "app_" + p)
+                        app = os.path.join(temp_job_folder, app_name)
+                        shutil.copytree(app, app_client_root)
 
     def run(self):
         try:
             self.logger.info("Deploy and start the Server App.")
-            server_thread = threading.Thread(target=self.start_server_app,
-                                             args=[])
+            server_thread = threading.Thread(target=self.start_server_app, args=[])
             server_thread.start()
 
             # wait for the server app is started
@@ -147,8 +173,7 @@ class SimulatorRunner(FLComponent):
             executor = ThreadPoolExecutor(max_workers=self.args.threads)
             lock = threading.Lock()
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p),
-                                [self, self.args.threads, lock])
+                executor.submit(lambda p: self.run_client_thread(*p), [self, self.args.threads, lock])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
@@ -168,16 +193,13 @@ class SimulatorRunner(FLComponent):
 
         server_app_runner = SimulatorServerAppRunner()
         snapshot = None
-        server_app_runner.start_server_app(self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger)
+        server_app_runner.start_server_app(
+            self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
+        )
 
-    def deploy_client_apps(self, meta):
+    def _set_client_status(self):
         for client in self.federated_clients:
             app_client_root = os.path.join(self.simulator_root, "app_" + client.client_name)
-
-            app_name = self.get_client_app_name(client, meta)
-            app = os.path.join(self.args.job_folder, app_name)
-            shutil.copytree(app, app_client_root)
-
             client.app_client_root = app_client_root
             client.args = self.args
             # self.create_client_runner(client)

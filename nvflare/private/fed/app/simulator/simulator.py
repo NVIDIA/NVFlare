@@ -24,10 +24,10 @@ from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("job_folder")
-    parser.add_argument("--data_path", "-i", type=str, help="Input data_path")
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    # parser.add_argument("--data_path", "-i", type=str, help="Input data_path")
+    parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--clients", "-n", type=int, help="number of clients")
-    parser.add_argument("--client_file", "-f", type=str, help="client names file")
+    parser.add_argument("--client_list", "-c", type=str, help="client names list")
     parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     args = parser.parse_args()
@@ -49,4 +49,3 @@ if __name__ == "__main__":
     if simulator.setup():
         simulator.run()
     os._exit(0)
-

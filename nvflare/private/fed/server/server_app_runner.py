@@ -21,7 +21,6 @@ from nvflare.private.fed.server.server_status import ServerStatus
 
 
 class ServerAppRunner:
-
     def start_server_app(self, server, args, app_root, job_id, snapshot, logger):
 
         try:

@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, List
+from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, RunProcessKey
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, make_reply, Shareable
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.private.fed.server.server_state import HotState
+
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
 
 
 class SimulatorServerEngine(ServerEngine):
-
     def persist_components(self, fl_ctx: FLContext, completed: bool):
         pass
 
@@ -32,29 +32,49 @@ class SimulatorServerEngine(ServerEngine):
         pass
 
     def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        replies = self.aux_send(
-            targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
-        )
+        replies = self.aux_send(targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx)
 
         return replies
 
 
 class SimulatorServer(FederatedServer):
-
-    def __init__(self, project_name=None, min_num_clients=2, max_num_clients=10, wait_after_min_clients=10,
-                 cmd_modules=None, heart_beat_timeout=600, handlers: Optional[List[FLComponent]] = None, args=None,
-                 secure_train=False, enable_byoc=False, snapshot_persistor=None, overseer_agent=None):
-        super().__init__(project_name, min_num_clients, max_num_clients, wait_after_min_clients, cmd_modules,
-                         heart_beat_timeout, handlers, args, secure_train, enable_byoc, snapshot_persistor,
-                         overseer_agent)
+    def __init__(
+        self,
+        project_name=None,
+        min_num_clients=2,
+        max_num_clients=10,
+        wait_after_min_clients=10,
+        cmd_modules=None,
+        heart_beat_timeout=600,
+        handlers: Optional[List[FLComponent]] = None,
+        args=None,
+        secure_train=False,
+        enable_byoc=False,
+        snapshot_persistor=None,
+        overseer_agent=None,
+    ):
+        super().__init__(
+            project_name,
+            min_num_clients,
+            max_num_clients,
+            wait_after_min_clients,
+            cmd_modules,
+            heart_beat_timeout,
+            handlers,
+            args,
+            secure_train,
+            enable_byoc,
+            snapshot_persistor,
+            overseer_agent,
+        )
 
         self.engine.run_processes["simulate_job"] = {
-                RunProcessKey.LISTEN_PORT: None,
-                RunProcessKey.CONNECTION: None,
-                RunProcessKey.CHILD_PROCESS: None,
-                RunProcessKey.JOB_ID: "simulate_job",
-                # RunProcessKey.PARTICIPANTS: job_clients,
-            }
+            RunProcessKey.LISTEN_PORT: None,
+            RunProcessKey.CONNECTION: None,
+            RunProcessKey.CHILD_PROCESS: None,
+            RunProcessKey.JOB_ID: "simulate_job",
+            # RunProcessKey.PARTICIPANTS: job_clients,
+        }
 
         self.server_state = HotState()
 
@@ -95,4 +115,3 @@ class SimulatorServer(FederatedServer):
     def stop_training(self):
         self.engine.run_processes.clear()
         super().stop_training()
-

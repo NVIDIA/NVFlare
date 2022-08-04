@@ -14,16 +14,16 @@
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.utils.common_utils import get_open_ports
-
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
+
+from ..server.server_train import create_admin_server
 from .base_client_deployer import BaseClientDeployer
 from .server_deployer import ServerDeployer
-from ..server.server_train import create_admin_server
 
 
 class SimulatorDeploy(ServerDeployer):
@@ -84,7 +84,7 @@ class SimulatorDeploy(ServerDeployer):
 
         return federated_client
 
-    def create_admin_agent(self, server_args, federated_client: FederatedClient,args, rank=0):
+    def create_admin_agent(self, server_args, federated_client: FederatedClient, args, rank=0):
         sender = AdminMessageSender(
             client_name=federated_client.token,
             server_args=server_args,
@@ -111,15 +111,9 @@ class SimulatorDeploy(ServerDeployer):
             "service": {
                 "target": "localhost:" + str(self.open_ports[0]),
                 "options": [
-                    [
-                        "grpc.max_send_message_length",
-                        2147483647
-                    ],
-                    [
-                        "grpc.max_receive_message_length",
-                        2147483647
-                    ]
-                ]
+                    ["grpc.max_send_message_length", 2147483647],
+                    ["grpc.max_receive_message_length", 2147483647],
+                ],
             },
             "admin_host": "localhost",
             "admin_port": self.open_ports[1],
@@ -129,7 +123,7 @@ class SimulatorDeploy(ServerDeployer):
             "compression": "Gzip",
             "admin_storage": "transfer",
             "download_job_url": "http://download.server.com/",
-            "min_num_clients": 1
+            "min_num_clients": 1,
         }
         return simulator_server
 
@@ -141,22 +135,13 @@ class SimulatorDeploy(ServerDeployer):
                     "service": {
                         "target": "localhost:" + str(self.open_ports[0]),
                         "options": [
-                            [
-                                "grpc.max_send_message_length",
-                                2147483647
-                            ],
-                            [
-                                "grpc.max_receive_message_length",
-                                2147483647
-                            ]
-                        ]
-                    }
+                            ["grpc.max_send_message_length", 2147483647],
+                            ["grpc.max_receive_message_length", 2147483647],
+                        ],
+                    },
                 }
             ],
-            "client": {
-                "retry_timeout": 30,
-                "compression": "Gzip"
-            }
+            "client": {"retry_timeout": 30, "compression": "Gzip"},
         }
 
         build_ctx = {
@@ -172,4 +157,3 @@ class SimulatorDeploy(ServerDeployer):
         }
 
         return client_config, build_ctx
-

@@ -267,9 +267,7 @@ class ClientRunner(FLComponent):
             task_data = task.data
             if task_data and isinstance(task_data, Shareable):
                 task_fetch_interval = task_data.get(TaskConstant.WAIT_TIME, self.task_fetch_interval)
-            self.log_debug(
-                fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval)
-            )
+            self.log_debug(fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval))
             # continue
 
         else:
@@ -294,9 +292,7 @@ class ClientRunner(FLComponent):
 
             reply_sent = self.engine.send_task_result(task_reply, fl_ctx)
             if reply_sent:
-                self.log_info(
-                    fl_ctx, "result sent to server for task: name={}, id={}".format(task.name, task.task_id)
-                )
+                self.log_info(fl_ctx, "result sent to server for task: name={}, id={}".format(task.name, task.task_id))
             else:
                 self.log_error(
                     fl_ctx,
