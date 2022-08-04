@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,10 +19,10 @@ import pandas as pd
 import xgboost as xgb
 from xgboost_learner import XGBoostLearner
 
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.apis.shareable import make_reply
+from nvflare.app_common.app_constant import AppConstants
 
 
 class XGBoostHiggsLearner(XGBoostLearner):
@@ -83,10 +83,10 @@ class XGBoostHiggsLearner(XGBoostLearner):
 
         # load data
         # training
-
         start = site_index["start"]
         end = site_index["end"]
-        higgs = pd.read_csv(data_path, header=None, skiprows=start, nrows=end - start)
+        data_size = end - start
+        higgs = pd.read_csv(data_path, header=None, skiprows=start, nrows=data_size)
         total_train_data_num = higgs.shape[0]
         # split to feature and label
         X_higgs_train = higgs.iloc[:, 1:]

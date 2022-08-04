@@ -24,7 +24,7 @@
       "id": "xgboost-learner",
       "path": "xgboost_higgs_learner.XGBoostHiggsLearner",
       "args": {
-        "train_config_filename": "config_train.json",
+        "train_config_filename": "config_train_uniform.json",
         "trees_per_round": 1
       }
     }
