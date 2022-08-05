@@ -59,13 +59,6 @@ class SimulatorRunner(FLComponent):
         elif self.args.clients:
             for i in range(self.args.clients):
                 client_names.append("client" + str(i))
-        else:
-            logging.error("Please provide a simulate client names file, or the number of clients")
-            sys.exit()
-
-        if self.args.threads > len(client_names):
-            logging.error("The number of threads to run can not be larger then the number of clients.")
-            sys.exit(-1)
 
         log_config_file_path = os.path.join(self.args.workspace, "startup", "log.config")
         assert os.path.isfile(log_config_file_path), "missing log config file {}".format(log_config_file_path)
@@ -97,6 +90,15 @@ class SimulatorRunner(FLComponent):
             if not valid:
                 raise RuntimeError(error)
 
+            if not client_names:
+                client_names = self._extract_client_names_from_meta(meta)
+            if not client_names:
+                self.logger.error("Please provide the client names list to run the simulator")
+                sys.exit(1)
+            if self.args.threads > len(client_names):
+                logging.error("The number of threads to run can not be larger then the number of clients.")
+                sys.exit(-1)
+
             self._validate_client_names(meta, client_names)
 
             # Deploy the FL server
@@ -119,6 +121,14 @@ class SimulatorRunner(FLComponent):
         except BaseException as error:
             self.logger.error(error)
             return False
+
+    def _extract_client_names_from_meta(self, meta):
+        client_names = []
+        for _, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
+            for p in participants:
+                if p.upper() != ALL_SITES and p != "server":
+                    client_names.append(p)
+        return client_names
 
     def _validate_client_names(self, meta, client_names):
         no_app_clients = []
