@@ -1,5 +1,5 @@
 {
-  "name": "hello-monai-bundle",
+  "name": "spleen-bundle",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {
