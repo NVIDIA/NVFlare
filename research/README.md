@@ -12,7 +12,7 @@ Each research project should create a sub directory with following requirements
 
 * sub directory name must be in ASCII string and no longer than 35 characters long
 * Each project should include
-  * README.MD -- document must include
+  * README.md -- document must include
     * objective 
     * background
     * description
@@ -40,6 +40,6 @@ sample_research$
                    └── custom
                         └── sample_executor.py
            └── meta.json
-└── README.MD
+└── README.md
 └── license.txt
 ```
