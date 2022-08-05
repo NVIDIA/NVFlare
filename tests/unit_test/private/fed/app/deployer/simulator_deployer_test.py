@@ -25,8 +25,7 @@ class MyTestCase(unittest.TestCase):
     def _create_parser(self):
         parser = argparse.ArgumentParser()
         parser.add_argument("job_folder")
-        parser.add_argument("--data_path", "-i", type=str, help="Input data_path")
-        parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+        parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
         parser.add_argument("--clients", "-n", type=int, help="number of clients", required=True)
         parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
 
@@ -39,7 +38,7 @@ class MyTestCase(unittest.TestCase):
             workspace = tempfile.mkdtemp()
             os.makedirs(os.path.join(workspace, 'transfer'))
             parser = self._create_parser()
-            args = parser.parse_args(['job_folder', '-m' + workspace, '-n 2', '-t 1'])
+            args = parser.parse_args(['job_folder', '-o' + workspace, '-n 2', '-t 1'])
             _, server = self.deployer.create_fl_server(args)
             assert isinstance(server, SimulatorServer)
 
@@ -50,6 +49,6 @@ class MyTestCase(unittest.TestCase):
         workspace = tempfile.mkdtemp()
         os.makedirs(os.path.join(workspace, 'transfer'))
         parser = self._create_parser()
-        args = parser.parse_args(['job_folder', '-m' + workspace, '-n 2', '-t 1'])
+        args = parser.parse_args(['job_folder', '-o' + workspace, '-n 2', '-t 1'])
         client = self.deployer.create_fl_client("client0", args)
         assert isinstance(client, FederatedClient)

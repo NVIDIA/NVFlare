@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import shutil
+import tempfile
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.utils.common_utils import get_open_ports
@@ -30,9 +32,10 @@ class SimulatorDeploy(ServerDeployer):
     def __init__(self):
         super().__init__()
         self.open_ports = get_open_ports(2)
+        self.admin_storage = tempfile.mkdtemp()
 
     def create_fl_server(self, args, secure_train=False):
-        simulator_server = self._create_simulator_server_config()
+        simulator_server = self._create_simulator_server_config(self.admin_storage)
 
         wait_after_min_clients = simulator_server.get("wait_after_min_clients", 10)
         heart_beat_timeout = 600
@@ -105,7 +108,7 @@ class SimulatorDeploy(ServerDeployer):
 
         return admin_agent
 
-    def _create_simulator_server_config(self):
+    def _create_simulator_server_config(self, admin_storage):
         simulator_server = {
             "name": "simulator",
             "service": {
@@ -121,7 +124,7 @@ class SimulatorDeploy(ServerDeployer):
             "heart_beat_timeout": 600,
             "num_server_workers": 4,
             "compression": "Gzip",
-            "admin_storage": "transfer",
+            "admin_storage": admin_storage,
             "download_job_url": "http://download.server.com/",
             "min_num_clients": 1,
         }
@@ -157,3 +160,7 @@ class SimulatorDeploy(ServerDeployer):
         }
 
         return client_config, build_ctx
+
+    def close(self):
+        shutil.rmtree(self.admin_storage)
+        super().close()

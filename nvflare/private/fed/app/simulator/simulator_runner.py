@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 import tempfile
+from pathlib import Path
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -61,7 +62,8 @@ class SimulatorRunner(FLComponent):
                 client_names.append("client" + str(i))
 
         log_config_file_path = os.path.join(self.args.workspace, "startup", "log.config")
-        assert os.path.isfile(log_config_file_path), "missing log config file {}".format(log_config_file_path)
+        if not os.path.isfile(log_config_file_path):
+            log_config_file_path = Path(__file__).parent / "resource/log.config"
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
         # self.logger = logging.getLogger()
