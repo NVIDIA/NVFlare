@@ -1,5 +1,4 @@
 import argparse
-import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -36,7 +35,6 @@ class MyTestCase(unittest.TestCase):
     def test_create_server(self):
         with patch("nvflare.private.fed.app.server.server_train.FedAdminServer") as mock_admin:
             workspace = tempfile.mkdtemp()
-            os.makedirs(os.path.join(workspace, 'transfer'))
             parser = self._create_parser()
             args = parser.parse_args(['job_folder', '-o' + workspace, '-n 2', '-t 1'])
             _, server = self.deployer.create_fl_server(args)
@@ -47,7 +45,6 @@ class MyTestCase(unittest.TestCase):
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
     def test_create_client(self, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
-        os.makedirs(os.path.join(workspace, 'transfer'))
         parser = self._create_parser()
         args = parser.parse_args(['job_folder', '-o' + workspace, '-n 2', '-t 1'])
         client = self.deployer.create_fl_client("client0", args)

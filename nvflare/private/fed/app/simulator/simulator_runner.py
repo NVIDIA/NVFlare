@@ -17,10 +17,10 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import Path
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -63,7 +63,7 @@ class SimulatorRunner(FLComponent):
 
         log_config_file_path = os.path.join(self.args.workspace, "startup", "log.config")
         if not os.path.isfile(log_config_file_path):
-            log_config_file_path = Path(__file__).parent / "resource/log.config"
+            log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
         # self.logger = logging.getLogger()
