@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import random
 import sys
 
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
+
+DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
 
 def get_package_command(cmd_type: str, poc_workspace: str, package_dir) -> str:
@@ -52,9 +55,25 @@ def get_nvflare_home() -> str:
     return nvflare_home
 
 
+def get_upload_dir(poc_workspace: str) -> str:
+    console_config_path = os.path.join(poc_workspace, f"{SC.FLARE_CONSOLE}/{SC.STARTUP}/fed_admin.json")
+    try:
+        with open(console_config_path, "r") as f:
+            console_config = json.load(f)
+            upload_dir = console_config[SC.FLARE_CONSOLE]["upload_dir"]
+    except IOError as e:
+        print(f"failed to load {console_config_path} {e}")
+        sys.exit(5)
+    except json.decoder.JSONDecodeError as e:
+        print(f"failed to load {console_config_path}, please double check the configuration {e}")
+        sys.exit(5)
+
+    return upload_dir
+
+
 def prepare_examples(poc_workspace: str):
     src = os.path.join(get_nvflare_home(), SC.EXAMPLES)
-    dst = os.path.join(poc_workspace, f"{SC.FLARE_CONSOLE}/{SC.TRANSFER}")
+    dst = os.path.join(poc_workspace, f"{SC.FLARE_CONSOLE}/{get_upload_dir(poc_workspace)}")
     print(f"link examples from {src} to {dst}")
     os.symlink(src, dst)
 
@@ -167,6 +186,7 @@ def clean_poc(poc_workspace: str):
 
     if is_poc_ready(poc_workspace):
         shutil.rmtree(poc_workspace, ignore_errors=True)
+        print(f"{poc_workspace} is removed")
     else:
         print(f"{poc_workspace} is not valid poc directory")
         exit(1)
@@ -175,10 +195,7 @@ def clean_poc(poc_workspace: str):
 def def_poc_parser(sub_cmd, prog_name: str):
     poc_parser = sub_cmd.add_parser("poc")
     poc_parser.add_argument(
-        "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients"
-    )
-    poc_parser.add_argument(
-        "-w", "--workspace", type=str, nargs="?", default=f"/tmp/{prog_name}/poc", help="poc workspace directory"
+        "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
     )
     poc_parser.add_argument(
         "-p",
@@ -213,14 +230,17 @@ def handle_poc_cmd(cmd_args):
     else:
         white_list = []
 
+    poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
+    if poc_workspace is None or len(poc_workspace.strip()) == 0:
+        poc_workspace = DEFAULT_WORKSPACE
     if cmd_args.start_poc:
-        start_poc(cmd_args.workspace, white_list)
+        start_poc(poc_workspace, white_list)
     elif cmd_args.prepare_poc:
-        prepare_poc(cmd_args.number_of_clients, cmd_args.workspace)
+        prepare_poc(cmd_args.number_of_clients, poc_workspace)
     elif cmd_args.stop_poc:
-        stop_poc(cmd_args.workspace, white_list)
+        stop_poc(poc_workspace, white_list)
     elif cmd_args.clean_poc:
-        clean_poc(cmd_args.workspace)
+        clean_poc(poc_workspace)
     else:
         print(f"unable to handle poc command:{cmd_args}")
         sys.exit(3)

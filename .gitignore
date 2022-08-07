@@ -46,6 +46,8 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+cov.xml
+unit_test.xml
 
 # Translations
 *.mo
@@ -141,3 +143,6 @@ variables.*
 *.hdf5
 
 wrksp/*
+
+# IDE
+*.iml

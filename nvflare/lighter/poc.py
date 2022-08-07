@@ -75,7 +75,9 @@ def get_dest_poc_dir(dest_poc):
 
 
 def generate_poc(num_clients, poc_workspace):
-    answer = input("This will delete poc folder in current directory and create a new one. Is it OK to proceed? (y/N) ")
+    answer = input(
+        f"This will delete poc folder in {poc_workspace} directory and create a new one. Is it OK to proceed? (y/N) "
+    )
     if answer.strip().upper() == "Y":
         dest_poc_folder = get_dest_poc_dir(poc_workspace)
         src_poc_folder = get_src_poc_dir()
