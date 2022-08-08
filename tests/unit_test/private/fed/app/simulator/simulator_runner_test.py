@@ -9,11 +9,10 @@ from unittest.mock import patch
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 
-class MyTestCase(unittest.TestCase):
+class TestSimulatorRunner(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.workspace = tempfile.mkdtemp()
-        os.makedirs(os.path.join(self.workspace, 'transfer'))
 
     def tearDown(self) -> None:
         super().tearDown()

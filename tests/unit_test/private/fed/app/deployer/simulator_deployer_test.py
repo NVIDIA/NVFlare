@@ -12,7 +12,7 @@ from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
 
 
-class MyTestCase(unittest.TestCase):
+class TestSimulatorDeploy(unittest.TestCase):
     def setUp(self) -> None:
         self.deployer = SimulatorDeploy()
         AuthorizationService.initialize(EmptyAuthorizer())
