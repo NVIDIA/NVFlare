@@ -65,7 +65,7 @@ class NPModelLocator(ModelLocator):
                 model_load_path = os.path.join(model_path, self.model_file_name)
                 np_data = None
                 try:
-                    np_data = np.load(model_load_path, allow_pickle=True)
+                    np_data = np.load(model_load_path, allow_pickle=False)
                     self.log_info(fl_ctx, f"Loaded {model_name} model from {model_load_path}.")
                 except Exception as e:
                     self.log_error(fl_ctx, f"Unable to load NP Model: {e}.")

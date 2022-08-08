@@ -9,3 +9,5 @@ psutil==5.9.1
 PyYAML==6.0
 six==1.16.0
 tenseal==0.3.0
+msgpack==1.0.3
+

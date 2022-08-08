@@ -14,7 +14,6 @@
 
 import logging
 import os
-import pickle
 import shutil
 import threading
 import time
@@ -36,6 +35,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     FLContextKey,
     MachineStatus,
+    ReservedKey,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
@@ -43,8 +43,11 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
+from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -293,6 +296,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
 
+        flare_decomposers.register()
+        common_decomposers.register()
+
     def get_current_model_meta_data(self):
         """Get the model metadata, which usually contains additional fields."""
         s = Struct()
@@ -403,7 +409,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             token = client.get_token()
 
             # engine = fl_ctx.get_engine()
-            shared_fl_ctx = pickle.loads(proto_to_bytes(request.context["fl_context"]))
+            shared_fl_ctx = fobs.loads(proto_to_bytes(request.context["fl_context"]))
             job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
             # fl_ctx.set_peer_context(shared_fl_ctx)
 
@@ -462,7 +468,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     }
                     command_conn.send(data)
 
-                    return_data = pickle.loads(command_conn.recv())
+                    return_data = fobs.loads(command_conn.recv())
                     task_name = return_data.get(ServerCommandKey.TASK_NAME)
                     task_id = return_data.get(ServerCommandKey.TASK_ID)
                     shareable = return_data.get(ServerCommandKey.SHAREABLE)
@@ -470,7 +476,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     fl_ctx.props.update(child_fl_ctx)
         except BaseException as e:
-            self.logger.info(f"Could not connect to server runner process: {e} - asked client to end the run")
+            self.logger.error(f"Could not connect to server runner process: {e} - asked client to end the run")
         return shareable, task_id, task_name
 
     def SubmitUpdate(self, request, context):
@@ -491,7 +497,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             else:
                 with self.lock:
                     shareable = Shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
-                    shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
+                    shared_fl_context = fobs.loads(proto_to_bytes(request.data.params["fl_context"]))
 
                     job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
                     if job_id not in self.engine.run_processes.keys():
@@ -517,11 +523,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     )
 
                     task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-                    shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
                     shareable.set_header(ServerCommandKey.FL_CLIENT, client)
                     shareable.set_header(ServerCommandKey.TASK_NAME, contribution_task_name)
+                    data = {ReservedKey.SHAREABLE: shareable, ReservedKey.SHARED_FL_CONTEXT: shared_fl_context}
 
-                    self._submit_update(shareable, shared_fl_context)
+                    self._submit_update(data, shared_fl_context)
 
                     # self.server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
@@ -535,7 +541,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             return summary_info
 
-    def _submit_update(self, shareable, shared_fl_context):
+    def _submit_update(self, submit_update_data, shared_fl_context):
         try:
             with self.engine.lock:
                 job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
@@ -543,11 +549,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 if command_conn:
                     data = {
                         ServerCommandKey.COMMAND: ServerCommandNames.SUBMIT_UPDATE,
-                        ServerCommandKey.DATA: shareable,
+                        ServerCommandKey.DATA: submit_update_data,
                     }
                     command_conn.send(data)
-        except BaseException:
-            self.logger.info("Could not connect to server runner process - asked client to end the run")
+        except BaseException as e:
+            self.logger.error(f"Could not connect to server runner process: {str(e)}", exc_info=True)
 
     def AuxCommunicate(self, request, context):
         """Handle auxiliary channel communication."""
@@ -565,7 +571,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             shareable = Shareable()
             shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
-            shared_fl_context = pickle.loads(proto_to_bytes(request.data["fl_context"]))
+            shared_fl_context = fobs.loads(proto_to_bytes(request.data["fl_context"]))
 
             job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
             if job_id not in self.engine.run_processes.keys():
@@ -616,8 +622,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     fl_ctx.props.update(child_fl_ctx)
                 else:
                     reply = make_reply(ReturnCode.ERROR)
-        except BaseException:
-            self.logger.info("Could not connect to server runner process - asked client to end the run")
+        except BaseException as e:
+            self.logger.error(f"Could not connect to server runner process: {str(e)} - asked client to end the run")
             reply = make_reply(ReturnCode.COMMUNICATION_ERROR)
 
         return reply
