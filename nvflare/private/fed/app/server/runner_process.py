@@ -24,8 +24,8 @@ from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
-from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.collective_command_agent import CollectiveCommandAgent
+from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
