@@ -12,8 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 from .client_package_checker import ClientPackageChecker
-from .nvflare_console_package_checker import NVFlareConsolePackageChecker
-from .overseer_package_checker import OverseerPackageChecker
-from .package_checker import PackageChecker
-from .server_package_checker import ServerPackageChecker
+from .utils import NVFlareConfig, NVFlareRole
+
+
+class NVFlareConsolePackageChecker(ClientPackageChecker):
+    NVF_CONFIG = NVFlareConfig.ADMIN
+    NVF_ROLE = NVFlareRole.ADMIN
+
+    def get_dry_run_command(self) -> str:
+        return os.path.join(self.package_path, "startup", "fl_admin.sh")

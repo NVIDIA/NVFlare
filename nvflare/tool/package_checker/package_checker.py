@@ -16,8 +16,10 @@ import os
 import signal
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from subprocess import TimeoutExpired
 
-from nvflare.tool.package_checker.utils import run_command_in_subprocess
+from nvflare.tool.package_checker.check_rule import CheckResult, CheckRule
+from nvflare.tool.package_checker.utils import run_command_in_subprocess, try_bind_address, try_write
 
 
 class PackageChecker(ABC):
@@ -26,36 +28,74 @@ class PackageChecker(ABC):
         self.problem_len = len("Problems")
         self.fix_len = len("How to fix")
         self.dry_run_process = None
+        self.dry_run_timeout = 5
+        self.package_path = None
+        self.rules = []
+
+    def init(self, package_path: str):
+        if not os.path.exists(package_path):
+            raise RuntimeError(f"Package path: {package_path} does not exist.")
+        self.package_path = package_path
+        self.init_rules(package_path)
 
     @abstractmethod
-    def should_be_checked(self, package_path) -> bool:
+    def init_rules(self, package_path: str):
+        pass
+
+    @abstractmethod
+    def should_be_checked(self) -> bool:
         """Check if this package should be checked by this checker."""
         pass
 
-    @abstractmethod
-    def check(self, package_path):
+    def check(self):
         """Checks if the package is runnable on the current system."""
-        pass
+        try:
+            for rule in self.rules:
+                if isinstance(rule, CheckRule):
+                    result: CheckResult = rule(self.package_path, data=None)
+                    if result.problem:
+                        self.add_report(result.problem, result.solution)
+                elif isinstance(rule, list):
+                    result = CheckResult()
+                    # ordered rules
+                    for r in rule:
+                        result = r(self.package_path, data=result.data)
+                        if result.problem:
+                            self.add_report(result.problem, result.solution)
+                            break
+
+            # check if server can run
+            if len(self.report[self.package_path]) == 0:
+                self.check_dry_run(timeout=self.dry_run_timeout)
+
+        except Exception as e:
+            self.add_report(
+                f"Exception happens in checking {e}, this package is not in correct format.",
+                "Please download a new package.",
+            )
 
     @abstractmethod
-    def dry_run(self, package_path):
+    def get_dry_run_command(self) -> str:
         pass
 
-    def check_package(self, package_path) -> bool:
-        self.check(package_path)
-        if self.report[package_path]:
+    def check_package(self) -> bool:
+        self.check()
+        if self.report[self.package_path]:
             return False
         return True
 
-    def stop_dry_run(self, package_path):
+    def dry_run(self):
+        self.dry_run_process = run_command_in_subprocess(self.get_dry_run_command())
+
+    def stop_dry_run(self):
         if self.dry_run_process:
             os.killpg(self.dry_run_process.pid, signal.SIGTERM)
-        process = run_command_in_subprocess(f"pkill -9 -f '{package_path}'")
+        process = run_command_in_subprocess(f"pkill -9 -f '{self.package_path}'")
         process.wait()
 
-    def add_report(self, package_path: str, problem_text: str, fix_text: str):
+    def add_report(self, problem_text: str, fix_text: str):
         lines = problem_text.splitlines()
-        self.report[package_path].append((problem_text, fix_text))
+        self.report[self.package_path].append((problem_text, fix_text))
         self.problem_len = max(self.problem_len, len(lines[0]))
         self.fix_len = max(self.fix_len, len(fix_text))
         for line in lines[1:]:
@@ -93,3 +133,31 @@ class PackageChecker(ABC):
                     )
             print("-" * total_width)
             print()
+
+    def check_bind_service_address(self, host: str, port: int, service_name: str = ""):
+        e = try_bind_address(host, int(port))
+        if e:
+            self.add_report(
+                f"Can't bind to address ({host}:{port}) for service {service_name}: {e}",
+                "Please check the DNS and port.",
+            )
+
+    def check_write_location(self, path_to_write: str, path_meaning: str = ""):
+        e = try_write(path_to_write)
+        if e:
+            self.add_report(
+                f"Can't write to {path_to_write} ({path_meaning}): {e}.",
+                "Please check the user permission.",
+            )
+
+    def check_dry_run(self, timeout: int):
+        command = self.get_dry_run_command()
+        process = run_command_in_subprocess(command)
+        try:
+            out, _ = process.communicate(timeout=timeout)
+            self.add_report(
+                f"Can't start successfully: \n{out}",
+                "Please check the error message of dry run.",
+            )
+        except TimeoutExpired:
+            os.killpg(process.pid, signal.SIGTERM)

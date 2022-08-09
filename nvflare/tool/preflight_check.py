@@ -16,8 +16,8 @@ import argparse
 import os
 
 from .package_checker import (
-    AdminConsolePackageChecker,
     ClientPackageChecker,
+    NVFlareConsolePackageChecker,
     OverseerPackageChecker,
     ServerPackageChecker,
 )
@@ -59,24 +59,26 @@ def main():
         OverseerPackageChecker(),
         ServerPackageChecker(),
         ClientPackageChecker(),
-        AdminConsolePackageChecker(),
+        NVFlareConsolePackageChecker(),
     ]
     for p in package_checkers:
         for name in package_to_check:
             package_path = os.path.abspath(os.path.join(package_root, name))
-            if p.should_be_checked(package_path):
-                result = p.check_package(package_path)
+            p.init(package_path=package_path)
+            if p.should_be_checked():
+                result = p.check_package()
                 if result and dry_run:
-                    p.dry_run(package_path)
+                    p.dry_run()
         if p.report:
             p.print_report()
 
     for p in package_checkers[::-1]:
         for name in package_to_check:
             package_path = os.path.abspath(os.path.join(package_root, name))
-            if p.should_be_checked(package_path):
+            p.init(package_path=package_path)
+            if p.should_be_checked():
                 if dry_run:
-                    p.stop_dry_run(package_path)
+                    p.stop_dry_run()
 
 
 if __name__ == "__main__":

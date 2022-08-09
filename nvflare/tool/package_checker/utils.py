@@ -29,6 +29,19 @@ from requests.adapters import HTTPAdapter
 from nvflare.fuel.hci.conn import ALL_END
 
 
+class NVFlareConfig:
+    OVERSEER = "gunicorn.conf.py"
+    SERVER = "fed_server.json"
+    CLIENT = "fed_client.json"
+    ADMIN = "fed_admin.json"
+
+
+class NVFlareRole:
+    SERVER = "server"
+    CLIENT = "client"
+    ADMIN = "admin"
+
+
 def try_write(path: str):
     try:
         created = False
@@ -91,23 +104,23 @@ def _parse_overseer_agent(d: dict, required_args: list):
 
 def _prepare_data(args: dict):
     data = dict(role=args["role"], project=args["project"])
-    if args["role"] == "server":
+    if args["role"] == NVFlareRole.SERVER:
         data["sp_end_point"] = ":".join([args["name"], args["fl_port"], args["admin_port"]])
     return data
 
 
-def get_ca_cert_file_name():
+def _get_ca_cert_file_name():
     return "rootCA.pem"
 
 
-def get_cert_file_name(role: str):
-    if role == "server":
+def _get_cert_file_name(role: str):
+    if role == NVFlareRole.SERVER:
         return "server.crt"
     return "client.crt"
 
 
-def get_prv_key_file_name(role: str):
-    if role == "server":
+def _get_prv_key_file_name(role: str):
+    if role == NVFlareRole.SERVER:
         return "server.key"
     return "client.key"
 
@@ -115,14 +128,14 @@ def get_prv_key_file_name(role: str):
 def check_overseer_running(startup: str, overseer_agent_conf: dict, role: str, retry: int = 3) -> Optional[Response]:
     """Checks if overseer is running."""
     required_args = ["overseer_end_point", "role", "project", "name"]
-    if role == "server":
+    if role == NVFlareRole.SERVER:
         required_args.extend(["fl_port", "admin_port"])
 
     overseer_agent_args = _parse_overseer_agent(overseer_agent_conf, required_args)
     session = _create_http_session(
-        ca_path=os.path.join(startup, get_ca_cert_file_name()),
-        cert_path=os.path.join(startup, get_cert_file_name(role)),
-        prv_key_path=os.path.join(startup, get_prv_key_file_name(role)),
+        ca_path=os.path.join(startup, _get_ca_cert_file_name()),
+        cert_path=os.path.join(startup, _get_cert_file_name(role)),
+        prv_key_path=os.path.join(startup, _get_prv_key_file_name(role)),
     )
     data = _prepare_data(overseer_agent_args)
     try_count = 0
@@ -158,10 +171,10 @@ def check_socket_server_running(startup: str, host: str, port: int) -> bool:
         ctx.verify_mode = ssl.CERT_REQUIRED
         ctx.check_hostname = False
 
-        ctx.load_verify_locations(os.path.join(startup, get_ca_cert_file_name()))
+        ctx.load_verify_locations(os.path.join(startup, _get_ca_cert_file_name()))
         ctx.load_cert_chain(
-            certfile=os.path.join(startup, get_cert_file_name("client")),
-            keyfile=os.path.join(startup, get_prv_key_file_name("client")),
+            certfile=os.path.join(startup, _get_cert_file_name("client")),
+            keyfile=os.path.join(startup, _get_prv_key_file_name("client")),
         )
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -175,16 +188,16 @@ def check_socket_server_running(startup: str, host: str, port: int) -> bool:
     return True
 
 
-def check_grpc_server_running(startup: str, host: str, port: int) -> bool:
-    with open(os.path.join(startup, get_ca_cert_file_name()), "rb") as f:
+def check_grpc_server_running(startup: str, host: str, port: int, token=None) -> bool:
+    with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
         trusted_certs = f.read()
-    with open(os.path.join(startup, get_prv_key_file_name("client")), "rb") as f:
+    with open(os.path.join(startup, _get_prv_key_file_name("client")), "rb") as f:
         private_key = f.read()
-    with open(os.path.join(startup, get_cert_file_name("client")), "rb") as f:
+    with open(os.path.join(startup, _get_cert_file_name("client")), "rb") as f:
         certificate_chain = f.read()
 
     call_credentials = grpc.metadata_call_credentials(
-        lambda context, callback: callback((("x-custom-token", self.client_name),), None)
+        lambda context, callback: callback((("x-custom-token", token),), None)
     )
     credentials = grpc.ssl_channel_credentials(
         certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
