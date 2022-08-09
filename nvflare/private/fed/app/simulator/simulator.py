@@ -24,7 +24,6 @@ from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("job_folder")
-    # parser.add_argument("--data_path", "-i", type=str, help="Input data_path")
     parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--clients", "-n", type=int, help="number of clients")
     parser.add_argument("--client_list", "-c", type=str, help="client names list")

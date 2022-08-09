@@ -20,7 +20,6 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
