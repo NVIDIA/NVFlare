@@ -16,6 +16,8 @@ import json
 import os
 import random
 import sys
+import subprocess
+from typing import List
 
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
@@ -124,8 +126,44 @@ def validate_poc_workspace(poc_workspace: str):
         sys.exit(2)
 
 
-def start_poc(poc_workspace: str, white_list: list = []):
-    print(f"start_poc at {poc_workspace}, white_list={white_list}")
+def validate_gpu_ids(gpu_ids: list, host_gpu_ids: list):
+    for gpu_id in gpu_ids:
+        if gpu_id not in host_gpu_ids:
+            print(f"gpu_id provided is not available in the host machine, available GPUs are {host_gpu_ids}")
+            sys.exit(7)
+
+
+def get_host_gpu_ids() -> List[int]:
+    process = subprocess.Popen(["nvidia-smi", "--list-gpus"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = process.communicate()
+    st = process.poll()
+    rc = process.returncode
+    if rc > 0:
+        print("Failed to get host gpu device Ids", result[0])
+        sys.exit(6)
+    else:
+        # 'GPU 0: NVIDIA GeForce RTX 3090 (UUID: GPU-xxxx-xxxx-xxxx-xxx)\n'
+        if result[0].startswith("GPU"):
+            gpus = result[0].split("\n")
+            gpu_ids = [gpu.split(":")[0].split(" ")[1] for gpu in gpus]
+        else:
+            gpu_ids = []
+
+    return gpu_ids
+
+
+def get_gpu_ids(cmd_args) -> List[int]:
+    host_gpu_ids = get_host_gpu_ids()
+    if type(cmd_args.gpu) == int and cmd_args.gpu < 0:
+        gpu_ids = host_gpu_ids
+    else:
+        gpu_ids = cmd_args.gpu
+        validate_gpu_ids(gpu_ids, host_gpu_ids)
+    return gpu_ids
+
+
+def start_poc(poc_workspace: str, gpu_ids: List[int], white_list: list = []):
+    print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, white_list={white_list}")
     validate_poc_workspace(poc_workspace)
     _run_poc(SC.CMD_START, poc_workspace, excluded=[SC.FLARE_OVERSEER], white_list=white_list)
 
@@ -136,12 +174,13 @@ def stop_poc(poc_workspace: str, white_list: list = []):
     _run_poc(SC.CMD_STOP, poc_workspace, excluded=[SC.FLARE_OVERSEER], white_list=white_list)
 
 
-def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_list: list = []):
+def _build_commands(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: list, white_list: list = []):
     """
     :param cmd_type: start/stop
     :param poc_workspace:  poc workspace directory path
-    :param white_list: whitelist, package name. If empty, include every package
+    :param gpu_ids: GPU device Ids. If empty then there is no GPU
     :param excluded: excluded package namae
+    :param white_list: whitelist, package name. If empty, include every package
     :return:
     """
 
@@ -171,8 +210,12 @@ def sync_process(cmd_path):
     subprocess.run(cmd_path.split(" "))
 
 
-def _run_poc(cmd_type: str, poc_workspace: str, excluded: list, white_list=[]):
-    package_commands = _build_commands(cmd_type, poc_workspace, excluded, white_list)
+def _run_poc(cmd_type: str,
+             poc_workspace: str,
+             gpu_ids: List[int],
+             excluded: list,
+             white_list=[]):
+    package_commands = _build_commands(cmd_type, poc_workspace, gpu_ids, excluded, white_list)
     for package_name, cmd_path in package_commands:
         print(f"{cmd_type}: package: {package_name}, executing {cmd_path}")
         if package_name == SC.FLARE_CONSOLE:
@@ -206,6 +249,14 @@ def def_poc_parser(sub_cmd, prog_name: str):
         help="package directory, default to all = all packages, only used for start/stop-poc commands when specified",
     )
     poc_parser.add_argument(
+        "-gpu",
+        "--gpu",
+        type=int,
+        nargs='*',
+        default="-1",
+        help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
+    )
+    poc_parser.add_argument(
         "--prepare", dest="prepare_poc", action="store_const", const=prepare_poc, help="prepare poc workspace"
     )
     poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
@@ -217,10 +268,10 @@ def def_poc_parser(sub_cmd, prog_name: str):
 
 def is_poc(cmd_args) -> bool:
     return (
-        hasattr(cmd_args, "start_poc")
-        or hasattr(cmd_args, "prepare_poc")
-        or hasattr(cmd_args, "stop_poc")
-        or hasattr(cmd_args, "clean_poc")
+            hasattr(cmd_args, "start_poc")
+            or hasattr(cmd_args, "prepare_poc")
+            or hasattr(cmd_args, "stop_poc")
+            or hasattr(cmd_args, "clean_poc")
     )
 
 
@@ -233,8 +284,10 @@ def handle_poc_cmd(cmd_args):
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
     if poc_workspace is None or len(poc_workspace.strip()) == 0:
         poc_workspace = DEFAULT_WORKSPACE
+
     if cmd_args.start_poc:
-        start_poc(poc_workspace, white_list)
+        gpu_ids = get_gpu_ids(cmd_args)
+        start_poc(poc_workspace, gpu_ids, white_list)
     elif cmd_args.prepare_poc:
         prepare_poc(cmd_args.number_of_clients, poc_workspace)
     elif cmd_args.stop_poc:
