@@ -15,7 +15,7 @@
 import threading
 import time
 
-from nvflare.apis.client_engine_spec import ClientEngineSpec, TaskAssignment
+from nvflare.apis.client_engine_spec import TaskAssignment
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
@@ -92,10 +92,6 @@ class ClientRunner(FLComponent):
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
-        engine = fl_ctx.get_engine()
-        if not isinstance(engine, ClientEngineSpec):
-            raise TypeError("engine must be ClientEngineSpec, but got {}".format(type(engine)))
-
         if not isinstance(task.data, Shareable):
             self.log_error(
                 fl_ctx, "got invalid task data in assignment: expect Shareable, but got {}".format(type(task.data))

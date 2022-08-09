@@ -44,7 +44,6 @@ class SimulatorDeploy(ServerDeployer):
 
         self.services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
-            min_num_clients=simulator_server.get("min_num_clients", 1),
             max_num_clients=simulator_server.get("max_num_clients", 100),
             wait_after_min_clients=wait_after_min_clients,
             cmd_modules=self.cmd_modules,
@@ -126,7 +125,6 @@ class SimulatorDeploy(ServerDeployer):
             "compression": "Gzip",
             "admin_storage": admin_storage,
             "download_job_url": "http://download.server.com/",
-            "min_num_clients": 1,
         }
         return simulator_server
 

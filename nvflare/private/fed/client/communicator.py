@@ -452,7 +452,7 @@ class Communicator:
                 self.should_stop = False
                 return
 
-        self.logger.error(f"Action: {action} grpc communication error.")
+        self.logger.error(f"Action: {action} grpc communication error: {grpc_error}.")
         if grpc.StatusCode.UNAVAILABLE == status_code:
             self.logger.error(f"Could not connect to server: {service.get('target')}\t {grpc_error.details()}")
             self.should_stop = True

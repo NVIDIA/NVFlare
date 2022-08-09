@@ -25,6 +25,7 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
+from nvflare.private.fed.server.collective_command_agent import CollectiveCommandAgent
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
@@ -39,6 +40,7 @@ def main():
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
     parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
+    parser.add_argument("--collective_command_port", type=str, help="collective command listen port", required=True)
     parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
@@ -67,6 +69,7 @@ def main():
     logger.info("Runner_process started.")
 
     command_agent = None
+    collective_command_agent = None
     try:
         os.chdir(args.workspace)
 
@@ -100,6 +103,9 @@ def main():
             command_agent = ServerCommandAgent(int(args.port))
             command_agent.start(server.engine)
 
+            collective_command_agent = CollectiveCommandAgent(int(args.collective_command_port))
+            collective_command_agent.start(server.engine)
+
             snapshot = None
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
@@ -109,6 +115,8 @@ def main():
         finally:
             if command_agent:
                 command_agent.shutdown()
+            if collective_command_agent:
+                collective_command_agent.shutdown()
             if deployer:
                 deployer.close()
 

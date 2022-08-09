@@ -61,6 +61,7 @@ from nvflare.widgets.widget import Widget, WidgetID
 
 from .admin import ClientReply
 from .client_manager import ClientManager
+from .collective_comm_waiter import CollectiveCommWaiter
 from .job_runner import JobRunner
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -205,7 +206,7 @@ class ServerEngine(ServerEngineInternalSpec):
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
 
-            open_ports = get_open_ports(2)
+            open_ports = get_open_ports(3)
             self._start_runner_process(
                 self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
             )
@@ -248,11 +249,9 @@ class ServerEngine(ServerEngineInternalSpec):
     def wait_for_complete(self, job_id):
         while True:
             try:
-                with self.lock:
-                    command_conn = self.get_command_conn(job_id)
-                    if command_conn:
-                        data = {ServerCommandKey.COMMAND: ServerCommandNames.HEARTBEAT, ServerCommandKey.DATA: {}}
-                        command_conn.send(data)
+                self.send_command_to_child_runner_process(
+                    job_id=job_id, command_name=ServerCommandNames.HEARTBEAT, command_data={}, return_result=False
+                )
                 time.sleep(1.0)
             except BaseException:
                 with self.lock:
@@ -291,6 +290,8 @@ class ServerEngine(ServerEngineInternalSpec):
             + str(listen_port)
             + " -c "
             + str(open_ports[0])
+            + " --collective_command_port "
+            + str(open_ports[2])
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="
@@ -307,6 +308,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         with self.lock:
             self.run_processes[run_number] = {
+                RunProcessKey.COLLECTIVE_LISTEN_PORT: open_ports[2],
+                RunProcessKey.COLLECTIVE_CONNECTION: None,
                 RunProcessKey.LISTEN_PORT: listen_port,
                 RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
@@ -346,14 +349,14 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.logger.info("Abort the server app run.")
 
+        status_message = ""
         try:
-            with self.lock:
-                command_conn = self.get_command_conn(job_id)
-                if command_conn:
-                    data = {ServerCommandKey.COMMAND: AdminCommandNames.ABORT, ServerCommandKey.DATA: {}}
-                    command_conn.send(data)
-                    status_message = command_conn.recv()
-                    self.logger.info(f"Abort server: {status_message}")
+            status_message = self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=AdminCommandNames.ABORT,
+                command_data={},
+            )
+            self.logger.info(f"Abort server status: {status_message}")
         except BaseException:
             with self.lock:
                 child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS, None)
@@ -364,7 +367,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.run_processes.pop(job_id)
 
         self.engine_info.status = MachineStatus.STOPPED
-        return ""
+        return status_message
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
@@ -443,12 +446,11 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_app_run_info(self, job_id) -> RunInfo:
         run_info = None
         try:
-            with self.lock:
-                command_conn = self.get_command_conn(job_id)
-                if command_conn:
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_RUN_INFO, ServerCommandKey.DATA: {}}
-                    command_conn.send(data)
-                    run_info = command_conn.recv()
+            run_info = self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=ServerCommandNames.GET_RUN_INFO,
+                command_data={},
+            )
         except BaseException:
             self.logger.error(f"Failed to get_app_run_info from run_{job_id}")
 
@@ -597,10 +599,38 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return results
 
+    def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
+        result = None
+        with self.lock:
+            command_conn = self.get_command_conn(job_id)
+            if command_conn:
+                data = {ServerCommandKey.COMMAND: command_name, ServerCommandKey.DATA: command_data}
+                command_conn.send(data)
+                if return_result:
+                    result = command_conn.recv()
+        return result
+
+    def get_collective_command_conn(self, job_id):
+        # this function need to be called with self.lock
+        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.COLLECTIVE_CONNECTION)
+
+        if not command_conn:
+            try:
+                port = self.run_processes.get(job_id, {}).get(RunProcessKey.COLLECTIVE_LISTEN_PORT)
+                command_waiter = CollectiveCommWaiter()
+                address = ("localhost", port)
+                command_conn = CommandClient(address, authkey="client process secret password".encode())
+                command_conn = ClientConnection(command_conn)
+                self.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION] = command_conn
+                self.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION_WAITER] = command_waiter
+            except Exception:
+                pass
+        return command_conn
+
     def get_command_conn(self, job_id):
         # this function need to be called with self.lock
         port = self.run_processes.get(job_id, {}).get(RunProcessKey.LISTEN_PORT)
-        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.CONNECTION, None)
+        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.CONNECTION)
 
         if not command_conn:
             try:
@@ -674,26 +704,24 @@ class ServerEngine(ServerEngineInternalSpec):
     def show_stats(self, job_id):
         stats = None
         try:
-            with self.lock:
-                command_conn = self.get_command_conn(job_id)
-                if command_conn:
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.SHOW_STATS, ServerCommandKey.DATA: {}}
-                    command_conn.send(data)
-                    stats = command_conn.recv()
+            stats = self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=ServerCommandNames.SHOW_STATS,
+                command_data={},
+            )
         except BaseException:
-            self.logger.error(f"Failed to get_stats from run_{job_id}")
+            self.logger.error(f"Failed to get_stats from JOB: {job_id}")
 
         return stats
 
     def get_errors(self, job_id):
         stats = None
         try:
-            with self.lock:
-                command_conn = self.get_command_conn(job_id)
-                if command_conn:
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_ERRORS, ServerCommandKey.DATA: {}}
-                    command_conn.send(data)
-                    stats = command_conn.recv()
+            stats = self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=ServerCommandNames.GET_ERRORS,
+                command_data={},
+            )
         except BaseException:
             self.logger.error(f"Failed to get_stats from run_{job_id}")
 
@@ -779,51 +807,3 @@ def server_shutdown(server, touch_file):
     finally:
         server.status = ServerStatus.SHUTDOWN
         sys.exit(2)
-
-
-def copy_new_server_properties(server, new_server):
-    # server.model_manager = new_server.model_manager
-    # server.model_saver = new_server.model_saver
-    server.builder = new_server.builder
-
-    server.wait_after_min_clients = new_server.wait_after_min_clients
-
-    server.outbound_filters = new_server.outbound_filters
-    server.inbound_filters = new_server.inbound_filters
-    server.cmd_modules = new_server.cmd_modules
-    server.processors = new_server.processors
-
-    # server.task_name = new_server.task_name
-    server.min_num_clients = new_server.min_num_clients
-    server.max_num_clients = new_server.max_num_clients
-    server.current_round = new_server.current_round
-    server.num_rounds = new_server.num_rounds
-    server.start_round = new_server.start_round
-
-    # server.heart_beat_timeout = new_server.heart_beat_timeout
-    # server.handlers = new_server.handlers
-
-    # clients = server.client_manager.clients
-    # server.client_manager = new_server.client_manager
-    # server.client_manager.clients = clients
-    server.client_manager.min_num_clients = new_server.client_manager.min_num_clients
-    server.client_manager.max_num_clients = new_server.client_manager.max_num_clients
-    server.client_manager.logger = new_server.client_manager.logger
-    server.client_manager.logger.disabled = False
-
-    server.reset_tokens()
-    server.contributed_clients.clear()
-    # server.accumulator.clear()
-
-    server.fl_ctx = new_server.fl_ctx
-
-    server.controller = new_server.controller
-    # server.model_aggregator = new_server.model_aggregator
-    # server.model_saver = new_server.model_saver
-    # server.shareable_generator = new_server.shareable_generator
-
-
-def set_up_run_config(server, conf):
-    server.heart_beat_timeout = conf.heartbeat_timeout
-    server.runner_config = conf.runner_config
-    server.handlers = conf.handlers

@@ -10,12 +10,26 @@ Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html
 Install additional requirements:
 
 ```
-pip3 install monai
+python3 -m pip install monai[nibabel]==0.9.0
+python3 -m pip install tqdm
+python3 -m pip install pytorch-ignite
 ```
 
 ### 2. Set up your FL workspace
 
 Follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to set up your POC ("proof of concept") workspace.
+The folder structure is like:
+```
+current_path/
+	poc/
+	hello-monai/
+```
+
+Please put the example into the `transfer` folder of `admin`:
+```
+mkdir -p poc/admin/transfer
+cp -rf hello-monai poc/admin/transfer
+```
 
 ### 3. Run the experiment
 

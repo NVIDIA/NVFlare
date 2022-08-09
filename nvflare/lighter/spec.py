@@ -102,6 +102,9 @@ class Builder(ABC):
     def get_kit_dir(self, participate: Participant, ctx: dict):
         return os.path.join(self.get_wip_dir(ctx), participate.name, "startup")
 
+    def get_transfer_dir(self, participate: Participant, ctx: dict):
+        return os.path.join(self.get_wip_dir(ctx), participate.name, "transfer")
+
     def get_state_dir(self, ctx: dict):
         return ctx.get("state_dir")
 

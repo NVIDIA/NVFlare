@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict
+
+from requests import Response
 
 from .fl_context import FLContext
 
@@ -30,24 +31,38 @@ class SP:
 
 
 class OverseerAgent(ABC):
+    def __init__(self):
+        self.overseer_info = {}
+
     def initialize(self, fl_ctx: FLContext):
         pass
 
+    @abstractmethod
     def set_secure_context(self, ca_path: str, cert_path: str = "", prv_key_path: str = ""):
         pass
 
+    @abstractmethod
     def start(self, update_callback=None, conditional_cb=False):
         pass
 
+    @abstractmethod
     def pause(self):
         pass
 
+    @abstractmethod
     def resume(self):
         pass
 
+    @abstractmethod
     def end(self):
         pass
 
+    @abstractmethod
+    def is_shutdown(self) -> bool:
+        """Return whether the agent receives a shutdown request."""
+        pass
+
+    @abstractmethod
     def get_primary_sp(self) -> SP:
         """Return current primary service provider.
 
@@ -56,16 +71,10 @@ class OverseerAgent(ABC):
         """
         pass
 
-    def promote_sp(self, sp_end_point, headers=None):
+    @abstractmethod
+    def promote_sp(self, sp_end_point, headers=None) -> Response:
         pass
 
-    def add_payload(self, payload: Dict[str, Any]):
-        pass
-
-    def get_overseer_status(self) -> Dict[str, Any]:
-        """
-
-        Returns:
-            Dict[str, Any]: [description]
-        """
+    @abstractmethod
+    def set_state(self, state) -> Response:
         pass

@@ -83,11 +83,11 @@ class TF2ModelPersistor(ModelPersistor):
         """
 
         if os.path.exists(self._pkl_save_path):
-            self.logger.info(f"Loading server weights")
+            self.logger.info("Loading server weights")
             with open(self._pkl_save_path, "rb") as f:
                 model_learnable = pickle.load(f)
         else:
-            self.logger.info(f"Initializing server model")
+            self.logger.info("Initializing server model")
             network = Net()
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             network.compile(optimizer="adam", loss=loss_fn, metrics=["accuracy"])
@@ -101,11 +101,10 @@ class TF2ModelPersistor(ModelPersistor):
             self._initialize(fl_ctx)
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
-        """
-            persist the Model object
+        """Saves model.
 
         Args:
-            model: Model object
+            model_learnable: ModelLearnable object
             fl_ctx: FLContext
         """
         model_learnable_info = {k: str(type(v)) for k, v in model_learnable.items()}

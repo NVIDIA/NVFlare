@@ -62,11 +62,11 @@ class CertBuilder(Builder):
             self.subject = self.root_cert.subject
             self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
 
-    def _build_root(self, subject):
+    def _build_root(self, subject, subject_org):
         if not self.persistent_state:
             pri_key, pub_key = self._generate_keys()
             self.issuer = subject
-            self.root_cert = self._generate_cert(subject, self.issuer, pri_key, pub_key, ca=True)
+            self.root_cert = self._generate_cert(subject, subject_org, self.issuer, pri_key, pub_key, ca=True)
             self.pri_key = pri_key
             self.pub_key = pub_key
             self.serialized_cert = serialize_cert(self.root_cert)
@@ -101,7 +101,7 @@ class CertBuilder(Builder):
             f.write(self.serialized_cert)
 
     def build(self, project, ctx):
-        self._build_root(project.name)
+        self._build_root(project.name, subject_org=None)
         ctx["root_cert"] = self.root_cert
         ctx["root_pri_key"] = self.pri_key
         overseer = project.get_participants_by_type("overseer")
@@ -120,7 +120,12 @@ class CertBuilder(Builder):
     def get_pri_key_cert(self, participant):
         pri_key, pub_key = self._generate_keys()
         subject = participant.subject
-        cert = self._generate_cert(subject, self.issuer, self.pri_key, pub_key)
+        subject_org = participant.org
+        if participant.type == "admin":
+            roles = participant.props.get("roles")
+        else:
+            roles = None
+        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, roles=roles)
         return pri_key, cert
 
     def _generate_keys(self):
@@ -128,8 +133,10 @@ class CertBuilder(Builder):
         pub_key = pri_key.public_key()
         return pri_key, pub_key
 
-    def _generate_cert(self, subject, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False):
-        x509_subject = self._x509_name(subject)
+    def _generate_cert(
+        self, subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, roles=None
+    ):
+        x509_subject = self._x509_name(subject, subject_org, roles)
         x509_issuer = self._x509_name(issuer)
         builder = (
             x509.CertificateBuilder()
@@ -160,10 +167,16 @@ class CertBuilder(Builder):
             )
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
-    def _x509_name(self, cn_name, org_name=None):
+    def _x509_name(self, cn_name, org_name=None, roles=None):
         name = [x509.NameAttribute(NameOID.COMMON_NAME, cn_name)]
         if org_name is not None:
             name.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, org_name))
+        if roles:
+            if isinstance(roles, list):
+                role_list = "|".join(roles)
+            else:
+                role_list = roles
+            name.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, role_list))
         return x509.Name(name)
 
     def finalize(self, ctx):

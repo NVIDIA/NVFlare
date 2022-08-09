@@ -17,6 +17,8 @@
 import copy
 import pickle
 import time
+from abc import ABC, abstractmethod
+from typing import List
 
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
@@ -25,26 +27,28 @@ from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.widgets.widget import WidgetID
 
 
-class CommandProcessor(object):
+class CommandProcessor(ABC):
     """The CommandProcessor is responsible for processing a command from parent process."""
 
+    @abstractmethod
     def get_command_name(self) -> str:
-        """Get command name that this processor will handle.
+        """Gets the command name that this processor will handle.
 
-        Returns: name of the command
-
+        Returns:
+            name of the command
         """
         pass
 
+    @abstractmethod
     def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the specified command.
+        """Processes the data.
 
         Args:
             data: process data
             fl_ctx: FLContext
 
-        Return: reply message
-
+        Return:
+            A reply message
         """
         pass
 
@@ -172,27 +176,12 @@ class SubmitUpdateCommand(CommandProcessor):
 
 
 class AuxCommunicateCommand(CommandProcessor):
-    """To implement the server GetTask command."""
+    """Server AuxCommunicate command."""
 
     def get_command_name(self) -> str:
-        """To get the command name.
-
-        Returns: ServerCommandNames.AUX_COMMUNICATE
-
-        """
         return ServerCommandNames.AUX_COMMUNICATE
 
     def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the abort command.
-
-        Args:
-            data: process data
-            fl_ctx: FLContext
-
-        Returns: task data
-
-        """
-
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
         topic = data.get_header(ServerCommandKey.TOPIC)
         shareable = data.get_header(ServerCommandKey.SHAREABLE)
@@ -290,7 +279,7 @@ class ByeCommand(CommandProcessor):
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
-    commands = [
+    commands: List[CommandProcessor] = [
         AbortCommand(),
         ByeCommand(),
         GetRunInfoCommand(),

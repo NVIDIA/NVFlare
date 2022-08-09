@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-from requests import Request, RequestException, Session, codes
+from requests import Request, RequestException, Response, Session, codes
 from requests.adapters import HTTPAdapter
 
 from nvflare.apis.overseer_spec import SP, OverseerAgent
@@ -36,6 +36,7 @@ class HttpOverseerAgent(OverseerAgent):
     ):
         if role not in ["server", "client", "admin"]:
             raise ValueError(f'Expect role in ["server", "client", "admin"] but got {role}')
+        super().__init__()
         self._role = role
         self._overseer_end_point = overseer_end_point
         self._project = project
@@ -52,7 +53,6 @@ class HttpOverseerAgent(OverseerAgent):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._retry_delay = 4
         self._asked_to_stop_retrying = False
-        self._overseer_info = {}
         self._update_callback = None
         self._conditional_cb = False
         if self._role == "server":
@@ -61,7 +61,7 @@ class HttpOverseerAgent(OverseerAgent):
 
     def _send(
         self, api_point, headers: Optional[Dict[str, Any]] = None, payload: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    ) -> Response:
         try_count = 0
         while not self._asked_to_stop_retrying:
             try:
@@ -69,9 +69,8 @@ class HttpOverseerAgent(OverseerAgent):
                 prepared = self._session.prepare_request(req)
                 resp = self._session.send(prepared)
                 return resp
-            except RequestException as e:
+            except RequestException:
                 try_count += 1
-                # self._logger.info(f"tried: {try_count} with exception: {e}")
                 time.sleep(self._retry_delay)
 
     def set_secure_context(self, ca_path: str, cert_path: str = "", prv_key_path: str = ""):
@@ -87,7 +86,7 @@ class HttpOverseerAgent(OverseerAgent):
         if self._ca_path:
             self._session.verify = self._ca_path
             self._session.cert = (self._cert_path, self._prv_key_path)
-        self.conditional_cb = conditional_cb
+        self._conditional_cb = conditional_cb
         if update_callback:
             self._update_callback = update_callback
         self._report_and_query.start()
@@ -109,7 +108,7 @@ class HttpOverseerAgent(OverseerAgent):
 
     def is_shutdown(self) -> bool:
         """Return whether the agent receives a shutdown request."""
-        return self._overseer_info.get("system") == "shutdown"
+        return self.overseer_info.get("system") == "shutdown"
 
     def get_primary_sp(self) -> SP:
         """Return current primary service provider.
@@ -119,11 +118,11 @@ class HttpOverseerAgent(OverseerAgent):
         """
         return self._psp
 
-    def promote_sp(self, sp_end_point, headers=None):
+    def promote_sp(self, sp_end_point, headers=None) -> Response:
         api_point = self._overseer_end_point + "/promote"
         return self._send(api_point, headers=None, payload={"sp_end_point": sp_end_point, "project": self._project})
 
-    def set_state(self, state):
+    def set_state(self, state) -> Response:
         api_point = self._overseer_end_point + "/state"
         return self._send(api_point, payload={"state": state})
 
@@ -132,7 +131,7 @@ class HttpOverseerAgent(OverseerAgent):
             self._update_callback(self)
 
     def _handle_ssid(self, ssid):
-        if not self.conditional_cb or self._last_service_session_id != ssid:
+        if not self._conditional_cb or self._last_service_session_id != ssid:
             self._last_service_session_id = ssid
             self._do_callback()
 
@@ -156,8 +155,8 @@ class HttpOverseerAgent(OverseerAgent):
             return
         if resp.status_code != codes.ok:
             return
-        self._overseer_info = resp.json()
-        psp = self._overseer_info.get("primary_sp")
+        self.overseer_info = resp.json()
+        psp = self.overseer_info.get("primary_sp")
         if psp:
             name, fl_port, admin_port = psp.get("sp_end_point").split(":")
             service_session_id = psp.get("service_session_id", "")
