@@ -36,7 +36,7 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
-from nvflare.private.fed.simulator.simulator_client_app_runner import SimulatorServerAppRunner
+from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -293,7 +293,7 @@ class SimulatorRunner(FLComponent):
 
             with client.run_manager.new_context() as fl_ctx:
                 client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-                client_runner.fire_event(EventType.SWAP_IN, fl_ctx)
+                self.fire_event(EventType.SWAP_IN, fl_ctx)
 
                 interval, task_processed = client_runner.run_one_task(fl_ctx)
                 self.logger.info(f"Finished one task run for client: {client.client_name}")
@@ -307,8 +307,7 @@ class SimulatorRunner(FLComponent):
     def release_last_run_resources(self, last_run_client_index):
         last_run_client = self.federated_clients[last_run_client_index]
         with last_run_client.run_manager.new_context() as fl_ctx:
-            client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-            client_runner.fire_event(EventType.SWAP_OUT, fl_ctx)
+            self.fire_event(EventType.SWAP_OUT, fl_ctx)
 
             fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
             last_run_client.run_manager = None
