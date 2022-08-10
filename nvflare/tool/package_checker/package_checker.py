@@ -19,7 +19,7 @@ from collections import defaultdict
 from subprocess import TimeoutExpired
 
 from nvflare.tool.package_checker.check_rule import CheckResult, CheckRule
-from nvflare.tool.package_checker.utils import run_command_in_subprocess, try_bind_address, try_write
+from nvflare.tool.package_checker.utils import run_command_in_subprocess, try_bind_address, try_write_dir
 
 
 class PackageChecker(ABC):
@@ -143,7 +143,7 @@ class PackageChecker(ABC):
             )
 
     def check_write_location(self, path_to_write: str, path_meaning: str = ""):
-        e = try_write(path_to_write)
+        e = try_write_dir(path_to_write)
         if e:
             self.add_report(
                 f"Can't write to {path_to_write} ({path_meaning}): {e}.",

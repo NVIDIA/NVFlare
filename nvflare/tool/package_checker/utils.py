@@ -42,7 +42,7 @@ class NVFlareRole:
     ADMIN = "admin"
 
 
-def try_write(path: str):
+def try_write_dir(path: str):
     try:
         created = False
         if not os.path.exists(path):
@@ -63,7 +63,7 @@ def try_bind_address(host: str, port: int):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind((host, port))
-    except socket.error as e:
+    except OSError as e:
         return e
     finally:
         sock.close()
@@ -156,7 +156,7 @@ def check_overseer_running(startup: str, overseer_agent_conf: dict, role: str, r
     return resp
 
 
-def check_response(resp: Response) -> bool:
+def check_response(resp: Optional[Response]) -> bool:
     if not resp:
         return False
     if resp.status_code != codes.ok:

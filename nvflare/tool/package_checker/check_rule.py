@@ -10,7 +10,7 @@ from nvflare.tool.package_checker.utils import (
     check_response,
     check_socket_server_running,
     try_bind_address,
-    try_write,
+    try_write_dir,
 )
 
 
@@ -85,7 +85,7 @@ class CheckWriting(CheckRule):
         path_to_write = self.get_filename_from_package(package_path)
         e = None
         if path_to_write:
-            e = try_write(path_to_write)
+            e = try_write_dir(path_to_write)
         if e:
             return CheckResult(
                 f"Can't write to {path_to_write}: {e}.",
