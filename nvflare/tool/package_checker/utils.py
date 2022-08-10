@@ -20,7 +20,7 @@ import ssl
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import grpc
 from requests import Request, RequestException, Response, Session, codes
@@ -89,13 +89,13 @@ def _send_request(
     return resp
 
 
-def _parse_overseer_agent(d: dict, required_args: list):
+def parse_overseer_agent_args(overseer_agent_conf: dict, required_args: list):
     result = {}
-    overseer_agent_path = d.get("path")
+    overseer_agent_path = overseer_agent_conf.get("path")
     if overseer_agent_path != "nvflare.ha.overseer_agent.HttpOverseerAgent":
         raise Exception(f"overseer agent {overseer_agent_path} is not supported.")
     for k in required_args:
-        value = d.get("args", {}).get(k)
+        value = overseer_agent_conf.get("args", {}).get(k)
         if value is None:
             raise Exception(f"overseer agent missing arg '{k}'.")
         result[k] = value
@@ -125,13 +125,14 @@ def _get_prv_key_file_name(role: str):
     return "client.key"
 
 
-def check_overseer_running(startup: str, overseer_agent_conf: dict, role: str, retry: int = 3) -> Optional[Response]:
-    """Checks if overseer is running."""
-    required_args = ["overseer_end_point", "role", "project", "name"]
-    if role == NVFlareRole.SERVER:
-        required_args.extend(["fl_port", "admin_port"])
+def split_by_len(item, max_len):
+    return [item[ind : ind + max_len] for ind in range(0, len(item), max_len)]
 
-    overseer_agent_args = _parse_overseer_agent(overseer_agent_conf, required_args)
+
+def check_overseer_running(
+    startup: str, overseer_agent_args: dict, role: str, retry: int = 3
+) -> Tuple[Optional[Response], Optional[str]]:
+    """Checks if overseer is running."""
     session = _create_http_session(
         ca_path=os.path.join(startup, _get_ca_cert_file_name()),
         cert_path=os.path.join(startup, _get_cert_file_name(role)),
@@ -141,6 +142,7 @@ def check_overseer_running(startup: str, overseer_agent_conf: dict, role: str, r
     try_count = 0
     retry_delay = 1
     resp = None
+    err = None
     while try_count < retry:
         try:
             resp = _send_request(
@@ -150,10 +152,11 @@ def check_overseer_running(startup: str, overseer_agent_conf: dict, role: str, r
             )
             if resp:
                 break
-        except RequestException:
+        except RequestException as e:
             try_count += 1
             time.sleep(retry_delay)
-    return resp
+            err = str(e)
+    return resp, err
 
 
 def check_response(resp: Optional[Response]) -> bool:

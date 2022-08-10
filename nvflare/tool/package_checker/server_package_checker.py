@@ -78,11 +78,13 @@ class ServerPackageChecker(PackageChecker):
     def init_rules(self, package_path):
         self.dry_run_timeout = 3
         self.rules = [
-            CheckOverseerRunning(role=NVFlareRole.SERVER),
-            CheckAddressBinding(get_host_and_port_from_package=_get_grpc_host_and_port),
-            CheckAddressBinding(get_host_and_port_from_package=_get_admin_host_and_port),
-            CheckWriting(get_filename_from_package=_get_snapshot_storage_root),
-            CheckWriting(get_filename_from_package=_get_job_storage_root),
+            CheckOverseerRunning(name="Check overseer running", role=NVFlareRole.SERVER),
+            CheckAddressBinding(name="Check grpc port binding", get_host_and_port_from_package=_get_grpc_host_and_port),
+            CheckAddressBinding(
+                name="Check admin port binding", get_host_and_port_from_package=_get_admin_host_and_port
+            ),
+            CheckWriting(name="Check snapshot storage writable", get_filename_from_package=_get_snapshot_storage_root),
+            CheckWriting(name="Check job storage writable", get_filename_from_package=_get_job_storage_root),
         ]
 
     def should_be_checked(self) -> bool:
@@ -97,6 +99,8 @@ class ServerPackageChecker(PackageChecker):
             f" -m {self.package_path} -s {NVFlareConfig.SERVER}"
             " --set secure_train=false config_folder=config"
         )
+        self.snapshot_storage_root = _get_snapshot_storage_root(self.package_path)
+        self.job_storage_root = _get_job_storage_root(self.package_path)
         return command
 
     def stop_dry_run(self):

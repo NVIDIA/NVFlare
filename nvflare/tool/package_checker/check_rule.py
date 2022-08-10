@@ -9,19 +9,25 @@ from nvflare.tool.package_checker.utils import (
     check_overseer_running,
     check_response,
     check_socket_server_running,
+    parse_overseer_agent_args,
     try_bind_address,
     try_write_dir,
 )
 
+CHECK_PASSED = "PASSED"
+
 
 class CheckResult:
     def __init__(self, problem="", solution="", data=None):
-        self.data = data
         self.problem = problem
         self.solution = solution
+        self.data = data
 
 
 class CheckRule(ABC):
+    def __init__(self, name):
+        self.name = name
+
     @abstractmethod
     def __call__(self, package_path: str, data) -> CheckResult:
         """Returns problem and solution.
@@ -33,7 +39,8 @@ class CheckRule(ABC):
 
 
 class CheckOverseerRunning(CheckRule):
-    def __init__(self, role: str):
+    def __init__(self, name: str, role: str):
+        super().__init__(name)
         if role not in [NVFlareRole.SERVER, NVFlareRole.CLIENT, NVFlareRole.ADMIN]:
             raise RuntimeError(f"role {role} is not supported.")
         self.role = role
@@ -56,14 +63,28 @@ class CheckOverseerRunning(CheckRule):
         else:
             overseer_agent_conf = fed_config["overseer_agent"]
 
-        resp = check_overseer_running(startup=startup, overseer_agent_conf=overseer_agent_conf, role=self.role)
-        if not check_response(resp):
-            return CheckResult("Can't connect to overseer", "Please check if overseer is up.")
-        return CheckResult("", "", resp)
+        required_args = ["overseer_end_point", "role", "project", "name"]
+        if self.role == NVFlareRole.SERVER:
+            required_args.extend(["fl_port", "admin_port"])
+
+        overseer_agent_args = parse_overseer_agent_args(overseer_agent_conf, required_args)
+        resp, err = check_overseer_running(startup=startup, overseer_agent_args=overseer_agent_args, role=self.role)
+        if err:
+            return CheckResult(
+                f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']}): {err}",
+                "Please check if overseer is up or certificates are correct.",
+            )
+        elif not check_response(resp):
+            return CheckResult(
+                f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']})",
+                "Please check if overseer is up or certificates are correct.",
+            )
+        return CheckResult(CHECK_PASSED, "N/A", resp)
 
 
 class CheckAddressBinding(CheckRule):
-    def __init__(self, get_host_and_port_from_package):
+    def __init__(self, name: str, get_host_and_port_from_package):
+        super().__init__(name)
         self.get_host_and_port_from_package = get_host_and_port_from_package
 
     def __call__(self, package_path, data=None):
@@ -74,11 +95,12 @@ class CheckAddressBinding(CheckRule):
                 f"Can't bind to address ({host}:{port}): {e}",
                 "Please check the DNS and port.",
             )
-        return CheckResult("", "")
+        return CheckResult(CHECK_PASSED, "N/A")
 
 
 class CheckWriting(CheckRule):
-    def __init__(self, get_filename_from_package):
+    def __init__(self, name: str, get_filename_from_package):
+        super().__init__(name)
         self.get_filename_from_package = get_filename_from_package
 
     def __call__(self, package_path, data=None):
@@ -91,7 +113,7 @@ class CheckWriting(CheckRule):
                 f"Can't write to {path_to_write}: {e}.",
                 "Please check the user permission.",
             )
-        return CheckResult("", "")
+        return CheckResult(CHECK_PASSED, "N/A")
 
 
 class CheckPrimarySPInResponse(CheckRule):
@@ -103,7 +125,7 @@ class CheckPrimarySPInResponse(CheckRule):
                 f"Can't get primary service provider ({psp}) from overseer",
                 "Please check if server is up.",
             )
-        return CheckResult("", "", psp)
+        return CheckResult(CHECK_PASSED, "N/A", psp)
 
 
 class CheckSPSocketServerAvailable(CheckRule):
@@ -116,7 +138,7 @@ class CheckSPSocketServerAvailable(CheckRule):
                 f"Can't connect to primary service provider's ({sp_end_point}) socketserver",
                 "Please check if server is up.",
             )
-        return CheckResult("", "", data)
+        return CheckResult(CHECK_PASSED, "N/A", data)
 
 
 class CheckSPGRPCServerAvailable(CheckRule):
@@ -130,4 +152,4 @@ class CheckSPGRPCServerAvailable(CheckRule):
                 f"Can't connect to primary service provider's ({sp_end_point}) grpc server",
                 "Please check if server is up.",
             )
-        return CheckResult("", "", data)
+        return CheckResult(CHECK_PASSED, "N/A", data)

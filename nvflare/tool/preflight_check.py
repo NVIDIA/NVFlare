@@ -26,26 +26,20 @@ from .package_checker import (
 def main():
     parser = argparse.ArgumentParser("nvflare preflight check")
     parser.add_argument("--package_root", required=True, type=str, help="root folder of all the packages")
-    parser.add_argument(
-        "--packages",
-        type=str,
-        nargs="*",
-        help="package to be checked, if not specified, will check all the package inside the root.",
-    )
+    parser.add_argument("--packages", type=str, nargs="*")
     args = parser.parse_args()
     package_root = args.package_root
-    dry_run = False
 
     if not os.path.isdir(package_root):
         print(f"package_root {package_root} is not a valid directory.")
         return
 
     if not args.packages:
-        print("Did not specify any package. will run a full check including a dry run.")
-        dry_run = True
+        print("Did not specify any package.")
+        return
 
     package_names = list(os.listdir(package_root))
-    package_to_check = args.packages if args.packages is not None else package_names
+    package_to_check = args.packages
     for name in package_to_check:
         if name not in package_names:
             print(f"package name {name} is not in the specified root dir.")
@@ -66,19 +60,8 @@ def main():
             package_path = os.path.abspath(os.path.join(package_root, name))
             p.init(package_path=package_path)
             if p.should_be_checked():
-                result = p.check_package()
-                if result and dry_run:
-                    p.dry_run()
-        if p.report:
-            p.print_report()
-
-    for p in package_checkers[::-1]:
-        for name in package_to_check:
-            package_path = os.path.abspath(os.path.join(package_root, name))
-            p.init(package_path=package_path)
-            if p.should_be_checked():
-                if dry_run:
-                    p.stop_dry_run()
+                p.check()
+        p.print_report()
 
 
 if __name__ == "__main__":

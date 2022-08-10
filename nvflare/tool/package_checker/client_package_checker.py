@@ -42,10 +42,10 @@ class ClientPackageChecker(PackageChecker):
         self.dry_run_timeout = 5
         self.rules = [
             [
-                CheckOverseerRunning(role=self.NVF_ROLE),
-                CheckPrimarySPInResponse(),
-                CheckSPSocketServerAvailable(),
-                CheckSPGRPCServerAvailable(),
+                CheckOverseerRunning(name="Check overseer running", role=self.NVF_ROLE),
+                CheckPrimarySPInResponse(name="Check primary service provider available"),
+                CheckSPSocketServerAvailable(name="Check SP's socket server available"),
+                CheckSPGRPCServerAvailable(name="Check SP's GRPC server available"),
             ]
         ]
 

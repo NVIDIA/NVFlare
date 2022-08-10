@@ -58,19 +58,15 @@ class TestUtils:
         assert check_response(resp=resp) == result
 
     def test_check_overseer_running(self):
-        with patch("nvflare.tool.package_checker.utils._parse_overseer_agent") as mock1:
-            mock1.return_value = {"overseer_end_point": "random_place"}
-            with patch("nvflare.tool.package_checker.utils._create_http_session") as mock2:
-                mock2.return_value = None
-                with patch("nvflare.tool.package_checker.utils._prepare_data") as mock3:
-                    mock3.return_value = None
-                    with patch("nvflare.tool.package_checker.utils._send_request") as mock4:
-                        mock4.return_value = _mock_response(200)
-                        assert (
-                            check_overseer_running(
-                                startup="test",
-                                overseer_agent_conf={},
-                                role="",
-                            ).status_code
-                            == 200
-                        )
+        with patch("nvflare.tool.package_checker.utils._create_http_session") as mock2:
+            mock2.return_value = None
+            with patch("nvflare.tool.package_checker.utils._prepare_data") as mock3:
+                mock3.return_value = None
+                with patch("nvflare.tool.package_checker.utils._send_request") as mock4:
+                    mock4.return_value = _mock_response(200)
+                    resp, err = check_overseer_running(
+                        startup="test",
+                        overseer_agent_args={"overseer_end_point": "random"},
+                        role="",
+                    )
+                    assert resp.status_code == 200
