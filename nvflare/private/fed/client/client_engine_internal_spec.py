@@ -69,7 +69,6 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         job_id: str,
         allocated_resource: dict = None,
         token: str = None,
-        resource_consumer=None,
         resource_manager=None,
     ) -> str:
         """Starts the app for the specified run.
@@ -78,7 +77,6 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
             job_id: job_id
             allocated_resource: allocated resource
             token: token
-            resource_consumer: resource consumer
             resource_manager: resource manager
 
         Returns:

@@ -12,18 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import collections
-import json
-
-
-def update(d, u):
-    for k, v in u.items():
-        if isinstance(v, collections.Mapping):
-            d[k] = update(d.get(k, {}), v)
-        else:
-            d[k] = v
-    return d
-
 
 def update_configs_with_envs(configs, env):
     for k, v in configs.items():
@@ -49,8 +37,3 @@ def extract_first_level_primitive(d):
         if type(v) in (int, float, bool, str):
             result[k] = v
     return result
-
-
-def save_to_json(data, path, sort_keys=False, indent=None):
-    with open(path, "w") as f:
-        json.dump(data, f, sort_keys=sort_keys, indent=indent)

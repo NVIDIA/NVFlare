@@ -15,14 +15,14 @@
 import time
 
 
-def time_to_string(t):
+def time_to_string(t) -> str:
     """Convert time into a formatted string.
 
     Args:
         t: input time string in seconds since the Epoch
 
-    Returns: formatted time string
-
+    Returns:
+        formatted time string
     """
     if t is None:
         return "N/A"
