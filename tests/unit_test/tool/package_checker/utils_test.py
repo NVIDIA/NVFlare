@@ -14,6 +14,7 @@
 
 import os
 import shutil
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,13 +33,14 @@ def _mock_response(code) -> Response:
 
 class TestUtils:
     def test_try_write_exist(self):
-        path = "hello"
-        os.mkdir(path)
-        assert try_write_dir(path) is None
-        shutil.rmtree(path)
+        tempdir = tempfile.mkdtemp()
+        assert try_write_dir(tempdir) is None
+        shutil.rmtree(tempdir)
 
     def test_try_write_non_exist(self):
-        assert try_write_dir("hello") is None
+        tempdir = tempfile.mkdtemp()
+        shutil.rmtree(tempdir)
+        assert try_write_dir(tempdir) is None
 
     def test_try_write_exception(self):
         with patch("os.path.exists", side_effect=OSError("Test")):
