@@ -44,8 +44,8 @@ class TestSimulatorRunner(unittest.TestCase):
 
         expected_clients = ["sit-1", "site-2"]
         client_names = []
-        for client in runner.federated_clients:
-            client_names.append(client.client_name)
+        for client in runner.client_names:
+            client_names.append(client)
         assert client_names.sort() == expected_clients.sort()
 
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
@@ -63,8 +63,8 @@ class TestSimulatorRunner(unittest.TestCase):
 
         expected_clients = ["sit-1"]
         client_names = []
-        for client in runner.federated_clients:
-            client_names.append(client.client_name)
+        for client in runner.client_names:
+            client_names.append(client)
         assert client_names.sort() == expected_clients.sort()
 
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")

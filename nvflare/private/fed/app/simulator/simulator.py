@@ -35,7 +35,8 @@ def parse_args():
 
 if __name__ == "__main__":
     """
-    This is the main program when starting the NVIDIA FLARE server process.
+    This is the main program when running the NVFlare Simulator. Use the Flare simulator API,
+    create the SimulatorRunner object, do a setup(), then calls the run().
     """
 
     if sys.version_info >= (3, 9):
