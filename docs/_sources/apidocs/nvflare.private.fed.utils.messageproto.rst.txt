@@ -1,0 +1,7 @@
+nvflare.private.fed.utils.messageproto module
+=============================================
+
+.. automodule:: nvflare.private.fed.utils.messageproto
+   :members:
+   :undoc-members:
+   :show-inheritance:

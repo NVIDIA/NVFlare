@@ -1,0 +1,314 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Highlights &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="NVIDIA FLARE Overview" href="flare_overview.html" />
+    <link rel="prev" title="NVIDIA FLARE" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Highlights</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#new-in-nvidia-flare-2-1-0">New in NVIDIA FLARE 2.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#nvidia-flare-key-features">NVIDIA FLARE Key Features</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#training-workflows">Training workflows</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#evaluation-workflows">Evaluation workflows</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#privacy-preservation-algorithms">Privacy preservation algorithms</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#learning-algorithms">Learning algorithms</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#examples">Examples</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>Highlights</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/highlights.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="highlights">
+<span id="id1"></span><h1>Highlights<a class="headerlink" href="#highlights" title="Permalink to this heading">¶</a></h1>
+<section id="new-in-nvidia-flare-2-1-0">
+<h2>New in NVIDIA FLARE 2.1.0<a class="headerlink" href="#new-in-nvidia-flare-2-1-0" title="Permalink to this heading">¶</a></h2>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="programming_guide/high_availability.html#high-availability"><span class="std std-ref">High Availability (HA)</span></a> supports multiple FL Servers and automatically cuts
+over to another server when the currently active server becomes unavailable.</p></li>
+<li><p><a class="reference internal" href="user_guide/job.html#multi-job"><span class="std std-ref">Multi-Job Execution</span></a> supports resource-based multi-job execution by allowing for concurrent runs
+provided resources required by the jobs are satisfied.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="nvidia-flare-key-features">
+<h2>NVIDIA FLARE Key Features<a class="headerlink" href="#nvidia-flare-key-features" title="Permalink to this heading">¶</a></h2>
+<p>NVIDIA FLARE provides a set of commonly-used algorithms to illustrate best practices and allow simplified development of
+common Federated Learning Workflows.</p>
+<section id="training-workflows">
+<h3>Training workflows<a class="headerlink" href="#training-workflows" title="Permalink to this heading">¶</a></h3>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="programming_guide/controllers/scatter_and_gather_workflow.html#scatter-and-gather-workflow"><span class="std std-ref">Scatter and Gather (SAG)</span></a> is a reference implementation of the default
+workflow in previous versions of NVIDIA FLARE.  SAG implements a hub and spoke model in which the central server
+Controller broadcasts Tasks to be Executed on the client Workers.  After the client Executors return their Task’s
+Shareable result (e.g., client model weights from DL training), the server Controller aggregates the results, for
+example with a federated weighted average.</p></li>
+<li><p><a class="reference internal" href="programming_guide/controllers/cyclic_workflow.html#cyclic"><span class="std std-ref">Cyclic</span></a> is a reference implementation of a cyclic workflow, in which the central server issues a
+series of tasks to be scheduled for cyclic execution among a group of clients.  The client worker Executor passes
+the Task’s Shareable result to the next client for further execution, and so on, until the final client returns
+the final Shareable to the server.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="evaluation-workflows">
+<h3>Evaluation workflows<a class="headerlink" href="#evaluation-workflows" title="Permalink to this heading">¶</a></h3>
+<blockquote>
+<div><ul>
+<li><p><a class="reference internal" href="programming_guide/controllers/cross_site_model_evaluation.html#cross-site-model-evaluation"><span class="std std-ref">Cross site model validation</span></a> is a workflow that allows validation of each
+client model and the server global model against each client dataset.</p>
+<p>Data is not shared, rather the collection of models is distributed to each client site to run local validation.</p>
+<p>The results of local validation are collected by the server to construct an all-to-all matrix of
+model performance vs. client dataset.</p>
+</li>
+<li><p><a class="reference internal" href="programming_guide/controllers/cross_site_model_evaluation.html#cross-site-model-evaluation"><span class="std std-ref">Global model evaluation</span></a> is a subset of cross-site model validation in which
+the server’s global model is distributed to each client for evaluation on the client’s local dataset.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="privacy-preservation-algorithms">
+<h3>Privacy preservation algorithms<a class="headerlink" href="#privacy-preservation-algorithms" title="Permalink to this heading">¶</a></h3>
+<p>Privacy preserving algorithms in NVIDIA FLARE are implemented as <a class="reference internal" href="programming_guide/filters.html#filters-for-privacy"><span class="std std-ref">filters</span></a>
+that can be applied as data is sent or received between peers.</p>
+<blockquote>
+<div><ul>
+<li><p>Differential privacy:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Exclude specific variables (<a class="reference internal" href="apidocs/nvflare.app_common.filters.exclude_vars.html#nvflare.app_common.filters.exclude_vars.ExcludeVars" title="nvflare.app_common.filters.exclude_vars.ExcludeVars"><code class="xref py py-class docutils literal notranslate"><span class="pre">ExcludeVars</span></code></a>)</p></li>
+<li><p>truncate weights by percentile (<a class="reference internal" href="apidocs/nvflare.app_common.filters.percentile_privacy.html#nvflare.app_common.filters.percentile_privacy.PercentilePrivacy" title="nvflare.app_common.filters.percentile_privacy.PercentilePrivacy"><code class="xref py py-class docutils literal notranslate"><span class="pre">PercentilePrivacy</span></code></a>)</p></li>
+<li><p>apply sparse vector techniques (<a class="reference internal" href="apidocs/nvflare.app_common.filters.svt_privacy.html#nvflare.app_common.filters.svt_privacy.SVTPrivacy" title="nvflare.app_common.filters.svt_privacy.SVTPrivacy"><code class="xref py py-class docutils literal notranslate"><span class="pre">SVTPrivacy</span></code></a>).</p></li>
+</ul>
+</div></blockquote>
+</li>
+<li><p>Homomorphic encryption: NVIDIA FLARE provides homomorphic encryption and decryption
+filters that can be used by clients to encrypt Shareable data before sending it to a peer.</p>
+<p>The server does not have a decryption key but using HE can operate on the encrypted data to aggregate
+and return the encrypted aggregated data to clients.</p>
+<p>Clients can then decrypt the data with their local key and continue local training.</p>
+</li>
+</ul>
+</div></blockquote>
+</section>
+<section id="learning-algorithms">
+<h3>Learning algorithms<a class="headerlink" href="#learning-algorithms" title="Permalink to this heading">¶</a></h3>
+<blockquote>
+<div><ul class="simple">
+<li><p>Fed average (implemented through the <a class="reference internal" href="programming_guide/controllers/scatter_and_gather_workflow.html#scatter-and-gather-workflow"><span class="std std-ref">Scatter and Gather Workflow</span></a>) - In the federated averaging workflow,
+a set of initial weights is distributed to client Workers who perform local training.  After local training,
+clients return their local weights as a Shareables that are aggregated (averaged).  This new set of global average
+weights is redistributed to clients and the process repeats for the specified number of rounds.</p></li>
+<li><p><a class="reference external" href="https://arxiv.org/abs/1812.06127">FedProx</a> (example configuration can be found in cifar10_fedprox of <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">CIFAR-10 example</a>) -
+implements a <a class="reference internal" href="apidocs/nvflare.app_common.pt.pt_fedproxloss.html#nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss" title="nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss"><code class="xref py py-class docutils literal notranslate"><span class="pre">Loss</span> <span class="pre">function</span></code></a> to penalize a client’s
+local weights based on deviation from the global model.</p></li>
+<li><p><a class="reference external" href="https://arxiv.org/abs/2003.00295">FedOpt</a> (example configuration can be found in cifar10_fedopt of <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">CIFAR-10 example</a>) -
+implements a <a class="reference internal" href="apidocs/nvflare.app_common.pt.pt_fedopt.html#nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator" title="nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ShareableGenerator</span></code></a> that
+can use a specified Optimizer and Learning Rate Scheduler when updating the global model.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="examples">
+<h3>Examples<a class="headerlink" href="#examples" title="Permalink to this heading">¶</a></h3>
+<p>Nvidia FLARE provide a rich set of <a class="reference internal" href="example_applications.html#example-applications"><span class="std std-ref">example applications</span></a> to walk your through the whole
+process.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="NVIDIA FLARE" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="flare_overview.html" class="btn btn-neutral float-right" title="NVIDIA FLARE Overview" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

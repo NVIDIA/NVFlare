@@ -1,0 +1,520 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.client.admin_commands &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.client.admin_commands</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.client.admin_commands</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;FL Admin commands.&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">AdminCommandNames</span><span class="p">,</span> <span class="n">FLContextKey</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">ReservedHeaderKey</span><span class="p">,</span> <span class="n">Shareable</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.client.client_status</span> <span class="kn">import</span> <span class="n">get_status_message</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.info_collector</span> <span class="kn">import</span> <span class="n">InfoCollector</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.widget</span> <span class="kn">import</span> <span class="n">WidgetID</span>
+
+
+<div class="viewcode-block" id="CommandProcessor"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.CommandProcessor">[docs]</a><span class="k">class</span> <span class="nc">CommandProcessor</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The CommandProcessor is responsible for processing a command from parent process.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="CommandProcessor.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.CommandProcessor.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Get command name that this processor will handle.</span>
+
+<span class="sd">        Returns: name of the command</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="CommandProcessor.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.CommandProcessor.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the specified command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Return: reply message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div></div>
+
+
+<div class="viewcode-block" id="CheckStatusCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.CheckStatusCommand">[docs]</a><span class="k">class</span> <span class="nc">CheckStatusCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the check_status command.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="CheckStatusCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.CheckStatusCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get thee command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.CHECK_STATUSv</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">CHECK_STATUS</span></div>
+
+<div class="viewcode-block" id="CheckStatusCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.CheckStatusCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the check_status command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: status message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">federated_client</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">client</span>
+        <span class="k">return</span> <span class="n">get_status_message</span><span class="p">(</span><span class="n">federated_client</span><span class="o">.</span><span class="n">status</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="AbortCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AbortCommand">[docs]</a><span class="k">class</span> <span class="nc">AbortCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the abort command.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="AbortCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AbortCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get the command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.ABORT</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">ABORT</span></div>
+
+<div class="viewcode-block" id="AbortCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AbortCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the abort command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: abort command message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">client_runner</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">RUNNER</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">client_runner</span><span class="o">.</span><span class="n">abort</span><span class="p">()</span></div></div>
+
+
+<div class="viewcode-block" id="AbortTaskCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AbortTaskCommand">[docs]</a><span class="k">class</span> <span class="nc">AbortTaskCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the abort_task command.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="AbortTaskCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AbortTaskCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get the command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.ABORT_TASK</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">ABORT_TASK</span></div>
+
+<div class="viewcode-block" id="AbortTaskCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AbortTaskCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the abort_task command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: abort_task command message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">client_runner</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">RUNNER</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client_runner</span><span class="p">:</span>
+            <span class="n">client_runner</span><span class="o">.</span><span class="n">abort_task</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">None</span></div></div>
+
+
+<div class="viewcode-block" id="ShowStatsCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ShowStatsCommand">[docs]</a><span class="k">class</span> <span class="nc">ShowStatsCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the show_stats command.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ShowStatsCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ShowStatsCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get the command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.SHOW_STATS</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">SHOW_STATS</span></div>
+
+<div class="viewcode-block" id="ShowStatsCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ShowStatsCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the abort_task command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: show_stats command message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">collector</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_widget</span><span class="p">(</span><span class="n">WidgetID</span><span class="o">.</span><span class="n">INFO_COLLECTOR</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">collector</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;no info collector&quot;</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">collector</span><span class="p">,</span> <span class="n">InfoCollector</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;collector must be an instance of InfoCollector, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">collector</span><span class="p">)))</span>
+
+            <span class="n">result</span> <span class="o">=</span> <span class="n">collector</span><span class="o">.</span><span class="n">get_run_stats</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="s2">&quot;No stats info&quot;</span>
+        <span class="k">return</span> <span class="n">result</span></div></div>
+
+
+<div class="viewcode-block" id="ShowErrorsCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ShowErrorsCommand">[docs]</a><span class="k">class</span> <span class="nc">ShowErrorsCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the show_errors command.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ShowErrorsCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ShowErrorsCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get the command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.SHOW_ERRORS</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">SHOW_ERRORS</span></div>
+
+<div class="viewcode-block" id="ShowErrorsCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ShowErrorsCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the show_errors command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: show_errors command message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">collector</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_widget</span><span class="p">(</span><span class="n">WidgetID</span><span class="o">.</span><span class="n">INFO_COLLECTOR</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">collector</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;no info collector&quot;</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">collector</span><span class="p">,</span> <span class="n">InfoCollector</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;collector must be an instance of InfoCollector, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">collector</span><span class="p">)))</span>
+
+            <span class="n">result</span> <span class="o">=</span> <span class="n">collector</span><span class="o">.</span><span class="n">get_errors</span><span class="p">()</span>
+
+        <span class="c1"># CommandAgent is expecting data, could not be None</span>
+        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="s2">&quot;No Errors&quot;</span>
+        <span class="k">return</span> <span class="n">result</span></div></div>
+
+
+<div class="viewcode-block" id="ResetErrorsCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ResetErrorsCommand">[docs]</a><span class="k">class</span> <span class="nc">ResetErrorsCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the reset_errors command.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ResetErrorsCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ResetErrorsCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get the command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.RESET_ERRORS</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">RESET_ERRORS</span></div>
+
+<div class="viewcode-block" id="ResetErrorsCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ResetErrorsCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the reset_errors command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: reset_errors command message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">engine</span><span class="o">.</span><span class="n">reset_errors</span><span class="p">()</span></div></div>
+
+
+<div class="viewcode-block" id="AuxCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AuxCommand">[docs]</a><span class="k">class</span> <span class="nc">AuxCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the Aux communication command.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="AuxCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AuxCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get the command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.AUX_COMMAND</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">AUX_COMMAND</span></div>
+
+<div class="viewcode-block" id="AuxCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AuxCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the Aux communication command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: Aux communication command message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+
+        <span class="n">topic</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">ReservedHeaderKey</span><span class="o">.</span><span class="n">TOPIC</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">engine</span><span class="o">.</span><span class="n">dispatch</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">,</span> <span class="n">request</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="ByeCommand"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ByeCommand">[docs]</a><span class="k">class</span> <span class="nc">ByeCommand</span><span class="p">(</span><span class="n">CommandProcessor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To implement the ShutdownCommand.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ByeCommand.get_command_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ByeCommand.get_command_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;To get the command name.</span>
+
+<span class="sd">        Returns: AdminCommandNames.SHUTDOWN</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">SHUTDOWN</span></div>
+
+<div class="viewcode-block" id="ByeCommand.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.ByeCommand.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the Shutdown command.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data: process data</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: Shutdown command message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="kc">None</span></div></div>
+
+
+<div class="viewcode-block" id="AdminCommands"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AdminCommands">[docs]</a><span class="k">class</span> <span class="nc">AdminCommands</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;AdminCommands contains all the commands for processing the commands from the parent process.&quot;&quot;&quot;</span>
+
+    <span class="n">commands</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">CheckStatusCommand</span><span class="p">(),</span>
+        <span class="n">AbortCommand</span><span class="p">(),</span>
+        <span class="n">AbortTaskCommand</span><span class="p">(),</span>
+        <span class="n">ByeCommand</span><span class="p">(),</span>
+        <span class="n">ShowStatsCommand</span><span class="p">(),</span>
+        <span class="n">ShowErrorsCommand</span><span class="p">(),</span>
+        <span class="n">ResetErrorsCommand</span><span class="p">(),</span>
+        <span class="n">AuxCommand</span><span class="p">(),</span>
+    <span class="p">]</span>
+
+<div class="viewcode-block" id="AdminCommands.get_command"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AdminCommands.get_command">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">get_command</span><span class="p">(</span><span class="n">command_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Call to return the AdminCommand object.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            command_name: AdminCommand name</span>
+
+<span class="sd">        Returns: AdminCommand object</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">command</span> <span class="ow">in</span> <span class="n">AdminCommands</span><span class="o">.</span><span class="n">commands</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">command_name</span> <span class="o">==</span> <span class="n">command</span><span class="o">.</span><span class="n">get_command_name</span><span class="p">():</span>
+                <span class="k">return</span> <span class="n">command</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="AdminCommands.register_command"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_commands.html#nvflare.private.fed.client.admin_commands.AdminCommands.register_command">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">register_command</span><span class="p">(</span><span class="n">command_processor</span><span class="p">:</span> <span class="n">CommandProcessor</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Call to register the AdminCommand processor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            command_processor: AdminCommand processor</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">command_processor</span><span class="p">,</span> <span class="n">CommandProcessor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;command_processor must be an instance of CommandProcessor, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">command_processor</span><span class="p">))</span>
+            <span class="p">)</span>
+
+        <span class="n">AdminCommands</span><span class="o">.</span><span class="n">commands</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">command_processor</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

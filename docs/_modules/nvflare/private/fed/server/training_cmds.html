@@ -1,0 +1,831 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.server.training_cmds &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.server.training_cmds</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.server.training_cmds</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.client</span> <span class="kn">import</span> <span class="n">Client</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">AdminCommandNames</span><span class="p">,</span> <span class="n">WorkspaceConstants</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.conn</span> <span class="kn">import</span> <span class="n">Connection</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.reg</span> <span class="kn">import</span> <span class="n">CommandModule</span><span class="p">,</span> <span class="n">CommandModuleSpec</span><span class="p">,</span> <span class="n">CommandSpec</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">ClientStatusKey</span><span class="p">,</span> <span class="n">RequestHeader</span><span class="p">,</span> <span class="n">TrainingTopic</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.admin</span> <span class="kn">import</span> <span class="n">new_message</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.server_engine_internal_spec</span> <span class="kn">import</span> <span class="n">ServerEngineInternalSpec</span>
+<span class="kn">from</span> <span class="nn">nvflare.security.security</span> <span class="kn">import</span> <span class="n">Action</span><span class="p">,</span> <span class="n">FLAuthzContext</span>
+
+<span class="kn">from</span> <span class="nn">.app_authz</span> <span class="kn">import</span> <span class="n">AppAuthzService</span>
+<span class="kn">from</span> <span class="nn">.cmd_utils</span> <span class="kn">import</span> <span class="n">CommandUtil</span>
+<span class="kn">from</span> <span class="nn">.server_engine</span> <span class="kn">import</span> <span class="n">ServerEngine</span>
+
+
+<div class="viewcode-block" id="TrainingCommandModule"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule">[docs]</a><span class="k">class</span> <span class="nc">TrainingCommandModule</span><span class="p">(</span><span class="n">CommandModule</span><span class="p">,</span> <span class="n">CommandUtil</span><span class="p">):</span>
+
+    <span class="n">APP_STAGING_PATH</span> <span class="o">=</span> <span class="s2">&quot;app_staging_path&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;A class for training commands.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+<div class="viewcode-block" id="TrainingCommandModule.get_spec"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.get_spec">[docs]</a>    <span class="k">def</span> <span class="nf">get_spec</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">CommandModuleSpec</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;training&quot;</span><span class="p">,</span>
+            <span class="n">cmd_specs</span><span class="o">=</span><span class="p">[</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">DELETE_WORKSPACE</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;delete the workspace of a job&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;delete_workspace job_id&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">delete_job_id</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_set_job_id</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">confirm</span><span class="o">=</span><span class="s2">&quot;auth&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">DEPLOY_APP</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;deploy FL app to client/server&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;deploy_app job_id app server|client &lt;client-name&gt;|all&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">deploy_app</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_deploy_app</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">START_APP</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;start the FL app&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;start_app job_id server|client|all&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">start_app</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_train</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">CHECK_STATUS</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;check status of the FL server/client&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;check_status server|client&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">check_status</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_view</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">ABORT</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;abort the FL app&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;abort job_id server|client|all&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">abort_app</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_train</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">ABORT_TASK</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;abort the client current task execution&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;abort_task job_id &lt;client-name&gt;&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">abort_task</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_abort_client</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">REMOVE_CLIENT</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;remove a FL client&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;remove_client &lt;client-name&gt;&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">remove_client</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_remove_client</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">confirm</span><span class="o">=</span><span class="s2">&quot;auth&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">SHUTDOWN</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;shutdown the FL server/client&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;shutdown server|client|all&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">shutdown</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_operate</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">confirm</span><span class="o">=</span><span class="s2">&quot;auth&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">RESTART</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;restart the FL server/client&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;restart server|client|all&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">restart</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_operate</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">confirm</span><span class="o">=</span><span class="s2">&quot;auth&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">SET_TIMEOUT</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;set the admin commands timeout&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;set_timeout seconds &quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">set_timeout</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_set_timeout</span><span class="p">,</span>
+                    <span class="n">visible</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">],</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="TrainingCommandModule.authorize_set_job_id"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.authorize_set_job_id">[docs]</a>    <span class="k">def</span> <span class="nf">authorize_set_job_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: missing job id&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">FLAuthzContext</span><span class="o">.</span><span class="n">new_authz_context</span><span class="p">(</span><span class="n">site_names</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">SITE_SERVER</span><span class="p">],</span> <span class="n">actions</span><span class="o">=</span><span class="p">[</span><span class="n">Action</span><span class="o">.</span><span class="n">TRAIN</span><span class="p">])</span></div>
+
+    <span class="k">def</span> <span class="nf">_set_job_id_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">clients</span><span class="p">:</span>
+            <span class="n">valid_tokens</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">:</span>
+                <span class="n">valid_tokens</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">token</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">,</span> <span class="n">valid_tokens</span><span class="p">)</span>
+
+            <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">SET_JOB_ID</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+            <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_replies_to_table</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="TrainingCommandModule.delete_job_id"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.delete_job_id">[docs]</a>    <span class="k">def</span> <span class="nf">delete_job_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngine</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngine but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="n">engine</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Current running run_</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> can not be deleted.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">delete_job_id</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="c1"># ask clients to delete this RUN</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">DELETE_RUN</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+        <span class="n">clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">clients</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">,</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">token</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">])</span>
+            <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_replies_to_table</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="c1"># Deploy</span>
+<div class="viewcode-block" id="TrainingCommandModule.authorize_deploy_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.authorize_deploy_app">[docs]</a>    <span class="k">def</span> <span class="nf">authorize_deploy_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: missing job_id and target&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="n">err</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">validate_command_targets</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">args</span><span class="p">[</span><span class="mi">3</span><span class="p">:])</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">run_destination</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">run_destination</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span><span class="p">):</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: run_destination must be run_XXX&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">destination</span> <span class="o">=</span> <span class="n">run_destination</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span><span class="p">)</span> <span class="p">:]</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="n">destination</span><span class="p">)</span>
+
+        <span class="n">app_name</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">app_staging_path</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_staging_path_of_app</span><span class="p">(</span><span class="n">app_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">app_staging_path</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;App </span><span class="si">{}</span><span class="s2"> does not exist. Please upload it first&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">app_name</span><span class="p">))</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">APP_STAGING_PATH</span><span class="p">,</span> <span class="n">app_staging_path</span><span class="p">)</span>
+        <span class="n">target_type</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_SERVER</span><span class="p">:</span>
+            <span class="n">sites</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">SITE_SERVER</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sites</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">client_names</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_NAMES</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">client_names</span><span class="p">:</span>
+                <span class="n">sites</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">client_names</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_ALL</span><span class="p">:</span>
+                <span class="n">sites</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">SITE_SERVER</span><span class="p">)</span>
+
+        <span class="n">err</span><span class="p">,</span> <span class="n">authz_ctx</span> <span class="o">=</span> <span class="n">AppAuthzService</span><span class="o">.</span><span class="n">authorize_deploy</span><span class="p">(</span><span class="n">app_staging_path</span><span class="p">,</span> <span class="n">sites</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">authz_ctx</span></div>
+
+    <span class="k">def</span> <span class="nf">_deploy_to_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="c1"># return True if successful</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">err</span><span class="p">,</span> <span class="n">app_data</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_app_data</span><span class="p">(</span><span class="n">app_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">DEPLOY</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">app_data</span><span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">APP_NAME</span><span class="p">,</span> <span class="n">app_name</span><span class="p">)</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_replies_to_table</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">def</span> <span class="nf">_deploy_to_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">app_staging_path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="c1"># return True if successful</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">deploy_app_to_server</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">app_staging_path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s1">&#39;deployed app &quot;</span><span class="si">{}</span><span class="s1">&quot; to Server&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">app_name</span><span class="p">))</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="TrainingCommandModule.deploy_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.deploy_app">[docs]</a>    <span class="k">def</span> <span class="nf">deploy_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">app_name</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+        <span class="n">target_type</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE</span><span class="p">)</span>
+        <span class="n">app_staging_path</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">APP_STAGING_PATH</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_SERVER</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deploy_to_server</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">app_staging_path</span><span class="p">):</span>
+                <span class="k">return</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deploy_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+                <span class="k">return</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># all</span>
+            <span class="n">success</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deploy_to_server</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">app_staging_path</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+                <span class="n">client_names</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_NAMES</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">client_names</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deploy_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+                        <span class="k">return</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="c1"># Start App</span>
+    <span class="k">def</span> <span class="nf">_start_app_on_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">start_app_on_server</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Server app is starting....&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">def</span> <span class="nf">_start_app_on_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">check_app_start_readiness</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="c1"># run_info = engine.get_run_info()</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">START</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="c1"># message.set_header(RequestHeader.JOB_ID, str(run_info.job_id))</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_replies_to_table</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="TrainingCommandModule.start_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.start_app">[docs]</a>    <span class="k">def</span> <span class="nf">start_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+        <span class="n">target_type</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_SERVER</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_app_on_server</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+                <span class="k">return</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_app_on_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+                <span class="k">return</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># all</span>
+            <span class="n">success</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_app_on_server</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+                <span class="n">client_names</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_NAMES</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">client_names</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_app_on_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+                        <span class="k">return</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="c1"># Abort App</span>
+    <span class="k">def</span> <span class="nf">_abort_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">,</span> <span class="n">clients</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">job_id</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">abort_app_on_clients</span><span class="p">(</span><span class="n">clients</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="c1"># run_info = engine.get_app_run_info(job_id)</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">ABORT</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="c1"># if run_info:</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+
+        <span class="c1"># conn.set_prop(self.TARGET_CLIENT_NAMES, client_names)</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_replies_to_table</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="TrainingCommandModule.abort_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.abort_app">[docs]</a>    <span class="k">def</span> <span class="nf">abort_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+        <span class="n">target_type</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_SERVER</span> <span class="ow">or</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_ALL</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Trying to abort all clients before abort server ...&quot;</span><span class="p">)</span>
+            <span class="n">clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">clients</span><span class="p">:</span>
+                <span class="n">tokens</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">token</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">]</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">,</span> <span class="n">tokens</span>
+                <span class="p">)</span>  <span class="c1"># need this because not set in validate_command_targets when target_type == self.TARGET_TYPE_SERVER</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abort_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">clients</span><span class="o">=</span><span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">token</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">],</span> <span class="n">job_id</span><span class="o">=</span><span class="n">job_id</span><span class="p">):</span>
+                    <span class="k">return</span>
+            <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">abort_app_on_server</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+                <span class="k">return</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Abort signal has been sent to the server app.&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">:</span>
+            <span class="n">clients</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">clients</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;No clients to abort&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_abort_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">clients</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+                <span class="k">return</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="TrainingCommandModule.abort_task"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.abort_task">[docs]</a>    <span class="k">def</span> <span class="nf">abort_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">,</span> <span class="n">clients</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+        <span class="c1"># run_info = engine.get_app_run_info()</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">ABORT_TASK</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="c1"># if run_info:</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+
+        <span class="c1"># conn.set_prop(self.TARGET_CLIENT_NAMES, client_names)</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_replies_to_table</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span></div>
+
+    <span class="c1"># Shutdown</span>
+    <span class="k">def</span> <span class="nf">_shutdown_app_on_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">shutdown_server</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;FL app has been shutdown.&quot;</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_shutdown</span><span class="p">(</span><span class="s2">&quot;Bye bye&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">def</span> <span class="nf">_shutdown_app_on_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">SHUTDOWN</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">clients</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">clients</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;no clients to shutdown&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_replies_to_table</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">remove_clients</span><span class="p">(</span><span class="n">clients</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="TrainingCommandModule.shutdown"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.shutdown">[docs]</a>    <span class="k">def</span> <span class="nf">shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">target_type</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngine</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngine but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="n">engine</span><span class="o">.</span><span class="n">job_runner</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;There are still jobs running. Please let them finish or abort_job before shutdown.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_SERVER</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">():</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;There are still active clients. Shutdown all clients first.&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shutdown_app_on_server</span><span class="p">(</span><span class="n">conn</span><span class="p">):</span>
+                <span class="k">return</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shutdown_app_on_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">):</span>
+                <span class="k">return</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># all</span>
+            <span class="k">if</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">():</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Trying to shutdown clients before server...&quot;</span><span class="p">)</span>
+                <span class="n">success</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shutdown_app_on_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">success</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shutdown_app_on_server</span><span class="p">(</span><span class="n">conn</span><span class="p">):</span>
+                        <span class="k">return</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shutdown_app_on_server</span><span class="p">(</span><span class="n">conn</span><span class="p">):</span>
+                    <span class="k">return</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="c1"># Remove Clients</span>
+<div class="viewcode-block" id="TrainingCommandModule.authorize_remove_client"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.authorize_remove_client">[docs]</a>    <span class="k">def</span> <span class="nf">authorize_remove_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: missing site names&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">auth_args</span> <span class="o">=</span> <span class="p">[</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">]</span>
+        <span class="n">auth_args</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">authorize_operate</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">auth_args</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="TrainingCommandModule.authorize_abort_client"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.authorize_abort_client">[docs]</a>    <span class="k">def</span> <span class="nf">authorize_abort_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: missing job_id and target&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">run_destination</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">run_destination</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span><span class="p">):</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: run_destination must be run_XXX&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">run_destination</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span><span class="p">)</span> <span class="p">:]</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span>
+
+        <span class="n">auth_args</span> <span class="o">=</span> <span class="p">[</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">]</span>
+        <span class="n">auth_args</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">:])</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">authorize_operate</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">auth_args</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="TrainingCommandModule.remove_client"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.remove_client">[docs]</a>    <span class="k">def</span> <span class="nf">remove_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+        <span class="n">clients</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">)</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">remove_clients</span><span class="p">(</span><span class="n">clients</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="c1"># Restart</span>
+    <span class="k">def</span> <span class="nf">_restart_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">,</span> <span class="n">clients</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+        <span class="n">engine</span><span class="o">.</span><span class="n">remove_clients</span><span class="p">(</span><span class="n">clients</span><span class="p">)</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">RESTART</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_replies_to_string</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+
+<div class="viewcode-block" id="TrainingCommandModule.restart"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.restart">[docs]</a>    <span class="k">def</span> <span class="nf">restart</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngine</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngine but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="n">engine</span><span class="o">.</span><span class="n">job_runner</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;There are still jobs running. Please let them finish or abort_job before restart.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">target_type</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_SERVER</span> <span class="ow">or</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_ALL</span><span class="p">:</span>
+
+            <span class="n">clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">clients</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Trying to restart all clients before restarting server...&quot;</span><span class="p">)</span>
+                <span class="n">tokens</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">token</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">]</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">,</span> <span class="n">tokens</span>
+                <span class="p">)</span>  <span class="c1"># need this because not set in validate_command_targets when target_type == self.TARGET_TYPE_SERVER</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_restart_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">tokens</span><span class="p">)</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+                <span class="c1"># check with Isaac - no need to wait!</span>
+                <span class="c1"># time.sleep(5)</span>
+
+            <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">restart_server</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Server scheduled for restart&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">target_type</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">:</span>
+            <span class="n">clients</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TARGET_CLIENT_TOKENS</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">clients</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;no clients available&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_restart_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">clients</span><span class="p">)</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="c1"># Set Timeout</span>
+<div class="viewcode-block" id="TrainingCommandModule.authorize_set_timeout"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.authorize_set_timeout">[docs]</a>    <span class="k">def</span> <span class="nf">authorize_set_timeout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: missing timeout&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">num</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;must provide the timeout value in seconds&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">num</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;timeout must be &gt; 0&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">FLAuthzContext</span><span class="o">.</span><span class="n">new_authz_context</span><span class="p">(</span><span class="n">site_names</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">SITE_SERVER</span><span class="p">],</span> <span class="n">actions</span><span class="o">=</span><span class="p">[</span><span class="n">Action</span><span class="o">.</span><span class="n">TRAIN</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="TrainingCommandModule.set_timeout"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.set_timeout">[docs]</a>    <span class="k">def</span> <span class="nf">set_timeout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">server</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">server</span>
+        <span class="n">server</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;admin command timeout has been set to: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">timeout</span><span class="p">))</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="c1"># Check status</span>
+<div class="viewcode-block" id="TrainingCommandModule.check_status"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.training_cmds.html#nvflare.private.fed.server.training_cmds.TrainingCommandModule.check_status">[docs]</a>    <span class="k">def</span> <span class="nf">check_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="c1"># TODO:: Need more discussion on what status to be shown</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ServerEngineInternalSpec but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+        <span class="n">dst</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">dst</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_SERVER</span><span class="p">:</span>
+            <span class="n">engine_info</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_engine_info</span><span class="p">()</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Engine status: </span><span class="si">{</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">table</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">append_table</span><span class="p">([</span><span class="s2">&quot;Job_id&quot;</span><span class="p">,</span> <span class="s2">&quot;App Name&quot;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">app_name</span> <span class="ow">in</span> <span class="n">engine_info</span><span class="o">.</span><span class="n">app_names</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">([</span><span class="n">job_id</span><span class="p">,</span> <span class="n">app_name</span><span class="p">])</span>
+
+            <span class="n">clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Registered clients: </span><span class="si">{}</span><span class="s2"> &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">clients</span><span class="p">)))</span>
+
+            <span class="k">if</span> <span class="n">clients</span><span class="p">:</span>
+                <span class="n">table</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">append_table</span><span class="p">([</span><span class="s2">&quot;Client&quot;</span><span class="p">,</span> <span class="s2">&quot;Token&quot;</span><span class="p">,</span> <span class="s2">&quot;Last Connect Time&quot;</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">Client</span><span class="p">):</span>
+                        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;c must be Client but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)))</span>
+                    <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">([</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">token</span><span class="p">),</span> <span class="n">time</span><span class="o">.</span><span class="n">asctime</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">localtime</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">last_connect_time</span><span class="p">))])</span>
+        <span class="k">elif</span> <span class="n">dst</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">TARGET_TYPE_CLIENT</span><span class="p">:</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="n">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">CHECK_STATUS</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_request_to_clients</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_process_status_replies</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;invalid target type </span><span class="si">{}</span><span class="s2">. Usage: check_status server|client ...&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">dst</span><span class="p">))</span></div>
+
+    <span class="k">def</span> <span class="nf">_process_status_replies</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">,</span> <span class="n">replies</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">replies</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;no responses from clients&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">table</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">append_table</span><span class="p">([</span><span class="s2">&quot;client&quot;</span><span class="p">,</span> <span class="s2">&quot;app_name&quot;</span><span class="p">,</span> <span class="s2">&quot;job_id&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">replies</span><span class="p">:</span>
+            <span class="n">job_id</span> <span class="o">=</span> <span class="s2">&quot;?&quot;</span>
+            <span class="n">app_name</span> <span class="o">=</span> <span class="s2">&quot;?&quot;</span>
+            <span class="n">client_name</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_client_name_from_token</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">client_token</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">body</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">reply</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                        <span class="n">running_jobs</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ClientStatusKey</span><span class="o">.</span><span class="n">RUNNING_JOBS</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">running_jobs</span><span class="p">:</span>
+                            <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">running_jobs</span><span class="p">:</span>
+                                <span class="n">app_name</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ClientStatusKey</span><span class="o">.</span><span class="n">APP_NAME</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+                                <span class="n">job_id</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ClientStatusKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+                                <span class="n">status</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ClientStatusKey</span><span class="o">.</span><span class="n">STATUS</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+                                <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">([</span><span class="n">client_name</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">status</span><span class="p">])</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">([</span><span class="n">client_name</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="s2">&quot;No Jobs&quot;</span><span class="p">])</span>
+                <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Bad reply from client: </span><span class="si">{</span><span class="n">ex</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">([</span><span class="n">client_name</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="s2">&quot;No Reply&quot;</span><span class="p">])</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

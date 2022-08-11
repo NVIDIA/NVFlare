@@ -1,0 +1,691 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.apis.controller_spec module &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.apis.dxo module" href="nvflare.apis.dxo.html" />
+    <link rel="prev" title="nvflare.apis.client_engine_spec module" href="nvflare.apis.client_engine_spec.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a><ul class="current">
+<li class="toctree-l5"><a class="reference internal" href="nvflare.apis.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.apis.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.apis.html#module-nvflare.apis">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.ha.html">nvflare.ha package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.html">nvflare.private package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+          <li><a href="nvflare.apis.html">nvflare.apis package</a> &raquo;</li>
+      <li>nvflare.apis.controller_spec module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/apidocs/nvflare.apis.controller_spec.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nvflare.apis.controller_spec">
+<span id="nvflare-apis-controller-spec-module"></span><h1>nvflare.apis.controller_spec module<a class="headerlink" href="#module-nvflare.apis.controller_spec" title="Permalink to this heading">¶</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ClientTask">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ClientTask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ClientTask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ClientTask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>ClientTask records the processing information of a task for a client.</p>
+<p>Init ClientTask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client</strong> – the client</p></li>
+<li><p><strong>task</strong> – the processing information of this task will be recorded</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ControllerSpec</span></span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.abort_all_tasks">
+<span class="sig-name descname"><span class="pre">abort_all_tasks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.abort_all_tasks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.abort_all_tasks" title="Permalink to this definition">¶</a></dt>
+<dd><p>Asks clients to abort the execution of all tasks.</p>
+<p>NOTE: the server should send a notification to all clients, regardless of whether the server
+has any standing tasks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fl_ctx</strong> – the FL context</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.abort_task">
+<span class="sig-name descname"><span class="pre">abort_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.abort_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.abort_task" title="Permalink to this definition">¶</a></dt>
+<dd><p>Asks all clients to abort the execution of the specified task.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be aborted</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.broadcast">
+<span class="sig-name descname"><span class="pre">broadcast</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_responses</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wait_time_after_min_received</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.broadcast"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.broadcast" title="Permalink to this definition">¶</a></dt>
+<dd><p>Schedule to broadcast the task to specified targets.</p>
+<p>This is a non-blocking call.</p>
+<dl class="simple">
+<dt>The task is standing until one of the following conditions comes true:</dt><dd><ul class="simple">
+<li><p>if timeout is specified (&gt; 0), and the task has been standing for more than the specified time</p></li>
+<li><p>the controller has received the specified min_responses results for this task, and all target clients
+are done.</p></li>
+<li><p>the controller has received the specified min_responses results for this task, and has waited
+for wait_time_after_min_received.</p></li>
+</ul>
+</dd>
+<dt>While the task is standing:</dt><dd><ul class="simple">
+<li><p>Before sending the task to a client, the before_task_sent CB (if specified) is called;</p></li>
+<li><p>When a result is received from a client, the result_received CB (if specified) is called;</p></li>
+</ul>
+</dd>
+<dt>After the task is done, the task_done CB (if specified) is called:</dt><dd><ul class="simple">
+<li><p>If result_received CB is specified, the ‘result’ in the ClientTask of each
+client is produced by the result_received CB;</p></li>
+<li><p>Otherwise, the ‘result’ contains the original result submitted by the clients;</p></li>
+</ul>
+</dd>
+</dl>
+<p>NOTE: if the targets is None, the actual broadcast target clients will be dynamic, because the clients
+could join/disconnect at any moment. While the task is standing, any client that joins automatically
+becomes a target for this broadcast.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be sent</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context</p></li>
+<li><p><strong>targets</strong> – list of destination clients. None means all clients are determined dynamically;</p></li>
+<li><p><strong>min_responses</strong> – the min number of responses expected. If == 0, must get responses from
+all clients that the task has been sent to;</p></li>
+<li><p><strong>wait_time_after_min_received</strong> – how long (secs) to wait after the min_responses is received.
+If == 0, end the task immediately after the min responses are received;</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.broadcast_and_wait">
+<span class="sig-name descname"><span class="pre">broadcast_and_wait</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_responses</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wait_time_after_min_received</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">abort_signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.signal.html#nvflare.apis.signal.Signal" title="nvflare.apis.signal.Signal"><span class="pre">Signal</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.broadcast_and_wait"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.broadcast_and_wait" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is the blocking version of the ‘broadcast’ method.</p>
+<p>First, the task is scheduled for broadcast (see the broadcast method);
+It then waits until the task is completed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be sent</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context</p></li>
+<li><p><strong>targets</strong> – list of destination clients. None means all clients are determined dynamically.</p></li>
+<li><p><strong>min_responses</strong> – the min number of responses expected. If == 0, must get responses from
+all clients that the task has been sent to;</p></li>
+<li><p><strong>wait_time_after_min_received</strong> – how long (secs) to wait after the min_responses is received.
+If == 0, end the task immediately after the min responses are received;</p></li>
+<li><p><strong>abort_signal</strong> – the abort signal. If triggered, this method stops waiting and returns to the caller.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.broadcast_forever">
+<span class="sig-name descname"><span class="pre">broadcast_forever</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.broadcast_forever"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.broadcast_forever" title="Permalink to this definition">¶</a></dt>
+<dd><p>Schedule a broadcast task that never ends until timeout or explicitly cancelled.</p>
+<p>All clients will get the task every time it asks for a new task.
+This is a non-blocking call.</p>
+<p>NOTE: you can change the content of the task in the before_task_sent function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be sent</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context</p></li>
+<li><p><strong>targets</strong> – list of destination clients. None means all clients are determined dynamically.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.cancel_all_tasks">
+<span class="sig-name descname"><span class="pre">cancel_all_tasks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">completion_status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TaskCompletionStatus.CANCELLED</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.cancel_all_tasks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.cancel_all_tasks" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cancels all standing tasks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>completion_status</strong> – the TaskCompletionStatus of the task</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.cancel_task">
+<span class="sig-name descname"><span class="pre">cancel_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">completion_status</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.TaskCompletionStatus" title="nvflare.apis.controller_spec.TaskCompletionStatus"><span class="pre">TaskCompletionStatus</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">TaskCompletionStatus.CANCELLED</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.cancel_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.cancel_task" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cancels the specified task.</p>
+<p>If the task is standing, the task is cancelled immediately (and removed from job queue) and calls
+the task_done CB (if specified);</p>
+<p>If the task is not standing, this method has no effect.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be cancelled</p></li>
+<li><p><strong>completion_status</strong> – the TaskCompletionStatus of the task</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.get_num_standing_tasks">
+<span class="sig-name descname"><span class="pre">get_num_standing_tasks</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.get_num_standing_tasks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.get_num_standing_tasks" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets tasks that are currently standing.</p>
+<p>Returns: length of the list of standing tasks</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.process_result_of_unknown_task">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">process_result_of_unknown_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">client_task_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.process_result_of_unknown_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.process_result_of_unknown_task" title="Permalink to this definition">¶</a></dt>
+<dd><p>Process result when no task is found for it.</p>
+<p>This is called when a result submission is received from a client, but no standing
+task can be found for it (from the task queue)</p>
+<p>This could happen when:
+- the client’s submission is too late - the task is already completed
+- the Controller lost the task, e.g. the Server is restarted</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client</strong> – the client that the result comes from</p></li>
+<li><p><strong>task_name</strong> – the name of the task</p></li>
+<li><p><strong>client_task_id</strong> – ID of the task</p></li>
+<li><p><strong>result</strong> – the result from the client</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context that comes with the client’s submission</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.relay">
+<span class="sig-name descname"><span class="pre">relay</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">send_order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.SendOrder" title="nvflare.apis.controller_spec.SendOrder"><span class="pre">SendOrder</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">SendOrder.SEQUENTIAL</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_assignment_timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_result_timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dynamic_targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.relay"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.relay" title="Permalink to this definition">¶</a></dt>
+<dd><p>Schedules a task to be done sequentially by the clients in the targets list. This is a non-blocking call.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be performed by each client</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context for scheduling the task</p></li>
+<li><p><strong>targets</strong> – list of clients. If None, all clients.</p></li>
+<li><p><strong>send_order</strong> – how to choose the next client</p></li>
+<li><p><strong>task_assignment_timeout</strong> – how long to wait for the expected client to get assigned</p></li>
+<li><p><strong>client.</strong> (<em>before assigning to next</em>) – </p></li>
+<li><p><strong>task_result_timeout</strong> – how long to wait for result from the assigned client before giving up.</p></li>
+<li><p><strong>dynamic_targets</strong> – whether to dynamically grow the target list. If True, then the target list is</p></li>
+<li><p><strong>joins.</strong> (<em>expanded dynamically when a new client</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.relay_and_wait">
+<span class="sig-name descname"><span class="pre">relay_and_wait</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">send_order</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">SendOrder.SEQUENTIAL</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_assignment_timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_result_timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dynamic_targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">abort_signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.signal.html#nvflare.apis.signal.Signal" title="nvflare.apis.signal.Signal"><span class="pre">Signal</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.relay_and_wait"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.relay_and_wait" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is the blocking version of ‘relay’.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.send">
+<span class="sig-name descname"><span class="pre">send</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">send_order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.SendOrder" title="nvflare.apis.controller_spec.SendOrder"><span class="pre">SendOrder</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">SendOrder.SEQUENTIAL</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_assignment_timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.send"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.send" title="Permalink to this definition">¶</a></dt>
+<dd><p>Schedule to send the task to a single target client.</p>
+<p>This is a non-blocking call.</p>
+<p>In ANY order, the target client is the first target that asks for task.
+In SEQUENTIAL order, the controller will try its best to send the task to the first client
+in the targets list. If can’t, it will try the next target, and so on.</p>
+<p>NOTE: if the ‘targets’ is None, the actual target clients will be dynamic, because the clients
+could join/disconnect at any moment. While the task is standing, any client that joins automatically
+becomes a target for this task.</p>
+<p>If the send_order is SEQUENTIAL, the targets must be a non-empty list of client names.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be sent</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context</p></li>
+<li><p><strong>targets</strong> – list of candidate target clients.</p></li>
+<li><p><strong>send_order</strong> – how to choose the client to send the task.</p></li>
+<li><p><strong>task_assignment_timeout</strong> – in SEQUENTIAL order, this is the wait time for trying a target client, before trying next target.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.send_and_wait">
+<span class="sig-name descname"><span class="pre">send_and_wait</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">send_order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.SendOrder" title="nvflare.apis.controller_spec.SendOrder"><span class="pre">SendOrder</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">SendOrder.SEQUENTIAL</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_assignment_timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">abort_signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="nvflare.apis.signal.html#nvflare.apis.signal.Signal" title="nvflare.apis.signal.Signal"><span class="pre">Signal</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.send_and_wait"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.send_and_wait" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is the blocking version of the ‘send’ method.</p>
+<p>First, the task is scheduled for send (see the ‘send’ method);
+It then waits until the task is completed and returns the task completion status and collected result.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task to be performed by each client</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context for scheduling the task</p></li>
+<li><p><strong>targets</strong> – list of clients. If None, all clients.</p></li>
+<li><p><strong>send_order</strong> – how to choose the next client</p></li>
+<li><p><strong>task_assignment_timeout</strong> – how long to wait for the expected client to get assigned</p></li>
+<li><p><strong>client.</strong> (<em>before assigning to next</em>) – </p></li>
+<li><p><strong>abort_signal</strong> – the abort signal. If triggered, this method stops waiting and returns to the caller.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.start_controller">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">start_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.start_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.start_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Starts the controller.</p>
+<p>This method is called at the beginning of the RUN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and register</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.ControllerSpec.stop_controller">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">stop_controller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#ControllerSpec.stop_controller"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.ControllerSpec.stop_controller" title="Permalink to this definition">¶</a></dt>
+<dd><p>Stops the controller.</p>
+<p>This method is called right before the RUN is ended.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fl_ctx</strong> – the FL context. You can use this context to access services provided by the</p></li>
+<li><p><strong>example</strong> (<em>framework. For</em>) – </p></li>
+<li><p><strong>your</strong> (<em>you can get Command Register from it and unregister</em>) – </p></li>
+<li><p><strong>modules.</strong> (<em>admin command</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.SendOrder">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">SendOrder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#SendOrder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.SendOrder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Enum</span></code></p>
+<p>An enumeration.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.SendOrder.ANY">
+<span class="sig-name descname"><span class="pre">ANY</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'any'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.SendOrder.ANY" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.SendOrder.SEQUENTIAL">
+<span class="sig-name descname"><span class="pre">SEQUENTIAL</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'sequential'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.SendOrder.SEQUENTIAL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.Task">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">props</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">before_task_sent_cb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">after_task_sent_cb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result_received_cb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_done_cb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#Task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.Task" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Init the Task.</p>
+<p>A task is a piece of work that is assigned by the Controller to client workers.
+Depending on how the task is assigned (broadcast, send, or relay), the task will be performed by one or more clients.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em>) – name of the task</p></li>
+<li><p><strong>data</strong> (<em>Shareable</em>) – data of the task</p></li>
+<li><p><strong>props</strong> – Any additional properties of the task</p></li>
+<li><p><strong>timeout</strong> – How long this task will last. If == 0, the task never time out.</p></li>
+<li><p><strong>before_task_sent_cb</strong> – If provided, this callback would be called before controller sends the tasks to clients.
+It needs to follow the before_task_sent_cb_signature.</p></li>
+<li><p><strong>after_task_sent_cb</strong> – If provided, this callback would be called after controller sends the tasks to clients.
+It needs to follow the after_task_sent_cb_signature.</p></li>
+<li><p><strong>result_received_cb</strong> – If provided, this callback would be called when controller receives results from clients.
+It needs to follow the result_received_cb_signature.</p></li>
+<li><p><strong>task_done_cb</strong> – If provided, this callback would be called when task is done.
+It needs to follow the task_done_cb_signature.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.Task.get_prop">
+<span class="sig-name descname"><span class="pre">get_prop</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#Task.get_prop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.Task.get_prop" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.Task.set_prop">
+<span class="sig-name descname"><span class="pre">set_prop</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#Task.set_prop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.Task.set_prop" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.TaskCompletionStatus">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">TaskCompletionStatus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#TaskCompletionStatus"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.TaskCompletionStatus" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Enum</span></code></p>
+<p>An enumeration.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.TaskCompletionStatus.ABORTED">
+<span class="sig-name descname"><span class="pre">ABORTED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'aborted'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.TaskCompletionStatus.ABORTED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.TaskCompletionStatus.CANCELLED">
+<span class="sig-name descname"><span class="pre">CANCELLED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'cancelled'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.TaskCompletionStatus.CANCELLED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.TaskCompletionStatus.ERROR">
+<span class="sig-name descname"><span class="pre">ERROR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'error'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.TaskCompletionStatus.ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.TaskCompletionStatus.IGNORED">
+<span class="sig-name descname"><span class="pre">IGNORED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'ignored'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.TaskCompletionStatus.IGNORED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.TaskCompletionStatus.OK">
+<span class="sig-name descname"><span class="pre">OK</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'ok'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.TaskCompletionStatus.OK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.TaskCompletionStatus.TIMEOUT">
+<span class="sig-name descname"><span class="pre">TIMEOUT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'timeout'</span></em><a class="headerlink" href="#nvflare.apis.controller_spec.TaskCompletionStatus.TIMEOUT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.after_task_sent_cb_signature">
+<span class="sig-name descname"><span class="pre">after_task_sent_cb_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client_task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.ClientTask" title="nvflare.apis.controller_spec.ClientTask"><span class="pre">ClientTask</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#after_task_sent_cb_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.after_task_sent_cb_signature" title="Permalink to this definition">¶</a></dt>
+<dd><p>Signature of the after_task_sent CB.</p>
+<p>Called after sending a task to a client.
+Usually used to clean up the FL Context or the Task data</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client_task</strong> – the client task that has been sent</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context that comes with the client’s task request.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.before_task_sent_cb_signature">
+<span class="sig-name descname"><span class="pre">before_task_sent_cb_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client_task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.ClientTask" title="nvflare.apis.controller_spec.ClientTask"><span class="pre">ClientTask</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#before_task_sent_cb_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.before_task_sent_cb_signature" title="Permalink to this definition">¶</a></dt>
+<dd><p>Signature of the before_task_sent CB.</p>
+<p>Called before sending a task to a client.
+Usually used to prepare the FL Context, which is created to process client’s task req
+You can also use this CB to alter the data of the task to be sent.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client_task</strong> – the client task that is about to be sent</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context that comes with the client’s task request.</p></li>
+<li><p><strong>client!</strong> (<em>Public properties you set to this context will be sent to the</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.result_received_cb_signature">
+<span class="sig-name descname"><span class="pre">result_received_cb_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client_task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.ClientTask" title="nvflare.apis.controller_spec.ClientTask"><span class="pre">ClientTask</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#result_received_cb_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.result_received_cb_signature" title="Permalink to this definition">¶</a></dt>
+<dd><p>Signature of result_received CB.</p>
+<p>Called after a result is received from a client</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client_task</strong> – the client task that the result is for</p></li>
+<li><p><strong>fl_ctx</strong> – the FL context that comes with the client’s result submission</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nvflare.apis.controller_spec.task_done_cb_signature">
+<span class="sig-name descname"><span class="pre">task_done_cb_signature</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.apis.controller_spec.Task" title="nvflare.apis.controller_spec.Task"><span class="pre">Task</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/controller_spec.html#task_done_cb_signature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.controller_spec.task_done_cb_signature" title="Permalink to this definition">¶</a></dt>
+<dd><p>Signature of task_done CB.</p>
+<p>Called when the task is completed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> – the task that is completed</p></li>
+<li><p><strong>fl_ctx</strong> – an instance of FL Context used for this call only.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="nvflare.apis.client_engine_spec.html" class="btn btn-neutral float-left" title="nvflare.apis.client_engine_spec module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nvflare.apis.dxo.html" class="btn btn-neutral float-right" title="nvflare.apis.dxo module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

@@ -1,0 +1,1227 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.apis.fl_constant module &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.apis.fl_context module" href="nvflare.apis.fl_context.html" />
+    <link rel="prev" title="nvflare.apis.fl_component module" href="nvflare.apis.fl_component.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a><ul class="current">
+<li class="toctree-l5"><a class="reference internal" href="nvflare.apis.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.apis.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.apis.html#module-nvflare.apis">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.ha.html">nvflare.ha package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.html">nvflare.private package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+          <li><a href="nvflare.apis.html">nvflare.apis package</a> &raquo;</li>
+      <li>nvflare.apis.fl_constant module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/apidocs/nvflare.apis.fl_constant.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nvflare.apis.fl_constant">
+<span id="nvflare-apis-fl-constant-module"></span><h1>nvflare.apis.fl_constant module<a class="headerlink" href="#module-nvflare.apis.fl_constant" title="Permalink to this heading">¶</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AdminCommandNames</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#AdminCommandNames"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.ABORT">
+<span class="sig-name descname"><span class="pre">ABORT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'abort'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.ABORT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.ABORT_JOB">
+<span class="sig-name descname"><span class="pre">ABORT_JOB</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'abort_job'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.ABORT_JOB" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.ABORT_TASK">
+<span class="sig-name descname"><span class="pre">ABORT_TASK</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'abort_task'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.ABORT_TASK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.AUX_COMMAND">
+<span class="sig-name descname"><span class="pre">AUX_COMMAND</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'aux_command'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.AUX_COMMAND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.CHECK_STATUS">
+<span class="sig-name descname"><span class="pre">CHECK_STATUS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'check_status'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.CHECK_STATUS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.CLONE_JOB">
+<span class="sig-name descname"><span class="pre">CLONE_JOB</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'clone_job'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.CLONE_JOB" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.DELETE_JOB">
+<span class="sig-name descname"><span class="pre">DELETE_JOB</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'delete_job'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.DELETE_JOB" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.DELETE_WORKSPACE">
+<span class="sig-name descname"><span class="pre">DELETE_WORKSPACE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'delete_workspace'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.DELETE_WORKSPACE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.DEPLOY_APP">
+<span class="sig-name descname"><span class="pre">DEPLOY_APP</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'deploy_app'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.DEPLOY_APP" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.DOWNLOAD_JOB">
+<span class="sig-name descname"><span class="pre">DOWNLOAD_JOB</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'download_job'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.DOWNLOAD_JOB" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.LIST_JOBS">
+<span class="sig-name descname"><span class="pre">LIST_JOBS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'list_jobs'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.LIST_JOBS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.REMOVE_CLIENT">
+<span class="sig-name descname"><span class="pre">REMOVE_CLIENT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'remove_client'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.REMOVE_CLIENT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.RESET_ERRORS">
+<span class="sig-name descname"><span class="pre">RESET_ERRORS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'reset_errors'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.RESET_ERRORS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.RESTART">
+<span class="sig-name descname"><span class="pre">RESTART</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'restart'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.RESTART" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.SET_TIMEOUT">
+<span class="sig-name descname"><span class="pre">SET_TIMEOUT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'set_timeout'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.SET_TIMEOUT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.SHOW_ERRORS">
+<span class="sig-name descname"><span class="pre">SHOW_ERRORS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'show_errors'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.SHOW_ERRORS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.SHOW_STATS">
+<span class="sig-name descname"><span class="pre">SHOW_STATS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'show_stats'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.SHOW_STATS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.SHUTDOWN">
+<span class="sig-name descname"><span class="pre">SHUTDOWN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'shutdown'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.SHUTDOWN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.START_APP">
+<span class="sig-name descname"><span class="pre">START_APP</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'start_app'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.START_APP" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.AdminCommandNames.SUBMIT_JOB">
+<span class="sig-name descname"><span class="pre">SUBMIT_JOB</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'submit_job'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.AdminCommandNames.SUBMIT_JOB" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.EventScope">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">EventScope</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#EventScope"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.EventScope" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.EventScope.FEDERATION">
+<span class="sig-name descname"><span class="pre">FEDERATION</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'federation'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.EventScope.FEDERATION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.EventScope.LOCAL">
+<span class="sig-name descname"><span class="pre">LOCAL</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'local'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.EventScope.LOCAL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FLContextKey</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#FLContextKey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.APP_ROOT">
+<span class="sig-name descname"><span class="pre">APP_ROOT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__app_root__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.APP_ROOT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.ARGS">
+<span class="sig-name descname"><span class="pre">ARGS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__args__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.ARGS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.CLIENT_NAME">
+<span class="sig-name descname"><span class="pre">CLIENT_NAME</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__client_name__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.CLIENT_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.CURRENT_JOB_ID">
+<span class="sig-name descname"><span class="pre">CURRENT_JOB_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__current_job_id__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.CURRENT_JOB_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.CURRENT_RUN">
+<span class="sig-name descname"><span class="pre">CURRENT_RUN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__run_num__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.CURRENT_RUN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.EVENT_DATA">
+<span class="sig-name descname"><span class="pre">EVENT_DATA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_data__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.EVENT_DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.EVENT_ID">
+<span class="sig-name descname"><span class="pre">EVENT_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_id__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.EVENT_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.EVENT_ORIGIN">
+<span class="sig-name descname"><span class="pre">EVENT_ORIGIN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_origin__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.EVENT_ORIGIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.EVENT_ORIGIN_SITE">
+<span class="sig-name descname"><span class="pre">EVENT_ORIGIN_SITE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_origin_site__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.EVENT_ORIGIN_SITE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.EVENT_SCOPE">
+<span class="sig-name descname"><span class="pre">EVENT_SCOPE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_scope__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.EVENT_SCOPE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.FROM_RANK_NUMBER">
+<span class="sig-name descname"><span class="pre">FROM_RANK_NUMBER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__from_rank_number__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.FROM_RANK_NUMBER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.IS_CLIENT_TASK_RESEND">
+<span class="sig-name descname"><span class="pre">IS_CLIENT_TASK_RESEND</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__is_resend__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.IS_CLIENT_TASK_RESEND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.JOB_INFO">
+<span class="sig-name descname"><span class="pre">JOB_INFO</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__job_info__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.JOB_INFO" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.JOB_RUN_NUMBER">
+<span class="sig-name descname"><span class="pre">JOB_RUN_NUMBER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__job_run_number__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.JOB_RUN_NUMBER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.NUM_OF_PROCESSES">
+<span class="sig-name descname"><span class="pre">NUM_OF_PROCESSES</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__num_of_processes__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.NUM_OF_PROCESSES" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.PEER_CONTEXT">
+<span class="sig-name descname"><span class="pre">PEER_CONTEXT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__peer_ctx__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.PEER_CONTEXT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.RANK_NUMBER">
+<span class="sig-name descname"><span class="pre">RANK_NUMBER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__rank_number__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.RANK_NUMBER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.REPLY">
+<span class="sig-name descname"><span class="pre">REPLY</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__reply__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.REPLY" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.RUNNER">
+<span class="sig-name descname"><span class="pre">RUNNER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__runner__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.RUN_ABORT_SIGNAL">
+<span class="sig-name descname"><span class="pre">RUN_ABORT_SIGNAL</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__run_abort_signal__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.RUN_ABORT_SIGNAL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.SECURE_MODE">
+<span class="sig-name descname"><span class="pre">SECURE_MODE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__secure_mode__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.SECURE_MODE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.SHAREABLE">
+<span class="sig-name descname"><span class="pre">SHAREABLE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__shareable__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.SHAREABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.SP_END_POINT">
+<span class="sig-name descname"><span class="pre">SP_END_POINT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__sp_end_point__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.SP_END_POINT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.TASK_DATA">
+<span class="sig-name descname"><span class="pre">TASK_DATA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_data__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.TASK_DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.TASK_ID">
+<span class="sig-name descname"><span class="pre">TASK_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_id__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.TASK_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.TASK_NAME">
+<span class="sig-name descname"><span class="pre">TASK_NAME</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_name__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.TASK_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.TASK_RESULT">
+<span class="sig-name descname"><span class="pre">TASK_RESULT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_result__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.TASK_RESULT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.WORKFLOW">
+<span class="sig-name descname"><span class="pre">WORKFLOW</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__workflow__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.WORKFLOW" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.WORKSPACE_OBJECT">
+<span class="sig-name descname"><span class="pre">WORKSPACE_OBJECT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__workspace_object__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.WORKSPACE_OBJECT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FLContextKey.WORKSPACE_ROOT">
+<span class="sig-name descname"><span class="pre">WORKSPACE_ROOT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__workspace_root__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FLContextKey.WORKSPACE_ROOT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FedEventHeader">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FedEventHeader</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#FedEventHeader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.FedEventHeader" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FedEventHeader.DIRECTION">
+<span class="sig-name descname"><span class="pre">DIRECTION</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_direction'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FedEventHeader.DIRECTION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FedEventHeader.EVENT_TYPE">
+<span class="sig-name descname"><span class="pre">EVENT_TYPE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_event_type'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FedEventHeader.EVENT_TYPE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FedEventHeader.ORIGIN">
+<span class="sig-name descname"><span class="pre">ORIGIN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_origin'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FedEventHeader.ORIGIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FedEventHeader.TARGETS">
+<span class="sig-name descname"><span class="pre">TARGETS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_targets'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FedEventHeader.TARGETS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.FedEventHeader.TIMESTAMP">
+<span class="sig-name descname"><span class="pre">TIMESTAMP</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_timestamp'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.FedEventHeader.TIMESTAMP" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">LogMessageTag</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#LogMessageTag"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.CRITICAL">
+<span class="sig-name descname"><span class="pre">CRITICAL</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log/critical'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.CRITICAL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.DEBUG">
+<span class="sig-name descname"><span class="pre">DEBUG</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log/debug'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.DEBUG" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.ERROR">
+<span class="sig-name descname"><span class="pre">ERROR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log/error'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.EXCEPTION">
+<span class="sig-name descname"><span class="pre">EXCEPTION</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log/exception'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.EXCEPTION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.INFO">
+<span class="sig-name descname"><span class="pre">INFO</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log/info'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.INFO" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.LOG_RECORD">
+<span class="sig-name descname"><span class="pre">LOG_RECORD</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log_record'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.LOG_RECORD" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.LogMessageTag.WARNING">
+<span class="sig-name descname"><span class="pre">WARNING</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log/warning'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.LogMessageTag.WARNING" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.MachineStatus">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">MachineStatus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#MachineStatus"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.MachineStatus" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Enum</span></code></p>
+<p>Constants for machine status.</p>
+<dl class="simple">
+<dt>Status Lifecycle</dt><dd><p>STOPPED &lt;-&gt; STARTING -&gt; STARTED -&gt; STOPPING -&gt; STOPPED</p>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.MachineStatus.STARTED">
+<span class="sig-name descname"><span class="pre">STARTED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'started'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.MachineStatus.STARTED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.MachineStatus.STARTING">
+<span class="sig-name descname"><span class="pre">STARTING</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'starting'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.MachineStatus.STARTING" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.MachineStatus.STOPPED">
+<span class="sig-name descname"><span class="pre">STOPPED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'stopped'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.MachineStatus.STOPPED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.MachineStatus.STOPPING">
+<span class="sig-name descname"><span class="pre">STOPPING</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'stopping'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.MachineStatus.STOPPING" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.NonSerializableKeys">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">NonSerializableKeys</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#NonSerializableKeys"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.NonSerializableKeys" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.NonSerializableKeys.KEYS">
+<span class="sig-name descname"><span class="pre">KEYS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">['__engine__',</span> <span class="pre">'__manager__',</span> <span class="pre">'__runner__']</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.NonSerializableKeys.KEYS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ReservedKey</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#ReservedKey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.APP_ROOT">
+<span class="sig-name descname"><span class="pre">APP_ROOT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__app_root__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.APP_ROOT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.ARGS">
+<span class="sig-name descname"><span class="pre">ARGS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__args__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.ARGS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.AUX_RUNNER">
+<span class="sig-name descname"><span class="pre">AUX_RUNNER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__aux_runner__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.AUX_RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.CLIENT_NAME">
+<span class="sig-name descname"><span class="pre">CLIENT_NAME</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__client_name__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.CLIENT_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.COOKIE_JAR">
+<span class="sig-name descname"><span class="pre">COOKIE_JAR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__cookie_jar__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.COOKIE_JAR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.CURRENT_JOB_ID">
+<span class="sig-name descname"><span class="pre">CURRENT_JOB_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__current_job_id__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.CURRENT_JOB_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.ENGINE">
+<span class="sig-name descname"><span class="pre">ENGINE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__engine__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.ENGINE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.EVENT_DATA">
+<span class="sig-name descname"><span class="pre">EVENT_DATA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_data__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.EVENT_DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.EVENT_ID">
+<span class="sig-name descname"><span class="pre">EVENT_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_id__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.EVENT_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.EVENT_ORIGIN">
+<span class="sig-name descname"><span class="pre">EVENT_ORIGIN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_origin__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.EVENT_ORIGIN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.EVENT_ORIGIN_SITE">
+<span class="sig-name descname"><span class="pre">EVENT_ORIGIN_SITE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_origin_site__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.EVENT_ORIGIN_SITE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.EVENT_SCOPE">
+<span class="sig-name descname"><span class="pre">EVENT_SCOPE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__event_scope__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.EVENT_SCOPE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.FROM_RANK_NUMBER">
+<span class="sig-name descname"><span class="pre">FROM_RANK_NUMBER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__from_rank_number__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.FROM_RANK_NUMBER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.IDENTITY_NAME">
+<span class="sig-name descname"><span class="pre">IDENTITY_NAME</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__identity_name__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.IDENTITY_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.IS_RESEND">
+<span class="sig-name descname"><span class="pre">IS_RESEND</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__is_resend__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.IS_RESEND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.JOB_INFO">
+<span class="sig-name descname"><span class="pre">JOB_INFO</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__job_info__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.JOB_INFO" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.JOB_RUN_NUMBER">
+<span class="sig-name descname"><span class="pre">JOB_RUN_NUMBER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__job_run_number__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.JOB_RUN_NUMBER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.MANAGER">
+<span class="sig-name descname"><span class="pre">MANAGER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__manager__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.MANAGER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.NUM_OF_PROCESSES">
+<span class="sig-name descname"><span class="pre">NUM_OF_PROCESSES</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__num_of_processes__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.NUM_OF_PROCESSES" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.PEER_CTX">
+<span class="sig-name descname"><span class="pre">PEER_CTX</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__peer_ctx__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.PEER_CTX" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.RANK_NUMBER">
+<span class="sig-name descname"><span class="pre">RANK_NUMBER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__rank_number__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.RANK_NUMBER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.RC">
+<span class="sig-name descname"><span class="pre">RC</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__rc__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.RC" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.REPLY">
+<span class="sig-name descname"><span class="pre">REPLY</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__reply__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.REPLY" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.RUNNER">
+<span class="sig-name descname"><span class="pre">RUNNER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__runner__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.RUN_ABORT_SIGNAL">
+<span class="sig-name descname"><span class="pre">RUN_ABORT_SIGNAL</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__run_abort_signal__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.RUN_ABORT_SIGNAL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.RUN_NUM">
+<span class="sig-name descname"><span class="pre">RUN_NUM</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__run_num__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.RUN_NUM" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.SECURE_MODE">
+<span class="sig-name descname"><span class="pre">SECURE_MODE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__secure_mode__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.SECURE_MODE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.SHAREABLE">
+<span class="sig-name descname"><span class="pre">SHAREABLE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__shareable__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.SHAREABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.SP_END_POINT">
+<span class="sig-name descname"><span class="pre">SP_END_POINT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__sp_end_point__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.SP_END_POINT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.TASK_DATA">
+<span class="sig-name descname"><span class="pre">TASK_DATA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_data__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.TASK_DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.TASK_ID">
+<span class="sig-name descname"><span class="pre">TASK_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_id__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.TASK_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.TASK_NAME">
+<span class="sig-name descname"><span class="pre">TASK_NAME</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_name__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.TASK_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.TASK_RESULT">
+<span class="sig-name descname"><span class="pre">TASK_RESULT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__task_result__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.TASK_RESULT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.WORKFLOW">
+<span class="sig-name descname"><span class="pre">WORKFLOW</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__workflow__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.WORKFLOW" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.WORKSPACE_OBJECT">
+<span class="sig-name descname"><span class="pre">WORKSPACE_OBJECT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__workspace_object__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.WORKSPACE_OBJECT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedKey.WORKSPACE_ROOT">
+<span class="sig-name descname"><span class="pre">WORKSPACE_ROOT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__workspace_root__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedKey.WORKSPACE_ROOT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedTopic">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ReservedTopic</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#ReservedTopic"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedTopic" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedTopic.ABORT_ASK">
+<span class="sig-name descname"><span class="pre">ABORT_ASK</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__abort_task__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedTopic.ABORT_ASK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedTopic.AUX_COMMAND">
+<span class="sig-name descname"><span class="pre">AUX_COMMAND</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__aux_command__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedTopic.AUX_COMMAND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReservedTopic.END_RUN">
+<span class="sig-name descname"><span class="pre">END_RUN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'__end_run__'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReservedTopic.END_RUN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ReturnCode</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#ReturnCode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.BAD_PEER_CONTEXT">
+<span class="sig-name descname"><span class="pre">BAD_PEER_CONTEXT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'BAD_PEER_CONTEXT'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.BAD_PEER_CONTEXT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.BAD_REQUEST_DATA">
+<span class="sig-name descname"><span class="pre">BAD_REQUEST_DATA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'BAD_REQUEST_DATA'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.BAD_REQUEST_DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.BAD_TASK_DATA">
+<span class="sig-name descname"><span class="pre">BAD_TASK_DATA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'BAD_TASK_DATA'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.BAD_TASK_DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.COMMUNICATION_ERROR">
+<span class="sig-name descname"><span class="pre">COMMUNICATION_ERROR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'COMMUNICATION_ERROR'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.COMMUNICATION_ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.EMPTY_RESULT">
+<span class="sig-name descname"><span class="pre">EMPTY_RESULT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'EMPTY_RESULT'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.EMPTY_RESULT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.ERROR">
+<span class="sig-name descname"><span class="pre">ERROR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'ERROR'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.EXECUTION_EXCEPTION">
+<span class="sig-name descname"><span class="pre">EXECUTION_EXCEPTION</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'EXECUTION_EXCEPTION'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.EXECUTION_EXCEPTION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.EXECUTION_RESULT_ERROR">
+<span class="sig-name descname"><span class="pre">EXECUTION_RESULT_ERROR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'EXECUTION_RESULT_ERROR'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.EXECUTION_RESULT_ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.HANDLER_EXCEPTION">
+<span class="sig-name descname"><span class="pre">HANDLER_EXCEPTION</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'HANDLER_EXCEPTION'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.HANDLER_EXCEPTION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.MISSING_PEER_CONTEXT">
+<span class="sig-name descname"><span class="pre">MISSING_PEER_CONTEXT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'MISSING_PEER_CONTEXT'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.MISSING_PEER_CONTEXT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.MODEL_UNRECOGNIZED">
+<span class="sig-name descname"><span class="pre">MODEL_UNRECOGNIZED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'MODEL_UNRECOGNIZED'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.MODEL_UNRECOGNIZED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.OK">
+<span class="sig-name descname"><span class="pre">OK</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'OK'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.OK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.RUN_MISMATCH">
+<span class="sig-name descname"><span class="pre">RUN_MISMATCH</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'RUN_MISMATCH'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.RUN_MISMATCH" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.SERVER_NOT_READY">
+<span class="sig-name descname"><span class="pre">SERVER_NOT_READY</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'SERVER_NOT_READY'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.SERVER_NOT_READY" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.TASK_ABORTED">
+<span class="sig-name descname"><span class="pre">TASK_ABORTED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'TASK_ABORTED'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.TASK_ABORTED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.TASK_DATA_FILTER_ERROR">
+<span class="sig-name descname"><span class="pre">TASK_DATA_FILTER_ERROR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'TASK_DATA_FILTER_ERROR'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.TASK_DATA_FILTER_ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.TASK_RESULT_FILTER_ERROR">
+<span class="sig-name descname"><span class="pre">TASK_RESULT_FILTER_ERROR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'TASK_RESULT_FILTER_ERROR'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.TASK_RESULT_FILTER_ERROR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.TASK_UNKNOWN">
+<span class="sig-name descname"><span class="pre">TASK_UNKNOWN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'TASK_UNKNOWN'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.TASK_UNKNOWN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.TASK_UNSUPPORTED">
+<span class="sig-name descname"><span class="pre">TASK_UNSUPPORTED</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'TASK_UNSUPPORTED'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.TASK_UNSUPPORTED" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.TOPIC_UNKNOWN">
+<span class="sig-name descname"><span class="pre">TOPIC_UNKNOWN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'TOPIC_UNKNOWN'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.TOPIC_UNKNOWN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ReturnCode.VALIDATE_TYPE_UNKNOWN">
+<span class="sig-name descname"><span class="pre">VALIDATE_TYPE_UNKNOWN</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'VALIDATE_TYPE_UNKNOWN'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ReturnCode.VALIDATE_TYPE_UNKNOWN" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.RunProcessKey">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">RunProcessKey</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#RunProcessKey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.RunProcessKey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.RunProcessKey.CHILD_PROCESS">
+<span class="sig-name descname"><span class="pre">CHILD_PROCESS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_child_process'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.RunProcessKey.CHILD_PROCESS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.RunProcessKey.CONNECTION">
+<span class="sig-name descname"><span class="pre">CONNECTION</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_comm_conn'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.RunProcessKey.CONNECTION" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.RunProcessKey.JOB_ID">
+<span class="sig-name descname"><span class="pre">JOB_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_job_id'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.RunProcessKey.JOB_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.RunProcessKey.LISTEN_PORT">
+<span class="sig-name descname"><span class="pre">LISTEN_PORT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_listen_port'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.RunProcessKey.LISTEN_PORT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.RunProcessKey.PARTICIPANTS">
+<span class="sig-name descname"><span class="pre">PARTICIPANTS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_participants'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.RunProcessKey.PARTICIPANTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.RunProcessKey.STATUS">
+<span class="sig-name descname"><span class="pre">STATUS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_status'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.RunProcessKey.STATUS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ServerCommandKey</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#ServerCommandKey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.AUX_REPLY">
+<span class="sig-name descname"><span class="pre">AUX_REPLY</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'aux_reply'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.AUX_REPLY" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.CLIENTS">
+<span class="sig-name descname"><span class="pre">CLIENTS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'clients'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.CLIENTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.COLLECTOR">
+<span class="sig-name descname"><span class="pre">COLLECTOR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'collector'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.COLLECTOR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.COMMAND">
+<span class="sig-name descname"><span class="pre">COMMAND</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'command'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.COMMAND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.DATA">
+<span class="sig-name descname"><span class="pre">DATA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'data'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.DATA" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.FL_CLIENT">
+<span class="sig-name descname"><span class="pre">FL_CLIENT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'fl_client'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.FL_CLIENT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.FL_CONTEXT">
+<span class="sig-name descname"><span class="pre">FL_CONTEXT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'fl_context'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.FL_CONTEXT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.JOB_ID">
+<span class="sig-name descname"><span class="pre">JOB_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'job_id'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.JOB_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.PEER_FL_CONTEXT">
+<span class="sig-name descname"><span class="pre">PEER_FL_CONTEXT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'peer_fl_ctx'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.PEER_FL_CONTEXT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.SHAREABLE">
+<span class="sig-name descname"><span class="pre">SHAREABLE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'shareable'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.SHAREABLE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.TASK_ID">
+<span class="sig-name descname"><span class="pre">TASK_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'task_id'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.TASK_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.TASK_NAME">
+<span class="sig-name descname"><span class="pre">TASK_NAME</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'task_name'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.TASK_NAME" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandKey.TOPIC">
+<span class="sig-name descname"><span class="pre">TOPIC</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'topic'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandKey.TOPIC" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ServerCommandNames</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#ServerCommandNames"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.AUX_COMMUNICATE">
+<span class="sig-name descname"><span class="pre">AUX_COMMUNICATE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'aux_communicate'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.AUX_COMMUNICATE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.AUX_SEND">
+<span class="sig-name descname"><span class="pre">AUX_SEND</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'aux_send'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.AUX_SEND" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.GET_CLIENTS">
+<span class="sig-name descname"><span class="pre">GET_CLIENTS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'get_clients'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.GET_CLIENTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.GET_ERRORS">
+<span class="sig-name descname"><span class="pre">GET_ERRORS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'get_errors'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.GET_ERRORS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.GET_RUN_INFO">
+<span class="sig-name descname"><span class="pre">GET_RUN_INFO</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'get_run_info'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.GET_RUN_INFO" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.GET_TASK">
+<span class="sig-name descname"><span class="pre">GET_TASK</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'get_task'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.GET_TASK" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.HEARTBEAT">
+<span class="sig-name descname"><span class="pre">HEARTBEAT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'heartbeat'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.HEARTBEAT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.SHOW_STATS">
+<span class="sig-name descname"><span class="pre">SHOW_STATS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'show_stats'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.SHOW_STATS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.ServerCommandNames.SUBMIT_UPDATE">
+<span class="sig-name descname"><span class="pre">SUBMIT_UPDATE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'submit_update'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.ServerCommandNames.SUBMIT_UPDATE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SnapshotKey">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">SnapshotKey</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#SnapshotKey"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.SnapshotKey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SnapshotKey.FL_CONTEXT">
+<span class="sig-name descname"><span class="pre">FL_CONTEXT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'fl_context'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SnapshotKey.FL_CONTEXT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SnapshotKey.JOB_CLIENTS">
+<span class="sig-name descname"><span class="pre">JOB_CLIENTS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_job_clients'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SnapshotKey.JOB_CLIENTS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SnapshotKey.JOB_ID">
+<span class="sig-name descname"><span class="pre">JOB_ID</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_job_id'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SnapshotKey.JOB_ID" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SnapshotKey.JOB_INFO">
+<span class="sig-name descname"><span class="pre">JOB_INFO</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_job_info'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SnapshotKey.JOB_INFO" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SnapshotKey.SERVER_RUNNER">
+<span class="sig-name descname"><span class="pre">SERVER_RUNNER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_Server_Runner'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SnapshotKey.SERVER_RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SnapshotKey.WORKSPACE">
+<span class="sig-name descname"><span class="pre">WORKSPACE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_workspace'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SnapshotKey.WORKSPACE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">SystemComponents</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#SystemComponents"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.CANCEL_RESOURCE_PROCESSOR">
+<span class="sig-name descname"><span class="pre">CANCEL_RESOURCE_PROCESSOR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'cancel_resource_processor'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.CANCEL_RESOURCE_PROCESSOR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.CHECK_RESOURCE_PROCESSOR">
+<span class="sig-name descname"><span class="pre">CHECK_RESOURCE_PROCESSOR</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'check_resource_processor'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.CHECK_RESOURCE_PROCESSOR" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.CLIENT_RUNNER">
+<span class="sig-name descname"><span class="pre">CLIENT_RUNNER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'client_runner'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.CLIENT_RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.JOB_MANAGER">
+<span class="sig-name descname"><span class="pre">JOB_MANAGER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'job_manager'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.JOB_MANAGER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.JOB_RUNNER">
+<span class="sig-name descname"><span class="pre">JOB_RUNNER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'job_runner'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.JOB_RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.JOB_SCHEDULER">
+<span class="sig-name descname"><span class="pre">JOB_SCHEDULER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'job_scheduler'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.JOB_SCHEDULER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.RESOURCE_CONSUMER">
+<span class="sig-name descname"><span class="pre">RESOURCE_CONSUMER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'resource_consumer'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.RESOURCE_CONSUMER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.RESOURCE_MANAGER">
+<span class="sig-name descname"><span class="pre">RESOURCE_MANAGER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'resource_manager'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.RESOURCE_MANAGER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.SystemComponents.SERVER_RUNNER">
+<span class="sig-name descname"><span class="pre">SERVER_RUNNER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'server_runner'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.SystemComponents.SERVER_RUNNER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.WorkspaceConstants">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">WorkspaceConstants</span></span><a class="reference internal" href="../_modules/nvflare/apis/fl_constant.html#WorkspaceConstants"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.apis.fl_constant.WorkspaceConstants" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>hard coded file names inside the workspace folder.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.WorkspaceConstants.APP_PREFIX">
+<span class="sig-name descname"><span class="pre">APP_PREFIX</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'app_'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.WorkspaceConstants.APP_PREFIX" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.WorkspaceConstants.AUDIT_LOG">
+<span class="sig-name descname"><span class="pre">AUDIT_LOG</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'audit.log'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.WorkspaceConstants.AUDIT_LOG" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.WorkspaceConstants.LOGGING_CONFIG">
+<span class="sig-name descname"><span class="pre">LOGGING_CONFIG</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'log.config'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.WorkspaceConstants.LOGGING_CONFIG" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.WorkspaceConstants.RESTART_FILE">
+<span class="sig-name descname"><span class="pre">RESTART_FILE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'restart.fl'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.WorkspaceConstants.RESTART_FILE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.WorkspaceConstants.SHUTDOWN_FILE">
+<span class="sig-name descname"><span class="pre">SHUTDOWN_FILE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'shutdown.fl'</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.WorkspaceConstants.SHUTDOWN_FILE" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.apis.fl_constant.WorkspaceConstants.WORKSPACE_PREFIX">
+<span class="sig-name descname"><span class="pre">WORKSPACE_PREFIX</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">''</span></em><a class="headerlink" href="#nvflare.apis.fl_constant.WorkspaceConstants.WORKSPACE_PREFIX" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="nvflare.apis.fl_component.html" class="btn btn-neutral float-left" title="nvflare.apis.fl_component module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nvflare.apis.fl_context.html" class="btn btn-neutral float-right" title="nvflare.apis.fl_context module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

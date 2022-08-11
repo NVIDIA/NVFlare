@@ -1,0 +1,528 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.app_common.executors.multi_process_executor &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+        <script src="../../../../_static/jquery.js"></script>
+        <script src="../../../../_static/underscore.js"></script>
+        <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../_static/doctools.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.app_common.executors.multi_process_executor</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.app_common.executors.multi_process_executor</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">shlex</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span> <span class="nn">multiprocessing.connection</span> <span class="kn">import</span> <span class="n">Client</span><span class="p">,</span> <span class="n">Listener</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.event_type</span> <span class="kn">import</span> <span class="n">EventType</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.executor</span> <span class="kn">import</span> <span class="n">Executor</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_component</span> <span class="kn">import</span> <span class="n">FLComponent</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span><span class="p">,</span> <span class="n">ReturnCode</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">make_reply</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.signal</span> <span class="kn">import</span> <span class="n">Signal</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.utils.common_utils</span> <span class="kn">import</span> <span class="n">get_open_ports</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.utils.fl_context_utils</span> <span class="kn">import</span> <span class="n">get_serializable_data</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.common.multi_process_executor_constants</span> <span class="kn">import</span> <span class="n">CommunicateData</span><span class="p">,</span> <span class="n">CommunicationMetaData</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.utils.class_utils</span> <span class="kn">import</span> <span class="n">ModuleScanner</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.utils.component_builder</span> <span class="kn">import</span> <span class="n">ComponentBuilder</span>
+
+
+<div class="viewcode-block" id="WorkerComponentBuilder"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.WorkerComponentBuilder">[docs]</a><span class="k">class</span> <span class="nc">WorkerComponentBuilder</span><span class="p">(</span><span class="n">ComponentBuilder</span><span class="p">):</span>
+    <span class="n">FL_PACKAGES</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;nvflare&quot;</span><span class="p">]</span>
+    <span class="n">FL_MODULES</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;client&quot;</span><span class="p">,</span> <span class="s2">&quot;app&quot;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Component to build workers.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">module_scanner</span> <span class="o">=</span> <span class="n">ModuleScanner</span><span class="p">(</span><span class="n">WorkerComponentBuilder</span><span class="o">.</span><span class="n">FL_PACKAGES</span><span class="p">,</span> <span class="n">WorkerComponentBuilder</span><span class="o">.</span><span class="n">FL_MODULES</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="WorkerComponentBuilder.get_module_scanner"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.WorkerComponentBuilder.get_module_scanner">[docs]</a>    <span class="k">def</span> <span class="nf">get_module_scanner</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">module_scanner</span></div></div>
+
+
+<div class="viewcode-block" id="MultiProcessExecutor"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor">[docs]</a><span class="k">class</span> <span class="nc">MultiProcessExecutor</span><span class="p">(</span><span class="n">Executor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">executor_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num_of_processes</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">components</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Manage the multi-process execution life cycle.</span>
+
+<span class="sd">        Arguments:</span>
+<span class="sd">            executor_id: executor component ID</span>
+<span class="sd">            num_of_processes: number of processes to create</span>
+<span class="sd">            components: a dictionary for component classes to their arguments</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">executor_id</span> <span class="o">=</span> <span class="n">executor_id</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">components</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">handlers</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_build_components</span><span class="p">(</span><span class="n">components</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">num_of_processes</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> must be an instance of int but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">num_of_processes</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">num_of_processes</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="n">num_of_processes</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">num_of_processes</span><span class="si">}</span><span class="s2"> must &gt;= 1.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_of_processes</span> <span class="o">=</span> <span class="n">num_of_processes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">executor</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exe_process</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">open_ports</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">stop_execute</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relay_threads</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">finalized</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">event_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relay_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+<div class="viewcode-block" id="MultiProcessExecutor.get_multi_process_command"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor.get_multi_process_command">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_multi_process_command</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Provide the command for starting multi-process execution.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            multi-process starting command</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+    <span class="k">def</span> <span class="nf">_build_components</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">components</span><span class="p">):</span>
+        <span class="n">component_builder</span> <span class="o">=</span> <span class="n">WorkerComponentBuilder</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">components</span><span class="p">:</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;id&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;missing component id&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">components</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span> <span class="o">=</span> <span class="n">component_builder</span><span class="o">.</span><span class="n">build_component</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">components</span><span class="p">[</span><span class="n">cid</span><span class="p">],</span> <span class="n">FLComponent</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">handlers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">components</span><span class="p">[</span><span class="n">cid</span><span class="p">])</span>
+
+<div class="viewcode-block" id="MultiProcessExecutor.handle_event"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor.handle_event">[docs]</a>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">START_RUN</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">END_RUN</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">finalize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pass_event_to_rank_processes</span><span class="p">(</span><span class="n">event_type</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_pass_event_to_rank_processes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">event_site</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">EVENT_ORIGIN_SITE</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">event_site</span> <span class="o">!=</span> <span class="n">CommunicateData</span><span class="o">.</span><span class="n">SUB_WORKER_PROCESS</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_lock</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+                        <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">CommunicateData</span><span class="o">.</span><span class="n">HANDLE_EVENT</span><span class="p">,</span>
+                        <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">FL_CTX</span><span class="p">:</span> <span class="n">get_serializable_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">),</span>
+                        <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EVENT_TYPE</span><span class="p">:</span> <span class="n">event_type</span><span class="p">,</span>
+                    <span class="p">}</span>
+                    <span class="c1"># send the init data to all the child processes</span>
+                    <span class="k">for</span> <span class="n">conn_client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">:</span>
+                        <span class="n">conn_client</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">HANDLE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+                    <span class="n">return_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">HANDLE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+                    <span class="c1"># update the fl_ctx from the child process return data.</span>
+                    <span class="n">fl_ctx</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">return_data</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">FL_CTX</span><span class="p">]</span><span class="o">.</span><span class="n">props</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="c1"># Warning: Have to set fire_event=False, otherwise it will cause dead loop on the event handling!!!</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_warning</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Failed to relay the event to child processes. Event: </span><span class="si">{</span><span class="n">event_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">fire_event</span><span class="o">=</span><span class="kc">False</span>
+                    <span class="p">)</span>
+
+<div class="viewcode-block" id="MultiProcessExecutor.initialize"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor.initialize">[docs]</a>    <span class="k">def</span> <span class="nf">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">executor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">executor_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="p">,</span> <span class="n">Executor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;invalid executor </span><span class="si">{}</span><span class="s2">: expect Executor but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">executor_id</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialize_multi_process</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_initialize_multi_process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">open_ports</span> <span class="o">=</span> <span class="n">get_open_ports</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_of_processes</span> <span class="o">*</span> <span class="mi">3</span><span class="p">)</span>
+
+            <span class="n">command</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">get_multi_process_command</span><span class="p">()</span>
+                <span class="o">+</span> <span class="s2">&quot; -m nvflare.private.fed.app.client.sub_worker_process&quot;</span>
+                <span class="o">+</span> <span class="s2">&quot; -m &quot;</span>
+                <span class="o">+</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">ARGS</span><span class="p">)</span><span class="o">.</span><span class="n">workspace</span>
+                <span class="o">+</span> <span class="s2">&quot; --ports &quot;</span>
+                <span class="o">+</span> <span class="s2">&quot;-&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">open_ports</span><span class="p">])</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;multi_process_executor command: </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="c1"># use os.setsid to create new process group ID</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">exe_process</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">),</span> <span class="n">preexec_fn</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">setsid</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
+
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_of_processes</span><span class="p">):</span>
+                <span class="n">listen_port</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">open_ports</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">+</span> <span class="mi">2</span><span class="p">]</span>
+                <span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay_fire_event</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">listen_port</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">relay_threads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">thread</span><span class="p">)</span>
+                <span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+                <span class="n">open_port</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">open_ports</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="mi">3</span><span class="p">]</span>
+                <span class="n">exe_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_connection</span><span class="p">(</span><span class="n">open_port</span><span class="p">)</span>
+
+                <span class="n">open_port</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">open_ports</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="mi">3</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+                <span class="n">handle_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_connection</span><span class="p">(</span><span class="n">open_port</span><span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">{</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">:</span> <span class="n">exe_conn</span><span class="p">,</span> <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">HANDLE_CONN</span><span class="p">:</span> <span class="n">handle_conn</span><span class="p">}</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Created the connections to child processes on ports: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">open_ports</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">FL_CTX</span><span class="p">:</span> <span class="n">get_serializable_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">),</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">COMPONENTS</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">components</span><span class="p">,</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">HANDLERS</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">handlers</span><span class="p">,</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">LOCAL_EXECUTOR</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="p">,</span>
+            <span class="p">}</span>
+
+            <span class="c1"># send the init data to all the child processes</span>
+            <span class="n">responses</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">conn_client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">:</span>
+                <span class="n">conn_client</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">responses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+
+            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="n">run_abort_signal</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_run_abort_signal</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">run_abort_signal</span> <span class="ow">and</span> <span class="n">run_abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">finalize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="k">break</span>
+
+                <span class="c1"># Make sure to receive responses from all rank processes.</span>
+                <span class="n">index</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="n">received_all</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">for</span> <span class="n">conn_client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">:</span>
+                    <span class="n">received_all</span> <span class="o">=</span> <span class="n">received_all</span> <span class="ow">and</span> <span class="n">responses</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">responses</span><span class="p">[</span><span class="n">index</span><span class="p">]:</span>
+                        <span class="k">if</span> <span class="n">conn_client</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="mf">0.2</span><span class="p">):</span>
+                            <span class="n">conn_client</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+                            <span class="n">responses</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="n">index</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">received_all</span><span class="p">:</span>
+                    <span class="k">break</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;error initializing multi_process executor&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_relay_fire_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">listen_port</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">address</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">listen_port</span><span class="p">))</span>
+        <span class="n">listener</span> <span class="o">=</span> <span class="n">Listener</span><span class="p">(</span><span class="n">address</span><span class="p">,</span> <span class="n">authkey</span><span class="o">=</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">PARENT_PASSWORD</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">listener</span><span class="o">.</span><span class="n">accept</span><span class="p">()</span>
+
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stop_execute</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">conn</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="mf">0.1</span><span class="p">):</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+                    <span class="n">event_type</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EVENT_TYPE</span><span class="p">]</span>
+                    <span class="n">rank_number</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">RANK_NUMBER</span><span class="p">]</span>
+
+                    <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">relay_lock</span><span class="p">:</span>
+                        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">FL_CTX</span><span class="p">]</span><span class="o">.</span><span class="n">props</span><span class="p">)</span>
+
+                        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">FROM_RANK_NUMBER</span><span class="p">,</span> <span class="n">rank_number</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span>
+                            <span class="n">FLContextKey</span><span class="o">.</span><span class="n">EVENT_ORIGIN_SITE</span><span class="p">,</span>
+                            <span class="n">CommunicateData</span><span class="o">.</span><span class="n">SUB_WORKER_PROCESS</span><span class="p">,</span>
+                            <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                            <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                        <span class="p">)</span>
+                        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+                        <span class="n">engine</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">event_type</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+                        <span class="n">return_data</span> <span class="o">=</span> <span class="p">{</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">FL_CTX</span><span class="p">:</span> <span class="n">get_serializable_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)}</span>
+                    <span class="n">conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">return_data</span><span class="p">)</span>
+            <span class="k">except</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Failed to relay the fired events from rank_processes.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_create_connection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_port</span><span class="p">):</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">conn</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">address</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="n">open_port</span><span class="p">)</span>
+                <span class="n">conn</span> <span class="o">=</span> <span class="n">Client</span><span class="p">(</span><span class="n">address</span><span class="p">,</span> <span class="n">authkey</span><span class="o">=</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">CHILD_PASSWORD</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+            <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+                <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">conn</span>
+
+<div class="viewcode-block" id="MultiProcessExecutor.execute"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor.execute">[docs]</a>    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;There&#39;s no executor for task </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_name</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execute_multi_process</span><span class="p">(</span>
+            <span class="n">task_name</span><span class="o">=</span><span class="n">task_name</span><span class="p">,</span> <span class="n">shareable</span><span class="o">=</span><span class="n">shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="n">abort_signal</span><span class="o">=</span><span class="n">abort_signal</span>
+        <span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_execute_multi_process</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+
+        <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">finalize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">CommunicateData</span><span class="o">.</span><span class="n">EXECUTE</span><span class="p">,</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">TASK_NAME</span><span class="p">:</span> <span class="n">task_name</span><span class="p">,</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">SHAREABLE</span><span class="p">:</span> <span class="n">shareable</span><span class="p">,</span>
+                <span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">FL_CTX</span><span class="p">:</span> <span class="n">get_serializable_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">),</span>
+            <span class="p">}</span>
+
+            <span class="c1"># send the execute command to all the child processes</span>
+            <span class="k">for</span> <span class="n">conn_client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">:</span>
+                <span class="n">conn_client</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">finalize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="mf">1.0</span><span class="p">):</span>
+                    <span class="c1"># Only need to receive the Shareable and FLContext update from rank 0 process.</span>
+                    <span class="n">return_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+                    <span class="n">shareable</span> <span class="o">=</span> <span class="n">return_data</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">SHAREABLE</span><span class="p">]</span>
+                    <span class="n">fl_ctx</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">return_data</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">FL_CTX</span><span class="p">]</span><span class="o">.</span><span class="n">props</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">shareable</span>
+        <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Multi-Process Execution error.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_RESULT_ERROR</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MultiProcessExecutor.finalize"><a class="viewcode-back" href="../../../../apidocs/nvflare.app_common.executors.multi_process_executor.html#nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor.finalize">[docs]</a>    <span class="k">def</span> <span class="nf">finalize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;This is called when exiting/aborting the executor.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalized</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">finalized</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stop_execute</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">CommunicateData</span><span class="o">.</span><span class="n">CLOSE</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">conn_client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_clients</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">conn_client</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">EXE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">conn_client</span><span class="p">[</span><span class="n">CommunicationMetaData</span><span class="o">.</span><span class="n">HANDLE_CONN</span><span class="p">]</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;close command sent to rank processes.&quot;</span><span class="p">)</span>
+            <span class="k">except</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Failed to send the close command. &quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">killpg</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getpgid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exe_process</span><span class="o">.</span><span class="n">pid</span><span class="p">),</span> <span class="mi">9</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;kill signal sent&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exe_process</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">exe_process</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+
+        <span class="c1"># wait for all relay threads to join!</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">relay_threads</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+                <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Multi-Process Executor finalized!&quot;</span><span class="p">,</span> <span class="n">fire_event</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

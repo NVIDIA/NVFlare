@@ -1,0 +1,554 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.server.server_engine_internal_spec module &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.private.fed.server.server_json_config module" href="nvflare.private.fed.server.server_json_config.html" />
+    <link rel="prev" title="nvflare.private.fed.server.server_engine module" href="nvflare.private.fed.server.server_engine.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.ha.html">nvflare.ha package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.private.html">nvflare.private package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.private.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.private.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.private.html#module-nvflare.private">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+          <li><a href="nvflare.private.html">nvflare.private package</a> &raquo;</li>
+          <li><a href="nvflare.private.fed.html">nvflare.private.fed package</a> &raquo;</li>
+          <li><a href="nvflare.private.fed.server.html">nvflare.private.fed.server package</a> &raquo;</li>
+      <li>nvflare.private.fed.server.server_engine_internal_spec module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/apidocs/nvflare.private.fed.server.server_engine_internal_spec.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nvflare.private.fed.server.server_engine_internal_spec">
+<span id="nvflare-private-fed-server-server-engine-internal-spec-module"></span><h1>nvflare.private.fed.server.server_engine_internal_spec module<a class="headerlink" href="#module-nvflare.private.fed.server.server_engine_internal_spec" title="Permalink to this heading">¶</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.EngineInfo">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">EngineInfo</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#EngineInfo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.EngineInfo" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Engine information.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ServerEngineInternalSpec</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec" title="nvflare.apis.server_engine_spec.ServerEngineSpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">ServerEngineSpec</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.abort_app_on_clients">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abort_app_on_clients</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">clients:</span> <span class="pre">[&lt;class</span> <span class="pre">'str'&gt;]</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.abort_app_on_clients"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.abort_app_on_clients" title="Permalink to this definition">¶</a></dt>
+<dd><p>Abort the application on the specified clients.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.abort_app_on_server">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abort_app_on_server</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.abort_app_on_server"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.abort_app_on_server" title="Permalink to this definition">¶</a></dt>
+<dd><p>Abort the application on the server.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.ask_to_stop">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ask_to_stop</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.ask_to_stop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.ask_to_stop" title="Permalink to this definition">¶</a></dt>
+<dd><p>Ask the engine to stop the current run.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.aux_send">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">aux_send</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">topic</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.aux_send"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.aux_send" title="Permalink to this definition">¶</a></dt>
+<dd><p>Send a request to client(s) via the auxiliary channel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>targets</strong> – list of Client or client names</p></li>
+<li><p><strong>topic</strong> – topic of the request</p></li>
+<li><p><strong>request</strong> – request to be sent</p></li>
+<li><p><strong>timeout</strong> – number of secs to wait for replies</p></li>
+<li><p><strong>fl_ctx</strong> – FL context</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>client_name =&gt; Shareable</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>A dict of replies</p>
+</dd>
+</dl>
+<p>NOTE: when a reply is received, the peer_ctx props must be set into the PEER_PROPS header
+of the reply Shareable.</p>
+<p>If a reply is not received from a client, do not put it into the reply dict.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.build_component">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">build_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.build_component"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.build_component" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build a component from the config_dict.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>config_dict</strong> – configuration.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.check_app_start_readiness">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">check_app_start_readiness</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.check_app_start_readiness"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.check_app_start_readiness" title="Permalink to this definition">¶</a></dt>
+<dd><p>Check whether the app is ready to start.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.delete_job_id">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">delete_job_id</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.delete_job_id"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.delete_job_id" title="Permalink to this definition">¶</a></dt>
+<dd><p>Delete specified RUN.</p>
+<p>The Engine must do status check before the run can be deleted.
+:param job_id: job id</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.deploy_app_to_server">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">deploy_app_to_server</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">app_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">app_staging_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.deploy_app_to_server"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.deploy_app_to_server" title="Permalink to this definition">¶</a></dt>
+<dd><p>Deploy the specified app to the server.</p>
+<p>Copy the app folder tree from staging area to the server’s RUN area</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>job_id</strong> – job id of the app to be deployed</p></li>
+<li><p><strong>app_name</strong> – name of the app to be deployed</p></li>
+<li><p><strong>app_staging_path</strong> – the full path to the app folder in staging area</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_app_data">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_app_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">app_name:</span> <span class="pre">str)</span> <span class="pre">-&gt;</span> <span class="pre">(&lt;class</span> <span class="pre">'str'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">&lt;class</span> <span class="pre">'object'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_app_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_app_data" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get data for deploying the app.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>app_name</strong> – name of the app</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_app_run_info">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_app_run_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.private.fed.server.run_manager.html#nvflare.private.fed.server.run_manager.RunInfo" title="nvflare.private.fed.server.run_manager.RunInfo"><span class="pre">RunInfo</span></a></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_app_run_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_app_run_info" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the app RunInfo from the child process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>App RunInfo</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_client_from_name">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_client_from_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.apis.client.html#nvflare.apis.client.Client" title="nvflare.apis.client.Client"><span class="pre">Client</span></a></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_client_from_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_client_from_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the registered client token from client_name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>client_name</strong> – client name</p>
+</dd>
+</dl>
+<p>Returns: registered client</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_client_name_from_token">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_client_name_from_token</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_client_name_from_token"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_client_name_from_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the registered client name from communication token.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>token</strong> – communication token</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Client name</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_engine_info">
+<span class="sig-name descname"><span class="pre">get_engine_info</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.private.fed.server.server_engine_internal_spec.EngineInfo" title="nvflare.private.fed.server.server_engine_internal_spec.EngineInfo"><span class="pre">EngineInfo</span></a></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_engine_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_engine_info" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get general info of the engine.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_errors">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_errors" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the errors of the server components.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_id</strong> – current job_id</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Server components errors.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_job_clients">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_job_clients</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client_sites</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">{}</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_job_clients"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_job_clients" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the participating clients for the job</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>client_sites</strong> – clients with the dispatching info</p>
+</dd>
+</dl>
+<p>Returns:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_run_info">
+<span class="sig-name descname"><span class="pre">get_run_info</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="nvflare.private.fed.server.run_manager.html#nvflare.private.fed.server.run_manager.RunInfo" title="nvflare.private.fed.server.run_manager.RunInfo"><span class="pre">RunInfo</span></a></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_run_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_run_info" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_staging_path_of_app">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_staging_path_of_app</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">app_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.get_staging_path_of_app"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.get_staging_path_of_app" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the staging path of the app waiting to be deployed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>app_name</strong> (<em>str</em>) – application name</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The app’s folder path or empty string if the app doesn’t exist</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.remove_clients">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">remove_clients</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">clients:</span> <span class="pre">[&lt;class</span> <span class="pre">'str'&gt;]</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.remove_clients"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.remove_clients" title="Permalink to this definition">¶</a></dt>
+<dd><p>Remove specified clients.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>clients</strong> – clients to be removed</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.restart_server">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">restart_server</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.restart_server"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.restart_server" title="Permalink to this definition">¶</a></dt>
+<dd><p>Restart the server.</p>
+<p>The engine should not exit right away.
+See shutdown_server.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.set_configurator">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">set_configurator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">conf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.private.fed.server.server_json_config.html#nvflare.private.fed.server.server_json_config.ServerJsonConfigurator" title="nvflare.private.fed.server.server_json_config.ServerJsonConfigurator"><span class="pre">ServerJsonConfigurator</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.set_configurator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.set_configurator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the configurator for server.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>conf</strong> – A ServerJsonConfigurator object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.set_job_runner">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">set_job_runner</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_runner</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner" title="nvflare.private.fed.server.job_runner.JobRunner"><span class="pre">JobRunner</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_manager</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.job_def_manager_spec.html#nvflare.apis.job_def_manager_spec.JobDefManagerSpec" title="nvflare.apis.job_def_manager_spec.JobDefManagerSpec"><span class="pre">JobDefManagerSpec</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.set_job_runner"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.set_job_runner" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the JobRunner for server.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>job_runner</strong> – A JobRunner object</p></li>
+<li><p><strong>job_manager</strong> – A JobDefManagerSpec object</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.set_run_manager">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">set_run_manager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">run_manager</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.private.fed.server.run_manager.html#nvflare.private.fed.server.run_manager.RunManager" title="nvflare.private.fed.server.run_manager.RunManager"><span class="pre">RunManager</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.set_run_manager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.set_run_manager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the RunManager for server.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>run_manager</strong> – A RunManager object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.show_stats">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">show_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.show_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.show_stats" title="Permalink to this definition">¶</a></dt>
+<dd><p>Show_stats of the server.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_id</strong> – current job_id</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Component stats of the server</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.shutdown_server">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">shutdown_server</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.shutdown_server"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.shutdown_server" title="Permalink to this definition">¶</a></dt>
+<dd><p>Shutdown the server.</p>
+<p>The engine should not exit right away.
+It should set its status to STOPPING, and set up a timer (in a different thread),
+and return from this call right away (if other restart conditions are met).
+When the timer fires, it exits.
+This would give the caller to process the feedback or clean up (e.g. admin cmd response).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.start_app_on_server">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">start_app_on_server</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_idber</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_clients</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">snapshot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/server/server_engine_internal_spec.html#ServerEngineInternalSpec.start_app_on_server"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.server.server_engine_internal_spec.ServerEngineInternalSpec.start_app_on_server" title="Permalink to this definition">¶</a></dt>
+<dd><p>Start the FL app on Server.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>An error message. An empty string if successful.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="nvflare.private.fed.server.server_engine.html" class="btn btn-neutral float-left" title="nvflare.private.fed.server.server_engine module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nvflare.private.fed.server.server_json_config.html" class="btn btn-neutral float-right" title="nvflare.private.fed.server.server_json_config module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

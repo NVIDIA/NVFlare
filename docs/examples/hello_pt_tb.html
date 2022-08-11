@@ -1,0 +1,542 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hello PyTorch with TensorBoard &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Hello TensorFlow 2" href="hello_tf2.html" />
+    <link rel="prev" title="Hello PyTorch" href="hello_pt.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../example_applications.html">Example Applications</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="hello_scatter_and_gather.html">Hello Scatter and Gather</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hello_cross_val.html">Hello Cross-Site Validation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hello_pt.html">Hello PyTorch</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Hello PyTorch with TensorBoard</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#adding-tensorboard-streaming-to-configurations">Adding TensorBoard Streaming to Configurations</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#adding-tensorboard-streaming-to-your-code">Adding TensorBoard Streaming to your Code</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#train-the-model-federated">Train the Model, Federated!</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#running-the-fl-system">Running the FL System</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#viewing-the-tensorboard-dashboard-during-training">Viewing the TensorBoard Dashboard during Training</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#accessing-the-results">Accessing the results</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#shutdown-fl-system">Shutdown FL system</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="hello_tf2.html">Hello TensorFlow 2</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic">Hello Cyclic Weight Transfer (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_analysis">Federated Analysis (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10 (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai">Hello MONAI (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18">Differential Privacy for BraTS18 Segmentation (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate">Prostate Segmentation from Multi-source Data (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../example_applications.html#custom-code-in-example-apps">Custom Code in Example Apps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../example_applications.html">Example Applications</a> &raquo;</li>
+      <li>Hello PyTorch with TensorBoard</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/examples/hello_pt_tb.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="hello-pytorch-with-tensorboard">
+<span id="hello-pt-tb"></span><h1>Hello PyTorch with TensorBoard<a class="headerlink" href="#hello-pytorch-with-tensorboard" title="Permalink to this heading">¶</a></h1>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h2>
+<p>In this exercise, you will learn how to stream TensorBoard events from the clients
+to the server in order to visualize live training metrics from a central place on the server.</p>
+<p>This exercise will be working with the <code class="docutils literal notranslate"><span class="pre">hello-pt-tb</span></code> application in the examples folder,
+which builds upon <a class="reference internal" href="hello_pt.html"><span class="doc">Hello PyTorch</span></a> by adding TensorBoard streaming.</p>
+<p>The setup of this exercise consists of one <strong>server</strong> and two <strong>clients</strong>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This exercise differs from <a class="reference internal" href="hello_pt.html"><span class="doc">Hello PyTorch</span></a>, as it uses the <code class="docutils literal notranslate"><span class="pre">Learner</span></code> API along with the <code class="docutils literal notranslate"><span class="pre">LearnerExecutor</span></code>.
+In short, the execution flow is abstracted away into the <code class="docutils literal notranslate"><span class="pre">LearnerExecutor</span></code>, allowing you to only need to implement the required methods in the <code class="docutils literal notranslate"><span class="pre">Learner</span></code> class.
+This will not be the focus of this guide, however you can learn more at <a class="reference internal" href="../apidocs/nvflare.app_common.abstract.learner_spec.html#nvflare.app_common.abstract.learner_spec.Learner" title="nvflare.app_common.abstract.learner_spec.Learner"><code class="xref py py-class docutils literal notranslate"><span class="pre">Learner</span></code></a>
+and <a class="reference internal" href="../apidocs/nvflare.app_common.executors.learner_executor.html#nvflare.app_common.executors.learner_executor.LearnerExecutor" title="nvflare.app_common.executors.learner_executor.LearnerExecutor"><code class="xref py py-class docutils literal notranslate"><span class="pre">LearnerExecutor</span></code></a>.</p>
+</div>
+<p>Let’s get started. Make sure you have an environment with NVIDIA FLARE installed as described in
+<a class="reference internal" href="../quickstart.html"><span class="doc">quickstart</span></a> guide. First clone the repo:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/NVIDIA/NVFlare.git
+</pre></div>
+</div>
+<p>Now remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
+Since you will use PyTorch, torchvision, and TensorBoard for this exercise, let’s go ahead and install these libraries:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>nvflare-env<span class="o">)</span> $ python3 -m pip install torch torchvision tensorboard
+</pre></div>
+</div>
+</section>
+<section id="adding-tensorboard-streaming-to-configurations">
+<h2>Adding TensorBoard Streaming to Configurations<a class="headerlink" href="#adding-tensorboard-streaming-to-configurations" title="Permalink to this heading">¶</a></h2>
+<p>Inside the config folder there are two files, <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code> and <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">config_fed_client.json</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 2</span><span class="w">  </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"></span>
+<span class="linenos"> 3</span>
+<span class="linenos"> 4</span><span class="w">  </span><span class="nt">&quot;executors&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos"> 5</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 6</span><span class="w">      </span><span class="nt">&quot;tasks&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos"> 7</span><span class="w">        </span><span class="s2">&quot;train&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos"> 8</span><span class="w">        </span><span class="s2">&quot;submit_model&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos"> 9</span><span class="w">        </span><span class="s2">&quot;validate&quot;</span><span class="w"></span>
+<span class="linenos">10</span><span class="w">      </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">11</span><span class="w">      </span><span class="nt">&quot;executor&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">12</span><span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Executor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">13</span><span class="w">        </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.executors.learner_executor.LearnerExecutor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">14</span><span class="w">        </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">15</span><span class="w">          </span><span class="nt">&quot;learner_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pt_learner&quot;</span><span class="w"></span>
+<span class="linenos">16</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">17</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">18</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">19</span><span class="w">  </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">20</span><span class="w">  </span><span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">21</span><span class="w">  </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">22</span><span class="w">  </span><span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">23</span><span class="w">  </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">24</span><span class="w">  </span><span class="nt">&quot;components&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">25</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">26</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pt_learner&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">27</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pt_learner.PTLearner&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">28</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">29</span><span class="w">        </span><span class="nt">&quot;lr&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.01</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">30</span><span class="w">        </span><span class="nt">&quot;epochs&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">31</span><span class="w">        </span><span class="nt">&quot;analytic_sender_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;analytic_sender&quot;</span><span class="w"></span>
+<span class="linenos">32</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">33</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">34</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">35</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;analytic_sender&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">36</span><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AnalyticsSender&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">37</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;event_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;analytix_log_stats&quot;</span><span class="p">}</span><span class="w"></span>
+<span class="linenos">38</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">39</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">40</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;event_to_fed&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">41</span><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ConvertToFedEvent&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">42</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;events_to_convert&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;analytix_log_stats&quot;</span><span class="p">],</span><span class="w"> </span><span class="nt">&quot;fed_event_prefix&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fed.&quot;</span><span class="p">}</span><span class="w"></span>
+<span class="linenos">43</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">44</span><span class="w">  </span><span class="p">]</span><span class="w"></span>
+<span class="linenos">45</span><span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+<p>Take a look at the components section of the client config at line 24.
+The first component is the <code class="docutils literal notranslate"><span class="pre">pt_learner</span></code> which contains the initialization, training, and validation logic.
+<code class="docutils literal notranslate"><span class="pre">pt_learner.py</span></code> is where we will add our TensorBoard streaming changes.</p>
+<p>Next we have the <a class="reference internal" href="../apidocs/nvflare.app_common.widgets.streaming.html#nvflare.app_common.widgets.streaming.AnalyticsSender" title="nvflare.app_common.widgets.streaming.AnalyticsSender"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnalyticsSender</span></code></a>,
+which implements some common methods that follow the signatures from the PyTorch SummaryWriter.
+This makes it easy for the <code class="docutils literal notranslate"><span class="pre">pt_learner</span></code> to log metrics and send events.</p>
+<p>Finally, we have the <a class="reference internal" href="../apidocs/nvflare.app_common.widgets.convert_to_fed_event.html#nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent" title="nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"><code class="xref py py-class docutils literal notranslate"><span class="pre">ConvertToFedEvent</span></code></a>,
+which converts local events to federated events.
+This changes the event <code class="docutils literal notranslate"><span class="pre">analytix_log_stats</span></code> into a fed event <code class="docutils literal notranslate"><span class="pre">fed.analytix_log_stats</span></code>,
+which will then be streamed from the clients to the server.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">config_fed_server.json</span><a class="headerlink" href="#id2" title="Permalink to this code">¶</a></div>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 2</span><span class="w">  </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"></span>
+<span class="linenos"> 3</span>
+<span class="linenos"> 4</span><span class="w">  </span><span class="nt">&quot;server&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 5</span><span class="w">    </span><span class="nt">&quot;heart_beat_timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="w"></span>
+<span class="linenos"> 6</span><span class="w">  </span><span class="p">},</span><span class="w"></span>
+<span class="linenos"> 7</span><span class="w">  </span><span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w"></span>
+<span class="linenos"> 8</span><span class="w">  </span><span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w"></span>
+<span class="linenos"> 9</span><span class="w">  </span><span class="nt">&quot;components&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">10</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">11</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;persistor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">12</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">13</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">14</span><span class="w">        </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">15</span><span class="w">          </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;simple_network.SimpleNetwork&quot;</span><span class="w"></span>
+<span class="linenos">16</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">17</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">18</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">19</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">20</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">21</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">22</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"></span>
+<span class="linenos">23</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">24</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">25</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;aggregator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">26</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">27</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">28</span><span class="w">        </span><span class="nt">&quot;expected_data_kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;WEIGHTS&quot;</span><span class="w"></span>
+<span class="linenos">29</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">30</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">31</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">32</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model_locator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">33</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.pt.pt_file_model_locator.PTFileModelLocator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">34</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">35</span><span class="w">        </span><span class="nt">&quot;pt_persistor_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;persistor&quot;</span><span class="w"></span>
+<span class="linenos">36</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">37</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">38</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">39</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;json_generator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">40</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">41</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"></span>
+<span class="linenos">42</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">43</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">44</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tb_analytics_receiver&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">45</span><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;TBAnalyticsReceiver&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">46</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;events&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;fed.analytix_log_stats&quot;</span><span class="p">]}</span><span class="w"></span>
+<span class="linenos">47</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">48</span><span class="w">  </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">49</span><span class="w">  </span><span class="nt">&quot;workflows&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">50</span><span class="w">      </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">51</span><span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;scatter_and_gather&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">52</span><span class="w">        </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ScatterAndGather&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">53</span><span class="w">        </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">54</span><span class="w">            </span><span class="nt">&quot;min_clients&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">55</span><span class="w">            </span><span class="nt">&quot;num_rounds&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">56</span><span class="w">            </span><span class="nt">&quot;start_round&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">57</span><span class="w">            </span><span class="nt">&quot;wait_time_after_min_received&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">58</span><span class="w">            </span><span class="nt">&quot;aggregator_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;aggregator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">59</span><span class="w">            </span><span class="nt">&quot;persistor_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;persistor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">60</span><span class="w">            </span><span class="nt">&quot;shareable_generator_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">61</span><span class="w">            </span><span class="nt">&quot;train_task_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;train&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">62</span><span class="w">            </span><span class="nt">&quot;train_timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"></span>
+<span class="linenos">63</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">64</span><span class="w">      </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">65</span><span class="w">      </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">66</span><span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cross_site_validate&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">67</span><span class="w">        </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CrossSiteModelEval&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">68</span><span class="w">        </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">69</span><span class="w">          </span><span class="nt">&quot;model_locator_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model_locator&quot;</span><span class="w"></span>
+<span class="linenos">70</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">71</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">72</span><span class="w">  </span><span class="p">]</span><span class="w"></span>
+<span class="linenos">73</span><span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+<p>Under the component section in the server config, we have the
+<code class="xref py py-class docutils literal notranslate"><span class="pre">TBAnalyticsReceiver</span></code>
+of type <a class="reference internal" href="../apidocs/nvflare.app_common.widgets.streaming.html#nvflare.app_common.widgets.streaming.AnalyticsReceiver" title="nvflare.app_common.widgets.streaming.AnalyticsReceiver"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnalyticsReceiver</span></code></a>.</p>
+<p>This component receives TensorBoard events from the clients and saves them to a specified folder
+(default <code class="docutils literal notranslate"><span class="pre">tb_events</span></code>) under the server’s run folder.</p>
+<p>Notice how the accepted event type <code class="docutils literal notranslate"><span class="pre">&quot;fed.analytix_log_stats&quot;</span></code> matches the output of
+<a class="reference internal" href="../apidocs/nvflare.app_common.widgets.convert_to_fed_event.html#nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent" title="nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"><code class="xref py py-class docutils literal notranslate"><span class="pre">ConvertToFedEvent</span></code></a> in the client config.</p>
+</section>
+<section id="adding-tensorboard-streaming-to-your-code">
+<h2>Adding TensorBoard Streaming to your Code<a class="headerlink" href="#adding-tensorboard-streaming-to-your-code" title="Permalink to this heading">¶</a></h2>
+<p>In this exercise, all of the TensorBoard code additions will be made in <code class="docutils literal notranslate"><span class="pre">pt_learner.py</span></code>.</p>
+<p>First we must initialize our TensorBoard writer to the <code class="docutils literal notranslate"><span class="pre">AnalyticsSender</span></code> we defined in the client config:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">61</span>        <span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">62</span>        <span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">63</span>        <span class="bp">self</span><span class="o">.</span><span class="n">n_iterations</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span><span class="p">)</span>
+<span class="linenos">64</span>
+<span class="linenos">65</span>        <span class="c1"># Create CIFAR10 dataset for validation.</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">LearnerExecutor</span></code> passes in the component dictionary into the <code class="docutils literal notranslate"><span class="pre">parts</span></code> parameter of <code class="docutils literal notranslate"><span class="pre">initialize()</span></code>.
+We can then access the <code class="docutils literal notranslate"><span class="pre">AnalyticsSender</span></code> component we defined in <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>
+by using the <code class="docutils literal notranslate"><span class="pre">self.analytic_sender_id</span></code> as the key in the <code class="docutils literal notranslate"><span class="pre">parts</span></code> dictionary.
+Note that <code class="docutils literal notranslate"><span class="pre">self.analytic_sender_id</span></code> defaults to <code class="docutils literal notranslate"><span class="pre">&quot;analytic_sender&quot;</span></code>,
+but we can also define it in the client config to be passed into the constructor.</p>
+<p>Now that our TensorBoard writer is set to <code class="docutils literal notranslate"><span class="pre">AnalyticsSender</span></code>,
+we can write and stream training metrics to the server in <code class="docutils literal notranslate"><span class="pre">local_train()</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">127</span>        <span class="c1"># Check the abort_signal after training.</span>
+<span class="linenos">128</span>        <span class="c1"># local_train returns early if abort_signal is triggered.</span>
+<span class="linenos">129</span>        <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+<span class="linenos">130</span>            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+<span class="linenos">131</span>
+<span class="linenos">132</span>        <span class="c1"># Save the local model after training.</span>
+<span class="linenos">133</span>        <span class="bp">self</span><span class="o">.</span><span class="n">save_local_model</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+<span class="linenos">134</span>
+<span class="linenos">135</span>        <span class="c1"># Get the new state dict and send as weights</span>
+<span class="linenos">136</span>        <span class="n">new_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+<span class="linenos">137</span>        <span class="n">new_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">new_weights</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+<span class="linenos">138</span>
+<span class="linenos">139</span>        <span class="n">outgoing_dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span>
+<span class="linenos">140</span>            <span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">new_weights</span><span class="p">,</span> <span class="n">meta</span><span class="o">=</span><span class="p">{</span><span class="n">MetaKey</span><span class="o">.</span><span class="n">NUM_STEPS_CURRENT_ROUND</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_iterations</span><span class="p">}</span>
+<span class="linenos">141</span>        <span class="p">)</span>
+<span class="linenos">142</span>        <span class="k">return</span> <span class="n">outgoing_dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
+<span class="linenos">143</span>
+<span class="linenos">144</span>    <span class="k">def</span> <span class="nf">local_train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">abort_signal</span><span class="p">):</span>
+<span class="linenos">145</span>        <span class="c1"># Basic training</span>
+<span class="linenos">146</span>        <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs</span><span class="p">):</span>
+<span class="linenos">147</span>            <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+<span class="linenos">148</span>            <span class="n">running_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="linenos">149</span>            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_loader</span><span class="p">):</span>
+<span class="linenos">150</span>                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+<span class="linenos">151</span>                    <span class="k">return</span>
+<span class="linenos">152</span>
+<span class="linenos">153</span>                <span class="n">images</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">batch</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="n">batch</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+<span class="linenos">154</span>                <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+<span class="linenos">155</span>
+<span class="linenos">156</span>                <span class="n">predictions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>
+<span class="linenos">157</span>                <span class="n">cost</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">loss</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
+<span class="linenos">158</span>                <span class="n">cost</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="linenos">159</span>                <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>We use <code class="docutils literal notranslate"><span class="pre">add_scalar(tag,</span> <span class="pre">scalar,</span> <span class="pre">global_step)</span></code> on line 155 to send training loss metrics,
+while on line 159 we send the validation accuracy at the end of each epoch.</p>
+<p>You can learn more about other supported writer methods in
+<a class="reference internal" href="../apidocs/nvflare.app_common.widgets.streaming.html#nvflare.app_common.widgets.streaming.AnalyticsSender" title="nvflare.app_common.widgets.streaming.AnalyticsSender"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnalyticsSender</span></code></a>.</p>
+</section>
+<section id="train-the-model-federated">
+<h2>Train the Model, Federated!<a class="headerlink" href="#train-the-model-federated" title="Permalink to this heading">¶</a></h2>
+<p>Now you can use admin command prompt to submit and start this example job.
+To do this on a proof of concept local FL system, follow the sections
+<a class="reference internal" href="../quickstart.html#setting-up-poc"><span class="std std-ref">Setting Up the Application Environment in POC Mode</span></a> and <a class="reference internal" href="../quickstart.html#starting-poc"><span class="std std-ref">Starting the Application Environment in POC Mode</span></a> if you have not already.</p>
+<section id="running-the-fl-system">
+<h3>Running the FL System<a class="headerlink" href="#running-the-fl-system" title="Permalink to this heading">¶</a></h3>
+<p>With the admin client command prompt successfully connected and logged in, enter the command below.</p>
+<pre class="literal-block">&gt; submit_job hello-pt-tb</pre>
+<p>Pay close attention to what happens in each of four terminals.
+You can see how the admin submits the job to the server and how
+the <a class="reference internal" href="../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner" title="nvflare.private.fed.server.job_runner.JobRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">JobRunner</span></code></a> on the server
+automatically picks up the job to deploy and start the run.</p>
+<p>This command uploads the job configuration from the admin client to the server.
+A job id will be returned, and we can use that id to access job information.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If we use submit_job [app] then that app will be treated as a single app job.</p>
+</div>
+<p>From time to time, you can issue <code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code> in the admin client to check the entire training progress.</p>
+<p>You should now see how the training does in the very first terminal (the one that started the server).</p>
+</section>
+</section>
+<section id="viewing-the-tensorboard-dashboard-during-training">
+<h2>Viewing the TensorBoard Dashboard during Training<a class="headerlink" href="#viewing-the-tensorboard-dashboard-during-training" title="Permalink to this heading">¶</a></h2>
+<p>On the client side, the <code class="docutils literal notranslate"><span class="pre">AnalyticsSender</span></code> works as a TensorBoard SummaryWriter.
+Instead of writing to TB files, it actually generates NVFLARE events of type <code class="docutils literal notranslate"><span class="pre">analytix_log_stats</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">ConvertToFedEvent</span></code> widget will turn the event <code class="docutils literal notranslate"><span class="pre">analytix_log_stats</span></code> into a fed event
+<code class="docutils literal notranslate"><span class="pre">fed.analytix_log_stats</span></code>, which will be delivered to the server side.</p>
+<p>On the server side, the <code class="docutils literal notranslate"><span class="pre">TBAnalyticsReceiver</span></code> is configured to process <code class="docutils literal notranslate"><span class="pre">fed.analytix_log_stats</span></code> events,
+which writes received TB data into appropriate TB files on the server
+(defaults to <code class="docutils literal notranslate"><span class="pre">server/[JOB</span> <span class="pre">ID]/tb_events</span></code>).</p>
+<p>To view training metrics that are being streamed to the server, run:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>tensorboard --logdir<span class="o">=</span>poc/server/<span class="o">[</span>JOB ID<span class="o">]</span>/tb_events
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>if the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser.
+For example:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>ssh -L <span class="o">{</span>local_machine_port<span class="o">}</span>:127.0.0.1:6006 user@server_ip
+</pre></div>
+</div>
+</div>
+<div class="admonition attention">
+<p class="admonition-title">Attention</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">server/[JOB</span> <span class="pre">ID]</span></code> folder only exists when job is running.
+After the job is finished, please use <cite>download_job [JOB ID]</cite> to get the workspace data as explained below.</p>
+</div>
+<section id="accessing-the-results">
+<h3>Accessing the results<a class="headerlink" href="#accessing-the-results" title="Permalink to this heading">¶</a></h3>
+<p>The results of each job will usually be stored inside the server side workspace.</p>
+<p>Please refer to <a class="reference internal" href="../user_guide/workspace.html#access-server-workspace"><span class="std std-ref">access server-side workspace</span></a>
+for accessing the server side workspace.</p>
+</section>
+<section id="shutdown-fl-system">
+<h3>Shutdown FL system<a class="headerlink" href="#shutdown-fl-system" title="Permalink to this heading">¶</a></h3>
+<p>Once the FL run is complete and the server has successfully aggregated the client’s results after all the rounds, and
+cross site model evaluation is finished, run the following commands in the fl_admin to shutdown the system (while
+inputting <code class="docutils literal notranslate"><span class="pre">admin</span></code> when prompted with password):</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; shutdown client
+&gt; shutdown server
+&gt; bye
+</pre></div>
+</div>
+<p>Congratulations!</p>
+<p>Now you will be able to see the live training metrics of each client from a central place on the server.</p>
+<p>The full source code for this exercise can be found in
+<a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb">examples/hello-pt-tb</a>.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="hello_pt.html" class="btn btn-neutral float-left" title="Hello PyTorch" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="hello_tf2.html" class="btn btn-neutral float-right" title="Hello TensorFlow 2" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

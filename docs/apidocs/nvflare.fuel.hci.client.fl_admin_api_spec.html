@@ -1,0 +1,672 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.fuel.hci.client.fl_admin_api_spec module &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.fuel.hci.server package" href="nvflare.fuel.hci.server.html" />
+    <link rel="prev" title="nvflare.fuel.hci.client.fl_admin_api_runner module" href="nvflare.fuel.hci.client.fl_admin_api_runner.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.fuel.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.fuel.html#module-nvflare.fuel">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.ha.html">nvflare.ha package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.html">nvflare.private package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+          <li><a href="nvflare.fuel.html">nvflare.fuel package</a> &raquo;</li>
+          <li><a href="nvflare.fuel.hci.html">nvflare.fuel.hci package</a> &raquo;</li>
+          <li><a href="nvflare.fuel.hci.client.html">nvflare.fuel.hci.client package</a> &raquo;</li>
+      <li>nvflare.fuel.hci.client.fl_admin_api_spec module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/apidocs/nvflare.fuel.hci.client.fl_admin_api_spec.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nvflare.fuel.hci.client.fl_admin_api_spec">
+<span id="nvflare-fuel-hci-client-fl-admin-api-spec-module"></span><h1>nvflare.fuel.hci.client.fl_admin_api_spec module<a class="headerlink" href="#module-nvflare.fuel.hci.client.fl_admin_api_spec" title="Permalink to this heading">¶</a></h1>
+<dl class="py exception">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.APISyntaxError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">APISyntaxError</span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#APISyntaxError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.APISyntaxError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Exception</span></code></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FLAdminAPIResponse</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.fuel.hci.client.api_status.html#nvflare.fuel.hci.client.api_status.APIStatus" title="nvflare.fuel.hci.client.api_status.APIStatus"><span class="pre">APIStatus</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">details</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">raw</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPIResponse"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></p>
+<p>Structure containing the response of calls to the api as key value pairs.</p>
+<p>The status key is the primary indicator of the success of a call and can contain APIStatus.SUCCESS or another
+APIStatus. Most calls will return additional information in the details key, which is also a dictionary of key
+value pairs. The raw key can optionally have the underlying response from AdminAPI when relevant, particularly
+when data is received from the server and the status of a call is APIStatus.ERROR_RUNTIME to provide additional
+information.</p>
+<p>Note that the status in this response primarily indicates that the command submitted successfully. Depending on
+the command and especially for calls to multiple clients, the contents of details or the raw response should be
+examined to determine if the execution of the command was successful for each specific client.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>status</strong> – APIStatus for primary indicator of the success of a call</p></li>
+<li><p><strong>details</strong> – response details</p></li>
+<li><p><strong>raw</strong> – raw response from server</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">FLAdminAPISpec</span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.abort">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abort</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType" title="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType"><span class="pre">TargetType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.abort"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.abort" title="Permalink to this definition">¶</a></dt>
+<dd><p>Issue a command to abort training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>job_id</strong> (<em>str</em>) – job id</p></li>
+<li><p><strong>target_type</strong> – server | client</p></li>
+<li><p><strong>targets</strong> – if target_type is client, targets can optionally be a list of client names</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.abort_job">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abort_job</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.abort_job"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.abort_job" title="Permalink to this definition">¶</a></dt>
+<dd><p>Abort a job that is running.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_id</strong> (<em>str</em>) – the job id to abort</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.cat_target">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cat_target</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.cat_target"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.cat_target" title="Permalink to this definition">¶</a></dt>
+<dd><p>Issue cat command.</p>
+<p>Sends the shell command to get the contents of the target’s specified file allowing for options that the cat
+command of admin client allows. The target can be “server” or a specific client name for example “site2”. The
+file is required and should contain the relative path to the file from the working directory of the target. The
+allowed options are “-n” to number all output lines, “-b” to number nonempty output lines, “-s” to suppress
+repeated empty output lines, and “-T” to display TAB characters as ^I.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>str</em>) – either server or single client’s client name.</p></li>
+<li><p><strong>options</strong> (<em>str</em>) – the options string as provided to the ls command for admin client.</p></li>
+<li><p><strong>file</strong> (<em>str</em>) – the path to the file to return the contents of</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.check_status">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">check_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType" title="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType"><span class="pre">TargetType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.check_status"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.check_status" title="Permalink to this definition">¶</a></dt>
+<dd><p>Checks and returns the FL status.</p>
+<p>If target_type is server, the call does not wait for the server to retrieve
+information on the clients but returns the last information the server had at the time this call is made.</p>
+<p>If target_type is client, specific clients can be specified in targets, and this call generally takes longer
+than the function to just check the FL server status because this one waits for communication from the server to
+client then back.</p>
+<p>Note that this is still the previous training check_status, and there will be a new call to get status through
+InfoCollector, which will be able to get information from components.</p>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.clone_job">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">clone_job</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.clone_job"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.clone_job" title="Permalink to this definition">¶</a></dt>
+<dd><p>Clone a job that exists by copying the job contents and providing a new job_id.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_id</strong> (<em>str</em>) – job id of the job to clone</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.delete_job">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">delete_job</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.delete_job"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.delete_job" title="Permalink to this definition">¶</a></dt>
+<dd><p>Delete the specified job and workspace from the permanent store.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_id</strong> (<em>str</em>) – the job id to delete</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.download_job">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">download_job</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.download_job"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.download_job" title="Permalink to this definition">¶</a></dt>
+<dd><p>Download the specified job in the system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_id</strong> (<em>str</em>) – Job id for the job to download</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.env_target">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">env_target</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.env_target"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.env_target" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the environment variables of the specified target.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>target</strong> (<em>str</em>) – either server or single client’s client name.</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_active_sp">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_active_sp</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.get_active_sp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_active_sp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the active server (service provider).</p>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_available_apps_to_upload">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_available_apps_to_upload</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.get_available_apps_to_upload"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_available_apps_to_upload" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_connected_client_list">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_connected_client_list</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.get_connected_client_list"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_connected_client_list" title="Permalink to this definition">¶</a></dt>
+<dd><p>A convenience function to get a list of the clients currently connected to the FL server.</p>
+<p>Operates through the check status server call. Note that this returns the client list based on the last known
+statuses on the server, so it can be possible for a client to be disconnected and not yet removed from the list
+of connected clients.</p>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_working_directory">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_working_directory</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.get_working_directory"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.get_working_directory" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the workspace root directory of the specified target.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>target</strong> (<em>str</em>) – either server or single client’s client name.</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.grep_target">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">grep_target</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pattern</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.grep_target"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.grep_target" title="Permalink to this definition">¶</a></dt>
+<dd><p>Issue grep command.</p>
+<p>Sends the shell command to grep the contents of the target’s specified file allowing for options that the grep
+command of admin client allows. The target can be “server” or a specific client name for example “site2”. The
+file is required and should contain the relative path to the file from the working directory of the target. The
+pattern is also required. The allowed options are “-n” to print line number with output lines, “-i” to ignore
+case distinctions, and “-b” to print the byte offset with output lines.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>str</em>) – either server or single client’s client name.</p></li>
+<li><p><strong>options</strong> (<em>str</em>) – the options string as provided to the grep command for admin client.</p></li>
+<li><p><strong>pattern</strong> (<em>str</em>) – the pattern to search for</p></li>
+<li><p><strong>file</strong> (<em>str</em>) – the path to the file to grep</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.list_jobs">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">list_jobs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.list_jobs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.list_jobs" title="Permalink to this definition">¶</a></dt>
+<dd><p>List the jobs in the system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>options</strong> (<em>str</em>) – the options string as provided to the list_jobs command for admin client.</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.list_sp">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">list_sp</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.list_sp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.list_sp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the information on the available servers (service providers).</p>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.ls_target">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ls_target</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.ls_target"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.ls_target" title="Permalink to this definition">¶</a></dt>
+<dd><p>Issue ls command to retrieve the contents of the path.</p>
+<p>Sends the shell command to get the directory listing of the target allowing for options that the ls command
+of admin client allows. If no path is specified, the contents of the working directory are returned. The target
+can be “server” or a specific client name for example “site2”. The allowed options are: “-a” for all, “-l” to
+use a long listing format, “-t” to sort by modification time newest first, “-S” to sort by file size largest
+first, “-R” to list subdirectories recursively, “-u” with -l to show access time otherwise sort by access time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>str</em>) – either server or single client’s client name.</p></li>
+<li><p><strong>options</strong> (<em>str</em>) – the options string as provided to the ls command for admin client.</p></li>
+<li><p><strong>path</strong> (<em>str</em>) – optionally, the path to specify (relative to the working directory of the specified target)</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.promote_sp">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">promote_sp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sp_end_point</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.promote_sp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.promote_sp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sends command through overseer_agent to promote the specified sp_end_point to become the active server.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>sp_end_point</strong> – service provider end point to promote to active in the form of server:fl_port:admin_port like example.com:8002:8003</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.remove_client">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">remove_client</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.remove_client"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.remove_client" title="Permalink to this definition">¶</a></dt>
+<dd><p>Issue a command to remove a specific FL client or FL clients.</p>
+<p>Note that the targets will not be able to start with an API command after shutting down. Also, you will not be
+able to issue admin commands through the server to that client until the client is restarted (this includes
+being able to issue the restart command through the API).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>targets</strong> – a list of client names</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.reset_errors">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">reset_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.reset_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.reset_errors" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resets the collector errors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_id</strong> (<em>str</em>) – job id</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.restart">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">restart</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType" title="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType"><span class="pre">TargetType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.restart"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.restart" title="Permalink to this definition">¶</a></dt>
+<dd><p>Issue a command to restart the specified target.</p>
+<p>If the target is server, all FL clients will be restarted as well.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target_type</strong> – server | client</p></li>
+<li><p><strong>targets</strong> – if target_type is client, targets can optionally be a list of client names</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.set_timeout">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">set_timeout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.set_timeout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.set_timeout" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sets the timeout for admin commands on the server in seconds.</p>
+<p>This timeout is the maximum amount of time the server will wait for replies from clients. If the timeout is too
+short, the server may not receive a response because clients may not have a chance to reply.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>timeout</strong> – timeout in seconds of admin commands to set on the server</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.show_errors">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">show_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType" title="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType"><span class="pre">TargetType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.show_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.show_errors" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets and shows errors from the Info Collector.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>job_id</strong> (<em>str</em>) – job id</p></li>
+<li><p><strong>target_type</strong> – server | client</p></li>
+<li><p><strong>targets</strong> – if target_type is client, targets can optionally be a list of client names</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.show_stats">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">show_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType" title="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType"><span class="pre">TargetType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.show_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.show_stats" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets and shows stats from the Info Collector.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>job_id</strong> (<em>str</em>) – job id</p></li>
+<li><p><strong>target_type</strong> – server | client</p></li>
+<li><p><strong>targets</strong> – if target_type is client, targets can optionally be a list of client names</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.shutdown">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">shutdown</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType" title="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType"><span class="pre">TargetType</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">targets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.shutdown"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.shutdown" title="Permalink to this definition">¶</a></dt>
+<dd><p>Issue a command to stop FL entirely for a specific FL client or specific FL clients.</p>
+<p>Note that the targets will not be able to start with an API command after shutting down.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target_type</strong> – server | client</p></li>
+<li><p><strong>targets</strong> – if target_type is client, targets can optionally be a list of client names</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.submit_job">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">submit_job</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_folder</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.submit_job"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.submit_job" title="Permalink to this definition">¶</a></dt>
+<dd><p>Submit a job.</p>
+<p>Assumes job folder is in the upload_dir set in API init.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>job_folder</strong> (<em>str</em>) – name of the job folder in upload_dir to submit</p>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.tail_target_log">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">tail_target_log</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.tail_target_log"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.tail_target_log" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the end of target’s log allowing for options that the tail of admin client allows.</p>
+<p>The option “-n” can be used to specify the number of lines for example “-n 100”, or “-c” can specify the
+number of bytes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>str</em>) – either server or single client’s client name.</p></li>
+<li><p><strong>options</strong> (<em>str</em>) – the options string as provided to the tail command for admin client. For this command, “-n” can be
+used to specify the number of lines for example “-n 100”, or “-c” can specify the number of bytes.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.wait_until_server_status">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">wait_until_server_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">interval</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">callback</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">bool</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fail_attempts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">3</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPIResponse"><span class="pre">FLAdminAPIResponse</span></a></span></span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#FLAdminAPISpec.wait_until_server_status"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec.wait_until_server_status" title="Permalink to this definition">¶</a></dt>
+<dd><p>Wait until provided callback returns True.</p>
+<p>There is the option to specify a timeout and interval to check the server status. If no callback function is
+provided, the default callback returns True when the server
+status is “training stopped”. A custom callback can be provided to add logic to handle checking for other
+conditions. A timeout should be set in case there are any error conditions that result in the system being stuck
+in a state where the callback never returns True.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>interval</strong> (<em>int</em>) – in seconds, the time between consecutive checks of the server</p></li>
+<li><p><strong>timeout</strong> (<em>int</em>) – if set, the amount of time this function will run until before returning a response message</p></li>
+<li><p><strong>callback</strong> – the reply from check_status_server() will be passed to the callback, along with any additional kwargs</p></li>
+<li><p><strong>logic.</strong> (<em>which can go on to perform additional</em>) – </p></li>
+<li><p><strong>fail_attempts</strong> (<em>int</em>) – number of consecutive failed attempts of getting the server status before returning with ERROR_RUNTIME.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: FLAdminAPIResponse</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">TargetType</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/fuel/hci/client/fl_admin_api_spec.html#TargetType"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Enum</span></code></p>
+<p>An enumeration.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType.ALL">
+<span class="sig-name descname"><span class="pre">ALL</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'all'</span></em><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType.ALL" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType.CLIENT">
+<span class="sig-name descname"><span class="pre">CLIENT</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'client'</span></em><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType.CLIENT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.fuel.hci.client.fl_admin_api_spec.TargetType.SERVER">
+<span class="sig-name descname"><span class="pre">SERVER</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'server'</span></em><a class="headerlink" href="#nvflare.fuel.hci.client.fl_admin_api_spec.TargetType.SERVER" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="nvflare.fuel.hci.client.fl_admin_api_runner.html" class="btn btn-neutral float-left" title="nvflare.fuel.hci.client.fl_admin_api_runner module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nvflare.fuel.hci.server.html" class="btn btn-neutral float-right" title="nvflare.fuel.hci.server package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

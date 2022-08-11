@@ -1,0 +1,442 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.protos.federated_pb2_grpc &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.protos.federated_pb2_grpc</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.protos.federated_pb2_grpc</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Generated by the gRPC Python protocol compiler plugin. DO NOT EDIT!</span>
+<span class="sd">&quot;&quot;&quot;Client and server classes corresponding to protobuf-defined services.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">grpc</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.protos</span> <span class="kn">import</span> <span class="n">federated_pb2</span> <span class="k">as</span> <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span>
+
+
+<div class="viewcode-block" id="FederatedTrainingStub"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingStub">[docs]</a><span class="k">class</span> <span class="nc">FederatedTrainingStub</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The global federated model interfaces</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">channel</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Constructor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            channel: A grpc.Channel.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Register</span> <span class="o">=</span> <span class="n">channel</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span>
+                <span class="s1">&#39;/fedlearn.FederatedTraining/Register&#39;</span><span class="p">,</span>
+                <span class="n">request_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientLogin</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+                <span class="n">response_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Quit</span> <span class="o">=</span> <span class="n">channel</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span>
+                <span class="s1">&#39;/fedlearn.FederatedTraining/Quit&#39;</span><span class="p">,</span>
+                <span class="n">request_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientState</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+                <span class="n">response_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">GetTask</span> <span class="o">=</span> <span class="n">channel</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span>
+                <span class="s1">&#39;/fedlearn.FederatedTraining/GetTask&#39;</span><span class="p">,</span>
+                <span class="n">request_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientState</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+                <span class="n">response_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">CurrentTask</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">SubmitUpdate</span> <span class="o">=</span> <span class="n">channel</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span>
+                <span class="s1">&#39;/fedlearn.FederatedTraining/SubmitUpdate&#39;</span><span class="p">,</span>
+                <span class="n">request_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">Contribution</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+                <span class="n">response_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Heartbeat</span> <span class="o">=</span> <span class="n">channel</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span>
+                <span class="s1">&#39;/fedlearn.FederatedTraining/Heartbeat&#39;</span><span class="p">,</span>
+                <span class="n">request_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">Token</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+                <span class="n">response_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">AuxCommunicate</span> <span class="o">=</span> <span class="n">channel</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span>
+                <span class="s1">&#39;/fedlearn.FederatedTraining/AuxCommunicate&#39;</span><span class="p">,</span>
+                <span class="n">request_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">AuxMessage</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+                <span class="n">response_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">AuxReply</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FederatedTrainingServicer"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingServicer">[docs]</a><span class="k">class</span> <span class="nc">FederatedTrainingServicer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The global federated model interfaces</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="FederatedTrainingServicer.Register"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingServicer.Register">[docs]</a>    <span class="k">def</span> <span class="nf">Register</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;client registration, so that it will contribute to the training</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNIMPLEMENTED</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_details</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTrainingServicer.Quit"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingServicer.Quit">[docs]</a>    <span class="k">def</span> <span class="nf">Quit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;client quiting the federated training</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNIMPLEMENTED</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_details</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTrainingServicer.GetTask"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingServicer.GetTask">[docs]</a>    <span class="k">def</span> <span class="nf">GetTask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;server to client model sharing</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNIMPLEMENTED</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_details</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTrainingServicer.SubmitUpdate"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingServicer.SubmitUpdate">[docs]</a>    <span class="k">def</span> <span class="nf">SubmitUpdate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;client to server contribution submission</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNIMPLEMENTED</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_details</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTrainingServicer.Heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingServicer.Heartbeat">[docs]</a>    <span class="k">def</span> <span class="nf">Heartbeat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;client to server heartbeat keep live</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNIMPLEMENTED</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_details</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTrainingServicer.AuxCommunicate"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTrainingServicer.AuxCommunicate">[docs]</a>    <span class="k">def</span> <span class="nf">AuxCommunicate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;client to server aux channel communication</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNIMPLEMENTED</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_details</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Method not implemented!&#39;</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="add_FederatedTrainingServicer_to_server"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.add_FederatedTrainingServicer_to_server">[docs]</a><span class="k">def</span> <span class="nf">add_FederatedTrainingServicer_to_server</span><span class="p">(</span><span class="n">servicer</span><span class="p">,</span> <span class="n">server</span><span class="p">):</span>
+    <span class="n">rpc_method_handlers</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;Register&#39;</span><span class="p">:</span> <span class="n">grpc</span><span class="o">.</span><span class="n">unary_unary_rpc_method_handler</span><span class="p">(</span>
+                    <span class="n">servicer</span><span class="o">.</span><span class="n">Register</span><span class="p">,</span>
+                    <span class="n">request_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientLogin</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                    <span class="n">response_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s1">&#39;Quit&#39;</span><span class="p">:</span> <span class="n">grpc</span><span class="o">.</span><span class="n">unary_unary_rpc_method_handler</span><span class="p">(</span>
+                    <span class="n">servicer</span><span class="o">.</span><span class="n">Quit</span><span class="p">,</span>
+                    <span class="n">request_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientState</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                    <span class="n">response_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s1">&#39;GetTask&#39;</span><span class="p">:</span> <span class="n">grpc</span><span class="o">.</span><span class="n">unary_unary_rpc_method_handler</span><span class="p">(</span>
+                    <span class="n">servicer</span><span class="o">.</span><span class="n">GetTask</span><span class="p">,</span>
+                    <span class="n">request_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientState</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                    <span class="n">response_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">CurrentTask</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s1">&#39;SubmitUpdate&#39;</span><span class="p">:</span> <span class="n">grpc</span><span class="o">.</span><span class="n">unary_unary_rpc_method_handler</span><span class="p">(</span>
+                    <span class="n">servicer</span><span class="o">.</span><span class="n">SubmitUpdate</span><span class="p">,</span>
+                    <span class="n">request_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">Contribution</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                    <span class="n">response_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s1">&#39;Heartbeat&#39;</span><span class="p">:</span> <span class="n">grpc</span><span class="o">.</span><span class="n">unary_unary_rpc_method_handler</span><span class="p">(</span>
+                    <span class="n">servicer</span><span class="o">.</span><span class="n">Heartbeat</span><span class="p">,</span>
+                    <span class="n">request_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">Token</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                    <span class="n">response_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s1">&#39;AuxCommunicate&#39;</span><span class="p">:</span> <span class="n">grpc</span><span class="o">.</span><span class="n">unary_unary_rpc_method_handler</span><span class="p">(</span>
+                    <span class="n">servicer</span><span class="o">.</span><span class="n">AuxCommunicate</span><span class="p">,</span>
+                    <span class="n">request_deserializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">AuxMessage</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+                    <span class="n">response_serializer</span><span class="o">=</span><span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">AuxReply</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="p">),</span>
+    <span class="p">}</span>
+    <span class="n">generic_handler</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">method_handlers_generic_handler</span><span class="p">(</span>
+            <span class="s1">&#39;fedlearn.FederatedTraining&#39;</span><span class="p">,</span> <span class="n">rpc_method_handlers</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">add_generic_rpc_handlers</span><span class="p">((</span><span class="n">generic_handler</span><span class="p">,))</span></div>
+
+
+ <span class="c1"># This class is part of an EXPERIMENTAL API.</span>
+<div class="viewcode-block" id="FederatedTraining"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTraining">[docs]</a><span class="k">class</span> <span class="nc">FederatedTraining</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The global federated model interfaces</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="FederatedTraining.Register"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTraining.Register">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">Register</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">target</span><span class="p">,</span>
+            <span class="n">options</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">channel_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">call_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">wait_for_ready</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">grpc</span><span class="o">.</span><span class="n">experimental</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="s1">&#39;/fedlearn.FederatedTraining/Register&#39;</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientLogin</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+            <span class="n">options</span><span class="p">,</span> <span class="n">channel_credentials</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">,</span> <span class="n">compression</span><span class="p">,</span> <span class="n">wait_for_ready</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTraining.Quit"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTraining.Quit">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">Quit</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">target</span><span class="p">,</span>
+            <span class="n">options</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">channel_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">call_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">wait_for_ready</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">grpc</span><span class="o">.</span><span class="n">experimental</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="s1">&#39;/fedlearn.FederatedTraining/Quit&#39;</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientState</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+            <span class="n">options</span><span class="p">,</span> <span class="n">channel_credentials</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">,</span> <span class="n">compression</span><span class="p">,</span> <span class="n">wait_for_ready</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTraining.GetTask"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTraining.GetTask">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">GetTask</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">target</span><span class="p">,</span>
+            <span class="n">options</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">channel_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">call_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">wait_for_ready</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">grpc</span><span class="o">.</span><span class="n">experimental</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="s1">&#39;/fedlearn.FederatedTraining/GetTask&#39;</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">ClientState</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">CurrentTask</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+            <span class="n">options</span><span class="p">,</span> <span class="n">channel_credentials</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">,</span> <span class="n">compression</span><span class="p">,</span> <span class="n">wait_for_ready</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTraining.SubmitUpdate"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTraining.SubmitUpdate">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">SubmitUpdate</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">target</span><span class="p">,</span>
+            <span class="n">options</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">channel_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">call_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">wait_for_ready</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">grpc</span><span class="o">.</span><span class="n">experimental</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="s1">&#39;/fedlearn.FederatedTraining/SubmitUpdate&#39;</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">Contribution</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+            <span class="n">options</span><span class="p">,</span> <span class="n">channel_credentials</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">,</span> <span class="n">compression</span><span class="p">,</span> <span class="n">wait_for_ready</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTraining.Heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTraining.Heartbeat">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">Heartbeat</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">target</span><span class="p">,</span>
+            <span class="n">options</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">channel_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">call_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">wait_for_ready</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">grpc</span><span class="o">.</span><span class="n">experimental</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="s1">&#39;/fedlearn.FederatedTraining/Heartbeat&#39;</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">Token</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">FederatedSummary</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+            <span class="n">options</span><span class="p">,</span> <span class="n">channel_credentials</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">,</span> <span class="n">compression</span><span class="p">,</span> <span class="n">wait_for_ready</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedTraining.AuxCommunicate"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.protos.federated_pb2_grpc.html#nvflare.private.fed.protos.federated_pb2_grpc.FederatedTraining.AuxCommunicate">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">AuxCommunicate</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">target</span><span class="p">,</span>
+            <span class="n">options</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">channel_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">call_credentials</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">wait_for_ready</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">grpc</span><span class="o">.</span><span class="n">experimental</span><span class="o">.</span><span class="n">unary_unary</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="s1">&#39;/fedlearn.FederatedTraining/AuxCommunicate&#39;</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">AuxMessage</span><span class="o">.</span><span class="n">SerializeToString</span><span class="p">,</span>
+            <span class="n">nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2</span><span class="o">.</span><span class="n">AuxReply</span><span class="o">.</span><span class="n">FromString</span><span class="p">,</span>
+            <span class="n">options</span><span class="p">,</span> <span class="n">channel_credentials</span><span class="p">,</span>
+            <span class="n">insecure</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">,</span> <span class="n">compression</span><span class="p">,</span> <span class="n">wait_for_ready</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

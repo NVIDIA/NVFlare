@@ -1,0 +1,293 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NVIDIA FLARE Overview &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Quickstart" href="quickstart.html" />
+    <link rel="prev" title="Highlights" href="highlights.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="highlights.html">Highlights</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">NVIDIA FLARE Overview</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#high-level-system-architecture">High-level System Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design-principles">Design Principles</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>NVIDIA FLARE Overview</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/flare_overview.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="nvidia-flare-overview">
+<span id="flare-overview"></span><h1>NVIDIA FLARE Overview<a class="headerlink" href="#nvidia-flare-overview" title="Permalink to this heading">¶</a></h1>
+<p><strong>NVIDIA FLARE</strong> (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
+extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflow to a federated paradigm.</p>
+<p>With Nvidia FLARE platform developers can build a secure, privacy preserving offering
+for a distributed multi-party collaboration.</p>
+<p>NVIDIA FLARE SDK is built for robust, production scale for real-world federated learning deployments.</p>
+<p>It includes:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>A runtime environment enabling data scientists and researchers to easily carry out FL experiments in a
+real-world scenario. Nvidia FLARE supports multiple task execution, maximizing data scientist’s productivity.</p></li>
+<li><p>System capabilities to start up federated learning with high availability infrastructure.</p></li>
+<li><p>Built-in implementations of:</p>
+<ul>
+<li><p>Federated training workflows (scatter-and-gather, Cyclic)</p></li>
+<li><p>Federated evaluation workflows (global model evaluation, cross site model validation);</p></li>
+<li><p>Learning algorithms (FedAvg, FedOpt, FedProx)</p></li>
+<li><p>Privacy preserving algorithms (homomorphic encryption, differential privacy)</p></li>
+</ul>
+</li>
+<li><p>Extensible management tools for:</p>
+<ul>
+<li><p>Secure provisioning (SSL certificates)</p></li>
+<li><p>Orchestration (Admin Console) | (Admin APIs)</p></li>
+<li><p>Monitoring of federated learning experiments (Aux APIs; Tensorboard visualization)</p></li>
+</ul>
+</li>
+<li><p>A rich set of programmable APIs allowing researchers to create new federated workflows,
+learning &amp; privacy preserving algorithms.</p></li>
+</ul>
+</div></blockquote>
+<section id="high-level-system-architecture">
+<h2>High-level System Architecture<a class="headerlink" href="#high-level-system-architecture" title="Permalink to this heading">¶</a></h2>
+<p>As outlined above, NVIDIA FLARE includes components that allow researchers and developers to build and deploy
+end-to-end federated learning applications.</p>
+<p>The high-level architecture is shown in the diagram below.</p>
+<p>This includes the foundational components of the NVIDIA FLARE API and tools for privacy preservation and
+secure management of the platform.</p>
+<p>On top of this foundation are the building blocks for federated learning applications,
+with a set of federation workflows and learning algorithms.</p>
+<p>Alongside this central stack are tools that allow experimentation and proof-of-concept development
+with the FL Simulator (POC mode), along with a set of tools used to deploy and manage production workflows.</p>
+<img alt="_images/FL_stack.png" src="_images/FL_stack.png" style="height: 300px;" />
+</section>
+<section id="design-principles">
+<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Keep it simple - less is more</p></li>
+<li><p>Design to specification</p></li>
+<li><p>Build for real-world scenarios</p></li>
+<li><p>Keep the system general-purpose</p></li>
+<li><p>Client system friendly</p></li>
+</ul>
+<p><strong>Less is more</strong></p>
+<p>We strive to solve unique challenges by doing less while enabling others to do more.
+We can’t solve whole worlds’ problems, but by building an open platform we can enable
+others to solve world’s problems.</p>
+<p>This design principle means we intentionally limit the scope of the implementation,
+only building the necessary components. For a given implementation, we follow specifications
+in a way that allows others to easily customize and extend.</p>
+<p><strong>Design to Specification</strong></p>
+<p>Every component and API is specification-based, so that alternative implementations can be
+constructed by following the spec.  This allows pretty much every component to be customized.</p>
+<p>We strive to be open-minded in reference implementations, encouraging developers and end-users
+to extend and customize to meet the needs of their specific workflows.</p>
+<p><strong>Build for real-world scenarios</strong></p>
+<p>We build to handle real-world use cases where unexpected events or misbehaving code can be
+handled in a way that allows components or the system as a whole to fail gracefully.
+The reference implementations of the default components are designed to solve real-world
+problems in a straightforward way.</p>
+<p><strong>Keep the system general-purpose</strong></p>
+<p>We design ths system to be general purpose, to enable different “federated” computing use cases.
+We carefully package the components into different layers with minimal dependencies between layers.
+In this way, implementations for specific use cases should not demand modifications to the
+underlying system core.</p>
+<p><strong>Client system friendly</strong></p>
+<p>We design the system so that it can run anywhere with minimal environmental dependencies.
+We also strive to build the system in a way that does not interfere with the deployment environment,
+allowing FLARE to be easily integrated into your own applications or platforms.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="highlights.html" class="btn btn-neutral float-left" title="Highlights" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="quickstart.html" class="btn btn-neutral float-right" title="Quickstart" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

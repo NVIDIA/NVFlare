@@ -1,0 +1,449 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>High Availability and Server Failover &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="System Architecture" href="system_architecture.html" />
+    <link rel="prev" title="Provisioning in NVIDIA FLARE" href="provisioning_system.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../programming_guide.html">Programming Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="controllers.html">Controllers and Controller API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="executor.html">Executors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="shareable.html">Shareable</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_component.html">FLComponent</a></li>
+<li class="toctree-l2"><a class="reference internal" href="filters.html">Filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="provisioning_system.html">Provisioning in NVIDIA FLARE</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">High Availability and Server Failover</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#automatic-server-failover">Automatic Server Failover</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#overseer">Overseer</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#overseer-agent">Overseer Agent</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#overseer-response-handling">Overseer Response Handling</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#fl-client">FL Client</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#fl-server">FL Server</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#admin-client">Admin Client</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#job-execution-continuation">Job Execution Continuation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#ha-running-job-migration">HA Running Job Migration</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#flcompoent">FLCompoent</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#flcontext">FLContext</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#workspace">Workspace</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="system_architecture.html">System Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../programming_guide.html#code-structure">Code Structure</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../programming_guide.html">Programming Guide</a> &raquo;</li>
+      <li>High Availability and Server Failover</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/programming_guide/high_availability.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="high-availability-and-server-failover">
+<span id="high-availability"></span><h1>High Availability and Server Failover<a class="headerlink" href="#high-availability-and-server-failover" title="Permalink to this heading">¶</a></h1>
+<p>Previously in NVIDIA FLARE 2.0 and before, the FL server was the single point of failure for the system. Starting with
+NVIDIA FLARE 2.1.0, a high availability (HA) solution has been implemented to support multiple FL servers with
+automatic cutover when the currently active server becomes unavailable.</p>
+<p>The following areas were enhanced for supporting HA:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>There can now be any number of FL servers (e.g. SP1, SP2, where SP stands for service provider), and only one
+of them is in active service mode (hot), with all others in standby mode (cold).</p></li>
+<li><p>A new service called Overseer was added to oversee the overall availability of its clients (e.g. which SP is the
+hot or active one). Overseer setup is now required in provisioning.</p></li>
+<li><p>State Storage is now used by the Overseer to keep system availability state info.</p></li>
+<li><p>Overseer Agents were added the clients of the Overseer service (FL servers, FL clients, and admins) to constantly communicate
+with the Overseer to report its status and to get the current system status.</p></li>
+<li><p>State Persistence is now used by the SPs (FL servers) to keep job execution state data so that the job execution can
+continue after cutting over to a new server. The State Persistence is shared and accessible by all FL servers.</p></li>
+</ul>
+</div></blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>SP means Service Provider. In NVIDIA FLARE, an SP is an FL server.</p>
+</div>
+<section id="automatic-server-failover">
+<h2>Automatic Server Failover<a class="headerlink" href="#automatic-server-failover" title="Permalink to this heading">¶</a></h2>
+<p>The most important feature of HA is automatic cutover to a standby server when the current hot or active server is out of
+service, without human intervention. The Overseer and Overseer Agents help support this automatic SP cutover.</p>
+<section id="overseer">
+<h3>Overseer<a class="headerlink" href="#overseer" title="Permalink to this heading">¶</a></h3>
+<p>The Overseer provides the authoritative endpoint info of the hot FL server. All other system entities (FL servers, FL
+clients, admin clients) constantly communicate (i.e. every 5 seconds) with the Overseer (via the Overseer Agent in
+them) to obtain such information, and act on it. Each communication to the Overseer also serves as a heartbeat of the
+entity so the Overseer knows that the entity is still alive. If the hot FL Server missed a certain number of
+heartbeats in a row, then Overseer will change to another FL Server as the hot SP, if available. Therefore at any
+moment, there is at most one hot server.</p>
+<p>The endpoint of the Overseer is provisioned and its configuration information is included in the startup kit of each entity.</p>
+<p>For security reasons, the Overseer must only accept authenticated communications. In NVIDIA FLARE 2.1.0, the Overseer is
+implemented with mTLS authentication.</p>
+<p>Overseers maintain a service session id (SSID), which changes whenever any hot SP switch-over occurs, either by admin
+commands or automatically.  The following are cases associated with SP switch-over and SSID:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>If there is only one SP and it’s assigned as the hot SP. The overseer associates this hot SP with one unique SSID.</p></li>
+<li><p>If the above hot SP misses heartbeats and the overseer determines it loses communication with that SP, that SP
+becomes offline and is no longer a hot SP.</p></li>
+<li><p>If there is another SP available, the overseer automatically denotes that SP as hot and associates a
+new unique SSID to it.</p></li>
+<li><p>If there is no other SP available after the hot SP becomes offline, the overseer starts reporting no hot
+SP and no SSID.</p></li>
+<li><p>During the above case, when either a new SP or the previous hot SP comes online, the overseer will create a new
+unique SSID and assign that SP as hot.</p></li>
+<li><p>When the hot SP is keeping its online state by maintaining communication with the overseer, newly joined SPs are
+marked as online, but not hot SP.  Newly joined SPs also have no SSIDs associated with them, which means the
+original SSID is maintained with the current hot SP.</p></li>
+<li><p>The overseer will include information on all joined SP and hot SP information in the reply to heartbeats.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="overseer-agent">
+<h3>Overseer Agent<a class="headerlink" href="#overseer-agent" title="Permalink to this heading">¶</a></h3>
+<p>Overseer Agents provide a convenient and unified interface to communicate with the Overseer. By
+following the same interface and behavior defined by the the Overseer Agent specification, users can implement their own
+Overseer and Overseer Agent as a drop-in replacement.</p>
+<p>The Overseer Agent periodically sends heartbeats to the Overseer. These heartbeats indicate that this Overseer Agent is still
+alive and the communication between Overseer and Overseer Agent is not broken. When it fails in sending heartbeats,
+the Overseer Agent shall retry until it is told to stop.</p>
+<p>Each Overseer Agent includes a special property called “role”. This property is set by the callers as the callers, namely FL
+servers, FL clients or FL admins, have the knowledge about the role. For example:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>The Overseer Agents used by FL servers have to tell the Overseer that it sends heartbeats on behalf of an SP, thus
+its role is “server.”</p></li>
+<li><p>The Overseer Agents used by admin must indicate its role so Overseers allow admin commands after the agents are
+authenticated and authorized.</p></li>
+</ul>
+</div></blockquote>
+<p>The Overseer Agents internally maintain the last reply from Overseers, which is received during the last heartbeat.</p>
+<p>Callers can register a callback. The execution of the callback is based on the flag <code class="docutils literal notranslate"><span class="pre">conditional_cb</span></code>.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>If the callback is registered with the conditional_cb flag set to True, the callback is called only when the SSID changes.</p></li>
+<li><p>If that flag is set to False, the callback is called immediately every time after the reply of one heartbeat from the
+overseer is received.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="overseer-response-handling">
+<h3>Overseer Response Handling<a class="headerlink" href="#overseer-response-handling" title="Permalink to this heading">¶</a></h3>
+<p>The Overseer client is responsible for handling Overseer responses (or the lack of responses) properly.</p>
+<section id="fl-client">
+<h4>FL Client<a class="headerlink" href="#fl-client" title="Permalink to this heading">¶</a></h4>
+<section id="no-response-from-overseer-connection-error-etc">
+<h5>No response from Overseer (connection error, etc.)<a class="headerlink" href="#no-response-from-overseer-connection-error-etc" title="Permalink to this heading">¶</a></h5>
+<p>If I already have a hot SP, I’ll continue using it. I’ll keep retrying to communicate with the Overseer to obtain a response.</p>
+</section>
+<section id="no-hot-sp-available">
+<h5>No hot SP available<a class="headerlink" href="#no-hot-sp-available" title="Permalink to this heading">¶</a></h5>
+<p>If I already have a hot SP, I’ll continue using it. I’ll keep retrying to communicate with the Overseer to obtain a
+different response.</p>
+</section>
+<section id="hot-sp-has-not-changed">
+<h5>Hot SP has not changed<a class="headerlink" href="#hot-sp-has-not-changed" title="Permalink to this heading">¶</a></h5>
+<p>I’ll continue to use the current hot FL Server.</p>
+</section>
+<section id="hot-sp-has-changed">
+<h5>Hot SP has changed<a class="headerlink" href="#hot-sp-has-changed" title="Permalink to this heading">¶</a></h5>
+<p>I’ll suspend current jobs and abort current running tasks (if any), and try to login to the new hot FL server. After that,
+I will resume current jobs, if any. If I run into any communication issues with the new server, I will keep retrying
+until success or the hot server endpoint changes again.</p>
+</section>
+</section>
+<section id="fl-server">
+<h4>FL Server<a class="headerlink" href="#fl-server" title="Permalink to this heading">¶</a></h4>
+<section id="id1">
+<h5>No response from Overseer (connection error, etc.)<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h5>
+<p>I’ll stay in my current mode (hot or cold). I’ll keep retrying to communicate with the Overseer to obtain a response.</p>
+</section>
+<section id="id2">
+<h5>No hot SP available<a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h5>
+<p>I’ll stay in my current mode (hot or cold). I’ll keep retrying to communicate with the Overseer to obtain a
+different response.</p>
+</section>
+<section id="hot-sp-is-available">
+<h5>Hot SP is available<a class="headerlink" href="#hot-sp-is-available" title="Permalink to this heading">¶</a></h5>
+<p>If I’m currently cold, and the hot SP is not me, then I stay cold.</p>
+<p>If I’m currently hot, and the hot SP is me, then I stay hot.</p>
+<p>If I’m currently cold, and the hot SP has changed to me, then I transition to the Cold-to-Hot state. In this state, I
+will try to restart the unfinished jobs and get ready for client requests. Once ready, I transition to the hot state. If
+any requests are received during the Cold-to-Hot state, I’ll tell them to try later.</p>
+<p>If I’m currently hot, and the hot SP has changed to not me, then I transition to the Hot-to-Cold state. In this state,
+I will prepare to stop serving the client requests. If any requests are received during the Hot-to-Cold state, I will
+tell them I am not in service. This is a transition state to the cold state.</p>
+</section>
+</section>
+<section id="admin-client">
+<h4>Admin Client<a class="headerlink" href="#admin-client" title="Permalink to this heading">¶</a></h4>
+<section id="id3">
+<h5>No response from Overseer (connection error, etc.)<a class="headerlink" href="#id3" title="Permalink to this heading">¶</a></h5>
+<p>If I already have a hot SP, I’ll keep using it. I’ll keep retrying to communicate with the Overseer to obtain a response.</p>
+</section>
+<section id="id4">
+<h5>No hot SP available<a class="headerlink" href="#id4" title="Permalink to this heading">¶</a></h5>
+<p>If I already have a hot SP, I’ll keep using it. I’ll keep retrying to communicate with the Overseer to obtain a
+different response.</p>
+</section>
+<section id="id5">
+<h5>Hot SP has not changed<a class="headerlink" href="#id5" title="Permalink to this heading">¶</a></h5>
+<p>I’ll continue to use the current hot FL server.</p>
+</section>
+<section id="id6">
+<h5>Hot SP has changed<a class="headerlink" href="#id6" title="Permalink to this heading">¶</a></h5>
+<p>I’ll try to login to the new hot FL server. After that, I will issue commands to the new hot server. If I run
+into any communication issues with the new server, I will keep retrying until success or the hot server
+endpoint changes again.</p>
+</section>
+</section>
+</section>
+</section>
+<section id="job-execution-continuation">
+<h2>Job Execution Continuation<a class="headerlink" href="#job-execution-continuation" title="Permalink to this heading">¶</a></h2>
+<p>The secondary feature of HA is the continuation of job execution after SP cutover. NVIDIA FLARE implements a
+snapshot-based job continuation mechanism.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Once a job is started, the server creates the first snapshot that remembers the basic job state (job ID,
+workspace, etc.).</p></li>
+<li><p>During the execution of the job, the Controller initiates the creation of additional snapshots, based on its
+own control logic. Some controllers may decide not to create additional snapshots. For example, the
+Scatter-and-Gather controller works based on the concept of rounds, and it creates a snapshot after each round;
+whereas the cross-site-validation controller doesn’t create any snapshots.</p></li>
+<li><p>After the SP cutover, the Controller will initiate the restoration of job execution state from the latest snapshot.
+If the Controller didn’t create additional snapshots, then the job will be executed from the beginning after the SP cutover.</p></li>
+<li><p>Note that if clients detect the SP change, they will call “abort_task” to abort the current running task, because
+that task came from the previous SP. If at that moment there is a task running, it will be aborted with the “TASK_ABORTED”
+return code.</p></li>
+<li><p>After the job execution completes, the job snapshot will be deleted from the snapshot storage. If the SP cutover
+occurs after the job execution completes, the completed job will not be migrated over.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="ha-running-job-migration">
+<h2>HA Running Job Migration<a class="headerlink" href="#ha-running-job-migration" title="Permalink to this heading">¶</a></h2>
+<p>All the FLComponents in the FL workflow have the option to implement the StatePersistable, which is to decide what
+kind of data needs to persist and migrate to another server in the case of HA SP cutover. The FL snapshot includes
+the current running state of all the FLComponents, the FLContext, and the current Job workspace. Once the HA SP cutover
+occurs, the new SP will restore the FLContext, the Job workspace, and all the components’ working states. Note that
+depending on when the state is persisted, there is potentially a portion of work that may still be lost when the state
+is restored.</p>
+<section id="flcompoent">
+<h3>FLCompoent<a class="headerlink" href="#flcompoent" title="Permalink to this heading">¶</a></h3>
+<p>Each FLComponent has its implementation to decide what kind of data it needs to persist and migrate, and then how
+to restore from the persisted data.</p>
+</section>
+<section id="flcontext">
+<h3>FLContext<a class="headerlink" href="#flcontext" title="Permalink to this heading">¶</a></h3>
+<p>FLContext keeps the system running data of the current job. Once HA SP cutover occurs, the same data will be
+restored to the next SP. However, any non-serializable data in the FLContext will not be able to migrate and will be
+discarded.</p>
+</section>
+<section id="workspace">
+<h3>Workspace<a class="headerlink" href="#workspace" title="Permalink to this heading">¶</a></h3>
+<p>The running job workspace will also be migrated to the new SP, including the global model generated and
+logs. The FLContext has variables indicating the workspace folder structure locations. When setting up the HA
+servers, all the servers should choose the same folder locations to start the FL server.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="provisioning_system.html" class="btn btn-neutral float-left" title="Provisioning in NVIDIA FLARE" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="system_architecture.html" class="btn btn-neutral float-right" title="System Architecture" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

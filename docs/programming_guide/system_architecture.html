@@ -1,0 +1,393 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Architecture &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Programming Best Practices" href="../best_practices.html" />
+    <link rel="prev" title="High Availability and Server Failover" href="high_availability.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../programming_guide.html">Programming Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="controllers.html">Controllers and Controller API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="executor.html">Executors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="shareable.html">Shareable</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="fl_component.html">FLComponent</a></li>
+<li class="toctree-l2"><a class="reference internal" href="filters.html">Filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="provisioning_system.html">Provisioning in NVIDIA FLARE</a></li>
+<li class="toctree-l2"><a class="reference internal" href="high_availability.html">High Availability and Server Failover</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">System Architecture</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#concepts-and-system-components">Concepts and System Components</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#spec-based-programming-for-system-service-objects">Spec-based Programming for System Service Objects</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#system-components">System Components</a><ul>
+<li class="toctree-l5"><a class="reference internal" href="#overseer">Overseer</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#overseer-agent">Overseer Agent</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#job-definition-manager">Job Definition Manager</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#job-scheduler">Job Scheduler</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#storage">Storage</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#resource-manager">Resource Manager</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#resource-consumer">Resource Consumer</a></li>
+<li class="toctree-l5"><a class="reference internal" href="#snapshot-persisting">Snapshot Persisting</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../programming_guide.html#code-structure">Code Structure</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../programming_guide.html">Programming Guide</a> &raquo;</li>
+      <li>System Architecture</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/programming_guide/system_architecture.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="system-architecture">
+<h1>System Architecture<a class="headerlink" href="#system-architecture" title="Permalink to this heading">¶</a></h1>
+<p>NVIDIA FLARE is designed with the idea that less is more, using a spec based design principle to focus on what is
+essential (solutions to hard, tedious problems others do not want to solve) and to allow other people to be able to do
+what they want to do in real world applications. FL is an open ended space, so the spec based design allows others to
+bring their own implementations and solutions for various components.</p>
+<section id="concepts-and-system-components">
+<span id="id1"></span><h2>Concepts and System Components<a class="headerlink" href="#concepts-and-system-components" title="Permalink to this heading">¶</a></h2>
+<section id="spec-based-programming-for-system-service-objects">
+<h3>Spec-based Programming for System Service Objects<a class="headerlink" href="#spec-based-programming-for-system-service-objects" title="Permalink to this heading">¶</a></h3>
+<p>NVIDIA FLARE 2.1.0 needs additional services to implement the HA feature:
+storage, overseer, job definition management, etc. There are many ways to implement such services. For example,
+storage could be implemented with a file system, AWS S3, or some database technologies. Similarly, job definition
+management could be done with simple file reading or a sophisticated solution with a database or search engine.</p>
+<p>To allow any of these solutions in NVIDIA FLARE, we take a spec-based approach for such objects. Each such service will
+provide an interface definition (the spec), and all implementations must follow the spec. The spec defines the
+required behaviors for the implementation. At the same time, we provide some implementations that follow these specs.</p>
+<p>Spec definitions and provided implementations are below for the different system components.</p>
+</section>
+<section id="system-components">
+<span id="id2"></span><h3>System Components<a class="headerlink" href="#system-components" title="Permalink to this heading">¶</a></h3>
+<p>See the example <a class="reference internal" href="provisioning_system.html#id2"><span class="std std-ref">Default project.yml file</span></a> for how these components are configured in StaticFileBuilder.</p>
+<section id="overseer">
+<h4>Overseer<a class="headerlink" href="#overseer" title="Permalink to this heading">¶</a></h4>
+<p>The Overseer is a system component newly introduced in 2.1.0 that determines the hot FL server at any time for high availability.
+The name of the Overseer must be unique and in the format of fully qualified domain names.  During
+provisioning time, if the name is specified incorrectly, either being duplicate or containing incompatible
+characters, the provision command will fail with an error message. It is possible to use a unique hostname rather than
+FQDN, with the IP mapped to the hostname by having it added to <code class="docutils literal notranslate"><span class="pre">/etc/hosts</span></code>.</p>
+<p>NVIDIA FLARE 2.1.0 comes with HTTPS-based overseer.  Users are welcome to change the name and port arguments of the overseer
+in project.yml to fit their deployment environment.</p>
+<p>The Overseer will receive a Startup kit, which includes the start.sh shell script, its certificate and private key,
+root CA certificate, privileged user list file and a signature file.  The signature file contains signatures of each
+file, signed by root CA.  This is to ensure the privileged user list file is not tampered.</p>
+</section>
+<section id="overseer-agent">
+<h4>Overseer Agent<a class="headerlink" href="#overseer-agent" title="Permalink to this heading">¶</a></h4>
+<p>This is the component that communicates with the Overseer on the client’s behalf.
+Overseer agent config info is included in the Startup Kits of FL Servers, FL Clients, and Admin Clients.</p>
+<p>The provisioning tool generates the overseer agent section in fed_server.json, fed_client.json, and admin.json with
+information gathered from the project.yml file.  For example, if the overseer agent section specifies the listening
+port 7443, the overseer agent section of all fed_server.json, fed_client.json and admin.json contains that port
+information.</p>
+<p>The other important requirement is this agent must be able to communicate with the Overseer specified above.  Users
+may implement their own Overseer based on their deployment environment.  In that case, users also need to implement
+their own Overseer Agent.</p>
+<p><a class="reference internal" href="../apidocs/nvflare.apis.overseer_spec.html#nvflare.apis.overseer_spec.OverseerAgent" title="nvflare.apis.overseer_spec.OverseerAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">Overseer</span> <span class="pre">Agent</span> <span class="pre">Spec</span></code></a></p>
+<p>NVIDIA FLARE provides two implementations:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="../apidocs/nvflare.ha.overseer_agent.html#nvflare.ha.overseer_agent.HttpOverseerAgent" title="nvflare.ha.overseer_agent.HttpOverseerAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">HttpOverseerAgent</span></code></a> to work with the Overseer server. For NVIDIA
+FLARE 2.1.0, the provisioning tool will automatically map parameters specified in Overseer into the arguments for
+the HttpOverseerAgent.</p></li>
+<li><p><a class="reference internal" href="../apidocs/nvflare.ha.dummy_overseer_agent.html#nvflare.ha.dummy_overseer_agent.DummyOverseerAgent" title="nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">DummyOverseerAgent</span></code></a> is a dummy agent that simply
+returns the configured endpoint as the hot FL server. The dummy agent is used when a single FL server is configured
+and no Overseer server is necessary in an NVIDIA FLARE system. When DummyOverseerAgent is specified, the provisioning
+tool will include all arguments into the Overseer Agent section of generated json files.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="job-definition-manager">
+<h4>Job Definition Manager<a class="headerlink" href="#job-definition-manager" title="Permalink to this heading">¶</a></h4>
+<p>The Job Definition Manager config specifies the Python object that manages the access and manipulation of Job Definition objects stored in the Job Storage.</p>
+<p>The system reserved component id, job_manager, is used to denote the Job Definition Manager in the project.yml file.</p>
+<p>This component is specified as one item in the components.server section.</p>
+<p>This configuration is included in the fed_server.json of the Server’s Startup Kit.</p>
+<p><a class="reference internal" href="../apidocs/nvflare.apis.job_def_manager_spec.html#nvflare.apis.job_def_manager_spec.JobDefManagerSpec" title="nvflare.apis.job_def_manager_spec.JobDefManagerSpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">Job</span> <span class="pre">Definition</span> <span class="pre">Manager</span> <span class="pre">Spec</span></code></a></p>
+<p>NVIDIA FLARE provides a simple implementation that is based on scanning of job definition objects:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="../apidocs/nvflare.apis.impl.job_def_manager.html#nvflare.apis.impl.job_def_manager.SimpleJobDefManager" title="nvflare.apis.impl.job_def_manager.SimpleJobDefManager"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simple</span> <span class="pre">Job</span> <span class="pre">Def</span> <span class="pre">Manager</span></code></a></p></li>
+</ul>
+</div></blockquote>
+<section id="job-storage">
+<h5>Job Storage<a class="headerlink" href="#job-storage" title="Permalink to this heading">¶</a></h5>
+<p>The Job definition is stored in a persistent store (used by Simple Job Def Manager). The Job Storage config specifies the Python object that manages the access to the store.</p>
+<p>This component is specified as one item in the components.server section.</p>
+<p>This configuration is included in the fed_server.json of the Server’s Startup Kit.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The default storage is <cite>FilesystemStorage&lt;nvflare.app_common.storages.filesystem_storage.FilesystemStorage&gt;</cite> and is
+configured to use paths available in the file system to persist data. Other implementations can be used instead that
+may need to take other arguments or configurations.</p>
+</div>
+</section>
+</section>
+<section id="job-scheduler">
+<h4>Job Scheduler<a class="headerlink" href="#job-scheduler" title="Permalink to this heading">¶</a></h4>
+<p>The Job scheduler is responsible for determining the next job to run. Job scheduler config specifies the Job scheduler Python object.</p>
+<p>The system reserved component id, job_scheduler, is used to denote the Job Scheduler in the project.yml file.</p>
+<p>This component is specified as one item in the components.server section.</p>
+<p>This configuration is included in the fed_server.json of the Server’s Startup Kit.</p>
+<p><a class="reference internal" href="../apidocs/nvflare.apis.job_scheduler_spec.html#nvflare.apis.job_scheduler_spec.JobSchedulerSpec" title="nvflare.apis.job_scheduler_spec.JobSchedulerSpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">Job</span> <span class="pre">Scheduler</span> <span class="pre">Spec</span></code></a></p>
+<p>NVIDIA FLARE provides a default implementation of the Job Scheduler that does resource based scheduling as described in the beginning:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="../apidocs/nvflare.app_common.job_schedulers.job_scheduler.html#nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler" title="nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler"><code class="xref py py-class docutils literal notranslate"><span class="pre">Default</span> <span class="pre">Job</span> <span class="pre">Scheduler</span></code></a></p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="storage">
+<h4>Storage<a class="headerlink" href="#storage" title="Permalink to this heading">¶</a></h4>
+<p>Storage is used in Job Storage and Job Execution State Storage. See the specific sections for more details.</p>
+<p><a class="reference internal" href="../apidocs/nvflare.apis.storage.html#nvflare.apis.storage.StorageSpec" title="nvflare.apis.storage.StorageSpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">Storage</span> <span class="pre">Spec</span></code></a></p>
+<p>NVIDIA FLARE provides two simple storage implementations:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="../apidocs/nvflare.app_common.storages.filesystem_storage.html#nvflare.app_common.storages.filesystem_storage.FilesystemStorage" title="nvflare.app_common.storages.filesystem_storage.FilesystemStorage"><code class="xref py py-class docutils literal notranslate"><span class="pre">File</span> <span class="pre">System</span> <span class="pre">Storage</span></code></a></p></li>
+<li><p><code class="xref py py-class docutils literal notranslate"><span class="pre">AWS</span> <span class="pre">S3</span> <span class="pre">Storage</span></code></p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="resource-manager">
+<h4>Resource Manager<a class="headerlink" href="#resource-manager" title="Permalink to this heading">¶</a></h4>
+<p>The Resource Manager is responsible for managing job resources on FL Client. Resource Manager config specifies the Resource Manager Python object.</p>
+<p>The system reserved component id, resource_manager, is used to denote the Resource Manager in the project.yml file.</p>
+<p>This component is specified as one item in the components.client section.</p>
+<p>This configuration is included in the fed_client.json of the FL Client’s Startup Kit.</p>
+<p><a class="reference internal" href="../apidocs/nvflare.apis.resource_manager_spec.html#nvflare.apis.resource_manager_spec.ResourceManagerSpec" title="nvflare.apis.resource_manager_spec.ResourceManagerSpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">Resource</span> <span class="pre">Manager</span> <span class="pre">Spec</span></code></a></p>
+<p>NVIDIA FLARE provides a simple resource manager that manages resources as a list of items:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="../apidocs/nvflare.app_common.resource_managers.list_resource_manager.html#nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager" title="nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span> <span class="pre">Resource</span> <span class="pre">Manager</span></code></a></p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="resource-consumer">
+<h4>Resource Consumer<a class="headerlink" href="#resource-consumer" title="Permalink to this heading">¶</a></h4>
+<p>The Resource Consumer is responsible for consuming and/or initializing job resources on FL Client. The Resource Consumer
+config specifies the Resource Consumer Python object.</p>
+<p>This configuration is included in the fed_client.json of the FL Client’s Startup Kit.</p>
+<p>The system reserved component id, resource_consumer, is used to denote the Resource Consumer in the project.yml file.</p>
+<p>This component is specified as one item in the components.client section.</p>
+<p><a class="reference internal" href="../apidocs/nvflare.apis.resource_manager_spec.html#nvflare.apis.resource_manager_spec.ResourceConsumerSpec" title="nvflare.apis.resource_manager_spec.ResourceConsumerSpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">Resource</span> <span class="pre">Consumer</span> <span class="pre">Spec</span></code></a></p>
+<p>NVIDIA FLARE provides a GPU resource consumer:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="../apidocs/nvflare.app_common.resource_consumers.gpu_resource_consumer.html#nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer" title="nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer"><code class="xref py py-class docutils literal notranslate"><span class="pre">GPU</span> <span class="pre">Resource</span> <span class="pre">Consumer</span></code></a></p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="snapshot-persisting">
+<h4>Snapshot Persisting<a class="headerlink" href="#snapshot-persisting" title="Permalink to this heading">¶</a></h4>
+<p>The Job Execution State is persisted in snapshots with the Job Execution State Storage.</p>
+<section id="job-execution-state-storage">
+<h5>Job Execution State Storage<a class="headerlink" href="#job-execution-state-storage" title="Permalink to this heading">¶</a></h5>
+<p>The Job Execution State is stored in a persistent store. The Job Execution State Storage config specifies the Python
+object that manages the access to the store.</p>
+<p>This configuration is included in the fed_server.json of the Server’s Startup Kit.</p>
+</section>
+</section>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="high_availability.html" class="btn btn-neutral float-left" title="High Availability and Server Failover" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../best_practices.html" class="btn btn-neutral float-right" title="Programming Best Practices" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

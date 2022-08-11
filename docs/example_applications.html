@@ -1,0 +1,267 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Example Applications &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Hello Scatter and Gather" href="examples/hello_scatter_and_gather.html" />
+    <link rel="prev" title="Quickstart" href="quickstart.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Example Applications</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="examples/hello_scatter_and_gather.html">Hello Scatter and Gather</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/hello_cross_val.html">Hello Cross-Site Validation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/hello_pt.html">Hello PyTorch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/hello_pt_tb.html">Hello PyTorch with TensorBoard</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/hello_tf2.html">Hello TensorFlow 2</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic">Hello Cyclic Weight Transfer (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_analysis">Federated Analysis (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10 (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai">Hello MONAI (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18">Differential Privacy for BraTS18 Segmentation (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate">Prostate Segmentation from Multi-source Data (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#custom-code-in-example-apps">Custom Code in Example Apps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>Example Applications</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/example_applications.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="example-applications">
+<span id="id1"></span><h1>Example Applications<a class="headerlink" href="#example-applications" title="Permalink to this heading">¶</a></h1>
+<p>NVIDIA FLARE has several examples to help you get started with federated learning and to explore certain features in
+<a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples">the examples directory</a>.</p>
+<div class="toctree-wrapper compound">
+</div>
+<p>The following quickstart guides walk you through some of these examples:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><strong>Basic Examples</strong></p>
+<ul>
+<li><p><a class="reference internal" href="examples/hello_scatter_and_gather.html#hello-scatter-and-gather"><span class="std std-ref">Hello Scatter and Gather</span></a> - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer</p></li>
+<li><p><a class="reference internal" href="examples/hello_cross_val.html#hello-cross-val"><span class="std std-ref">Hello Cross-Site Validation</span></a> - Example using the Cross Site Model Eval workflow with a Numpy trainer</p></li>
+<li><p><a class="reference internal" href="examples/hello_pt.html#hello-pt"><span class="std std-ref">Hello PyTorch</span></a> - Example image classifier using FedAvg and PyTorch as the deep learning training framework</p></li>
+<li><p><a class="reference internal" href="examples/hello_pt_tb.html#hello-pt-tb"><span class="std std-ref">Hello PyTorch with TensorBoard</span></a> - Example building on Hello PyTorch with TensorBoard streaming from clients to server</p></li>
+<li><p><a class="reference internal" href="examples/hello_tf2.html#hello-tf2"><span class="std std-ref">Hello TensorFlow</span></a> - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks</p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic">Hello Cyclic Weight Transfer (GitHub)</a> - Example using the CyclicController workflow to implement <a class="reference external" href="https://pubmed.ncbi.nlm.nih.gov/29617797/">Cyclic Weight Transfer</a> with TensorFlow as the deep learning training framework</p></li>
+</ul>
+</li>
+<li><p><strong>Advanced examples</strong></p>
+<ul>
+<li><p><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_analysis">Federated Analysis (GitHub)</a> - Example of gathering local data summary statistics to compute global dataset statistics</p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10 (GitHub)</a> - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training</p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai">Hello MONAI (GitHub)</a> - Example medical image analysis using FedAvg and <a class="reference external" href="https://monai.io/">MONAI</a></p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18">Differential Privacy for BraTS18 segmentation (GitHub)</a> - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning</p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate">Prostate Segmentation from Multi-source Data (GitHub)</a> - Example of training a multi-institutional prostate segmentation model using <a class="reference external" href="https://arxiv.org/abs/1602.05629">FedAvg</a>, <a class="reference external" href="https://arxiv.org/abs/1812.06127">FedProx</a>, and <a class="reference external" href="https://arxiv.org/abs/2012.04221">Ditto</a></p></li>
+</ul>
+</li>
+</ul>
+</div></blockquote>
+<p>For the complete collection of example applications, see <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples">https://github.com/NVIDIA/NVFlare/tree/main/examples</a>.</p>
+<section id="custom-code-in-example-apps">
+<h2>Custom Code in Example Apps<a class="headerlink" href="#custom-code-in-example-apps" title="Permalink to this heading">¶</a></h2>
+<p>There are several ways to make <a class="reference internal" href="user_guide/application.html#custom-code"><span class="std std-ref">custom code</span></a> available to clients when using NVIDIA FLARE.
+Most hello-* examples use a custom folder within the FL application.
+Note that using a custom folder in the app needs to be <a class="reference internal" href="user_guide/application.html#troubleshooting-byoc"><span class="std std-ref">allowed</span></a> when using secure provisioning.
+By default, this option is disabled in the secure mode. POC mode, however, will work with custom code by default.</p>
+<p>In contrast, the <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">CIFAR-10</a>,
+<a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate">prostate segmentation</a>,
+and <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18">BraTS18 segmentation</a> examples assume that the
+learner code is already installed on the client’s system and available in the PYTHONPATH.
+Hence, the app folders do not include the custom code there.
+The PYTHONPATH is set in the <code class="docutils literal notranslate"><span class="pre">run_poc.sh</span></code> or <code class="docutils literal notranslate"><span class="pre">run_secure.sh</span></code> scripts of the example.
+Running these scripts as described in the README will make the learner code available to the clients.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="quickstart.html" class="btn btn-neutral float-left" title="Quickstart" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="examples/hello_scatter_and_gather.html" class="btn btn-neutral float-right" title="Hello Scatter and Gather" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

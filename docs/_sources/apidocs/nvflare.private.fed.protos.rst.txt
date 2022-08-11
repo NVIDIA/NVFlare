@@ -1,0 +1,21 @@
+nvflare.private.fed.protos package
+==================================
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 4
+
+   nvflare.private.fed.protos.admin_pb2
+   nvflare.private.fed.protos.admin_pb2_grpc
+   nvflare.private.fed.protos.federated_pb2
+   nvflare.private.fed.protos.federated_pb2_grpc
+
+Module contents
+---------------
+
+.. automodule:: nvflare.private.fed.protos
+   :members:
+   :undoc-members:
+   :show-inheritance:

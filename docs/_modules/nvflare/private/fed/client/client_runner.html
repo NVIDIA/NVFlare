@@ -1,0 +1,620 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.client.client_runner &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.client.client_runner</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.client.client_runner</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.client_engine_spec</span> <span class="kn">import</span> <span class="n">ClientEngineSpec</span><span class="p">,</span> <span class="n">TaskAssignment</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.event_type</span> <span class="kn">import</span> <span class="n">EventType</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_component</span> <span class="kn">import</span> <span class="n">FLComponent</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span><span class="p">,</span> <span class="n">ReservedKey</span><span class="p">,</span> <span class="n">ReservedTopic</span><span class="p">,</span> <span class="n">ReturnCode</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">make_reply</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.signal</span> <span class="kn">import</span> <span class="n">Signal</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">SpecialTaskName</span><span class="p">,</span> <span class="n">TaskConstant</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.info_collector</span> <span class="kn">import</span> <span class="n">GroupInfoCollector</span><span class="p">,</span> <span class="n">InfoCollector</span>
+
+
+<div class="viewcode-block" id="ClientRunnerConfig"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.client_runner.html#nvflare.private.fed.client.client_runner.ClientRunnerConfig">[docs]</a><span class="k">class</span> <span class="nc">ClientRunnerConfig</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task_table</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>  <span class="c1"># task_name =&gt; Executor</span>
+        <span class="n">task_data_filters</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>  <span class="c1"># task_name =&gt; list of filters</span>
+        <span class="n">task_result_filters</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>  <span class="c1"># task_name =&gt; list of filters</span>
+        <span class="n">handlers</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># list of event handlers</span>
+        <span class="n">components</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># dict of extra python objects: id =&gt; object</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To init ClientRunnerConfig.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_table: task_name: Executor dict</span>
+<span class="sd">            task_data_filters: task_name =&gt; list of data filters</span>
+<span class="sd">            task_result_filters: task_name =&gt; list of result filters</span>
+<span class="sd">            handlers: list of event handlers</span>
+<span class="sd">            components: dict of extra python objects: id =&gt; object</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_table</span> <span class="o">=</span> <span class="n">task_table</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_data_filters</span> <span class="o">=</span> <span class="n">task_data_filters</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_result_filters</span> <span class="o">=</span> <span class="n">task_result_filters</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">handlers</span> <span class="o">=</span> <span class="n">handlers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">components</span> <span class="o">=</span> <span class="n">components</span></div>
+
+
+<div class="viewcode-block" id="ClientRunner"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.client_runner.html#nvflare.private.fed.client.client_runner.ClientRunner">[docs]</a><span class="k">class</span> <span class="nc">ClientRunner</span><span class="p">(</span><span class="n">FLComponent</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">ClientRunnerConfig</span><span class="p">,</span>
+        <span class="n">job_id</span><span class="p">,</span>
+        <span class="n">engine</span><span class="p">:</span> <span class="n">ClientEngineSpec</span><span class="p">,</span>
+        <span class="n">task_fetch_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>  <span class="c1"># fetch task every 5 secs</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To init the ClientRunner.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            config: ClientRunnerConfig</span>
+<span class="sd">            job_id: job id</span>
+<span class="sd">            engine: ClientEngine object</span>
+<span class="sd">            task_fetch_interval:  fetch task interval</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">FLComponent</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_table</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">task_table</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_data_filters</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">task_data_filters</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_result_filters</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">task_result_filters</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span> <span class="o">=</span> <span class="n">job_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine</span> <span class="o">=</span> <span class="n">engine</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_fetch_interval</span> <span class="o">=</span> <span class="n">task_fetch_interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_abort_signal</span> <span class="o">=</span> <span class="n">Signal</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_abort_signal</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_executor</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_run_fired</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_run_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+        <span class="n">engine</span><span class="o">.</span><span class="n">register_aux_message_handler</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">ReservedTopic</span><span class="o">.</span><span class="n">END_RUN</span><span class="p">,</span> <span class="n">message_handle_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle_end_run</span><span class="p">)</span>
+        <span class="n">engine</span><span class="o">.</span><span class="n">register_aux_message_handler</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">ReservedTopic</span><span class="o">.</span><span class="n">ABORT_ASK</span><span class="p">,</span> <span class="n">message_handle_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle_abort_task</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_process_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">:</span> <span class="n">TaskAssignment</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ClientEngineSpec</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;engine must be ClientEngineSpec, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;got invalid task data in assignment: expect Shareable, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="p">))</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_TASK_DATA</span><span class="p">)</span>
+
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_DATA</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_NAME</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_ID</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">task_id</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">peer_ctx</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_peer_context</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">peer_ctx</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;missing peer context in Server task assignment&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">MISSING_PEER_CONTEXT</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">peer_ctx</span><span class="p">,</span> <span class="n">FLContext</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                <span class="n">fl_ctx</span><span class="p">,</span>
+                <span class="s2">&quot;bad peer context in Server task assignment: expects FLContext but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">peer_ctx</span><span class="p">)),</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_PEER_CONTEXT</span><span class="p">)</span>
+
+        <span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">set_peer_props</span><span class="p">(</span><span class="n">peer_ctx</span><span class="o">.</span><span class="n">get_all_public_props</span><span class="p">())</span>
+        <span class="n">peer_job_id</span> <span class="o">=</span> <span class="n">peer_ctx</span><span class="o">.</span><span class="n">get_job_id</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">peer_job_id</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;bad task assignment: not for the same job_id&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">RUN_MISMATCH</span><span class="p">)</span>
+
+        <span class="n">executor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_table</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">executor</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;bad task assignment: no executor available for task </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.BEFORE_TASK_DATA_FILTER&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">BEFORE_TASK_DATA_FILTER</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="n">filter_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_data_filters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">filter_list</span><span class="p">:</span>
+            <span class="n">task_data</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">data</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">filter_list</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">task_data</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">task_data</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;processing error in Task Data Filter </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">f</span><span class="p">)))</span>
+                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_DATA_FILTER_ERROR</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task_data</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                    <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;task data was converted to wrong type: expect Shareable but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">task_data</span><span class="p">))</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_DATA_FILTER_ERROR</span><span class="p">)</span>
+
+            <span class="n">task</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">task_data</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.AFTER_TASK_DATA_FILTER&quot;</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_DATA</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">AFTER_TASK_DATA_FILTER</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.BEFORE_TASK_EXECUTION&quot;</span><span class="p">)</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_DATA</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">BEFORE_TASK_EXECUTION</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;invoking task executor </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">executor</span><span class="p">)))</span>
+
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_lock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">task_abort_signal</span> <span class="o">=</span> <span class="n">Signal</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_executor</span> <span class="o">=</span> <span class="n">executor</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span> <span class="o">=</span> <span class="n">task</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">reply</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_abort_signal</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_lock</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_abort_signal</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">task_aborted</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">task_aborted</span> <span class="o">=</span> <span class="kc">False</span>
+
+                    <span class="bp">self</span><span class="o">.</span><span class="n">task_abort_signal</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">current_executor</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="n">task_aborted</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reply</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                    <span class="n">fl_ctx</span><span class="p">,</span>
+                    <span class="s2">&quot;bad result generated by executor </span><span class="si">{}</span><span class="s2">: must be Shareable but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                        <span class="nb">type</span><span class="p">(</span><span class="n">executor</span><span class="p">),</span> <span class="nb">type</span><span class="p">(</span><span class="n">reply</span><span class="p">)</span>
+                    <span class="p">),</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_RESULT_ERROR</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Critical RuntimeError happened with Exception </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">: Aborting the RUN!&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_RESULT_ERROR</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;processing error in task executor </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">executor</span><span class="p">)))</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
+
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_RESULT</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">reply</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.AFTER_TASK_EXECUTION&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">AFTER_TASK_EXECUTION</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.BEFORE_TASK_RESULT_FILTER&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">BEFORE_TASK_RESULT_FILTER</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="n">filter_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_result_filters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">filter_list</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">filter_list</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">reply</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">reply</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;processing error in Task Result Filter </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">f</span><span class="p">)))</span>
+                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_RESULT_FILTER_ERROR</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reply</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                    <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;task result was converted to wrong type: expect Shareable but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">reply</span><span class="p">))</span>
+                <span class="p">)</span>
+
+                <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_RESULT_FILTER_ERROR</span><span class="p">)</span>
+
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_RESULT</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">reply</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.AFTER_TASK_RESULT_FILTER&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">AFTER_TASK_RESULT_FILTER</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;finished processing task&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reply</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;task processing error: expects result to be Shareable, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">reply</span><span class="p">))</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_RESULT_ERROR</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">reply</span>
+
+    <span class="k">def</span> <span class="nf">_try_run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">task_fetch_interval</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_fetch_interval</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;run abort signal received&quot;</span><span class="p">)</span>
+                    <span class="k">break</span>
+
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">task_fetch_interval</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;run abort signal received&quot;</span><span class="p">)</span>
+                    <span class="k">break</span>
+
+                <span class="c1"># reset to default fetch interval</span>
+                <span class="n">task_fetch_interval</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_fetch_interval</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;fetching task from server ...&quot;</span><span class="p">)</span>
+                <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">get_task_assignment</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">task</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;no task received - will try in </span><span class="si">{}</span><span class="s2"> secs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_fetch_interval</span><span class="p">))</span>
+                    <span class="k">continue</span>
+
+                <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">SpecialTaskName</span><span class="o">.</span><span class="n">END_RUN</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;server asked to end the run&quot;</span><span class="p">)</span>
+                    <span class="k">break</span>
+
+                <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">SpecialTaskName</span><span class="o">.</span><span class="n">TRY_AGAIN</span><span class="p">:</span>
+                    <span class="n">task_data</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">data</span>
+                    <span class="k">if</span> <span class="n">task_data</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task_data</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+                        <span class="n">task_fetch_interval</span> <span class="o">=</span> <span class="n">task_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">TaskConstant</span><span class="o">.</span><span class="n">WAIT_TIME</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_fetch_interval</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;server asked to try again - will try in </span><span class="si">{}</span><span class="s2"> secs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_fetch_interval</span><span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="k">continue</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;got task assignment: name=</span><span class="si">{}</span><span class="s2">, id=</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">task_id</span><span class="p">))</span>
+
+                <span class="c1"># create a new task abort signal</span>
+                <span class="n">task_reply</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_task</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task_reply</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;task_reply must be Shareable, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">task_reply</span><span class="p">)))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.BEFORE_SEND_TASK_RESULT&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">BEFORE_SEND_TASK_RESULT</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+                <span class="c1"># set the cookie in the reply!</span>
+                <span class="n">task_data</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">data</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task_data</span><span class="p">,</span> <span class="n">Shareable</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;task_data must be Shareable, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">task_data</span><span class="p">)))</span>
+
+                <span class="n">cookie_jar</span> <span class="o">=</span> <span class="n">task_data</span><span class="o">.</span><span class="n">get_cookie_jar</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">cookie_jar</span><span class="p">:</span>
+                    <span class="n">task_reply</span><span class="o">.</span><span class="n">set_cookie_jar</span><span class="p">(</span><span class="n">cookie_jar</span><span class="p">)</span>
+
+                <span class="n">reply_sent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">send_task_result</span><span class="p">(</span><span class="n">task_reply</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">reply_sent</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;result sent to server for task: name=</span><span class="si">{}</span><span class="s2">, id=</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">task_id</span><span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span>
+                        <span class="s2">&quot;failed to send result to server for task: name=</span><span class="si">{}</span><span class="s2">, id=</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">task_id</span><span class="p">),</span>
+                    <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.AFTER_SEND_TASK_RESULT&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">AFTER_SEND_TASK_RESULT</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ClientRunner.run"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.client_runner.html#nvflare.private.fed.client.client_runner.ClientRunner.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_root</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">ABOUT_TO_START_RUN</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">APP_ROOT</span><span class="p">,</span> <span class="n">app_root</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">ARGS</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">ReservedKey</span><span class="o">.</span><span class="n">RUN_ABORT_SIGNAL</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_abort_signal</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;firing event EventType.START_RUN&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">START_RUN</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;client runner started&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">end_run_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">end_run_fired</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_try_run</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;processing error in RUN execution: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="c1"># in case any task is still running, abort it</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_abort_current_task</span><span class="p">()</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">end_run_events_sequence</span><span class="p">(</span><span class="s2">&quot;run method&quot;</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_abort_current_task</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_lock</span><span class="p">:</span>
+            <span class="n">task_abort_signal</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_abort_signal</span>
+            <span class="k">if</span> <span class="n">task_abort_signal</span><span class="p">:</span>
+                <span class="c1"># set task_abort_signal to None to prevent triggering again</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">task_abort_signal</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">task_name</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+                <span class="n">task_id</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+                <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span>
+                <span class="k">if</span> <span class="n">task</span><span class="p">:</span>
+                    <span class="n">task_name</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">name</span>
+                    <span class="n">task_id</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">task_id</span>
+
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+                    <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_NAME</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">task_name</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                    <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_ID</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">task_id</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+                    <span class="n">task_abort_signal</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;triggered task_abort_signal to stop task &#39;</span><span class="si">{}</span><span class="s2">&#39;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_name</span><span class="p">))</span>
+
+                    <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">ABORT_TASK</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;fired ABORT_TASK event to abort current task </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task_name</span><span class="p">))</span>
+
+<div class="viewcode-block" id="ClientRunner.abort_task"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.client_runner.html#nvflare.private.fed.client.client_runner.ClientRunner.abort_task">[docs]</a>    <span class="k">def</span> <span class="nf">abort_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_names</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">has_task_to_abort</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_lock</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span><span class="p">:</span>
+                    <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span><span class="o">.</span><span class="n">name</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">task_names</span> <span class="ow">or</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">task_names</span><span class="p">:</span>
+                        <span class="n">has_task_to_abort</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span>
+                            <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Ignored abort_task request since current task &#39;</span><span class="si">{}</span><span class="s2">&#39; is not target&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                        <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Ignored abort_task request since there is no current task&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">has_task_to_abort</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_abort_current_task</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ClientRunner.end_run_events_sequence"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.client_runner.html#nvflare.private.fed.client.client_runner.ClientRunner.end_run_events_sequence">[docs]</a>    <span class="k">def</span> <span class="nf">end_run_events_sequence</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">requester</span><span class="p">):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">requester</span><span class="si">}</span><span class="s2"> requests end run events sequence&quot;</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">end_run_lock</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">end_run_fired</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">ABOUT_TO_END_RUN</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;ABOUT_TO_END_RUN fired&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">END_RUN</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;END_RUN fired&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">end_run_fired</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="ClientRunner.abort"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.client_runner.html#nvflare.private.fed.client.client_runner.ClientRunner.abort">[docs]</a>    <span class="k">def</span> <span class="nf">abort</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To Abort the current run.</span>
+
+<span class="sd">        Returns: N/A</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;ABORT (RUN) command received&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_abort_current_task</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_abort_signal</span><span class="o">.</span><span class="n">trigger</span><span class="p">(</span><span class="s2">&quot;ABORT (RUN) triggered&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_run_events_sequence</span><span class="p">(</span><span class="s2">&quot;ABORT (RUN)&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ClientRunner.handle_event"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.client_runner.html#nvflare.private.fed.client.client_runner.ClientRunner.handle_event">[docs]</a>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">InfoCollector</span><span class="o">.</span><span class="n">EVENT_TYPE_GET_STATS</span><span class="p">:</span>
+            <span class="n">collector</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">InfoCollector</span><span class="o">.</span><span class="n">CTX_KEY_STATS_COLLECTOR</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">collector</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">collector</span><span class="p">,</span> <span class="n">GroupInfoCollector</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;collector must be GroupInfoCollector, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">collector</span><span class="p">)))</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span><span class="p">:</span>
+                    <span class="n">current_task_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_task</span><span class="o">.</span><span class="n">name</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">current_task_name</span> <span class="o">=</span> <span class="s2">&quot;None&quot;</span>
+                <span class="n">collector</span><span class="o">.</span><span class="n">set_info</span><span class="p">(</span>
+                    <span class="n">group_name</span><span class="o">=</span><span class="s2">&quot;ClientRunner&quot;</span><span class="p">,</span>
+                    <span class="n">info</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;job_id&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="s2">&quot;current_task_name&quot;</span><span class="p">:</span> <span class="n">current_task_name</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;started&quot;</span><span class="p">},</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">FATAL_TASK_ERROR</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">EVENT_DATA</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Aborting current task due to FATAL_TASK_ERROR received: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">reason</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_abort_current_task</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">FATAL_SYSTEM_ERROR</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">EVENT_DATA</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Aborting current RUN due to FATAL_SYSTEM_ERROR received: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">reason</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">abort</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">_handle_end_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;received aux request from Server to end current RUN&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">abort</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_handle_abort_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;received aux request from Server to abort current task&quot;</span><span class="p">)</span>
+        <span class="n">task_names</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;task_names&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">abort_task</span><span class="p">(</span><span class="n">task_names</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

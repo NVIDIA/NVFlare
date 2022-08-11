@@ -1,0 +1,429 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.client.admin &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.client.admin</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.client.admin</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;The FedAdmin to communicate with the Admin server.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">traceback</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.constants</span> <span class="kn">import</span> <span class="n">ConnProps</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.sec.audit</span> <span class="kn">import</span> <span class="n">Auditor</span><span class="p">,</span> <span class="n">AuditService</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.admin_defs</span> <span class="kn">import</span> <span class="n">Message</span><span class="p">,</span> <span class="n">error_reply</span><span class="p">,</span> <span class="n">ok_reply</span>
+
+
+<div class="viewcode-block" id="Sender"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.Sender">[docs]</a><span class="k">class</span> <span class="nc">Sender</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The Sender object integrate the agent with the underline messaging system.</span>
+
+<span class="sd">    Make sure its methods are exception-proof!</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Sender.send_reply"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.Sender.send_reply">[docs]</a>    <span class="k">def</span> <span class="nf">send_reply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reply</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Send the reply to the requester.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            reply: reply message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="Sender.retrieve_requests"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.Sender.retrieve_requests">[docs]</a>    <span class="k">def</span> <span class="nf">retrieve_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">Message</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Send the message to retrieve pending requests from the Server.</span>
+
+<span class="sd">        Returns: list of messages.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="Sender.send_result"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.Sender.send_result">[docs]</a>    <span class="k">def</span> <span class="nf">send_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Send the processor results to server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            message: message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="Sender.close"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.Sender.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Call to close the sender.</span>
+
+<span class="sd">        Returns:</span>
+
+<span class="sd">        &quot;&quot;&quot;</span></div></div>
+
+
+<div class="viewcode-block" id="RequestProcessor"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.RequestProcessor">[docs]</a><span class="k">class</span> <span class="nc">RequestProcessor</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The RequestProcessor is responsible for processing a request.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RequestProcessor.get_topics"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.RequestProcessor.get_topics">[docs]</a>    <span class="k">def</span> <span class="nf">get_topics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Get topics that this processor will handle.</span>
+
+<span class="sd">        Returns: list of topics</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="RequestProcessor.process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.RequestProcessor.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">app_ctx</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called to process the specified request.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            req: request message</span>
+<span class="sd">            app_ctx: application context</span>
+
+<span class="sd">        Returns: reply message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div></div>
+
+
+<div class="viewcode-block" id="FedAdminAgent"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.FedAdminAgent">[docs]</a><span class="k">class</span> <span class="nc">FedAdminAgent</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;FedAdminAgent communicate with the FedAdminServer.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_name</span><span class="p">,</span> <span class="n">sender</span><span class="p">:</span> <span class="n">Sender</span><span class="p">,</span> <span class="n">app_ctx</span><span class="p">,</span> <span class="n">req_poll_interval</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">process_poll_interval</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Init the FedAdminAgent.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_name: client name</span>
+<span class="sd">            sender: Sender object</span>
+<span class="sd">            app_ctx: application context</span>
+<span class="sd">            req_poll_interval: request polling interval</span>
+<span class="sd">            process_poll_interval: process polling interval</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sender</span><span class="p">,</span> <span class="n">Sender</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;sender must be an instance of Sender, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">sender</span><span class="p">)))</span>
+
+        <span class="n">auditor</span> <span class="o">=</span> <span class="n">AuditService</span><span class="o">.</span><span class="n">get_auditor</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">auditor</span><span class="p">,</span> <span class="n">Auditor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;auditor must be an instance of Auditor, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">auditor</span><span class="p">)))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">client_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sender</span> <span class="o">=</span> <span class="n">sender</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">auditor</span> <span class="o">=</span> <span class="n">auditor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">app_ctx</span> <span class="o">=</span> <span class="n">app_ctx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req_poll_interval</span> <span class="o">=</span> <span class="n">req_poll_interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_poll_interval</span> <span class="o">=</span> <span class="n">process_poll_interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processors</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reqs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="FedAdminAgent.register_processor"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.FedAdminAgent.register_processor">[docs]</a>    <span class="k">def</span> <span class="nf">register_processor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">processor</span><span class="p">:</span> <span class="n">RequestProcessor</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To register the RequestProcessor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            processor: RequestProcessor</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">processor</span><span class="p">,</span> <span class="n">RequestProcessor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;processor must be an instance of RequestProcessor, but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">processor</span><span class="p">)))</span>
+
+        <span class="n">topics</span> <span class="o">=</span> <span class="n">processor</span><span class="o">.</span><span class="n">get_topics</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">topic</span> <span class="ow">in</span> <span class="n">topics</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">topic</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">processors</span><span class="p">,</span> <span class="s2">&quot;duplicate processors for topic </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">topic</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">processors</span><span class="p">[</span><span class="n">topic</span><span class="p">]</span> <span class="o">=</span> <span class="n">processor</span></div>
+
+<div class="viewcode-block" id="FedAdminAgent.start"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.FedAdminAgent.start">[docs]</a>    <span class="k">def</span> <span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To start the FedAdminAgent.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">_start_retriever</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="p">,))</span>
+
+        <span class="c1"># called from the main thread</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">_start_processor</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="p">,))</span>
+
+        <span class="c1"># called from the main thread</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">_run_retriever</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="n">reqs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sender</span><span class="o">.</span><span class="n">retrieve_requests</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">reqs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reqs</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reqs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">reqs</span><span class="p">)</span>
+
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req_poll_interval</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_run_processor</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reqs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reqs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">req</span> <span class="o">=</span> <span class="kc">None</span>
+
+            <span class="k">if</span> <span class="n">req</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">Message</span><span class="p">),</span> <span class="s2">&quot;request must be Message but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">req</span><span class="p">))</span>
+                <span class="n">topic</span> <span class="o">=</span> <span class="n">req</span><span class="o">.</span><span class="n">topic</span>
+
+                <span class="c1"># create audit record</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">auditor</span><span class="p">:</span>
+                    <span class="n">user_name</span> <span class="o">=</span> <span class="n">req</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">USER_NAME</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                    <span class="n">ref_event_id</span> <span class="o">=</span> <span class="n">req</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">EVENT_ID</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">auditor</span><span class="o">.</span><span class="n">add_event</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="n">user_name</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="n">topic</span><span class="p">,</span> <span class="n">ref</span><span class="o">=</span><span class="n">ref_event_id</span><span class="p">)</span>
+
+                <span class="n">processor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">processors</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">topic</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">processor</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">reply</span> <span class="o">=</span> <span class="n">processor</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">app_ctx</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">reply</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="c1"># simply ack</span>
+                            <span class="n">reply</span> <span class="o">=</span> <span class="n">ok_reply</span><span class="p">()</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span>
+                                <span class="n">reply</span><span class="p">,</span> <span class="n">Message</span>
+                            <span class="p">),</span> <span class="s2">&quot;processor for topic </span><span class="si">{}</span><span class="s2"> failed to produce valid reply&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">topic</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                        <span class="n">traceback</span><span class="o">.</span><span class="n">print_exc</span><span class="p">()</span>
+                        <span class="n">reply</span> <span class="o">=</span> <span class="n">error_reply</span><span class="p">(</span><span class="s2">&quot;exception_occurred: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">reply</span> <span class="o">=</span> <span class="n">error_reply</span><span class="p">(</span><span class="s2">&quot;invalid_request&quot;</span><span class="p">)</span>
+
+                <span class="n">reply</span><span class="o">.</span><span class="n">set_ref_id</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sender</span><span class="o">.</span><span class="n">send_reply</span><span class="p">(</span><span class="n">reply</span><span class="p">)</span>
+
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">process_poll_interval</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FedAdminAgent.shutdown"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin.html#nvflare.private.fed.client.admin.FedAdminAgent.shutdown">[docs]</a>    <span class="k">def</span> <span class="nf">shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To be called by the Client Engine to gracefully shutdown the agent.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">retrieve_reqs_thread</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_req_thread</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">sender</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">_start_retriever</span><span class="p">(</span><span class="n">agent</span><span class="p">:</span> <span class="n">FedAdminAgent</span><span class="p">):</span>
+    <span class="n">agent</span><span class="o">.</span><span class="n">_run_retriever</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_start_processor</span><span class="p">(</span><span class="n">agent</span><span class="p">:</span> <span class="n">FedAdminAgent</span><span class="p">):</span>
+    <span class="n">agent</span><span class="o">.</span><span class="n">_run_processor</span><span class="p">()</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

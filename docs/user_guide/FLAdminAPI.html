@@ -1,0 +1,293 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FLAdminAPI &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>FLAdminAPI</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/user_guide/FLAdminAPI.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="fladminapi">
+<h1>FLAdminAPI<a class="headerlink" href="#fladminapi" title="Permalink to this heading">¶</a></h1>
+<p><a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI" title="nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPI</span></code></a> is a wrapper for admin commands that can be issued
+by an admin client to the FL server. You can use a provisioned admin client’s certs and keys to initialize an instance
+of FLAdminAPI to programmatically submit commands to the FL server.</p>
+<section id="initialization">
+<h2>Initialization<a class="headerlink" href="#initialization" title="Permalink to this heading">¶</a></h2>
+<p>It is recommended to use the <a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api_runner.html#nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner" title="nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPIRunner</span></code></a> to
+initialize the API, or use it as a guide to write your own code to use the FLAdminAPI.</p>
+<p>Compared to before NVIDIA FLARE 2.1.0, the FLAdminAPI now requires an overseer_agent to be provided, and this is automatically
+created by the <a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api_runner.html#nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner" title="nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPIRunner</span></code></a> with the
+information in <code class="docutils literal notranslate"><span class="pre">fed_admin.json</span></code> in the provided admin_dir’s startup directory.</p>
+<p>Logging in is now automatically handled, and when there is a server cutover, the overseer_agent will provide the new SP
+endpoint information for the active server and the FLAdminAPI will reauthenticate so the commands will be sent to the
+new active server.</p>
+<p><code class="docutils literal notranslate"><span class="pre">logout()</span></code> function can be called to log out. Both <code class="docutils literal notranslate"><span class="pre">login()</span></code> and <code class="docutils literal notranslate"><span class="pre">logout()</span></code> are
+inherited from AdminAPI.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">api</span><span class="o">.</span><span class="n">logout</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>After using FLAdminAPI, the overseer_agent must be cleaned up with a call to:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">api</span><span class="o">.</span><span class="n">overseer_agent</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h2>
+<p>See the example scripts <code class="docutils literal notranslate"><span class="pre">run_fl.py</span></code> in <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">CIFAR-10</a> for
+an example of how to use the FLAdminAPI with FLAdminAPIRunner.</p>
+<p>You can use the example as inspiration to write your own code using the FLAdminAPI to operate your FL system.</p>
+</section>
+<section id="arguments-and-targets">
+<h2>Arguments and targets<a class="headerlink" href="#arguments-and-targets" title="Permalink to this heading">¶</a></h2>
+<p>The arguments required for each FLAdminAPI call are specified in <a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api_spec.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPI</span></code></a>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">target</span></code> when needed is where the action should take place. An argument of <code class="docutils literal notranslate"><span class="pre">target</span></code> as a string can be a
+singular target of “server” or a specific client name. Where <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is required and <code class="docutils literal notranslate"><span class="pre">targets</span></code> can
+be an optional list, the call can be submitted to multiple targets:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “server”, the command target is just the server and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is ignored</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “client” and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is empty, the command target is all clients</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “client” and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is a list of strings, each a client name, the command target is all clients in the list <code class="docutils literal notranslate"><span class="pre">targets</span></code></p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “all” and the command supports it, the command target is the server and all clients</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="return-structure">
+<h2>Return Structure<a class="headerlink" href="#return-structure" title="Permalink to this heading">¶</a></h2>
+<p>FLAdminAPI calls return an FLAdminAPIResponse dictionary object of key value pairs consisting of a status of type APIStatus, a
+dictionary with details, and in some cases a raw response from the underlying call to AdminAPI (mainly useful for
+debugging).</p>
+</section>
+<section id="implementation-notes">
+<h2>Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permalink to this heading">¶</a></h2>
+<p>FLAdminAPI uses the underlying AdminAPI’s <code class="docutils literal notranslate"><span class="pre">do_command()</span></code> function to submit commands to the server, and you
+can also use this function directly for functions that are not wrapped in an FLAdminAPI function. Returns from AdminAPI
+are included in the FLAdminAPI reply under the “raw” key for some calls and error conditions.</p>
+</section>
+<section id="additional-and-complex-commands">
+<h2>Additional and Complex Commands<a class="headerlink" href="#additional-and-complex-commands" title="Permalink to this heading">¶</a></h2>
+<p>The functions <code class="docutils literal notranslate"><span class="pre">wait_until_server_status()</span></code>, <code class="docutils literal notranslate"><span class="pre">wait_until_client_status()</span></code>, and <code class="docutils literal notranslate"><span class="pre">wait_until_server_stats()</span></code> are
+included with the FLAdminAPI in NVIDIA FLARE as examples of useful functions that can be built with other calls in a
+loop with logic. These examples wait until the provided callback returns True, with the option to specify a timeout and
+interval to check the status or stats. There is a default callback to evaluate the reply in the included functions, and
+additional kwargs passed in will be available to the callback. Custom callbacks can be provided to add logic to handle
+checking for other conditions. For these example functions, a timeout should be set in case there are any error
+conditions that result in the system being stuck in a state where the callback never returns True.</p>
+<p>You can use the source code of these function as inspiration to create your own functions or logic that makes use of
+other FLAdminAPI calls.</p>
+</section>
+<section id="questions">
+<h2>Questions<a class="headerlink" href="#questions" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic">
+<li><p>Why do I get an error of “Command ___ not found in server or client cmds” even though I did not try any unspecified
+command?</p>
+<p>The underlying AdminAPI may have not have successfully logged in and obtained a list of available commands to register
+from the server. Please make sure that the server is accessible and the login is working.</p>
+</li>
+<li><p>Why does the AdminAPI return status APIStatus.SUCCESS even though an error occurred after issuing the command?</p>
+<p>If you send a raw command to the underlying AdminAPI with <code class="docutils literal notranslate"><span class="pre">do_command()</span></code>, AdminAPI returns APIStatus.SUCCESS if the
+command was successfully sent to the server and a reply obtained. FLAdminAPI’s calls make sense of the underlying
+server reply and returns a suitable status based on the reply.</p>
+</li>
+<li><p>After a while with the same command, why do I get a SUCCESS from FLAdminAPI but the raw reply contains an error of
+“not authenticated - no user”?</p>
+<p>The server has a timeout after which <code class="docutils literal notranslate"><span class="pre">login()</span></code> must be called again in order for the underlying AdminAPI to be
+authenticated.</p>
+</li>
+</ol>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

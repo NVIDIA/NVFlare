@@ -1,0 +1,874 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hello TensorFlow 2 &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="User Guide - Operations" href="../user_guide.html" />
+    <link rel="prev" title="Hello PyTorch with TensorBoard" href="hello_pt_tb.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../example_applications.html">Example Applications</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="hello_scatter_and_gather.html">Hello Scatter and Gather</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hello_cross_val.html">Hello Cross-Site Validation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hello_pt.html">Hello PyTorch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hello_pt_tb.html">Hello PyTorch with TensorBoard</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Hello TensorFlow 2</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#before-you-start">Before You Start</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nvidia-flare-client">NVIDIA FLARE Client</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#neural-network">Neural Network</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dataset-setup">Dataset &amp; Setup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#link-nvidia-flare-with-local-train">Link NVIDIA FLARE with Local Train</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#nvidia-flare-server-application">NVIDIA FLARE Server &amp; Application</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#filter">Filter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#model-aggregator">Model Aggregator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#model-persistor">Model Persistor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#application-configuration">Application Configuration</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#train-the-model-federated">Train the Model, Federated!</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#running-the-fl-system">Running the FL System</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#accessing-the-results">Accessing the results</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#shutdown-fl-system">Shutdown FL system</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic">Hello Cyclic Weight Transfer (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_analysis">Federated Analysis (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10 (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai">Hello MONAI (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18">Differential Privacy for BraTS18 Segmentation (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate">Prostate Segmentation from Multi-source Data (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../example_applications.html#custom-code-in-example-apps">Custom Code in Example Apps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../example_applications.html">Example Applications</a> &raquo;</li>
+      <li>Hello TensorFlow 2</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/examples/hello_tf2.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="hello-tensorflow-2">
+<span id="hello-tf2"></span><h1>Hello TensorFlow 2<a class="headerlink" href="#hello-tensorflow-2" title="Permalink to this heading">¶</a></h1>
+<section id="before-you-start">
+<h2>Before You Start<a class="headerlink" href="#before-you-start" title="Permalink to this heading">¶</a></h2>
+<p>We recommend you first finish either the <a class="reference internal" href="hello_pt.html"><span class="doc">Hello PyTorch</span></a> or the <a class="reference internal" href="hello_scatter_and_gather.html"><span class="doc">Hello Scatter and Gather</span></a> exercise.</p>
+<p>Those guides go more in depth in explaining the federated learning aspect of <a class="reference external" href="https://pypi.org/project/nvflare/">NVIDIA FLARE</a>.</p>
+<p>Here we assume you have already installed NVIDIA FLARE inside a python virtual environment
+and have already cloned the repo.</p>
+</section>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h2>
+<p>Through this exercise, you will integrate NVIDIA FLARE with the popular deep learning framework
+<a class="reference external" href="https://www.tensorflow.org/">TensorFlow 2</a> and learn how to use NVIDIA FLARE to train a convolutional
+network with the MNIST dataset using the Scatter and Gather workflow.
+You will also be introduced to some new components and concepts, including filters, aggregators, and event handlers.</p>
+<p>The setup of this exercise consists of one <strong>server</strong> and two <strong>clients</strong>.</p>
+<p>The following steps compose one cycle of weight updates, called a <strong>round</strong>:</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p>Clients are responsible for generating individual weight-updates for the model using their own MNIST dataset.</p></li>
+<li><p>These updates are then sent to the server which will aggregate them to produce a model with new weights.</p></li>
+<li><p>Finally, the server sends this updated version of the model back to each client.</p></li>
+</ol>
+</div></blockquote>
+<p>For this exercise, we will be working with the <code class="docutils literal notranslate"><span class="pre">hello-tf2</span></code> application in the examples folder.
+Custom FL applications can contain the folders:</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">tf2_net.py</span></code>, <code class="docutils literal notranslate"><span class="pre">trainer.py</span></code>, <code class="docutils literal notranslate"><span class="pre">filter.py</span></code>, <code class="docutils literal notranslate"><span class="pre">tf2_model_persistor.py</span></code>)</p></li>
+<li><p><strong>config</strong>: contains client and server configurations (<code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>, <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>)</p></li>
+<li><p><strong>resources</strong>: contains the logger config (<code class="docutils literal notranslate"><span class="pre">log.config</span></code>)</p></li>
+</ol>
+</div></blockquote>
+<p>Let’s get started.
+Since this task is using TensorFlow, let’s go ahead and install the library inside our virtual environment:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>nvflare-env<span class="o">)</span> $ python3 -m pip install tensorflow
+</pre></div>
+</div>
+</section>
+<section id="nvidia-flare-client">
+<h2>NVIDIA FLARE Client<a class="headerlink" href="#nvidia-flare-client" title="Permalink to this heading">¶</a></h2>
+<section id="neural-network">
+<h3>Neural Network<a class="headerlink" href="#neural-network" title="Permalink to this heading">¶</a></h3>
+<p>With all the required dependencies installed, you are ready to run a Federated Learning system
+with two clients and one server.</p>
+<p>Before you start, let’s see what a simplified MNIST network looks like.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">tf2_net.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">15</span><span class="kn">import</span> <span class="nn">tensorflow</span> <span class="k">as</span> <span class="nn">tf</span>
+<span class="linenos">16</span>
+<span class="linenos">17</span>
+<span class="linenos">18</span><span class="k">class</span> <span class="nc">Net</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+<span class="linenos">19</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="linenos">20</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="linenos">21</span>        <span class="bp">self</span><span class="o">.</span><span class="n">flatten</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Flatten</span><span class="p">(</span><span class="n">input_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">28</span><span class="p">,</span> <span class="mi">28</span><span class="p">))</span>
+<span class="linenos">22</span>        <span class="bp">self</span><span class="o">.</span><span class="n">dense1</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Dense</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;relu&quot;</span><span class="p">)</span>
+<span class="linenos">23</span>        <span class="bp">self</span><span class="o">.</span><span class="n">dropout</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span>
+<span class="linenos">24</span>        <span class="bp">self</span><span class="o">.</span><span class="n">dense2</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Dense</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<span class="linenos">25</span>
+<span class="linenos">26</span>    <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+<span class="linenos">27</span>        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="linenos">28</span>        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dense1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="linenos">29</span>        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dropout</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="linenos">30</span>        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dense2</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="linenos">31</span>        <span class="k">return</span> <span class="n">x</span>
+</pre></div>
+</div>
+</div>
+<p>This <code class="docutils literal notranslate"><span class="pre">Net</span></code> class is the convolutional neural network to train with MNIST dataset.
+This is not related to NVIDIA FLARE, so implement it in a file called <code class="docutils literal notranslate"><span class="pre">tf2_net.py</span></code>.</p>
+</section>
+<section id="dataset-setup">
+<h3>Dataset &amp; Setup<a class="headerlink" href="#dataset-setup" title="Permalink to this heading">¶</a></h3>
+<p>Now you have to implement the class <code class="docutils literal notranslate"><span class="pre">Trainer</span></code>, which is a subclass of <code class="docutils literal notranslate"><span class="pre">Executor</span></code> in NVIDIA FLARE,
+in a file called <code class="docutils literal notranslate"><span class="pre">trainer.py</span></code>.</p>
+<p>Before you can really start a training, you need to set up your dataset.
+In this exercise, you can download it from the Internet via <code class="docutils literal notranslate"><span class="pre">tf.keras</span></code>’s datasets module,
+and split it in half to create a separate dataset for each client.
+Additionally, you must setup the optimizer, loss function and transform to process the data.</p>
+<p>Since every step will be encapsulated in the <code class="docutils literal notranslate"><span class="pre">SimpleTrainer</span></code> class,
+let’s put this preparation stage into one method <code class="docutils literal notranslate"><span class="pre">setup</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">41</span>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+<span class="linenos">42</span>        <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">),</span> <span class="p">(</span>
+<span class="linenos">43</span>            <span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">,</span>
+<span class="linenos">44</span>            <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">,</span>
+<span class="linenos">45</span>        <span class="p">)</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">mnist</span><span class="o">.</span><span class="n">load_data</span><span class="p">()</span>
+<span class="linenos">46</span>        <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_images</span> <span class="o">=</span> <span class="p">(</span>
+<span class="linenos">47</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span> <span class="o">/</span> <span class="mf">255.0</span><span class="p">,</span>
+<span class="linenos">48</span>            <span class="bp">self</span><span class="o">.</span><span class="n">test_images</span> <span class="o">/</span> <span class="mf">255.0</span><span class="p">,</span>
+<span class="linenos">49</span>        <span class="p">)</span>
+<span class="linenos">50</span>
+<span class="linenos">51</span>        <span class="c1"># simulate separate datasets for each client by dividing MNIST dataset in half</span>
+<span class="linenos">52</span>        <span class="n">client_name</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_identity_name</span><span class="p">()</span>
+<span class="linenos">53</span>        <span class="k">if</span> <span class="n">client_name</span> <span class="o">==</span> <span class="s2">&quot;site-1&quot;</span><span class="p">:</span>
+<span class="linenos">54</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">[:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+<span class="linenos">55</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">[:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+<span class="linenos">56</span>            <span class="bp">self</span><span class="o">.</span><span class="n">test_images</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">[:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+<span class="linenos">57</span>            <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">[:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+<span class="linenos">58</span>        <span class="k">elif</span> <span class="n">client_name</span> <span class="o">==</span> <span class="s2">&quot;site-2&quot;</span><span class="p">:</span>
+<span class="linenos">59</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span> <span class="p">:]</span>
+<span class="linenos">60</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span> <span class="p">:]</span>
+<span class="linenos">61</span>            <span class="bp">self</span><span class="o">.</span><span class="n">test_images</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span> <span class="p">:]</span>
+<span class="linenos">62</span>            <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span> <span class="p">:]</span>
+<span class="linenos">63</span>
+<span class="linenos">64</span>        <span class="n">model</span> <span class="o">=</span> <span class="n">Net</span><span class="p">()</span>
+<span class="linenos">65</span>
+<span class="linenos">66</span>        <span class="n">loss_fn</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">losses</span><span class="o">.</span><span class="n">SparseCategoricalCrossentropy</span><span class="p">(</span><span class="n">from_logits</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">67</span>        <span class="n">model</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">optimizer</span><span class="o">=</span><span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="n">loss</span><span class="o">=</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">metrics</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;accuracy&quot;</span><span class="p">])</span>
+<span class="linenos">68</span>        <span class="n">_</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">Input</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">28</span><span class="p">,</span> <span class="mi">28</span><span class="p">)))</span>
+<span class="linenos">69</span>        <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">()))]</span>
+<span class="linenos">70</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
+<span class="linenos">71</span>
+</pre></div>
+</div>
+<p>How can you ensure this setup method is called before the client receives the model from the server?</p>
+<p>The Trainer class is also a <a class="reference internal" href="../programming_guide/fl_component.html#fl-component"><span class="std std-ref">FLComponent</span></a>, which always receives <code class="docutils literal notranslate"><span class="pre">Event</span></code> whenever
+NVIDIA FLARE enters or leaves a certain stage.</p>
+<p>In this case, there is an <code class="docutils literal notranslate"><span class="pre">Event</span></code> called <code class="docutils literal notranslate"><span class="pre">EventType.START_RUN</span></code> which perfectly matches these requirements.
+Because our trainer is a subclass of <code class="docutils literal notranslate"><span class="pre">FLComponent</span></code>, you can implement the handler to handle the event and call the setup method:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">37</span>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+<span class="linenos">38</span>        <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">START_RUN</span><span class="p">:</span>
+<span class="linenos">39</span>            <span class="bp">self</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is a new concept you haven’t learned in previous two exercises.</p>
+<p>The concepts of <code class="docutils literal notranslate"><span class="pre">event</span></code> and <code class="docutils literal notranslate"><span class="pre">handler</span></code> are very powerful because you are free to
+add your logic so it can run at different time and process various events.</p>
+<p>The entire list of events fired by NVIDIA FLARE is shown at <a class="reference internal" href="../programming_guide/event_system.html#event-system"><span class="std std-ref">Event types</span></a>.</p>
+</div>
+<p>You have everything you need, now let’s implement the last method called <code class="docutils literal notranslate"><span class="pre">execute</span></code>, which is
+called every time the client receives an updated model from the server with the Task we will configure.</p>
+</section>
+<section id="link-nvidia-flare-with-local-train">
+<h3>Link NVIDIA FLARE with Local Train<a class="headerlink" href="#link-nvidia-flare-with-local-train" title="Permalink to this heading">¶</a></h3>
+<p>Take a look at the following code:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span>
+        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+        <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This function is an extended function from the super class.</span>
+<span class="sd">        As a supervised learning based trainer, the train function will run</span>
+<span class="sd">        evaluate and train engines based on model weights from `shareable`.</span>
+<span class="sd">        After finishing training, a new `Shareable` object will be submitted</span>
+<span class="sd">        to server for aggregation.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_name: dispatched task</span>
+<span class="sd">            shareable: the `Shareable` object acheived from server.</span>
+<span class="sd">            fl_ctx: the `FLContext` object achieved from server.</span>
+<span class="sd">            abort_signal: if triggered, the training will be aborted.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            a new `Shareable` object to be submitted to server for aggregation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># retrieve model weights download from server&#39;s shareable</span>
+        <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">task_name</span> <span class="o">!=</span> <span class="s2">&quot;train&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">)</span>
+
+        <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
+        <span class="n">model_weights</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span>
+
+        <span class="c1"># use previous round&#39;s client weights to replace excluded layers from server</span>
+        <span class="n">prev_weights</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())</span>
+        <span class="p">}</span>
+
+        <span class="n">ordered_model_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">prev_weights</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+                <span class="n">ordered_model_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">prev_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+        <span class="c1"># update local model weights with received weights</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">set_weights</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+
+        <span class="c1"># adjust LR or other training time info as needed</span>
+        <span class="c1"># such as callback in the fit function</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">,</span>
+            <span class="n">epochs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs_per_round</span><span class="p">,</span>
+            <span class="n">validation_data</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># report updated weights in shareable</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="p">{</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())}</span>
+        <span class="n">dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Local epochs finished. Returning shareable&quot;</span><span class="p">)</span>
+        <span class="n">new_shareable</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">new_shareable</span>
+</pre></div>
+</div>
+<p>Every NVIDIA FLARE client receives the model weights from the server in the <a class="reference internal" href="../programming_guide/shareable.html#shareable"><span class="std std-ref">shareable</span></a>.
+This application uses the <code class="docutils literal notranslate"><span class="pre">exclude_var</span></code> filter, so make sure to replace the missing layer with weights from the clients’ previous training round:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">111</span>        <span class="n">ordered_model_weights</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">prev_weights</span><span class="p">}</span>
+<span class="linenos">112</span>        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">var_list</span><span class="p">:</span>
+<span class="linenos">113</span>            <span class="n">value</span> <span class="o">=</span> <span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+<span class="linenos">114</span>            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+<span class="linenos">115</span>                <span class="n">ordered_model_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">prev_weights</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>Now update the local model with those received weights:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">118</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">set_weights</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">ordered_model_weights</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+</pre></div>
+</div>
+<p>Then perform a simple <code class="code docutils literal notranslate"><span class="pre">self.model.fit</span></code> so the client’s model is trained with its own dataset:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">122</span>        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+<span class="linenos">123</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_images</span><span class="p">,</span>
+<span class="linenos">124</span>            <span class="bp">self</span><span class="o">.</span><span class="n">train_labels</span><span class="p">,</span>
+<span class="linenos">125</span>            <span class="n">epochs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">epochs_per_round</span><span class="p">,</span>
+<span class="linenos">126</span>            <span class="n">validation_data</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test_images</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_labels</span><span class="p">),</span>
+<span class="linenos">127</span>        <span class="p">)</span>
+</pre></div>
+</div>
+<p>After finishing the local train, the train method uses the newly-trained weights to build a new <code class="docutils literal notranslate"><span class="pre">DXO</span></code> to update the
+<code class="docutils literal notranslate"><span class="pre">Shareable</span></code> with and then returns it back to the NVIDIA FLARE server.</p>
+</section>
+</section>
+<section id="nvidia-flare-server-application">
+<h2>NVIDIA FLARE Server &amp; Application<a class="headerlink" href="#nvidia-flare-server-application" title="Permalink to this heading">¶</a></h2>
+<section id="filter">
+<h3>Filter<a class="headerlink" href="#filter" title="Permalink to this heading">¶</a></h3>
+<p><a class="reference internal" href="../programming_guide/filters.html#filters"><span class="std std-ref">filter</span></a> can be used for additional data processing in the <code class="docutils literal notranslate"><span class="pre">Shareable</span></code>, for both
+inbound and outbound data from the client and/or server.</p>
+<p>For this exercise, we use a basic <code class="docutils literal notranslate"><span class="pre">exclude_var</span></code> filter to exclude the variable/layer <code class="docutils literal notranslate"><span class="pre">flatten</span></code> from the task result
+as it goes outbound from the client to the server. The excluded layer is replaced with all zeros of the same shape,
+which reduces compression size and ensures that the clients’ weights for this variable are not shared with the server.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">filter.py</span><a class="headerlink" href="#id2" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 15</span><span class="kn">import</span> <span class="nn">re</span>
+<span class="linenos"> 16</span>
+<span class="linenos"> 17</span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="linenos"> 18</span><span class="kn">from</span> <span class="nn">nvflare.apis.dxo</span> <span class="kn">import</span> <span class="n">DXO</span><span class="p">,</span> <span class="n">DataKind</span><span class="p">,</span> <span class="n">from_shareable</span>
+<span class="linenos"> 19</span><span class="kn">from</span> <span class="nn">nvflare.apis.filter</span> <span class="kn">import</span> <span class="n">Filter</span>
+<span class="linenos"> 20</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="linenos"> 21</span><span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span>
+<span class="linenos"> 22</span>
+<span class="linenos"> 23</span>
+<span class="linenos"> 24</span><span class="k">class</span> <span class="nc">ExcludeVars</span><span class="p">(</span><span class="n">Filter</span><span class="p">):</span>
+<span class="linenos"> 25</span>    <span class="sd">&quot;&quot;&quot;</span>
+<span class="linenos"> 26</span><span class="sd">        Exclude/Remove variables from Sharable</span>
+<span class="linenos"> 27</span>
+<span class="linenos"> 28</span><span class="sd">    Args:</span>
+<span class="linenos"> 29</span><span class="sd">        exclude_vars: if not specified (None), all layers are being encrypted;</span>
+<span class="linenos"> 30</span><span class="sd">                      if list of variable/layer names, only specified variables are excluded;</span>
+<span class="linenos"> 31</span><span class="sd">                      if string containing regular expression (e.g. &quot;conv&quot;), only matched variables are being excluded.</span>
+<span class="linenos"> 32</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos"> 33</span>
+<span class="linenos"> 34</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exclude_vars</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="linenos"> 35</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="linenos"> 36</span>        <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="o">=</span> <span class="n">exclude_vars</span>
+<span class="linenos"> 37</span>        <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="linenos"> 38</span>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 39</span>            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span>
+<span class="linenos"> 40</span>                <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span>
+<span class="linenos"> 41</span>                <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span>
+<span class="linenos"> 42</span>            <span class="p">):</span>
+<span class="linenos"> 43</span>                <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos"> 44</span>                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+<span class="linenos"> 45</span>                    <span class="s2">&quot;Need to provide a list of layer names or a string for regex matching&quot;</span>
+<span class="linenos"> 46</span>                <span class="p">)</span>
+<span class="linenos"> 47</span>                <span class="k">return</span>
+<span class="linenos"> 48</span>
+<span class="linenos"> 49</span>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+<span class="linenos"> 50</span>                <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">:</span>
+<span class="linenos"> 51</span>                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+<span class="linenos"> 52</span>                        <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos"> 53</span>                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+<span class="linenos"> 54</span>                            <span class="s2">&quot;encrypt_layers needs to be a list of layer names to encrypt.&quot;</span>
+<span class="linenos"> 55</span>                        <span class="p">)</span>
+<span class="linenos"> 56</span>                        <span class="k">return</span>
+<span class="linenos"> 57</span>                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Excluding </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="si">}</span><span class="s2"> from shareable&quot;</span><span class="p">)</span>
+<span class="linenos"> 58</span>            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+<span class="linenos"> 59</span>                <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="o">=</span> <span class="p">(</span>
+<span class="linenos"> 60</span>                    <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="k">else</span> <span class="kc">None</span>
+<span class="linenos"> 61</span>                <span class="p">)</span>
+<span class="linenos"> 62</span>                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 63</span>                    <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos"> 64</span>                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+<span class="linenos"> 65</span>                    <span class="sa">f</span><span class="s1">&#39;Excluding all layers based on regex matches with &quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="si">}</span><span class="s1">&quot;&#39;</span>
+<span class="linenos"> 66</span>                <span class="p">)</span>
+<span class="linenos"> 67</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 68</span>            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Not excluding anything&quot;</span><span class="p">)</span>
+<span class="linenos"> 69</span>            <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos"> 70</span>
+<span class="linenos"> 71</span>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+<span class="linenos"> 72</span>
+<span class="linenos"> 73</span>        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;inside filter&quot;</span><span class="p">)</span>
+<span class="linenos"> 74</span>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">skip</span><span class="p">:</span>
+<span class="linenos"> 75</span>            <span class="k">return</span> <span class="n">shareable</span>
+<span class="linenos"> 76</span>
+<span class="linenos"> 77</span>        <span class="k">try</span><span class="p">:</span>
+<span class="linenos"> 78</span>            <span class="n">dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
+<span class="linenos"> 79</span>        <span class="k">except</span><span class="p">:</span>
+<span class="linenos"> 80</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;shareable data is not a valid DXO&quot;</span><span class="p">)</span>
+<span class="linenos"> 81</span>            <span class="k">return</span> <span class="n">shareable</span>
+<span class="linenos"> 82</span>
+<span class="linenos"> 83</span>        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dxo</span><span class="p">,</span> <span class="n">DXO</span><span class="p">)</span>
+<span class="linenos"> 84</span>        <span class="k">if</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data_kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHT_DIFF</span><span class="p">,</span> <span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">):</span>
+<span class="linenos"> 85</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;I cannot handle </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">dxo</span><span class="o">.</span><span class="n">data_kind</span><span class="p">))</span>
+<span class="linenos"> 86</span>            <span class="k">return</span> <span class="n">shareable</span>
+<span class="linenos"> 87</span>
+<span class="linenos"> 88</span>        <span class="k">if</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 89</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;no data to filter&quot;</span><span class="p">)</span>
+<span class="linenos"> 90</span>            <span class="k">return</span> <span class="n">shareable</span>
+<span class="linenos"> 91</span>
+<span class="linenos"> 92</span>        <span class="n">weights</span> <span class="o">=</span> <span class="n">dxo</span><span class="o">.</span><span class="n">data</span>
+<span class="linenos"> 93</span>
+<span class="linenos"> 94</span>        <span class="c1"># parse regex encrypt layers</span>
+<span class="linenos"> 95</span>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">):</span>
+<span class="linenos"> 96</span>            <span class="n">re_pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span>
+<span class="linenos"> 97</span>            <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos"> 98</span>            <span class="k">for</span> <span class="n">var_name</span> <span class="ow">in</span> <span class="n">weights</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+<span class="linenos"> 99</span>                <span class="k">if</span> <span class="n">re_pattern</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">var_name</span><span class="p">):</span>
+<span class="linenos">100</span>                    <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var_name</span><span class="p">)</span>
+<span class="linenos">101</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Regex found </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="si">}</span><span class="s2"> matching layers.&quot;</span><span class="p">)</span>
+<span class="linenos">102</span>            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<span class="linenos">103</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_warning</span><span class="p">(</span>
+<span class="linenos">104</span>                    <span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;No matching layers found with regex </span><span class="si">{</span><span class="n">re_pattern</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="linenos">105</span>                <span class="p">)</span>
+<span class="linenos">106</span>
+<span class="linenos">107</span>        <span class="c1"># remove variables</span>
+<span class="linenos">108</span>        <span class="n">n_excluded</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos">109</span>        <span class="n">var_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+<span class="linenos">110</span>            <span class="n">weights</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+<span class="linenos">111</span>        <span class="p">)</span>  <span class="c1"># needs to recast to list to be used in for loop</span>
+<span class="linenos">112</span>        <span class="n">n_vars</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">var_names</span><span class="p">)</span>
+<span class="linenos">113</span>        <span class="k">for</span> <span class="n">var_name</span> <span class="ow">in</span> <span class="n">var_names</span><span class="p">:</span>
+<span class="linenos">114</span>            <span class="c1"># self.logger.info(f&quot;Checking {var_name}&quot;)</span>
+<span class="linenos">115</span>            <span class="k">if</span> <span class="n">var_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_vars</span><span class="p">:</span>
+<span class="linenos">116</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Excluding </span><span class="si">{</span><span class="n">var_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">117</span>                <span class="n">weights</span><span class="p">[</span><span class="n">var_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="n">var_name</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="linenos">118</span>                <span class="n">n_excluded</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="linenos">119</span>        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span>
+<span class="linenos">120</span>            <span class="n">fl_ctx</span><span class="p">,</span>
+<span class="linenos">121</span>            <span class="sa">f</span><span class="s2">&quot;Excluded </span><span class="si">{</span><span class="n">n_excluded</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">n_vars</span><span class="si">}</span><span class="s2"> variables. </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">weights</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2"> remaining.&quot;</span><span class="p">,</span>
+<span class="linenos">122</span>        <span class="p">)</span>
+<span class="linenos">123</span>
+<span class="linenos">124</span>        <span class="n">dxo</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">weights</span>
+<span class="linenos">125</span>        <span class="k">return</span> <span class="n">dxo</span><span class="o">.</span><span class="n">update_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>The filtering procedure occurs in the one required method, process, which receives and returns a shareable.
+The parameters for what is excluded and the inbound/outbound option are all set in <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>
+(shown later below) and passed in through the constructor.</p>
+</section>
+<section id="model-aggregator">
+<h3>Model Aggregator<a class="headerlink" href="#model-aggregator" title="Permalink to this heading">¶</a></h3>
+<p>The <a class="reference internal" href="../programming_guide/controllers/scatter_and_gather_workflow.html#aggregator"><span class="std std-ref">model aggregator</span></a> is used by the server to aggregate the clients’ models into one model
+within the Scatter and Gather workflow.</p>
+<p>In this exercise, we perform a simple average over the two clients’ weights with the
+<a class="reference internal" href="../apidocs/nvflare.app_common.aggregators.intime_accumulate_model_aggregator.html#nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator" title="nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"><code class="xref py py-class docutils literal notranslate"><span class="pre">InTimeAccumulateWeightedAggregator</span></code></a>
+and configure for it to be used in <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code> (shown later below).</p>
+</section>
+<section id="model-persistor">
+<h3>Model Persistor<a class="headerlink" href="#model-persistor" title="Permalink to this heading">¶</a></h3>
+<p>The model persistor is used to load and save models on the server.</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-text">tf2_model_persistor.py</span><a class="headerlink" href="#id3" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 15</span><span class="kn">import</span> <span class="nn">os</span>
+<span class="linenos"> 16</span><span class="kn">import</span> <span class="nn">pickle</span>
+<span class="linenos"> 17</span><span class="kn">import</span> <span class="nn">json</span>
+<span class="linenos"> 18</span>
+<span class="linenos"> 19</span><span class="kn">import</span> <span class="nn">tensorflow</span> <span class="k">as</span> <span class="nn">tf</span>
+<span class="linenos"> 20</span><span class="kn">from</span> <span class="nn">nvflare.apis.event_type</span> <span class="kn">import</span> <span class="n">EventType</span>
+<span class="linenos"> 21</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span>
+<span class="linenos"> 22</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="linenos"> 23</span><span class="kn">from</span> <span class="nn">nvflare.app_common.abstract.model</span> <span class="kn">import</span> <span class="n">ModelLearnable</span>
+<span class="linenos"> 24</span><span class="kn">from</span> <span class="nn">nvflare.app_common.abstract.model_persistor</span> <span class="kn">import</span> <span class="n">ModelPersistor</span>
+<span class="linenos"> 25</span><span class="kn">from</span> <span class="nn">tf2_net</span> <span class="kn">import</span> <span class="n">Net</span>
+<span class="linenos"> 26</span><span class="kn">from</span> <span class="nn">nvflare.app_common.app_constant</span> <span class="kn">import</span> <span class="n">AppConstants</span>
+<span class="linenos"> 27</span><span class="kn">from</span> <span class="nn">nvflare.app_common.abstract.model</span> <span class="kn">import</span> <span class="n">make_model_learnable</span>
+<span class="linenos"> 28</span>
+<span class="linenos"> 29</span>
+<span class="linenos"> 30</span><span class="k">class</span> <span class="nc">TF2ModelPersistor</span><span class="p">(</span><span class="n">ModelPersistor</span><span class="p">):</span>
+<span class="linenos"> 31</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">save_name</span><span class="o">=</span><span class="s2">&quot;tf2_model.pkl&quot;</span><span class="p">):</span>
+<span class="linenos"> 32</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="linenos"> 33</span>        <span class="bp">self</span><span class="o">.</span><span class="n">save_name</span> <span class="o">=</span> <span class="n">save_name</span>
+<span class="linenos"> 34</span>
+<span class="linenos"> 35</span>    <span class="k">def</span> <span class="nf">_initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+<span class="linenos"> 36</span>        <span class="c1"># get save path from FLContext</span>
+<span class="linenos"> 37</span>        <span class="n">app_root</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">APP_ROOT</span><span class="p">)</span>
+<span class="linenos"> 38</span>        <span class="n">env</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos"> 39</span>        <span class="n">run_args</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">ARGS</span><span class="p">)</span>
+<span class="linenos"> 40</span>        <span class="k">if</span> <span class="n">run_args</span><span class="p">:</span>
+<span class="linenos"> 41</span>            <span class="n">env_config_file_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">app_root</span><span class="p">,</span> <span class="n">run_args</span><span class="o">.</span><span class="n">env</span><span class="p">)</span>
+<span class="linenos"> 42</span>            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">env_config_file_name</span><span class="p">):</span>
+<span class="linenos"> 43</span>                <span class="k">try</span><span class="p">:</span>
+<span class="linenos"> 44</span>                    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">env_config_file_name</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="linenos"> 45</span>                        <span class="n">env</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+<span class="linenos"> 46</span>                <span class="k">except</span><span class="p">:</span>
+<span class="linenos"> 47</span>                    <span class="bp">self</span><span class="o">.</span><span class="n">system_panic</span><span class="p">(</span>
+<span class="linenos"> 48</span>                        <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;error opening env config file </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">env_config_file_name</span><span class="p">),</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span>
+<span class="linenos"> 49</span>                    <span class="p">)</span>
+<span class="linenos"> 50</span>                    <span class="k">return</span>
+<span class="linenos"> 51</span>
+<span class="linenos"> 52</span>        <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 53</span>            <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;APP_CKPT_DIR&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+<span class="linenos"> 54</span>                <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">LOG_DIR</span><span class="p">,</span> <span class="n">env</span><span class="p">[</span><span class="s2">&quot;APP_CKPT_DIR&quot;</span><span class="p">],</span> <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sticky</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos"> 55</span>            <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;APP_CKPT&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 56</span>                <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span>
+<span class="linenos"> 57</span>                    <span class="n">AppConstants</span><span class="o">.</span><span class="n">CKPT_PRELOAD_PATH</span><span class="p">,</span>
+<span class="linenos"> 58</span>                    <span class="n">env</span><span class="p">[</span><span class="s2">&quot;APP_CKPT&quot;</span><span class="p">],</span>
+<span class="linenos"> 59</span>                    <span class="n">private</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos"> 60</span>                    <span class="n">sticky</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos"> 61</span>                <span class="p">)</span>
+<span class="linenos"> 62</span>
+<span class="linenos"> 63</span>        <span class="n">log_dir</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">LOG_DIR</span><span class="p">)</span>
+<span class="linenos"> 64</span>        <span class="k">if</span> <span class="n">log_dir</span><span class="p">:</span>
+<span class="linenos"> 65</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">app_root</span><span class="p">,</span> <span class="n">log_dir</span><span class="p">)</span>
+<span class="linenos"> 66</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 67</span>            <span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span> <span class="o">=</span> <span class="n">app_root</span>
+<span class="linenos"> 68</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_name</span><span class="p">)</span>
+<span class="linenos"> 69</span>        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span><span class="p">):</span>
+<span class="linenos"> 70</span>            <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_dir</span><span class="p">)</span>
+<span class="linenos"> 71</span>
+<span class="linenos"> 72</span>        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">sync_sticky</span><span class="p">()</span>
+<span class="linenos"> 73</span>
+<span class="linenos"> 74</span>    <span class="k">def</span> <span class="nf">load_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ModelLearnable</span><span class="p">:</span>
+<span class="linenos"> 75</span>        <span class="sd">&quot;&quot;&quot;</span>
+<span class="linenos"> 76</span><span class="sd">            initialize and load the Model.</span>
+<span class="linenos"> 77</span>
+<span class="linenos"> 78</span><span class="sd">        Args:</span>
+<span class="linenos"> 79</span><span class="sd">            fl_ctx: FLContext</span>
+<span class="linenos"> 80</span>
+<span class="linenos"> 81</span><span class="sd">        Returns:</span>
+<span class="linenos"> 82</span><span class="sd">            Model object</span>
+<span class="linenos"> 83</span><span class="sd">        &quot;&quot;&quot;</span>
+<span class="linenos"> 84</span>
+<span class="linenos"> 85</span>        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span><span class="p">):</span>
+<span class="linenos"> 86</span>            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loading server weights&quot;</span><span class="p">)</span>
+<span class="linenos"> 87</span>            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="linenos"> 88</span>                <span class="n">model_learnable</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+<span class="linenos"> 89</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 90</span>            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Initializing server model&quot;</span><span class="p">)</span>
+<span class="linenos"> 91</span>            <span class="n">network</span> <span class="o">=</span> <span class="n">Net</span><span class="p">()</span>
+<span class="linenos"> 92</span>            <span class="n">loss_fn</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">losses</span><span class="o">.</span><span class="n">SparseCategoricalCrossentropy</span><span class="p">(</span><span class="n">from_logits</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos"> 93</span>            <span class="n">network</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">optimizer</span><span class="o">=</span><span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="n">loss</span><span class="o">=</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">metrics</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;accuracy&quot;</span><span class="p">])</span>
+<span class="linenos"> 94</span>            <span class="n">_</span> <span class="o">=</span> <span class="n">network</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">Input</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">28</span><span class="p">,</span> <span class="mi">28</span><span class="p">)))</span>
+<span class="linenos"> 95</span>            <span class="n">var_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">network</span><span class="o">.</span><span class="n">get_layer</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">network</span><span class="o">.</span><span class="n">get_weights</span><span class="p">())}</span>
+<span class="linenos"> 96</span>            <span class="n">model_learnable</span> <span class="o">=</span> <span class="n">make_model_learnable</span><span class="p">(</span><span class="n">var_dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
+<span class="linenos"> 97</span>        <span class="k">return</span> <span class="n">model_learnable</span>
+<span class="linenos"> 98</span>
+<span class="linenos"> 99</span>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+<span class="linenos">100</span>        <span class="k">if</span> <span class="n">event</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">START_RUN</span><span class="p">:</span>
+<span class="linenos">101</span>            <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+<span class="linenos">102</span>
+<span class="linenos">103</span>    <span class="k">def</span> <span class="nf">save_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_learnable</span><span class="p">:</span> <span class="n">ModelLearnable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+<span class="linenos">104</span>        <span class="sd">&quot;&quot;&quot;</span>
+<span class="linenos">105</span><span class="sd">            persist the Model object</span>
+<span class="linenos">106</span>
+<span class="linenos">107</span><span class="sd">        Args:</span>
+<span class="linenos">108</span><span class="sd">            model: Model object</span>
+<span class="linenos">109</span><span class="sd">            fl_ctx: FLContext</span>
+<span class="linenos">110</span><span class="sd">        &quot;&quot;&quot;</span>
+<span class="linenos">111</span>        <span class="n">model_learnable_info</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">v</span><span class="p">))</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">model_learnable</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+<span class="linenos">112</span>        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Saving aggregated server weights: </span><span class="se">\n</span><span class="s2"> </span><span class="si">{</span><span class="n">model_learnable_info</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">113</span>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pkl_save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="linenos">114</span>            <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">model_learnable</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>In this exercise, we simply serialize the model weights dictionary using pickle and
+save it to a log directory calculated in initialize.
+The file is saved on the FL server and the weights file name is defined in <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>.
+Depending on the frameworks and tools, the methods of saving the model may vary.</p>
+<p>FLContext is used throughout these functions to provide various useful FL-related information.
+You can find more details in the <a class="reference internal" href="../programming_guide/fl_context.html#fl-context"><span class="std std-ref">documentation</span></a>.</p>
+</section>
+<section id="application-configuration">
+<h3>Application Configuration<a class="headerlink" href="#application-configuration" title="Permalink to this heading">¶</a></h3>
+<p>Finally, inside the config folder there are two files, <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code> and <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>.</p>
+<div class="literal-block-wrapper docutils container" id="id4">
+<div class="code-block-caption"><span class="caption-text">config_fed_server.json</span><a class="headerlink" href="#id4" title="Permalink to this code">¶</a></div>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 2</span><span class="w">  </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"></span>
+<span class="linenos"> 3</span><span class="w">  </span><span class="nt">&quot;server&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 4</span><span class="w">    </span><span class="nt">&quot;heart_beat_timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="w"></span>
+<span class="linenos"> 5</span><span class="w">  </span><span class="p">},</span><span class="w"></span>
+<span class="linenos"> 6</span><span class="w">  </span><span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w"></span>
+<span class="linenos"> 7</span><span class="w">  </span><span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w"></span>
+<span class="linenos"> 8</span><span class="w">  </span><span class="nt">&quot;components&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos"> 9</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">10</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;persistor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">11</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tf2_model_persistor.TF2ModelPersistor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">12</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">13</span><span class="w">        </span><span class="nt">&quot;save_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tf2weights.pickle&quot;</span><span class="w"></span>
+<span class="linenos">14</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">15</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">16</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">17</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">18</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">19</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"></span>
+<span class="linenos">20</span><span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="linenos">21</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">22</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;aggregator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">23</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">24</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">25</span><span class="w">        </span><span class="nt">&quot;expected_data_kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;WEIGHTS&quot;</span><span class="w"></span>
+<span class="linenos">26</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">27</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">28</span><span class="w">  </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">29</span><span class="w">  </span><span class="nt">&quot;workflows&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">30</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">31</span><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;scatter_gather_ctl&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">32</span><span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">33</span><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">34</span><span class="w">        </span><span class="nt">&quot;min_clients&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">35</span><span class="w">        </span><span class="nt">&quot;num_rounds&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">36</span><span class="w">        </span><span class="nt">&quot;start_round&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">37</span><span class="w">        </span><span class="nt">&quot;wait_time_after_min_received&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">38</span><span class="w">        </span><span class="nt">&quot;aggregator_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;aggregator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">39</span><span class="w">        </span><span class="nt">&quot;persistor_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;persistor&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">40</span><span class="w">        </span><span class="nt">&quot;shareable_generator_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">41</span><span class="w">        </span><span class="nt">&quot;train_task_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;train&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">42</span><span class="w">        </span><span class="nt">&quot;train_timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"></span>
+<span class="linenos">43</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">44</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">45</span><span class="w">  </span><span class="p">]</span><span class="w"></span>
+<span class="linenos">46</span><span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+<p>Note how the <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.scatter_and_gather.html#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"><code class="xref py py-class docutils literal notranslate"><span class="pre">ScatterAndGather</span></code></a> workflow is
+configured to use the included <code class="docutils literal notranslate"><span class="pre">aggregator</span></code> <a class="reference internal" href="../apidocs/nvflare.app_common.aggregators.intime_accumulate_model_aggregator.html#nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator" title="nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"><code class="xref py py-class docutils literal notranslate"><span class="pre">InTimeAccumulateWeightedAggregator</span></code></a>
+and <code class="docutils literal notranslate"><span class="pre">shareable_generator</span></code> <a class="reference internal" href="../apidocs/nvflare.app_common.shareablegenerators.full_model_shareable_generator.html#nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator" title="nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">FullModelShareableGenerator</span></code></a>.
+The <code class="docutils literal notranslate"><span class="pre">persistor</span></code> is configured to use <code class="docutils literal notranslate"><span class="pre">TF2ModelPersistor</span></code> in the custom directory of this hello_tf2 app with full
+Python module paths.</p>
+<div class="literal-block-wrapper docutils container" id="id5">
+<div class="code-block-caption"><span class="caption-text">config_fed_client.json</span><a class="headerlink" href="#id5" title="Permalink to this code">¶</a></div>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 2</span><span class="w">  </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"></span>
+<span class="linenos"> 3</span><span class="w">  </span><span class="nt">&quot;executors&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos"> 4</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 5</span><span class="w">      </span><span class="nt">&quot;tasks&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos"> 6</span><span class="w">        </span><span class="s2">&quot;train&quot;</span><span class="w"></span>
+<span class="linenos"> 7</span><span class="w">      </span><span class="p">],</span><span class="w"></span>
+<span class="linenos"> 8</span><span class="w">      </span><span class="nt">&quot;executor&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 9</span><span class="w">        </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;trainer.SimpleTrainer&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">10</span><span class="w">        </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">11</span><span class="w">          </span><span class="nt">&quot;epochs_per_round&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="w"></span>
+<span class="linenos">12</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">13</span><span class="w">      </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">14</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">15</span><span class="w">  </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">16</span><span class="w">  </span><span class="nt">&quot;task_result_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">17</span><span class="w">    </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">18</span><span class="w">      </span><span class="nt">&quot;tasks&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">19</span><span class="w">        </span><span class="s2">&quot;train&quot;</span><span class="w"></span>
+<span class="linenos">20</span><span class="w">      </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">21</span><span class="w">      </span><span class="nt">&quot;filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">22</span><span class="w">        </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">23</span><span class="w">          </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;filter.ExcludeVars&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="linenos">24</span><span class="w">          </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">25</span><span class="w">            </span><span class="nt">&quot;exclude_vars&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="linenos">26</span><span class="w">              </span><span class="s2">&quot;flatten&quot;</span><span class="w"></span>
+<span class="linenos">27</span><span class="w">            </span><span class="p">]</span><span class="w"></span>
+<span class="linenos">28</span><span class="w">          </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">29</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">30</span><span class="w">      </span><span class="p">]</span><span class="w"></span>
+<span class="linenos">31</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">32</span><span class="w">  </span><span class="p">],</span><span class="w"></span>
+<span class="linenos">33</span><span class="w">  </span><span class="nt">&quot;task_data_filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w"></span>
+<span class="linenos">34</span><span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+<p>Here, <code class="docutils literal notranslate"><span class="pre">executors</span></code> is configured with the Trainer implementation <code class="docutils literal notranslate"><span class="pre">SimpleTrainer</span></code>.
+Also, we set up <code class="docutils literal notranslate"><span class="pre">filter.ExcludeVars</span></code> as a <code class="docutils literal notranslate"><span class="pre">task_result_filters</span></code> and pass in <code class="docutils literal notranslate"><span class="pre">[&quot;flatten&quot;]</span></code> as the argument.
+Both of these are configured for the only Task that will be broadcast in the Scatter and Gather workflow, “train”.</p>
+</section>
+</section>
+<section id="train-the-model-federated">
+<h2>Train the Model, Federated!<a class="headerlink" href="#train-the-model-federated" title="Permalink to this heading">¶</a></h2>
+<p>Now you can use admin command prompt to submit and start this example job.
+To do this on a proof of concept local FL system, follow the sections
+<a class="reference internal" href="../quickstart.html#setting-up-poc"><span class="std std-ref">Setting Up the Application Environment in POC Mode</span></a> and <a class="reference internal" href="../quickstart.html#starting-poc"><span class="std std-ref">Starting the Application Environment in POC Mode</span></a> if you have not already.</p>
+<section id="running-the-fl-system">
+<h3>Running the FL System<a class="headerlink" href="#running-the-fl-system" title="Permalink to this heading">¶</a></h3>
+<p>With the admin client command prompt successfully connected and logged in, enter the command below.</p>
+<pre class="literal-block">&gt; submit_job hello-tf2</pre>
+<p>Pay close attention to what happens in each of four terminals.
+You can see how the admin submits the job to the server and how
+the <a class="reference internal" href="../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner" title="nvflare.private.fed.server.job_runner.JobRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">JobRunner</span></code></a> on the server
+automatically picks up the job to deploy and start the run.</p>
+<p>This command uploads the job configuration from the admin client to the server.
+A job id will be returned, and we can use that id to access job information.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If we use submit_job [app] then that app will be treated as a single app job.</p>
+</div>
+<p>From time to time, you can issue <code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code> in the admin client to check the entire training progress.</p>
+<p>You should now see how the training does in the very first terminal (the one that started the server).</p>
+</section>
+<section id="accessing-the-results">
+<h3>Accessing the results<a class="headerlink" href="#accessing-the-results" title="Permalink to this heading">¶</a></h3>
+<p>The results of each job will usually be stored inside the server side workspace.</p>
+<p>Please refer to <a class="reference internal" href="../user_guide/workspace.html#access-server-workspace"><span class="std std-ref">access server-side workspace</span></a>
+for accessing the server side workspace.</p>
+</section>
+<section id="shutdown-fl-system">
+<h3>Shutdown FL system<a class="headerlink" href="#shutdown-fl-system" title="Permalink to this heading">¶</a></h3>
+<p>Once the FL run is complete and the server has successfully aggregated the client’s results after all the rounds, and
+cross site model evaluation is finished, run the following commands in the fl_admin to shutdown the system (while
+inputting <code class="docutils literal notranslate"><span class="pre">admin</span></code> when prompted with password):</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; shutdown client
+&gt; shutdown server
+&gt; bye
+</pre></div>
+</div>
+<p>Congratulations!</p>
+<p>You’ve successfully built and run a federated learning system using TensorFlow 2.</p>
+<p>The full source code for this exercise can be found in
+<a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-tf2">examples/hello-tf2</a>.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="hello_pt_tb.html" class="btn btn-neutral float-left" title="Hello PyTorch with TensorBoard" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../user_guide.html" class="btn btn-neutral float-right" title="User Guide - Operations" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

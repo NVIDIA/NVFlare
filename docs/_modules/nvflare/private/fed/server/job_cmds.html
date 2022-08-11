@@ -1,0 +1,464 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.server.job_cmds &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.server.job_cmds</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.server.job_cmds</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.job_def</span> <span class="kn">import</span> <span class="n">Job</span><span class="p">,</span> <span class="n">JobMetaKey</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.job_def_manager_spec</span> <span class="kn">import</span> <span class="n">JobDefManagerSpec</span><span class="p">,</span> <span class="n">RunStatus</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.conn</span> <span class="kn">import</span> <span class="n">Connection</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.reg</span> <span class="kn">import</span> <span class="n">CommandModuleSpec</span><span class="p">,</span> <span class="n">CommandSpec</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.authz</span> <span class="kn">import</span> <span class="n">AuthorizationService</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.constants</span> <span class="kn">import</span> <span class="n">ConnProps</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.table</span> <span class="kn">import</span> <span class="n">Table</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.utils.argument_utils</span> <span class="kn">import</span> <span class="n">SafeArgumentParser</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.server_engine</span> <span class="kn">import</span> <span class="n">ServerEngine</span>
+<span class="kn">from</span> <span class="nn">nvflare.security.security</span> <span class="kn">import</span> <span class="n">Action</span>
+
+<span class="kn">from</span> <span class="nn">.cmd_utils</span> <span class="kn">import</span> <span class="n">CommandUtil</span>
+<span class="kn">from</span> <span class="nn">.training_cmds</span> <span class="kn">import</span> <span class="n">TrainingCommandModule</span>
+
+
+<div class="viewcode-block" id="JobCommandModule"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_cmds.html#nvflare.private.fed.server.job_cmds.JobCommandModule">[docs]</a><span class="k">class</span> <span class="nc">JobCommandModule</span><span class="p">(</span><span class="n">TrainingCommandModule</span><span class="p">,</span> <span class="n">CommandUtil</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Command module with commands for job management.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+<div class="viewcode-block" id="JobCommandModule.get_spec"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_cmds.html#nvflare.private.fed.server.job_cmds.JobCommandModule.get_spec">[docs]</a>    <span class="k">def</span> <span class="nf">get_spec</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">CommandModuleSpec</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;job_mgmt&quot;</span><span class="p">,</span>
+            <span class="n">cmd_specs</span><span class="o">=</span><span class="p">[</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;list_jobs&quot;</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;list submitted jobs&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;list_jobs [-n name_prefix] [-d] [job_id_prefix]&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">list_jobs</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;delete_job&quot;</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;delete a job and persisted workspace&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;delete_job job_id&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">delete_job</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_job</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;abort_job&quot;</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;abort a job if it is running or dispatched&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;abort_job job_id&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">abort_job</span><span class="p">,</span>  <span class="c1"># see if running, if running, send abort command</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_job</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">CommandSpec</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;clone_job&quot;</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;clone a job with a new job_id&quot;</span><span class="p">,</span>
+                    <span class="n">usage</span><span class="o">=</span><span class="s2">&quot;clone_job job_id&quot;</span><span class="p">,</span>
+                    <span class="n">handler_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">clone_job</span><span class="p">,</span>
+                    <span class="n">authz_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">authorize_job</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">],</span>
+        <span class="p">)</span></div>
+
+<div class="viewcode-block" id="JobCommandModule.authorize_job"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_cmds.html#nvflare.private.fed.server.job_cmds.JobCommandModule.authorize_job">[docs]</a>    <span class="k">def</span> <span class="nf">authorize_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;syntax error: missing job_id&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">job_def_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">job_def_manager</span>
+
+        <span class="k">with</span> <span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">job_def_manager</span><span class="o">.</span><span class="n">get_job</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">job</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Job with ID </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> doesn&#39;t exist&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">authorize_job_meta</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="p">,</span> <span class="p">[</span><span class="n">Action</span><span class="o">.</span><span class="n">TRAIN</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="JobCommandModule.list_jobs"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_cmds.html#nvflare.private.fed.server.job_cmds.JobCommandModule.list_jobs">[docs]</a>    <span class="k">def</span> <span class="nf">list_jobs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">parser</span> <span class="o">=</span> <span class="n">SafeArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s2">&quot;list_jobs&quot;</span><span class="p">)</span>
+            <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;job_id&quot;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;?&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Job ID prefix&quot;</span><span class="p">)</span>
+            <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;-d&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Show detailed list&quot;</span><span class="p">)</span>
+            <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;-n&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Filter by job name prefix&quot;</span><span class="p">)</span>
+            <span class="n">parsed_args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+
+            <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+            <span class="n">job_def_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">job_def_manager</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">job_def_manager</span><span class="p">,</span> <span class="n">JobDefManagerSpec</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;job_def_manager in engine is not of type JobDefManagerSpec, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">job_def_manager</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+
+            <span class="k">with</span> <span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+                <span class="n">jobs</span> <span class="o">=</span> <span class="n">job_def_manager</span><span class="o">.</span><span class="n">get_all_jobs</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">jobs</span><span class="p">:</span>
+                <span class="n">id_prefix</span> <span class="o">=</span> <span class="n">parsed_args</span><span class="o">.</span><span class="n">job_id</span>
+                <span class="n">name_prefix</span> <span class="o">=</span> <span class="n">parsed_args</span><span class="o">.</span><span class="n">n</span>
+
+                <span class="n">filtered_jobs</span> <span class="o">=</span> <span class="p">[</span><span class="n">job</span> <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">jobs</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_job_match</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="p">,</span> <span class="n">id_prefix</span><span class="p">,</span> <span class="n">name_prefix</span><span class="p">)]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">filtered_jobs</span><span class="p">:</span>
+                    <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;No jobs matching the searching criteria&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+
+                <span class="c1"># Can&#39;t use authz_func so do authorization one by one</span>
+                <span class="n">authorized_jobs</span> <span class="o">=</span> <span class="p">[</span><span class="n">job</span> <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">filtered_jobs</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_job_authorized</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job</span><span class="p">)]</span>
+
+                <span class="n">authorized_jobs</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">job</span><span class="p">:</span> <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">SUBMIT_TIME</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+
+                <span class="k">if</span> <span class="n">parsed_args</span><span class="o">.</span><span class="n">d</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_send_detail_list</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">authorized_jobs</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_send_summary_list</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">authorized_jobs</span><span class="p">)</span>
+
+                <span class="n">diff</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span> <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">filtered_jobs</span><span class="p">])</span> <span class="o">-</span> <span class="nb">set</span><span class="p">([</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span> <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">authorized_jobs</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">diff</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Following jobs are not authorized for listing: </span><span class="si">{</span><span class="n">diff</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Some jobs are not listed due to permission restrictions&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;No jobs.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="k">return</span>
+
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JobCommandModule.delete_job"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_cmds.html#nvflare.private.fed.server.job_cmds.JobCommandModule.delete_job">[docs]</a>    <span class="k">def</span> <span class="nf">delete_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngine</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;engine is not of type ServerEngine, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">job_def_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">job_def_manager</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">job_def_manager</span><span class="p">,</span> <span class="n">JobDefManagerSpec</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;job_def_manager in engine is not of type JobDefManagerSpec, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">job_def_manager</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">with</span> <span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+                <span class="n">job</span> <span class="o">=</span> <span class="n">job_def_manager</span><span class="o">.</span><span class="n">get_job</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">job</span><span class="p">:</span>
+                    <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;job: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> does not exist&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+                <span class="k">if</span> <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">STATUS</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="p">[</span><span class="n">RunStatus</span><span class="o">.</span><span class="n">DISPATCHED</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">RUNNING</span><span class="o">.</span><span class="n">value</span><span class="p">]:</span>
+                    <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;job: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> is running, could not be deleted at this time.&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+
+                <span class="n">job_def_manager</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Job </span><span class="si">{}</span><span class="s2"> deleted.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;exception occurred: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="k">return</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JobCommandModule.abort_job"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_cmds.html#nvflare.private.fed.server.job_cmds.JobCommandModule.abort_job">[docs]</a>    <span class="k">def</span> <span class="nf">abort_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="n">job_runner</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">job_runner</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">job_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+            <span class="n">job_runner</span><span class="o">.</span><span class="n">stop_run</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">())</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Abort signal has been sent to the server app.&quot;</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;Exception occurred trying to abort job: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="k">return</span></div>
+
+<div class="viewcode-block" id="JobCommandModule.clone_job"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_cmds.html#nvflare.private.fed.server.job_cmds.JobCommandModule.clone_job">[docs]</a>    <span class="k">def</span> <span class="nf">clone_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">app_ctx</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">ServerEngine</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;engine is not of type ServerEngine, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">job_def_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">job_def_manager</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">job_def_manager</span><span class="p">,</span> <span class="n">JobDefManagerSpec</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;job_def_manager in engine is not of type JobDefManagerSpec, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">job_def_manager</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">with</span> <span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span> <span class="k">as</span> <span class="n">fl_ctx</span><span class="p">:</span>
+                <span class="n">job</span> <span class="o">=</span> <span class="n">job_def_manager</span><span class="o">.</span><span class="n">get_job</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="n">data_bytes</span> <span class="o">=</span> <span class="n">job_def_manager</span><span class="o">.</span><span class="n">get_content</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="n">meta</span> <span class="o">=</span> <span class="n">job_def_manager</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="p">,</span> <span class="n">data_bytes</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="s2">&quot;Cloned job </span><span class="si">{}</span><span class="s2"> as: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_error</span><span class="p">(</span><span class="s2">&quot;Exception occurred trying to clone job: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="k">return</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_success</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_job_match</span><span class="p">(</span><span class="n">job_meta</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">id_prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name_prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">((</span><span class="ow">not</span> <span class="n">id_prefix</span><span class="p">)</span> <span class="ow">or</span> <span class="n">job_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;job_id&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">id_prefix</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="p">(</span><span class="ow">not</span> <span class="n">name_prefix</span><span class="p">)</span> <span class="ow">or</span> <span class="n">job_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">name_prefix</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+        <span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_send_detail_list</span><span class="p">(</span><span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Job</span><span class="p">]):</span>
+        <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">jobs</span><span class="p">:</span>
+            <span class="n">JobCommandModule</span><span class="o">.</span><span class="n">_set_duration</span><span class="p">(</span><span class="n">job</span><span class="p">)</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_send_summary_list</span><span class="p">(</span><span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">jobs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Job</span><span class="p">]):</span>
+
+        <span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">([</span><span class="s2">&quot;Job ID&quot;</span><span class="p">,</span> <span class="s2">&quot;Name&quot;</span><span class="p">,</span> <span class="s2">&quot;Status&quot;</span><span class="p">,</span> <span class="s2">&quot;Submit Time&quot;</span><span class="p">,</span> <span class="s2">&quot;Run Duration&quot;</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">jobs</span><span class="p">:</span>
+            <span class="n">JobCommandModule</span><span class="o">.</span><span class="n">_set_duration</span><span class="p">(</span><span class="n">job</span><span class="p">)</span>
+            <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span>
+                <span class="p">[</span>
+                    <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                    <span class="n">CommandUtil</span><span class="o">.</span><span class="n">get_job_name</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="p">),</span>
+                    <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">STATUS</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                    <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">SUBMIT_TIME_ISO</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">DURATION</span><span class="p">,</span> <span class="s2">&quot;N/A&quot;</span><span class="p">)),</span>
+                <span class="p">]</span>
+            <span class="p">)</span>
+
+        <span class="n">writer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
+        <span class="n">table</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">writer</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="n">writer</span><span class="o">.</span><span class="n">getvalue</span><span class="p">())</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_set_duration</span><span class="p">(</span><span class="n">job</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">STATUS</span><span class="p">)</span> <span class="o">==</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">RUNNING</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
+            <span class="n">start_time</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">START_TIME</span><span class="p">),</span> <span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S.</span><span class="si">%f</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
+            <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">DURATION</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">duration</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_job_authorized</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">job</span><span class="p">:</span> <span class="n">Job</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+
+        <span class="n">valid</span><span class="p">,</span> <span class="n">authz_ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">authorize_job_meta</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">job</span><span class="o">.</span><span class="n">meta</span><span class="p">,</span> <span class="p">[</span><span class="n">Action</span><span class="o">.</span><span class="n">VIEW</span><span class="p">])</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">valid</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="n">authz_ctx</span><span class="o">.</span><span class="n">user_name</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">USER_NAME</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">AUTHZ_CTX</span><span class="p">,</span> <span class="n">authz_ctx</span><span class="p">)</span>
+        <span class="n">authorizer</span> <span class="o">=</span> <span class="n">AuthorizationService</span><span class="o">.</span><span class="n">get_authorizer</span><span class="p">()</span>
+        <span class="n">authorized</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">authorizer</span><span class="o">.</span><span class="n">authorize</span><span class="p">(</span><span class="n">ctx</span><span class="o">=</span><span class="n">authz_ctx</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Authorization Error to view job </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">err</span><span class="p">))</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">authorized</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;View action for job </span><span class="si">{</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> is not authorized&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="k">return</span> <span class="kc">True</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

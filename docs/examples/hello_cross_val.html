@@ -1,0 +1,623 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hello Cross-Site Validation &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Hello PyTorch" href="hello_pt.html" />
+    <link rel="prev" title="Hello Scatter and Gather" href="hello_scatter_and_gather.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../example_applications.html">Example Applications</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="hello_scatter_and_gather.html">Hello Scatter and Gather</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Hello Cross-Site Validation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#before-you-start">Before You Start</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#prerequisite">Prerequisite</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#training">Training</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#implementing-the-validator">Implementing the Validator</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#application-configuration">Application Configuration</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#cross-site-validation">Cross site validation!</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#running-the-fl-system">Running the FL System</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#understanding-the-output">Understanding the Output</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#accessing-the-results">Accessing the results</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#shutdown-fl-system">Shutdown FL system</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="hello_pt.html">Hello PyTorch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hello_pt_tb.html">Hello PyTorch with TensorBoard</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hello_tf2.html">Hello TensorFlow 2</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic">Hello Cyclic Weight Transfer (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_analysis">Federated Analysis (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">Federated Learning with CIFAR-10 (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai">Hello MONAI (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18">Differential Privacy for BraTS18 Segmentation (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate">Prostate Segmentation from Multi-source Data (GitHub)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../example_applications.html#custom-code-in-example-apps">Custom Code in Example Apps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../example_applications.html">Example Applications</a> &raquo;</li>
+      <li>Hello Cross-Site Validation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/examples/hello_cross_val.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="hello-cross-site-validation">
+<span id="hello-cross-val"></span><h1>Hello Cross-Site Validation<a class="headerlink" href="#hello-cross-site-validation" title="Permalink to this heading">¶</a></h1>
+<section id="before-you-start">
+<h2>Before You Start<a class="headerlink" href="#before-you-start" title="Permalink to this heading">¶</a></h2>
+<p>Before jumping into this guide, make sure you have an environment
+with <a class="reference external" href="https://pypi.org/project/nvflare/">NVIDIA FLARE</a> installed.</p>
+<p>You can follow the <a class="reference internal" href="../quickstart.html#installation"><span class="std std-ref">installation</span></a> guide on the general concept of setting up a
+Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.</p>
+</section>
+<section id="prerequisite">
+<h2>Prerequisite<a class="headerlink" href="#prerequisite" title="Permalink to this heading">¶</a></h2>
+<p>This example builds on the <a class="reference internal" href="hello_scatter_and_gather.html"><span class="doc">Hello Scatter and Gather</span></a> example
+based on the <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.scatter_and_gather.html#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"><code class="xref py py-class docutils literal notranslate"><span class="pre">ScatterAndGather</span></code></a> workflow.</p>
+<p>Please make sure you go through it completely as the concepts are heavily tied.</p>
+</section>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h2>
+<p>This tutorial is meant to solely demonstrate how the NVIDIA FLARE system works,
+without introducing any actual deep learning concepts.</p>
+<p>Through this exercise, you will learn how to use NVIDIA FLARE with numpy to perform cross site validation
+after training.</p>
+<p>The training process is explained in the <a class="reference internal" href="hello_scatter_and_gather.html"><span class="doc">Hello Scatter and Gather</span></a> example.</p>
+<p>Using simplified weights and metrics, you will be able to clearly see how NVIDIA FLARE performs
+validation across different sites with little extra work.</p>
+<p>The setup of this exercise consists of one <strong>server</strong> and two <strong>clients</strong>.
+The server side model starting with weights <code class="docutils literal notranslate"><span class="pre">[[1,</span> <span class="pre">2,</span> <span class="pre">3],</span> <span class="pre">[4,</span> <span class="pre">5,</span> <span class="pre">6],</span> <span class="pre">[7,</span> <span class="pre">8,</span> <span class="pre">9]]</span></code>.</p>
+<p>Cross site validation consists of the following steps:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>During the initial phase of training with the <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.scatter_and_gather.html#nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather" title="nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"><code class="xref py py-class docutils literal notranslate"><span class="pre">ScatterAndGather</span></code></a>
+workflow, NPTrainer saves the local model to disk for the clients.</p></li>
+<li><p>The <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.cross_site_model_eval.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">CrossSiteModelEval</span></code></a> workflow
+gets the client models with the <code class="docutils literal notranslate"><span class="pre">submit_model</span></code> task.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">validate</span></code> task is broadcast to the all participating clients with the model shareable containing the model data,
+and results from the <code class="docutils literal notranslate"><span class="pre">validate</span></code> task are saved.</p></li>
+</ul>
+</div></blockquote>
+<p>During this exercise, we will see how NVIDIA FLARE takes care of most of the above steps with little work from the user.
+We will be working with the <code class="docutils literal notranslate"><span class="pre">hello-numpy-cross-val</span></code> application in the examples folder.
+Custom FL applications can contain the folders:</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p><strong>custom</strong>: contains the custom components (<code class="docutils literal notranslate"><span class="pre">np_trainer.py</span></code>, <code class="docutils literal notranslate"><span class="pre">np_model_persistor.py</span></code>, <code class="docutils literal notranslate"><span class="pre">np_validator.py</span></code>, <code class="docutils literal notranslate"><span class="pre">np_model_locator</span></code>, <code class="docutils literal notranslate"><span class="pre">np_formatter</span></code>)</p></li>
+<li><p><strong>config</strong>: contains client and server configurations (<code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code>, <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>)</p></li>
+<li><p><strong>resources</strong>: contains the logger config (<code class="docutils literal notranslate"><span class="pre">log.config</span></code>)</p></li>
+</ol>
+</div></blockquote>
+<p>Let’s get started. First clone the repo, if you haven’t already:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$ git clone https://github.com/NVIDIA/NVFlare.git
+</pre></div>
+</div>
+<p>Remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
+Ensure numpy is installed.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>nvflare-env<span class="o">)</span> $ python3 -m pip install numpy
+</pre></div>
+</div>
+<p>Now that you have all your dependencies installed, let’s implement the Federated Learning system.</p>
+</section>
+<section id="training">
+<h2>Training<a class="headerlink" href="#training" title="Permalink to this heading">¶</a></h2>
+<p>In the <a class="reference internal" href="hello_scatter_and_gather.html"><span class="doc">Hello Scatter and Gather</span></a> example, we implemented the <code class="docutils literal notranslate"><span class="pre">NPTrainer</span></code> object.
+In this example, we use the same <code class="docutils literal notranslate"><span class="pre">NPTrainer</span></code> but extend it to process the <code class="docutils literal notranslate"><span class="pre">submit_model</span></code> task to
+work with the <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.cross_site_model_eval.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">CrossSiteModelEval</span></code></a>
+workflow to get the client models.</p>
+<p>The code in <code class="docutils literal notranslate"><span class="pre">np_trainer.py</span></code> saves the model to disk after each step of training in the model.</p>
+<p>Note that the server also produces a global model.
+The <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.cross_site_model_eval.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">CrossSiteModelEval</span></code></a>
+workflow submits the server model for evaluation after the client models.</p>
+</section>
+<section id="implementing-the-validator">
+<h2>Implementing the Validator<a class="headerlink" href="#implementing-the-validator" title="Permalink to this heading">¶</a></h2>
+<p>The validator is an Executor that is called for validating the models received from the server during
+the <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.cross_site_model_eval.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">CrossSiteModelEval</span></code></a> workflow.</p>
+<p>These models could be from other clients or models generated on server.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">np_validator.py</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 15</span><span class="kn">import</span> <span class="nn">logging</span>
+<span class="linenos"> 16</span><span class="kn">import</span> <span class="nn">time</span>
+<span class="linenos"> 17</span>
+<span class="linenos"> 18</span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="linenos"> 19</span>
+<span class="linenos"> 20</span><span class="kn">from</span> <span class="nn">nvflare.apis.dxo</span> <span class="kn">import</span> <span class="n">DXO</span><span class="p">,</span> <span class="n">DataKind</span><span class="p">,</span> <span class="n">from_shareable</span>
+<span class="linenos"> 21</span><span class="kn">from</span> <span class="nn">nvflare.apis.executor</span> <span class="kn">import</span> <span class="n">Executor</span>
+<span class="linenos"> 22</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">ReturnCode</span>
+<span class="linenos"> 23</span><span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="linenos"> 24</span><span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">make_reply</span>
+<span class="linenos"> 25</span><span class="kn">from</span> <span class="nn">nvflare.apis.signal</span> <span class="kn">import</span> <span class="n">Signal</span>
+<span class="linenos"> 26</span><span class="kn">from</span> <span class="nn">nvflare.app_common.app_constant</span> <span class="kn">import</span> <span class="n">AppConstants</span>
+<span class="linenos"> 27</span>
+<span class="linenos"> 28</span><span class="kn">from</span> <span class="nn">.constants</span> <span class="kn">import</span> <span class="n">NPConstants</span>
+<span class="linenos"> 29</span>
+<span class="linenos"> 30</span>
+<span class="linenos"> 31</span><span class="k">class</span> <span class="nc">NPValidator</span><span class="p">(</span><span class="n">Executor</span><span class="p">):</span>
+<span class="linenos"> 32</span>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="linenos"> 33</span>        <span class="bp">self</span><span class="p">,</span>
+<span class="linenos"> 34</span>        <span class="n">epsilon</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<span class="linenos"> 35</span>        <span class="n">sleep_time</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<span class="linenos"> 36</span>        <span class="n">validate_task_name</span><span class="o">=</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">TASK_VALIDATION</span><span class="p">,</span>
+<span class="linenos"> 37</span>    <span class="p">):</span>
+<span class="linenos"> 38</span>        <span class="c1"># Init functions of components should be very minimal. Init</span>
+<span class="linenos"> 39</span>        <span class="c1"># is called when json is read. A big init will cause json loading to halt</span>
+<span class="linenos"> 40</span>        <span class="c1"># for long time.</span>
+<span class="linenos"> 41</span>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="linenos"> 42</span>
+<span class="linenos"> 43</span>        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;NPValidator&quot;</span><span class="p">)</span>
+<span class="linenos"> 44</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_random_epsilon</span> <span class="o">=</span> <span class="n">epsilon</span>
+<span class="linenos"> 45</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_sleep_time</span> <span class="o">=</span> <span class="n">sleep_time</span>
+<span class="linenos"> 46</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_task_name</span> <span class="o">=</span> <span class="n">validate_task_name</span>
+<span class="linenos"> 47</span>
+<span class="linenos"> 48</span>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+<span class="linenos"> 49</span>        <span class="c1"># if event_type == EventType.START_RUN:</span>
+<span class="linenos"> 50</span>        <span class="c1">#     Create all major components here. This is a simple app that doesn&#39;t need any components.</span>
+<span class="linenos"> 51</span>        <span class="c1"># elif event_type == EventType.END_RUN:</span>
+<span class="linenos"> 52</span>        <span class="c1">#     # Clean up resources (closing files, joining threads, removing dirs etc.)</span>
+<span class="linenos"> 53</span>        <span class="k">pass</span>
+<span class="linenos"> 54</span>
+<span class="linenos"> 55</span>    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span>
+<span class="linenos"> 56</span>        <span class="bp">self</span><span class="p">,</span>
+<span class="linenos"> 57</span>        <span class="n">task_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="linenos"> 58</span>        <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span>
+<span class="linenos"> 59</span>        <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span>
+<span class="linenos"> 60</span>        <span class="n">abort_signal</span><span class="p">:</span> <span class="n">Signal</span><span class="p">,</span>
+<span class="linenos"> 61</span>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+<span class="linenos"> 62</span>        <span class="c1"># Any long tasks should check abort_signal regularly.</span>
+<span class="linenos"> 63</span>        <span class="c1"># Otherwise, abort client will not work.</span>
+<span class="linenos"> 64</span>        <span class="n">count</span><span class="p">,</span> <span class="n">interval</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">0.5</span>
+<span class="linenos"> 65</span>        <span class="k">while</span> <span class="n">count</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sleep_time</span><span class="p">:</span>
+<span class="linenos"> 66</span>            <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+<span class="linenos"> 67</span>                <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+<span class="linenos"> 68</span>            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">interval</span><span class="p">)</span>
+<span class="linenos"> 69</span>            <span class="n">count</span> <span class="o">+=</span> <span class="n">interval</span>
+<span class="linenos"> 70</span>
+<span class="linenos"> 71</span>        <span class="k">if</span> <span class="n">task_name</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_task_name</span><span class="p">:</span>
+<span class="linenos"> 72</span>            <span class="k">try</span><span class="p">:</span>
+<span class="linenos"> 73</span>                <span class="c1"># First we extract DXO from the shareable.</span>
+<span class="linenos"> 74</span>                <span class="k">try</span><span class="p">:</span>
+<span class="linenos"> 75</span>                    <span class="n">model_dxo</span> <span class="o">=</span> <span class="n">from_shareable</span><span class="p">(</span><span class="n">shareable</span><span class="p">)</span>
+<span class="linenos"> 76</span>                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<span class="linenos"> 77</span>                    <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Unable to extract model dxo from shareable. Exception: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="fm">__str__</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 78</span>                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_TASK_DATA</span><span class="p">)</span>
+<span class="linenos"> 79</span>
+<span class="linenos"> 80</span>                <span class="c1"># Get model from shareable. data_kind must be WEIGHTS.</span>
+<span class="linenos"> 81</span>                <span class="k">if</span> <span class="n">model_dxo</span><span class="o">.</span><span class="n">data</span> <span class="ow">and</span> <span class="n">model_dxo</span><span class="o">.</span><span class="n">data_kind</span> <span class="o">==</span> <span class="n">DataKind</span><span class="o">.</span><span class="n">WEIGHTS</span><span class="p">:</span>
+<span class="linenos"> 82</span>                    <span class="n">model</span> <span class="o">=</span> <span class="n">model_dxo</span><span class="o">.</span><span class="n">data</span>
+<span class="linenos"> 83</span>                <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 84</span>                    <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span>
+<span class="linenos"> 85</span>                        <span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Model DXO doesn&#39;t have data or is not of type DataKind.WEIGHTS. Unable to validate.&quot;</span>
+<span class="linenos"> 86</span>                    <span class="p">)</span>
+<span class="linenos"> 87</span>                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_TASK_DATA</span><span class="p">)</span>
+<span class="linenos"> 88</span>
+<span class="linenos"> 89</span>                <span class="c1"># Check if key exists in model</span>
+<span class="linenos"> 90</span>                <span class="k">if</span> <span class="n">NPConstants</span><span class="o">.</span><span class="n">NUMPY_KEY</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">model</span><span class="p">:</span>
+<span class="linenos"> 91</span>                    <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;numpy_key not in model. Unable to validate.&quot;</span><span class="p">)</span>
+<span class="linenos"> 92</span>                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">BAD_TASK_DATA</span><span class="p">)</span>
+<span class="linenos"> 93</span>
+<span class="linenos"> 94</span>                <span class="c1"># The workflow provides MODEL_OWNER information in the shareable header.</span>
+<span class="linenos"> 95</span>                <span class="n">model_name</span> <span class="o">=</span> <span class="n">shareable</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">AppConstants</span><span class="o">.</span><span class="n">MODEL_OWNER</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+<span class="linenos"> 96</span>
+<span class="linenos"> 97</span>                <span class="c1"># Print properties.</span>
+<span class="linenos"> 98</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Model: </span><span class="se">\n</span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 99</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Task name: </span><span class="si">{</span><span class="n">task_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">100</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Client identity: </span><span class="si">{</span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_identity_name</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">101</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Validating model from </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+<span class="linenos">102</span>
+<span class="linenos">103</span>                <span class="c1"># Check abort signal regularly.</span>
+<span class="linenos">104</span>                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+<span class="linenos">105</span>                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+<span class="linenos">106</span>
+<span class="linenos">107</span>                <span class="c1"># Do some dummy validation.</span>
+<span class="linenos">108</span>                <span class="n">random_epsilon</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span>
+<span class="linenos">109</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Adding random epsilon </span><span class="si">{</span><span class="n">random_epsilon</span><span class="si">}</span><span class="s2"> in validation.&quot;</span><span class="p">)</span>
+<span class="linenos">110</span>                <span class="n">val_results</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="linenos">111</span>                <span class="n">np_data</span> <span class="o">=</span> <span class="n">model</span><span class="p">[</span><span class="n">NPConstants</span><span class="o">.</span><span class="n">NUMPY_KEY</span><span class="p">]</span>
+<span class="linenos">112</span>                <span class="n">np_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np_data</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">np_data</span><span class="p">))</span>
+<span class="linenos">113</span>                <span class="n">val_results</span><span class="p">[</span><span class="s2">&quot;accuracy&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np_data</span> <span class="o">+</span> <span class="n">random_epsilon</span>
+<span class="linenos">114</span>
+<span class="linenos">115</span>                <span class="c1"># Check abort signal regularly.</span>
+<span class="linenos">116</span>                <span class="k">if</span> <span class="n">abort_signal</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+<span class="linenos">117</span>                    <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_ABORTED</span><span class="p">)</span>
+<span class="linenos">118</span>
+<span class="linenos">119</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Validation result: </span><span class="si">{</span><span class="n">val_results</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">120</span>
+<span class="linenos">121</span>                <span class="c1"># Create DXO for metrics and return shareable.</span>
+<span class="linenos">122</span>                <span class="n">metric_dxo</span> <span class="o">=</span> <span class="n">DXO</span><span class="p">(</span><span class="n">data_kind</span><span class="o">=</span><span class="n">DataKind</span><span class="o">.</span><span class="n">METRICS</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">val_results</span><span class="p">)</span>
+<span class="linenos">123</span>                <span class="k">return</span> <span class="n">metric_dxo</span><span class="o">.</span><span class="n">to_shareable</span><span class="p">()</span>
+<span class="linenos">124</span>            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<span class="linenos">125</span>                <span class="bp">self</span><span class="o">.</span><span class="n">log_exception</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Exception in NPValidator execute: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+<span class="linenos">126</span>                <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">EXECUTION_EXCEPTION</span><span class="p">)</span>
+<span class="linenos">127</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos">128</span>            <span class="k">return</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">TASK_UNKNOWN</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>The validator is an Executor and implements the <strong>execute</strong> function which receives a Shareable.</p>
+<p>It handles the <code class="docutils literal notranslate"><span class="pre">validate</span></code> task by performing a calculation to find the sum divided by the max of the data
+and adding a <code class="docutils literal notranslate"><span class="pre">random_epsilon</span></code> before returning the results packaged with a DXO into a Shareable.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Note that in our hello-examples, we are demonstrating Federated Learning using data that does not have to do with deep learning.
+NVIDIA FLARE can be used with any data packaged inside a <a class="reference internal" href="../programming_guide/shareable.html#shareable"><span class="std std-ref">Shareable</span></a> object (subclasses <code class="docutils literal notranslate"><span class="pre">dict</span></code>), and
+<a class="reference internal" href="../programming_guide/data_exchange_object.html#data-exchange-object"><span class="std std-ref">DXO</span></a> is recommended as a way to manage that data in a standard way.</p>
+</div>
+<section id="application-configuration">
+<h3>Application Configuration<a class="headerlink" href="#application-configuration" title="Permalink to this heading">¶</a></h3>
+<p>Inside the config folder there are two files, <code class="docutils literal notranslate"><span class="pre">config_fed_client.json</span></code> and <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">config_fed_server.json</span><a class="headerlink" href="#id2" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
+<span class="linenos"> 2</span>  <span class="s2">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos"> 3</span>  <span class="s2">&quot;server&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos"> 4</span>    <span class="s2">&quot;heart_beat_timeout&quot;</span><span class="p">:</span> <span class="mi">600</span>
+<span class="linenos"> 5</span>  <span class="p">},</span>
+<span class="linenos"> 6</span>  <span class="s2">&quot;task_data_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos"> 7</span>  <span class="s2">&quot;task_result_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos"> 8</span>  <span class="s2">&quot;components&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos"> 9</span>    <span class="p">{</span>
+<span class="linenos">10</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;persistor&quot;</span><span class="p">,</span>
+<span class="linenos">11</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.np.np_model_persistor.NPModelPersistor&quot;</span><span class="p">,</span>
+<span class="linenos">12</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">13</span>    <span class="p">},</span>
+<span class="linenos">14</span>    <span class="p">{</span>
+<span class="linenos">15</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span>
+<span class="linenos">16</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator&quot;</span><span class="p">,</span>
+<span class="linenos">17</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">18</span>    <span class="p">},</span>
+<span class="linenos">19</span>    <span class="p">{</span>
+<span class="linenos">20</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;aggregator&quot;</span><span class="p">,</span>
+<span class="linenos">21</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator&quot;</span><span class="p">,</span>
+<span class="linenos">22</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">23</span>        <span class="s2">&quot;expected_data_kind&quot;</span><span class="p">:</span> <span class="s2">&quot;WEIGHTS&quot;</span>
+<span class="linenos">24</span>      <span class="p">}</span>
+<span class="linenos">25</span>    <span class="p">},</span>
+<span class="linenos">26</span>    <span class="p">{</span>
+<span class="linenos">27</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;model_locator&quot;</span><span class="p">,</span>
+<span class="linenos">28</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.np.np_model_locator.NPModelLocator&quot;</span><span class="p">,</span>
+<span class="linenos">29</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">30</span>    <span class="p">},</span>
+<span class="linenos">31</span>    <span class="p">{</span>
+<span class="linenos">32</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;formatter&quot;</span><span class="p">,</span>
+<span class="linenos">33</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.np.np_formatter.NPFormatter&quot;</span><span class="p">,</span>
+<span class="linenos">34</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">35</span>    <span class="p">},</span>
+<span class="linenos">36</span>    <span class="p">{</span>
+<span class="linenos">37</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;json_generator&quot;</span><span class="p">,</span>
+<span class="linenos">38</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator&quot;</span><span class="p">,</span>
+<span class="linenos">39</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">40</span>    <span class="p">}</span>
+<span class="linenos">41</span>  <span class="p">],</span>
+<span class="linenos">42</span>  <span class="s2">&quot;workflows&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">43</span>    <span class="p">{</span>
+<span class="linenos">44</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;scatter_and_gather&quot;</span><span class="p">,</span>
+<span class="linenos">45</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather&quot;</span><span class="p">,</span>
+<span class="linenos">46</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">47</span>        <span class="s2">&quot;min_clients&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos">48</span>        <span class="s2">&quot;num_rounds&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+<span class="linenos">49</span>        <span class="s2">&quot;start_round&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+<span class="linenos">50</span>        <span class="s2">&quot;wait_time_after_min_received&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+<span class="linenos">51</span>        <span class="s2">&quot;aggregator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;aggregator&quot;</span><span class="p">,</span>
+<span class="linenos">52</span>        <span class="s2">&quot;persistor_id&quot;</span><span class="p">:</span> <span class="s2">&quot;persistor&quot;</span><span class="p">,</span>
+<span class="linenos">53</span>        <span class="s2">&quot;shareable_generator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;shareable_generator&quot;</span><span class="p">,</span>
+<span class="linenos">54</span>        <span class="s2">&quot;train_task_name&quot;</span><span class="p">:</span> <span class="s2">&quot;train&quot;</span><span class="p">,</span>
+<span class="linenos">55</span>        <span class="s2">&quot;train_timeout&quot;</span><span class="p">:</span> <span class="mi">6000</span>
+<span class="linenos">56</span>      <span class="p">}</span>
+<span class="linenos">57</span>    <span class="p">},</span>
+<span class="linenos">58</span>    <span class="p">{</span>
+<span class="linenos">59</span>      <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;cross_site_model_eval&quot;</span><span class="p">,</span>
+<span class="linenos">60</span>      <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval&quot;</span><span class="p">,</span>
+<span class="linenos">61</span>      <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">62</span>        <span class="s2">&quot;model_locator_id&quot;</span><span class="p">:</span> <span class="s2">&quot;model_locator&quot;</span><span class="p">,</span>
+<span class="linenos">63</span>        <span class="s2">&quot;submit_model_timeout&quot;</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span>
+<span class="linenos">64</span>        <span class="s2">&quot;validation_timeout&quot;</span><span class="p">:</span> <span class="mi">6000</span><span class="p">,</span>
+<span class="linenos">65</span>        <span class="s2">&quot;cleanup_models&quot;</span><span class="p">:</span> <span class="n">false</span>
+<span class="linenos">66</span>      <span class="p">}</span>
+<span class="linenos">67</span>    <span class="p">}</span>
+<span class="linenos">68</span>  <span class="p">]</span>
+<span class="linenos">69</span><span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<p>The server now has a second workflow configured after Scatter and Gather, <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.cross_site_model_eval.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">CrossSiteModelEval</span></code></a>.</p>
+<p>The components “model_locator” and “formatter” have been added to work with the cross site model evaluation workflow,
+and the rest is the same as in <a class="reference internal" href="hello_scatter_and_gather.html"><span class="doc">Hello Scatter and Gather</span></a>.</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-text">config_fed_client.json</span><a class="headerlink" href="#id3" title="Permalink to this code">¶</a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span>
+<span class="linenos"> 2</span>  <span class="s2">&quot;format_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="linenos"> 3</span>  <span class="s2">&quot;executors&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos"> 4</span>    <span class="p">{</span>
+<span class="linenos"> 5</span>      <span class="s2">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos"> 6</span>        <span class="s2">&quot;train&quot;</span><span class="p">,</span>
+<span class="linenos"> 7</span>        <span class="s2">&quot;submit_model&quot;</span>
+<span class="linenos"> 8</span>      <span class="p">],</span>
+<span class="linenos"> 9</span>      <span class="s2">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">10</span>        <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.np.np_trainer.NPTrainer&quot;</span><span class="p">,</span>
+<span class="linenos">11</span>        <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{}</span>
+<span class="linenos">12</span>      <span class="p">}</span>
+<span class="linenos">13</span>    <span class="p">},</span>
+<span class="linenos">14</span>    <span class="p">{</span>
+<span class="linenos">15</span>      <span class="s2">&quot;tasks&quot;</span><span class="p">:</span> <span class="p">[</span>
+<span class="linenos">16</span>        <span class="s2">&quot;validate&quot;</span>
+<span class="linenos">17</span>      <span class="p">],</span>
+<span class="linenos">18</span>      <span class="s2">&quot;executor&quot;</span><span class="p">:</span> <span class="p">{</span>
+<span class="linenos">19</span>        <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;nvflare.app_common.np.np_validator.NPValidator&quot;</span>
+<span class="linenos">20</span>      <span class="p">}</span>
+<span class="linenos">21</span>    <span class="p">}</span>
+<span class="linenos">22</span>  <span class="p">],</span>
+<span class="linenos">23</span>  <span class="s2">&quot;task_result_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos">24</span>  <span class="s2">&quot;task_data_filters&quot;</span><span class="p">:</span> <span class="p">[],</span>
+<span class="linenos">25</span>  <span class="s2">&quot;components&quot;</span><span class="p">:</span> <span class="p">[]</span>
+<span class="linenos">26</span><span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<p>The client configuration now has more tasks and an additional Executor <code class="docutils literal notranslate"><span class="pre">NPValidator</span></code> configured to handle the “validate” task.
+The “submit_model” task has been added to the <code class="docutils literal notranslate"><span class="pre">NPTrainer</span></code> Executor to work with the <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.cross_site_model_eval.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">CrossSiteModelEval</span></code></a>
+workflow to get the client models.</p>
+</section>
+</section>
+<section id="cross-site-validation">
+<h2>Cross site validation!<a class="headerlink" href="#cross-site-validation" title="Permalink to this heading">¶</a></h2>
+<p>Now you can use admin command prompt to submit and start this example job.
+To do this on a proof of concept local FL system, follow the sections
+<a class="reference internal" href="../quickstart.html#setting-up-poc"><span class="std std-ref">Setting Up the Application Environment in POC Mode</span></a> and <a class="reference internal" href="../quickstart.html#starting-poc"><span class="std std-ref">Starting the Application Environment in POC Mode</span></a> if you have not already.</p>
+<section id="running-the-fl-system">
+<h3>Running the FL System<a class="headerlink" href="#running-the-fl-system" title="Permalink to this heading">¶</a></h3>
+<p>With the admin client command prompt successfully connected and logged in, enter the command below.</p>
+<pre class="literal-block">&gt; submit_job hello-numpy-cross-val</pre>
+<p>Pay close attention to what happens in each of four terminals.
+You can see how the admin submits the job to the server and how
+the <a class="reference internal" href="../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner" title="nvflare.private.fed.server.job_runner.JobRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">JobRunner</span></code></a> on the server
+automatically picks up the job to deploy and start the run.</p>
+<p>This command uploads the job configuration from the admin client to the server.
+A job id will be returned, and we can use that id to access job information.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If we use submit_job [app] then that app will be treated as a single app job.</p>
+</div>
+<p>From time to time, you can issue <code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code> in the admin client to check the entire training progress.</p>
+<p>You should now see how the training does in the very first terminal (the one that started the server).</p>
+<p>During the first phase, the model will be trained.</p>
+<p>During the second phase, cross site validation will happen.</p>
+<p>The workflow on the client will change to <a class="reference internal" href="../apidocs/nvflare.app_common.workflows.cross_site_model_eval.html#nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval" title="nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval"><code class="xref py py-class docutils literal notranslate"><span class="pre">CrossSiteModelEval</span></code></a>
+as it enters this second phase.</p>
+<p>During cross site model evaluation, every client validates other clients’ models and server models (if present).
+This can produce a lot of results. All the results will be kept in the job’s workspace when it is completed.</p>
+</section>
+<section id="understanding-the-output">
+<h3>Understanding the Output<a class="headerlink" href="#understanding-the-output" title="Permalink to this heading">¶</a></h3>
+<p>After starting the server and clients, you should begin to see
+some outputs in each terminal tracking the progress of the FL run.
+As each client finishes training, it will start the cross site validation process.
+During this you’ll see several important outputs the track the progress of cross site validation.</p>
+<p>The server shows the log of each client requesting models, the models it sends and the results received.
+Since the server could be responding to many clients at the same time, it may
+require careful examination to make proper sense of events from the jumbled logs.</p>
+</section>
+<section id="accessing-the-results">
+<h3>Accessing the results<a class="headerlink" href="#accessing-the-results" title="Permalink to this heading">¶</a></h3>
+<p>The results of each job will usually be stored inside the server side workspace.</p>
+<p>Please refer to <a class="reference internal" href="../user_guide/workspace.html#access-server-workspace"><span class="std std-ref">access server-side workspace</span></a>
+for accessing the server side workspace.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You could see the cross-site validation results
+at <code class="docutils literal notranslate"><span class="pre">[DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json</span></code></p>
+</div>
+</section>
+<section id="shutdown-fl-system">
+<h3>Shutdown FL system<a class="headerlink" href="#shutdown-fl-system" title="Permalink to this heading">¶</a></h3>
+<p>Once the FL run is complete and the server has successfully aggregated the client’s results after all the rounds, and
+cross site model evaluation is finished, run the following commands in the fl_admin to shutdown the system (while
+inputting <code class="docutils literal notranslate"><span class="pre">admin</span></code> when prompted with password):</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&gt; shutdown client
+&gt; shutdown server
+&gt; bye
+</pre></div>
+</div>
+<p>Congratulations!</p>
+<p>You’ve successfully run your numpy federated learning system with cross site validation.</p>
+<p>The full source code for this exercise can be found in
+<a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-cross-val/">examples/hello-numpy-cross-val</a>.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="hello_scatter_and_gather.html" class="btn btn-neutral float-left" title="Hello Scatter and Gather" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="hello_pt.html" class="btn btn-neutral float-right" title="Hello PyTorch" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

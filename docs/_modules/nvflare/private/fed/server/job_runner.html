@@ -1,0 +1,521 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.server.job_runner &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.server.job_runner</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.server.job_runner</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">os.path</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.event_type</span> <span class="kn">import</span> <span class="n">EventType</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_component</span> <span class="kn">import</span> <span class="n">FLComponent</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span><span class="p">,</span> <span class="n">RunProcessKey</span><span class="p">,</span> <span class="n">SystemComponents</span><span class="p">,</span> <span class="n">WorkspaceConstants</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.job_def</span> <span class="kn">import</span> <span class="n">ALL_SITES</span><span class="p">,</span> <span class="n">Job</span><span class="p">,</span> <span class="n">RunStatus</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.zip_utils</span> <span class="kn">import</span> <span class="n">zip_directory_to_bytes</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.admin_defs</span> <span class="kn">import</span> <span class="n">Message</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">RequestHeader</span><span class="p">,</span> <span class="n">TrainingTopic</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.admin</span> <span class="kn">import</span> <span class="n">check_client_replies</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.utils.fed_utils</span> <span class="kn">import</span> <span class="n">deploy_app</span>
+
+
+<span class="k">def</span> <span class="nf">_send_to_clients</span><span class="p">(</span><span class="n">admin_server</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">engine</span><span class="p">,</span> <span class="n">message</span><span class="p">):</span>
+    <span class="n">clients</span><span class="p">,</span> <span class="n">invalid_inputs</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">validate_clients</span><span class="p">(</span><span class="n">client_sites</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">invalid_inputs</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;invalid clients: </span><span class="si">{</span><span class="n">invalid_inputs</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+    <span class="n">requests</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">:</span>
+        <span class="n">requests</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">c</span><span class="o">.</span><span class="n">token</span><span class="p">:</span> <span class="n">message</span><span class="p">})</span>
+    <span class="n">replies</span> <span class="o">=</span> <span class="n">admin_server</span><span class="o">.</span><span class="n">send_requests</span><span class="p">(</span><span class="n">requests</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="n">admin_server</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">replies</span>
+
+
+<div class="viewcode-block" id="JobRunner"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner">[docs]</a><span class="k">class</span> <span class="nc">JobRunner</span><span class="p">(</span><span class="n">FLComponent</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">workspace_root</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">workspace_root</span> <span class="o">=</span> <span class="n">workspace_root</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ask_to_stop</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scheduler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+<div class="viewcode-block" id="JobRunner.handle_event"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner.handle_event">[docs]</a>    <span class="k">def</span> <span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="n">EventType</span><span class="o">.</span><span class="n">SYSTEM_START</span><span class="p">:</span>
+            <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">scheduler</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_SCHEDULER</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">event_type</span> <span class="ow">in</span> <span class="p">[</span><span class="n">EventType</span><span class="o">.</span><span class="n">JOB_COMPLETED</span><span class="p">,</span> <span class="n">EventType</span><span class="o">.</span><span class="n">JOB_ABORTED</span><span class="p">,</span> <span class="n">EventType</span><span class="o">.</span><span class="n">JOB_CANCELLED</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_save_workspace</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_deploy_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_data</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">fl_ctx</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="c1"># deploy app to all the client sites</span>
+        <span class="n">admin_server</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">DEPLOY</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">app_data</span><span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">APP_NAME</span><span class="p">,</span> <span class="n">app_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Send deploy command to the clients for run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="n">_send_to_clients</span><span class="p">(</span><span class="n">admin_server</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">,</span> <span class="n">engine</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">replies</span>
+
+    <span class="k">def</span> <span class="nf">_deploy_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job</span><span class="p">:</span> <span class="n">Job</span><span class="p">,</span> <span class="n">sites</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Deploy the application to the list of participants</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            job: job to be deployed</span>
+<span class="sd">            sites: participating sites</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            job_id</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">remove_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">JOB_RUN_NUMBER</span><span class="p">)</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">run_number</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">job_id</span>
+        <span class="n">workspace</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">workspace_root</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span> <span class="o">+</span> <span class="n">run_number</span><span class="p">)</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">while</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">workspace</span><span class="p">):</span>
+            <span class="n">run_number</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">job_id</span> <span class="o">+</span> <span class="s2">&quot;:&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">count</span><span class="p">)</span>
+            <span class="n">workspace</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">workspace_root</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span> <span class="o">+</span> <span class="n">run_number</span><span class="p">)</span>
+            <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">JOB_RUN_NUMBER</span><span class="p">,</span> <span class="n">run_number</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">participants</span> <span class="ow">in</span> <span class="n">job</span><span class="o">.</span><span class="n">get_deployment</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">app_data</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">get_application</span><span class="p">(</span><span class="n">app_name</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">participants</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">participants</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">==</span> <span class="n">ALL_SITES</span><span class="p">:</span>
+                <span class="n">participants</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;server&quot;</span><span class="p">]</span>
+                <span class="n">participants</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">client</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()])</span>
+
+            <span class="n">client_sites</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">participants</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">p</span> <span class="o">==</span> <span class="s2">&quot;server&quot;</span><span class="p">:</span>
+                    <span class="n">success</span> <span class="o">=</span> <span class="n">deploy_app</span><span class="p">(</span><span class="n">app_name</span><span class="o">=</span><span class="n">app_name</span><span class="p">,</span> <span class="n">site_name</span><span class="o">=</span><span class="s2">&quot;server&quot;</span><span class="p">,</span> <span class="n">workspace</span><span class="o">=</span><span class="n">workspace</span><span class="p">,</span> <span class="n">app_data</span><span class="o">=</span><span class="n">app_data</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span>
+                        <span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Application </span><span class="si">{</span><span class="n">app_name</span><span class="si">}</span><span class="s2"> deployed to the server for job: </span><span class="si">{</span><span class="n">run_number</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">fire_event</span><span class="o">=</span><span class="kc">False</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to deploy the App: </span><span class="si">{</span><span class="n">app_name</span><span class="si">}</span><span class="s2"> to the server&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">sites</span><span class="p">:</span>
+                        <span class="n">client_sites</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">client_sites</span><span class="p">:</span>
+                <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deploy_clients</span><span class="p">(</span><span class="n">app_data</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">run_number</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="n">check_client_replies</span><span class="p">(</span><span class="n">replies</span><span class="o">=</span><span class="n">replies</span><span class="p">,</span> <span class="n">client_sites</span><span class="o">=</span><span class="n">client_sites</span><span class="p">,</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;deploy the App&quot;</span><span class="p">)</span>
+                <span class="n">display_sites</span> <span class="o">=</span> <span class="s2">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">client_sites</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span>
+                    <span class="n">fl_ctx</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">&quot;Application </span><span class="si">{</span><span class="n">app_name</span><span class="si">}</span><span class="s2"> deployed to the clients: </span><span class="si">{</span><span class="n">display_sites</span><span class="si">}</span><span class="s2"> for run: </span><span class="si">{</span><span class="n">run_number</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="n">fire_event</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">JOB_DEPLOYED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">run_number</span>
+
+    <span class="k">def</span> <span class="nf">_start_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job</span><span class="p">:</span> <span class="n">Job</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Start the application</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            job_id: job_id</span>
+<span class="sd">            client_sites: participating sites</span>
+<span class="sd">            fl_ctx: FLContext</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">job_clients</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_job_clients</span><span class="p">(</span><span class="n">client_sites</span><span class="p">)</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">start_app_on_server</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">job_id</span><span class="o">=</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">job_clients</span><span class="o">=</span><span class="n">job_clients</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not start the server App for job: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+        <span class="n">replies</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">start_client_job</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">)</span>
+        <span class="n">client_sites_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">client_sites</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">check_client_replies</span><span class="p">(</span><span class="n">replies</span><span class="o">=</span><span class="n">replies</span><span class="p">,</span> <span class="n">client_sites</span><span class="o">=</span><span class="n">client_sites_names</span><span class="p">,</span> <span class="n">command</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;start job (</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+        <span class="n">display_sites</span> <span class="o">=</span> <span class="s2">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">client_sites_names</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Started run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> for clients: </span><span class="si">{</span><span class="n">display_sites</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">JOB_STARTED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_stop_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Stop the application</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            job_id: job_id to be stopped</span>
+<span class="sd">            fl_ctx: FLContext</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">run_process</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">run_process</span><span class="p">:</span>
+            <span class="n">client_sites</span> <span class="o">=</span> <span class="n">run_process</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">PARTICIPANTS</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">abort_client_run</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+            <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">abort_app_on_server</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Failed to abort the server for run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="JobRunner.abort_client_run"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner.abort_client_run">[docs]</a>    <span class="k">def</span> <span class="nf">abort_client_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">fl_ctx</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Send the abort run command to the clients</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            job_id: job_id</span>
+<span class="sd">            client_sites: Clients to be aborted</span>
+<span class="sd">            fl_ctx: FLContext</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">admin_server</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">ABORT</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Send abort command to the clients for run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">replies</span> <span class="o">=</span> <span class="n">_send_to_clients</span><span class="p">(</span><span class="n">admin_server</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">,</span> <span class="n">engine</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+            <span class="n">check_client_replies</span><span class="p">(</span><span class="n">replies</span><span class="o">=</span><span class="n">replies</span><span class="p">,</span> <span class="n">client_sites</span><span class="o">=</span><span class="n">client_sites</span><span class="p">,</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;abort the run&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Failed to abort run (</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">) on the clients: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_delete_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Deletes the run workspace</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            job_id: job_id</span>
+<span class="sd">            client_sites: participating sites</span>
+<span class="sd">            fl_ctx: FLContext</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+
+        <span class="n">admin_server</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">DELETE_RUN</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Send delete_run command to the clients for run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">replies</span> <span class="o">=</span> <span class="n">_send_to_clients</span><span class="p">(</span><span class="n">admin_server</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">,</span> <span class="n">engine</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+            <span class="n">check_client_replies</span><span class="p">(</span><span class="n">replies</span><span class="o">=</span><span class="n">replies</span><span class="p">,</span> <span class="n">client_sites</span><span class="o">=</span><span class="n">client_sites</span><span class="p">,</span> <span class="n">command</span><span class="o">=</span><span class="s2">&quot;send delete_run command&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Failed to execute delete run (</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">) on the clients: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">err</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">delete_job_id</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Failed to delete_run the server for run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_job_complete_process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">job_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_MANAGER</span><span class="p">)</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">ask_to_stop</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+                <span class="k">if</span> <span class="n">job_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">engine</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                    <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                        <span class="n">job</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">job</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="n">engine</span><span class="o">.</span><span class="n">execution_exception_run_processes</span><span class="p">:</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Try to abort run (</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">) on clients.&quot;</span><span class="p">)</span>
+                                <span class="n">run_process</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">execution_exception_run_processes</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span>
+
+                                <span class="c1"># stop client run</span>
+                                <span class="n">client_sites</span> <span class="o">=</span> <span class="n">run_process</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">PARTICIPANTS</span><span class="p">)</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">abort_client_run</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+                                <span class="n">job_manager</span><span class="o">.</span><span class="n">set_status</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">FINISHED_EXECUTION_EXCEPTION</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                            <span class="k">else</span><span class="p">:</span>
+                                <span class="n">job_manager</span><span class="o">.</span><span class="n">set_status</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">FINISHED_COMPLETED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span>
+                            <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_JOB_ID</span><span class="p">,</span> <span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">)</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">JOB_COMPLETED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">log_debug</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Finished running job:</span><span class="si">{</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_save_workspace</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_JOB_ID</span><span class="p">)</span>
+        <span class="n">workspace</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">workspace_root</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span> <span class="o">+</span> <span class="n">job_id</span><span class="p">)</span>
+        <span class="n">workspace_data</span> <span class="o">=</span> <span class="n">zip_directory_to_bytes</span><span class="p">(</span><span class="n">workspace</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">job_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_MANAGER</span><span class="p">)</span>
+
+        <span class="n">job_manager</span><span class="o">.</span><span class="n">save_workspace</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">workspace_data</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+
+<div class="viewcode-block" id="JobRunner.run"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+
+        <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_job_complete_process</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">fl_ctx</span><span class="p">])</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+        <span class="n">job_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_MANAGER</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">job_manager</span><span class="p">:</span>
+            <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">ask_to_stop</span><span class="p">:</span>
+                <span class="c1"># approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)</span>
+                <span class="n">approved_jobs</span> <span class="o">=</span> <span class="n">job_manager</span><span class="o">.</span><span class="n">get_jobs_by_status</span><span class="p">(</span><span class="n">RunStatus</span><span class="o">.</span><span class="n">SUBMITTED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">scheduler</span><span class="p">:</span>
+                    <span class="p">(</span><span class="n">ready_job</span><span class="p">,</span> <span class="n">sites</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scheduler</span><span class="o">.</span><span class="n">schedule_job</span><span class="p">(</span><span class="n">job_candidates</span><span class="o">=</span><span class="n">approved_jobs</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">ready_job</span><span class="p">:</span>
+                        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                            <span class="n">client_sites</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">sites</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">&quot;server&quot;</span><span class="p">}</span>
+                            <span class="n">job_id</span> <span class="o">=</span> <span class="kc">None</span>
+                            <span class="k">try</span><span class="p">:</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Got the job:</span><span class="si">{</span><span class="n">ready_job</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> from the scheduler to run&quot;</span><span class="p">)</span>
+                                <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_JOB_ID</span><span class="p">,</span> <span class="n">ready_job</span><span class="o">.</span><span class="n">job_id</span><span class="p">)</span>
+                                <span class="n">job_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deploy_job</span><span class="p">(</span><span class="n">ready_job</span><span class="p">,</span> <span class="n">sites</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                                <span class="n">job_manager</span><span class="o">.</span><span class="n">set_status</span><span class="p">(</span><span class="n">ready_job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">DISPATCHED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">_start_run</span><span class="p">(</span>
+                                    <span class="n">job_id</span><span class="o">=</span><span class="n">job_id</span><span class="p">,</span>
+                                    <span class="n">job</span><span class="o">=</span><span class="n">ready_job</span><span class="p">,</span>
+                                    <span class="n">client_sites</span><span class="o">=</span><span class="n">client_sites</span><span class="p">,</span>
+                                    <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">,</span>
+                                <span class="p">)</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">ready_job</span>
+                                <span class="n">job_manager</span><span class="o">.</span><span class="n">set_status</span><span class="p">(</span><span class="n">ready_job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">RUNNING</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                                <span class="k">if</span> <span class="n">job_id</span><span class="p">:</span>
+                                    <span class="k">if</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">:</span>
+                                        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span>
+                                    <span class="bp">self</span><span class="o">.</span><span class="n">_stop_run</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                                <span class="n">job_manager</span><span class="o">.</span><span class="n">set_status</span><span class="p">(</span><span class="n">ready_job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">FAILED_TO_RUN</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">JOB_ABORTED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Failed to run the Job (</span><span class="si">{</span><span class="n">ready_job</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;There&#39;s no Job Manager defined. Won&#39;t be able to run the jobs.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JobRunner.restore_running_job"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner.restore_running_job">[docs]</a>    <span class="k">def</span> <span class="nf">restore_running_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_number</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_clients</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">engine</span><span class="o">.</span><span class="n">start_app_on_server</span><span class="p">(</span><span class="n">run_number</span><span class="p">,</span> <span class="n">job_id</span><span class="o">=</span><span class="n">job_id</span><span class="p">,</span> <span class="n">job_clients</span><span class="o">=</span><span class="n">job_clients</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="n">snapshot</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">job_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_MANAGER</span><span class="p">)</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">job_manager</span><span class="o">.</span><span class="n">get_job</span><span class="p">(</span><span class="n">jid</span><span class="o">=</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">job</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_error</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Failed to restore the job: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> to the running job table: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JobRunner.stop_run"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner.stop_run">[docs]</a>    <span class="k">def</span> <span class="nf">stop_run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">job_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_MANAGER</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stop_run</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">job</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Stop the job run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_JOB_ID</span><span class="p">,</span> <span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">)</span>
+                <span class="n">job_manager</span><span class="o">.</span><span class="n">set_status</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">,</span> <span class="n">RunStatus</span><span class="o">.</span><span class="n">FINISHED_ABORTED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+                <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_jobs</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">JOB_ABORTED</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Job run: </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> does not exist.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="JobRunner.stop_all_runs"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.job_runner.html#nvflare.private.fed.server.job_runner.JobRunner.stop_all_runs">[docs]</a>    <span class="k">def</span> <span class="nf">stop_all_runs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="n">engine</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stop_run</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_info</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">,</span> <span class="s2">&quot;Stop all the running jobs.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ask_to_stop</span> <span class="o">=</span> <span class="kc">True</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

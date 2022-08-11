@@ -1,0 +1,7 @@
+nvflare.private.fed.protos.admin\_pb2\_grpc module
+==================================================
+
+.. automodule:: nvflare.private.fed.protos.admin_pb2_grpc
+   :members:
+   :undoc-members:
+   :show-inheritance:

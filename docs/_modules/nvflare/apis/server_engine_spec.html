@@ -1,0 +1,392 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.apis.server_engine_spec &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.apis.server_engine_spec</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.apis.server_engine_spec</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.widget</span> <span class="kn">import</span> <span class="n">Widget</span>
+
+<span class="kn">from</span> <span class="nn">.client</span> <span class="kn">import</span> <span class="n">Client</span>
+<span class="kn">from</span> <span class="nn">.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">.fl_snapshot</span> <span class="kn">import</span> <span class="n">RunSnapshot</span>
+<span class="kn">from</span> <span class="nn">.workspace</span> <span class="kn">import</span> <span class="n">Workspace</span>
+
+
+<div class="viewcode-block" id="ServerEngineSpec"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec">[docs]</a><span class="k">class</span> <span class="nc">ServerEngineSpec</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<div class="viewcode-block" id="ServerEngineSpec.fire_event"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.fire_event">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">fire_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.get_clients"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.get_clients">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">]:</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.sync_clients_from_main_process"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.sync_clients_from_main_process">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">sync_clients_from_main_process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To fetch the participating clients from the main parent process</span>
+
+<span class="sd">        Returns: clients</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.validate_clients"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.validate_clients">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">validate_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+        <span class="sd">&quot;&quot;&quot;Validate specified client names.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_names: list of names to be validated</span>
+
+<span class="sd">        Returns: a list of validate clients  and a list of invalid client names</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.new_context"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.new_context">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">new_context</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLContext</span><span class="p">:</span>
+        <span class="c1"># the engine must use FLContextManager to create a new context!</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.get_workspace"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.get_workspace">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_workspace</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Workspace</span><span class="p">:</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.get_component"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.get_component">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">object</span><span class="p">:</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.register_aux_message_handler"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.register_aux_message_handler">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">register_aux_message_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">message_handle_func</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Register aux message handling function with specified topics.</span>
+
+<span class="sd">        Exception is raised when:</span>
+<span class="sd">            a handler is already registered for the topic;</span>
+<span class="sd">            bad topic - must be a non-empty string</span>
+<span class="sd">            bad message_handle_func - must be callable</span>
+
+<span class="sd">        Implementation Note:</span>
+<span class="sd">            This method should simply call the ServerAuxRunner&#39;s register_aux_message_handler method.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            topic: the topic to be handled by the func</span>
+<span class="sd">            message_handle_func: the func to handle the message. Must follow aux_message_handle_func_signature.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.send_aux_request"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.send_aux_request">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">send_aux_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="p">[],</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Send a request to specified clients via the aux channel.</span>
+
+<span class="sd">        Implementation: simply calls the ServerAuxRunner&#39;s send_aux_request method.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            targets: target clients. None or empty list means all clients</span>
+<span class="sd">            topic: topic of the request</span>
+<span class="sd">            request: request to be sent</span>
+<span class="sd">            timeout: number of secs to wait for replies. 0 means fire-and-forget.</span>
+<span class="sd">            fl_ctx: FL context</span>
+
+<span class="sd">        Returns: a dict of replies (client name =&gt; reply Shareable)</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.fire_and_forget_aux_request"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.fire_and_forget_aux_request">[docs]</a>    <span class="k">def</span> <span class="nf">fire_and_forget_aux_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="p">[],</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_aux_request</span><span class="p">(</span><span class="n">targets</span><span class="p">,</span> <span class="n">topic</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.get_widget"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.get_widget">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_widget</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">widget_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Widget</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Get the widget with the specified ID.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            widget_id: ID of the widget</span>
+
+<span class="sd">        Returns: the widget or None if not found</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.persist_components"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.persist_components">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">persist_components</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">completed</span><span class="p">:</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To persist the FL running components</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fl_ctx: FLContext</span>
+<span class="sd">            completed: flag to indicate where the run is complete</span>
+
+<span class="sd">        Returns:</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.restore_components"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.restore_components">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">restore_components</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">:</span> <span class="n">RunSnapshot</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To restore the FL components from the saved snapshot</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            snapshot: RunSnapshot</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns:</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.start_client_job"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.start_client_job">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">start_client_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To send the start client run commands to the clients</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_sites: client sites</span>
+<span class="sd">            job_id: job_id</span>
+
+<span class="sd">        Returns:</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.check_client_resources"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.check_client_resources">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">check_client_resources</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resource_reqs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
+        <span class="sd">&quot;&quot;&quot;Sends the check_client_resources requests to the clients.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            resource_reqs: A dict of {client_name: resource requirements dict}</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A dict of {client_name: client_check_result} where client_check_result</span>
+<span class="sd">                is a tuple of {client check OK, resource reserve token if any}</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.cancel_client_resources"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.cancel_client_resources">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">cancel_client_resources</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">resource_check_results</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span> <span class="n">resource_reqs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Cancels the request resources for the job.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            resource_check_results: A dict of {client_name: client_check_result}</span>
+<span class="sd">                where client_check_result is a tuple of {client check OK, resource reserve token if any}</span>
+<span class="sd">            resource_reqs: A dict of {client_name: resource requirements dict}</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="ServerEngineSpec.get_client_name_from_token"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.server_engine_spec.html#nvflare.apis.server_engine_spec.ServerEngineSpec.get_client_name_from_token">[docs]</a>    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span> <span class="nf">get_client_name_from_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Gets client name from a client login token.&quot;&quot;&quot;</span>
+        <span class="k">pass</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

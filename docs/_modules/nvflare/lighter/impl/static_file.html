@@ -1,0 +1,535 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.lighter.impl.static_file &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+        <script src="../../../../_static/jquery.js"></script>
+        <script src="../../../../_static/underscore.js"></script>
+        <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../_static/doctools.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.lighter.impl.static_file</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.lighter.impl.static_file</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="kn">import</span> <span class="nn">yaml</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.lighter.spec</span> <span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span> <span class="nn">nvflare.lighter.utils</span> <span class="kn">import</span> <span class="n">sh_replace</span>
+
+
+<div class="viewcode-block" id="StaticFileBuilder"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.static_file.html#nvflare.lighter.impl.static_file.StaticFileBuilder">[docs]</a><span class="k">class</span> <span class="nc">StaticFileBuilder</span><span class="p">(</span><span class="n">Builder</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">enable_byoc</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">config_folder</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">app_validator</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">download_job_url</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">docker_image</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">snapshot_persistor</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">overseer_agent</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">components</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Build all static files from template.</span>
+
+<span class="sd">        Uses the information from project.yml through project to go through the participants and write the contents of</span>
+<span class="sd">        each file with the template, and replacing with the appropriate values from project.yml.</span>
+
+<span class="sd">        Usually, two main categories of files are created in all FL participants, static and dynamic. Static files</span>
+<span class="sd">        have similar contents among different participants, with small differences.  For example, the differences in</span>
+<span class="sd">        sub_start.sh are client name and python module.  Those are basically static files.  This builder uses template</span>
+<span class="sd">        file and string replacement to generate those static files for each participant.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            enable_byoc: for each participant, true to enable loading of code in the custom folder of applications</span>
+<span class="sd">            config_folder: usually &quot;config&quot;</span>
+<span class="sd">            app_validator: optional path to an app validator to verify that uploaded app has the expected structure</span>
+<span class="sd">            docker_image: when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enable_byoc</span> <span class="o">=</span> <span class="n">enable_byoc</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_folder</span> <span class="o">=</span> <span class="n">config_folder</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span> <span class="o">=</span> <span class="n">docker_image</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">download_job_url</span> <span class="o">=</span> <span class="n">download_job_url</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">app_validator</span> <span class="o">=</span> <span class="n">app_validator</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span> <span class="o">=</span> <span class="n">overseer_agent</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span> <span class="o">=</span> <span class="n">snapshot_persistor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">components</span> <span class="o">=</span> <span class="n">components</span>
+
+    <span class="k">def</span> <span class="nf">_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_full_path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">exe</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="n">mode</span> <span class="o">=</span> <span class="n">mode</span> <span class="o">+</span> <span class="s2">&quot;w&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_full_path</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">exe</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="n">file_full_path</span><span class="p">,</span> <span class="mo">0o755</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_build_overseer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">overseer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="n">dest_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_kit_dir</span><span class="p">(</span><span class="n">overseer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;start.sh&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;start_svr_sh&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">protocol</span> <span class="o">=</span> <span class="n">overseer</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;protocol&quot;</span><span class="p">,</span> <span class="s2">&quot;http&quot;</span><span class="p">)</span>
+        <span class="n">api_root</span> <span class="o">=</span> <span class="n">overseer</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;api_root&quot;</span><span class="p">,</span> <span class="s2">&quot;/api/v1/&quot;</span><span class="p">)</span>
+        <span class="n">default_port</span> <span class="o">=</span> <span class="s2">&quot;443&quot;</span> <span class="k">if</span> <span class="n">protocol</span> <span class="o">==</span> <span class="s2">&quot;https&quot;</span> <span class="k">else</span> <span class="s2">&quot;80&quot;</span>
+        <span class="n">port</span> <span class="o">=</span> <span class="n">overseer</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;port&quot;</span><span class="p">,</span> <span class="n">default_port</span><span class="p">)</span>
+        <span class="n">replacement_dict</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;port&quot;</span><span class="p">:</span> <span class="n">port</span><span class="p">,</span> <span class="s2">&quot;hostname&quot;</span><span class="p">:</span> <span class="n">overseer</span><span class="o">.</span><span class="n">name</span><span class="p">}</span>
+        <span class="n">admins</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">privilege_dict</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">admin</span> <span class="ow">in</span> <span class="n">admins</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">role</span> <span class="ow">in</span> <span class="n">admin</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;roles&quot;</span><span class="p">,</span> <span class="p">{}):</span>
+                <span class="k">if</span> <span class="n">role</span> <span class="ow">in</span> <span class="n">privilege_dict</span><span class="p">:</span>
+                    <span class="n">privilege_dict</span><span class="p">[</span><span class="n">role</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">subject</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">privilege_dict</span><span class="p">[</span><span class="n">role</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">admin</span><span class="o">.</span><span class="n">subject</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;privilege.yml&quot;</span><span class="p">),</span>
+            <span class="n">yaml</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">privilege_dict</span><span class="p">,</span> <span class="n">Dumper</span><span class="o">=</span><span class="n">yaml</span><span class="o">.</span><span class="n">Dumper</span><span class="p">),</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;docker.sh&quot;</span><span class="p">),</span>
+                <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;docker_svr_sh&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+                <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+                <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;gunicorn.conf.py&quot;</span><span class="p">),</span>
+            <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;gunicorn_conf_py&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;start.sh&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;start_ovsr_sh&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">port</span><span class="p">:</span>
+            <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;overseer_end_point&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">protocol</span><span class="si">}</span><span class="s2">://</span><span class="si">{</span><span class="n">overseer</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">port</span><span class="si">}{</span><span class="n">api_root</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;overseer_end_point&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">protocol</span><span class="si">}</span><span class="s2">://</span><span class="si">{</span><span class="n">overseer</span><span class="o">.</span><span class="n">name</span><span class="si">}{</span><span class="n">api_root</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_build_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">server</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;fed_server&quot;</span><span class="p">])</span>
+        <span class="n">dest_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_kit_dir</span><span class="p">(</span><span class="n">server</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="n">server_0</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;servers&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">server_0</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">project_name</span>
+        <span class="n">admin_port</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;admin_port&quot;</span><span class="p">,</span> <span class="mi">8003</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;admin_port&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">admin_port</span>
+        <span class="n">fed_learn_port</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fed_learn_port&quot;</span><span class="p">,</span> <span class="mi">8002</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;fed_learn_port&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">fed_learn_port</span>
+        <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;server_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">server_0</span><span class="p">[</span><span class="s2">&quot;service&quot;</span><span class="p">][</span><span class="s2">&quot;target&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">server</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">fed_learn_port</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">server_0</span><span class="p">[</span><span class="s2">&quot;admin_host&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">server_0</span><span class="p">[</span><span class="s2">&quot;admin_port&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">admin_port</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">download_job_url</span><span class="p">:</span>
+            <span class="n">server_0</span><span class="p">[</span><span class="s2">&quot;download_job_url&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">download_job_url</span>
+        <span class="n">config</span><span class="p">[</span><span class="s2">&quot;enable_byoc&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">enable_byoc</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">app_validator</span><span class="p">:</span>
+            <span class="n">config</span><span class="p">[</span><span class="s2">&quot;app_validator&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">app_validator</span><span class="p">}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">:</span>
+            <span class="n">overseer_agent</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">overseer_agent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;overseer_exists&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+                <span class="n">overseer_agent</span><span class="p">[</span><span class="s2">&quot;args&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;server&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;overseer_end_point&quot;</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;overseer_end_point&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                    <span class="s2">&quot;project&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">project_name</span><span class="p">,</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">server</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="s2">&quot;fl_port&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">fed_learn_port</span><span class="p">),</span>
+                    <span class="s2">&quot;admin_port&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">admin_port</span><span class="p">),</span>
+                <span class="p">}</span>
+            <span class="n">overseer_agent</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;overseer_exists&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">config</span><span class="p">[</span><span class="s2">&quot;overseer_agent&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">overseer_agent</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span><span class="p">:</span>
+            <span class="n">config</span><span class="p">[</span><span class="s2">&quot;snapshot_persistor&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span>
+        <span class="n">components</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;components&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">config</span><span class="p">[</span><span class="s2">&quot;components&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">components</span><span class="p">:</span>
+            <span class="n">temp_dict</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">comp</span><span class="p">}</span>
+            <span class="n">temp_dict</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">components</span><span class="p">[</span><span class="n">comp</span><span class="p">])</span>
+            <span class="n">config</span><span class="p">[</span><span class="s2">&quot;components&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">temp_dict</span><span class="p">)</span>
+        <span class="n">provisioned_client_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;client&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="n">provisioned_client_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">client</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">config</span><span class="p">[</span><span class="s2">&quot;provisioned_client_list&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">provisioned_client_list</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;fed_server.json&quot;</span><span class="p">),</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="s2">&quot;t&quot;</span><span class="p">)</span>
+        <span class="n">replacement_dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;admin_port&quot;</span><span class="p">:</span> <span class="n">admin_port</span><span class="p">,</span>
+            <span class="s2">&quot;fed_learn_port&quot;</span><span class="p">:</span> <span class="n">fed_learn_port</span><span class="p">,</span>
+            <span class="s2">&quot;config_folder&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config_folder</span><span class="p">,</span>
+            <span class="s2">&quot;docker_image&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;docker.sh&quot;</span><span class="p">),</span>
+                <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;docker_svr_sh&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+                <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+                <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;start.sh&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;start_svr_sh&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;sub_start.sh&quot;</span><span class="p">),</span>
+            <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;sub_start_svr_sh&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;log.config&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;log_config&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;readme.txt&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;readme_fs&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;stop_fl.sh&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;stop_fl_sh&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_build_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;fed_client&quot;</span><span class="p">])</span>
+        <span class="n">dest_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_kit_dir</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="n">fed_learn_port</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fed_learn_port&quot;</span><span class="p">)</span>
+        <span class="n">server_name</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;server_name&quot;</span><span class="p">)</span>
+        <span class="c1"># config[&quot;servers&quot;][0][&quot;service&quot;][&quot;target&quot;] = f&quot;{server_name}:{fed_learn_port}&quot;</span>
+        <span class="n">config</span><span class="p">[</span><span class="s2">&quot;servers&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">project_name</span>
+        <span class="n">config</span><span class="p">[</span><span class="s2">&quot;enable_byoc&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">enable_byoc</span>
+        <span class="n">replacement_dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;client_name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">client</span><span class="o">.</span><span class="n">subject</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;config_folder&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config_folder</span><span class="p">,</span>
+            <span class="s2">&quot;docker_image&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">:</span>
+            <span class="n">overseer_agent</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">overseer_agent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;overseer_exists&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+                <span class="n">overseer_agent</span><span class="p">[</span><span class="s2">&quot;args&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;client&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;overseer_end_point&quot;</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;overseer_end_point&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                    <span class="s2">&quot;project&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">project_name</span><span class="p">,</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">client</span><span class="o">.</span><span class="n">subject</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="n">overseer_agent</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;overseer_exists&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">config</span><span class="p">[</span><span class="s2">&quot;overseer_agent&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">overseer_agent</span>
+        <span class="n">components</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;components&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">config</span><span class="p">[</span><span class="s2">&quot;components&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">components</span><span class="p">:</span>
+            <span class="n">temp_dict</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">comp</span><span class="p">}</span>
+            <span class="n">temp_dict</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">components</span><span class="p">[</span><span class="n">comp</span><span class="p">])</span>
+            <span class="n">config</span><span class="p">[</span><span class="s2">&quot;components&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">temp_dict</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;fed_client.json&quot;</span><span class="p">),</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="s2">&quot;t&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;docker.sh&quot;</span><span class="p">),</span>
+                <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;docker_cln_sh&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+                <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+                <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;start.sh&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;start_cln_sh&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;sub_start.sh&quot;</span><span class="p">),</span>
+            <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;sub_start_cln_sh&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;log.config&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;log_config&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;readme.txt&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;readme_fc&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;stop_fl.sh&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;stop_fl_sh&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_build_admin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">admin</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;fed_admin&quot;</span><span class="p">])</span>
+        <span class="n">dest_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_kit_dir</span><span class="p">(</span><span class="n">admin</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="n">admin_port</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;admin_port&quot;</span><span class="p">)</span>
+        <span class="n">server_name</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;server_name&quot;</span><span class="p">)</span>
+
+        <span class="n">replacement_dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;cn&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">server_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;admin_port&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">admin_port</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;docker_image&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">agent_config</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">:</span>
+            <span class="n">overseer_agent</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">overseer_agent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;overseer_exists&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+                <span class="n">overseer_agent</span><span class="p">[</span><span class="s2">&quot;args&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;admin&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;overseer_end_point&quot;</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;overseer_end_point&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                    <span class="s2">&quot;project&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">project_name</span><span class="p">,</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">admin</span><span class="o">.</span><span class="n">subject</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="n">overseer_agent</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;overseer_exists&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">agent_config</span><span class="p">[</span><span class="s2">&quot;overseer_agent&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">overseer_agent</span>
+        <span class="n">config</span><span class="p">[</span><span class="s2">&quot;admin&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">agent_config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;fed_admin.json&quot;</span><span class="p">),</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="s2">&quot;t&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">docker_image</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;docker.sh&quot;</span><span class="p">),</span>
+                <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;docker_adm_sh&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+                <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+                <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;fl_admin.sh&quot;</span><span class="p">),</span>
+            <span class="n">sh_replace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;fl_admin_sh&quot;</span><span class="p">],</span> <span class="n">replacement_dict</span><span class="p">),</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+            <span class="n">exe</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dest_dir</span><span class="p">,</span> <span class="s2">&quot;readme.txt&quot;</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template</span><span class="p">[</span><span class="s2">&quot;readme_am&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="StaticFileBuilder.build"><a class="viewcode-back" href="../../../../apidocs/nvflare.lighter.impl.static_file.html#nvflare.lighter.impl.static_file.StaticFileBuilder.build">[docs]</a>    <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">project</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">template</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;template&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">project_name</span> <span class="o">=</span> <span class="n">project</span><span class="o">.</span><span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">project</span> <span class="o">=</span> <span class="n">project</span>
+        <span class="n">overseer</span> <span class="o">=</span> <span class="n">project</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;overseer&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_build_overseer</span><span class="p">(</span><span class="n">overseer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="n">servers</span> <span class="o">=</span> <span class="n">project</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;server&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">server</span> <span class="ow">in</span> <span class="n">servers</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_build_server</span><span class="p">(</span><span class="n">server</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="n">project</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;client&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_build_client</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">admin</span> <span class="ow">in</span> <span class="n">project</span><span class="o">.</span><span class="n">get_participants_by_type</span><span class="p">(</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span> <span class="n">first_only</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_build_admin</span><span class="p">(</span><span class="n">admin</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

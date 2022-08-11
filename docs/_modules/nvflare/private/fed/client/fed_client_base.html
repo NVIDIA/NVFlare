@@ -1,0 +1,568 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.client.fed_client_base &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.client.fed_client_base</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.client.fed_client_base</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span> <span class="nn">multiprocessing.dummy</span> <span class="kn">import</span> <span class="n">Pool</span> <span class="k">as</span> <span class="n">ThreadPool</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.filter</span> <span class="kn">import</span> <span class="n">Filter</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_component</span> <span class="kn">import</span> <span class="n">FLComponent</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">FLContextKey</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_exception</span> <span class="kn">import</span> <span class="n">FLCommunicationError</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.overseer_spec</span> <span class="kn">import</span> <span class="n">SP</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.signal</span> <span class="kn">import</span> <span class="n">Signal</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.utils.argument_utils</span> <span class="kn">import</span> <span class="n">parse_vars</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">EngineConstant</span>
+
+<span class="kn">from</span> <span class="nn">.client_status</span> <span class="kn">import</span> <span class="n">ClientStatus</span>
+<span class="kn">from</span> <span class="nn">.communicator</span> <span class="kn">import</span> <span class="n">Communicator</span>
+
+
+<div class="viewcode-block" id="FederatedClientBase"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase">[docs]</a><span class="k">class</span> <span class="nc">FederatedClientBase</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;The client-side base implementation of federated learning.</span>
+
+<span class="sd">    This class provide the tools function which will be used in both FedClient and FedClientLite.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">client_name</span><span class="p">,</span>
+        <span class="n">client_args</span><span class="p">,</span>
+        <span class="n">secure_train</span><span class="p">,</span>
+        <span class="n">server_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">retry_timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
+        <span class="n">client_state_processors</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Filter</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">handlers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">FLComponent</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">overseer_agent</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">components</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To init FederatedClientBase.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_name: client name</span>
+<span class="sd">            client_args: client config args</span>
+<span class="sd">            secure_train: True/False to indicate secure train</span>
+<span class="sd">            server_args: server config args</span>
+<span class="sd">            retry_timeout: retry timeout</span>
+<span class="sd">            client_state_processors: client state processor filters</span>
+<span class="sd">            handlers: handlers</span>
+<span class="sd">            compression: communication compression algorithm</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="n">client_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">token</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_args</span> <span class="o">=</span> <span class="n">client_args</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">servers</span> <span class="o">=</span> <span class="n">server_args</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span> <span class="o">=</span> <span class="n">Communicator</span><span class="p">(</span>
+            <span class="n">ssl_args</span><span class="o">=</span><span class="n">client_args</span><span class="p">,</span>
+            <span class="n">secure_train</span><span class="o">=</span><span class="n">secure_train</span><span class="p">,</span>
+            <span class="n">retry_timeout</span><span class="o">=</span><span class="n">retry_timeout</span><span class="p">,</span>
+            <span class="n">client_state_processors</span><span class="o">=</span><span class="n">client_state_processors</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="n">compression</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">secure_train</span> <span class="o">=</span> <span class="n">secure_train</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">handlers</span> <span class="o">=</span> <span class="n">handlers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">components</span> <span class="o">=</span> <span class="n">components</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat_done</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fl_ctx</span> <span class="o">=</span> <span class="n">FLContext</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">platform</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">abort_signal</span> <span class="o">=</span> <span class="n">Signal</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">ClientStatus</span><span class="o">.</span><span class="n">NOT_STARTED</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">remote_tasks</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">sp_established</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span> <span class="o">=</span> <span class="n">overseer_agent</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_init_agent</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">secure_train</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="o">.</span><span class="n">set_secure_context</span><span class="p">(</span>
+                    <span class="n">ca_path</span><span class="o">=</span><span class="n">client_args</span><span class="p">[</span><span class="s2">&quot;ssl_root_cert&quot;</span><span class="p">],</span>
+                    <span class="n">cert_path</span><span class="o">=</span><span class="n">client_args</span><span class="p">[</span><span class="s2">&quot;ssl_cert&quot;</span><span class="p">],</span>
+                    <span class="n">prv_key_path</span><span class="o">=</span><span class="n">client_args</span><span class="p">[</span><span class="s2">&quot;ssl_private_key&quot;</span><span class="p">],</span>
+                <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">overseer_callback</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_init_agent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">kv_list</span> <span class="o">=</span> <span class="n">parse_vars</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">set</span><span class="p">)</span>
+        <span class="n">sp</span> <span class="o">=</span> <span class="n">kv_list</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;sp&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">sp</span><span class="p">:</span>
+            <span class="n">fl_ctx</span> <span class="o">=</span> <span class="n">FLContext</span><span class="p">()</span>
+            <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">SP_END_POINT</span><span class="p">,</span> <span class="n">sp</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span>
+
+<div class="viewcode-block" id="FederatedClientBase.overseer_callback"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.overseer_callback">[docs]</a>    <span class="k">def</span> <span class="nf">overseer_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">overseer_agent</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">overseer_agent</span><span class="o">.</span><span class="n">is_shutdown</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">shutdown</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="n">sp</span> <span class="o">=</span> <span class="n">overseer_agent</span><span class="o">.</span><span class="n">get_primary_sp</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_primary_sp</span><span class="p">(</span><span class="n">sp</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.set_sp"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.set_sp">[docs]</a>    <span class="k">def</span> <span class="nf">set_sp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="n">sp</span><span class="p">:</span> <span class="n">SP</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">sp</span> <span class="ow">and</span> <span class="n">sp</span><span class="o">.</span><span class="n">primary</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">server</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;target&quot;</span><span class="p">)</span>
+            <span class="n">location</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;:&quot;</span> <span class="o">+</span> <span class="n">sp</span><span class="o">.</span><span class="n">fl_port</span>
+            <span class="k">if</span> <span class="n">server</span> <span class="o">!=</span> <span class="n">location</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">][</span><span class="s2">&quot;target&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">location</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sp_established</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Got the new primary SP: </span><span class="si">{</span><span class="n">location</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span> <span class="o">!=</span> <span class="n">sp</span><span class="o">.</span><span class="n">service_session_id</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">service_session_id</span>
+                <span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_switch_ssid</span><span class="p">)</span>
+                <span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">_switch_ssid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">get_all_job_ids</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">abort_task</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+        <span class="c1"># self.register()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Primary SP switched to new SSID: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">ssid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FederatedClientBase.client_register"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.client_register">[docs]</a>    <span class="k">def</span> <span class="nf">client_register</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">project_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Register the client to the FL server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            project_name: FL study project name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">client_registration</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CLIENT_NAME</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">EngineConstant</span><span class="o">.</span><span class="n">FL_TOKEN</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                        <span class="s2">&quot;Successfully registered client:</span><span class="si">{}</span><span class="s2"> for project </span><span class="si">{}</span><span class="s2">. Token:</span><span class="si">{}</span><span class="s2"> SSID:</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span>
+                        <span class="p">)</span>
+                    <span class="p">)</span>
+
+            <span class="k">except</span> <span class="n">FLCommunicationError</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">heartbeat_done</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.fetch_execute_task"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.fetch_execute_task">[docs]</a>    <span class="k">def</span> <span class="nf">fetch_execute_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Fetch a task from the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            project_name: FL study project name</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A CurrentTask message from server</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Starting to fetch execute task.&quot;</span><span class="p">)</span>
+            <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">getTask</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">task</span>
+        <span class="k">except</span> <span class="n">FLCommunicationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">e</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.push_execute_result"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.push_execute_result">[docs]</a>    <span class="k">def</span> <span class="nf">push_execute_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Submit execution results of a task to server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            project_name: FL study project name</span>
+<span class="sd">            shareable: Shareable object</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A FederatedSummary message from the server.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting to push execute result.&quot;</span><span class="p">)</span>
+            <span class="n">execute_task_name</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">TASK_NAME</span><span class="p">)</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">submitUpdate</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">,</span>
+                <span class="n">project_name</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span><span class="p">,</span>
+                <span class="n">fl_ctx</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">,</span>
+                <span class="n">shareable</span><span class="p">,</span>
+                <span class="n">execute_task_name</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">message</span>
+        <span class="k">except</span> <span class="n">FLCommunicationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">e</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.send_aux_message"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.send_aux_message">[docs]</a>    <span class="k">def</span> <span class="nf">send_aux_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Send auxiliary message to the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            project_name: FL study project name</span>
+<span class="sd">            topic: aux topic name</span>
+<span class="sd">            shareable: Shareable object</span>
+<span class="sd">            timeout: communication timeout</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A reply message</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Starting to send aux message.&quot;</span><span class="p">)</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">auxCommunicate</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">,</span> <span class="n">shareable</span><span class="p">,</span> <span class="n">topic</span><span class="p">,</span> <span class="n">timeout</span>
+            <span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">message</span>
+        <span class="k">except</span> <span class="n">FLCommunicationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">e</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.send_heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.send_heartbeat">[docs]</a>    <span class="k">def</span> <span class="nf">send_heartbeat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">project_name</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">:</span>
+                <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">:</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">send_heartbeat</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span>
+                <span class="p">)</span>
+        <span class="k">except</span> <span class="n">FLCommunicationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">heartbeat_done</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.heartbeat">[docs]</a>    <span class="k">def</span> <span class="nf">heartbeat</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sends a heartbeat from the client to the server.&quot;&quot;&quot;</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pool</span> <span class="o">=</span> <span class="n">ThreadPool</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">send_heartbeat</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pool</span><span class="p">:</span>
+                <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.pull_task"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.pull_task">[docs]</a>    <span class="k">def</span> <span class="nf">pull_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Fetch remote models and update the local client&#39;s session.&quot;&quot;&quot;</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pool</span> <span class="o">=</span> <span class="n">ThreadPool</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">remote_tasks</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fetch_execute_task</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="n">pull_success</span><span class="p">,</span> <span class="n">task_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_progress</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">remote_tasks</span><span class="p">)</span>
+            <span class="c1"># # Update app_ctx&#39;s current round info</span>
+            <span class="c1"># if self.app_context and self.remote_models[0] is not None:</span>
+            <span class="c1">#     self.app_context.global_round = self.remote_models[0].meta.current_round</span>
+            <span class="c1"># TODO: if some of the servers failed</span>
+            <span class="c1"># return self.model_manager.assign_current_model(self.remote_models)</span>
+            <span class="k">return</span> <span class="n">pull_success</span><span class="p">,</span> <span class="n">task_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">remote_tasks</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pool</span><span class="p">:</span>
+                <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.push_results"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.push_results">[docs]</a>    <span class="k">def</span> <span class="nf">push_results</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Push the local model to multiple servers.&quot;&quot;&quot;</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pool</span> <span class="o">=</span> <span class="n">ThreadPool</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">push_execute_result</span><span class="p">,</span> <span class="n">shareable</span><span class="o">=</span><span class="n">shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pool</span><span class="p">:</span>
+                <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.aux_send"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.aux_send">[docs]</a>    <span class="k">def</span> <span class="nf">aux_send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topic</span><span class="p">,</span> <span class="n">shareable</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Push the local model to multiple servers.&quot;&quot;&quot;</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pool</span> <span class="o">=</span> <span class="n">ThreadPool</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="n">messages</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span>
+                <span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">send_aux_message</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">,</span> <span class="n">shareable</span><span class="o">=</span><span class="n">shareable</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">),</span>
+                <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">messages</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">messages</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Only handle single server communication for now.</span>
+                <span class="k">return</span> <span class="n">messages</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pool</span><span class="p">:</span>
+                <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.register"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.register">[docs]</a>    <span class="k">def</span> <span class="nf">register</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Push the local model to multiple servers.&quot;&quot;&quot;</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pool</span> <span class="o">=</span> <span class="n">ThreadPool</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client_register</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pool</span><span class="p">:</span>
+                <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.set_primary_sp"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.set_primary_sp">[docs]</a>    <span class="k">def</span> <span class="nf">set_primary_sp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sp</span><span class="p">):</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pool</span> <span class="o">=</span> <span class="n">ThreadPool</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">set_sp</span><span class="p">,</span> <span class="n">sp</span><span class="o">=</span><span class="n">sp</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pool</span><span class="p">:</span>
+                <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.run_heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.run_heartbeat">[docs]</a>    <span class="k">def</span> <span class="nf">run_heartbeat</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Periodically runs the heartbeat.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.start_heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.start_heartbeat">[docs]</a>    <span class="k">def</span> <span class="nf">start_heartbeat</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">heartbeat_thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">run_heartbeat</span><span class="p">)</span>
+        <span class="n">heartbeat_thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.quit_remote"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.quit_remote">[docs]</a>    <span class="k">def</span> <span class="nf">quit_remote</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_name</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sending the last message to the server before leaving.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_name: task name</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns: N/A</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">communicator</span><span class="o">.</span><span class="n">quit_remote</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">,</span> <span class="n">task_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.set_client_engine"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.set_client_engine">[docs]</a>    <span class="k">def</span> <span class="nf">set_client_engine</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">engine</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine</span> <span class="o">=</span> <span class="n">engine</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.close"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Quit the remote federated server, close the local session.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Shutting down client&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="mi">0</span></div>
+
+<div class="viewcode-block" id="FederatedClientBase.check_progress"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.fed_client_base.html#nvflare.private.fed.client.fed_client_base.FederatedClientBase.check_progress">[docs]</a>    <span class="k">def</span> <span class="nf">check_progress</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">remote_tasks</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">remote_tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">server_meta</span> <span class="o">=</span> <span class="n">remote_tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span>
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">remote_tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">task_name</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

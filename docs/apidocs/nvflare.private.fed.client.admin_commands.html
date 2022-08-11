@@ -1,0 +1,534 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.client.admin_commands module &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.private.fed.client.admin_msg_sender module" href="nvflare.private.fed.client.admin_msg_sender.html" />
+    <link rel="prev" title="nvflare.private.fed.client.admin module" href="nvflare.private.fed.client.admin.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.ha.html">nvflare.ha package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.private.html">nvflare.private package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.private.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.private.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.private.html#module-nvflare.private">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+          <li><a href="nvflare.private.html">nvflare.private package</a> &raquo;</li>
+          <li><a href="nvflare.private.fed.html">nvflare.private.fed package</a> &raquo;</li>
+          <li><a href="nvflare.private.fed.client.html">nvflare.private.fed.client package</a> &raquo;</li>
+      <li>nvflare.private.fed.client.admin_commands module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/apidocs/nvflare.private.fed.client.admin_commands.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nvflare.private.fed.client.admin_commands">
+<span id="nvflare-private-fed-client-admin-commands-module"></span><h1>nvflare.private.fed.client.admin_commands module<a class="headerlink" href="#module-nvflare.private.fed.client.admin_commands" title="Permalink to this heading">¶</a></h1>
+<p>FL Admin commands.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AbortCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AbortCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AbortCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AbortCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the abort command.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AbortCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AbortCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AbortCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the command name.</p>
+<p>Returns: AdminCommandNames.ABORT</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AbortCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AbortCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AbortCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the abort command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: abort command message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AbortTaskCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AbortTaskCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AbortTaskCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AbortTaskCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the abort_task command.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AbortTaskCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AbortTaskCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AbortTaskCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the command name.</p>
+<p>Returns: AdminCommandNames.ABORT_TASK</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AbortTaskCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AbortTaskCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AbortTaskCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the abort_task command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: abort_task command message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AdminCommands">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AdminCommands</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AdminCommands"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AdminCommands" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>AdminCommands contains all the commands for processing the commands from the parent process.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AdminCommands.commands">
+<span class="sig-name descname"><span class="pre">commands</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">[&lt;nvflare.private.fed.client.admin_commands.CheckStatusCommand</span> <span class="pre">object&gt;,</span> <span class="pre">&lt;nvflare.private.fed.client.admin_commands.AbortCommand</span> <span class="pre">object&gt;,</span> <span class="pre">&lt;nvflare.private.fed.client.admin_commands.AbortTaskCommand</span> <span class="pre">object&gt;,</span> <span class="pre">&lt;nvflare.private.fed.client.admin_commands.ByeCommand</span> <span class="pre">object&gt;,</span> <span class="pre">&lt;nvflare.private.fed.client.admin_commands.ShowStatsCommand</span> <span class="pre">object&gt;,</span> <span class="pre">&lt;nvflare.private.fed.client.admin_commands.ShowErrorsCommand</span> <span class="pre">object&gt;,</span> <span class="pre">&lt;nvflare.private.fed.client.admin_commands.ResetErrorsCommand</span> <span class="pre">object&gt;,</span> <span class="pre">&lt;nvflare.private.fed.client.admin_commands.AuxCommand</span> <span class="pre">object&gt;]</span></em><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AdminCommands.commands" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AdminCommands.get_command">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">command_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AdminCommands.get_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AdminCommands.get_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Call to return the AdminCommand object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>command_name</strong> – AdminCommand name</p>
+</dd>
+</dl>
+<p>Returns: AdminCommand object</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AdminCommands.register_command">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">register_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">command_processor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><span class="pre">CommandProcessor</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AdminCommands.register_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AdminCommands.register_command" title="Permalink to this definition">¶</a></dt>
+<dd><p>Call to register the AdminCommand processor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>command_processor</strong> – AdminCommand processor</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AuxCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AuxCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AuxCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AuxCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the Aux communication command.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AuxCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AuxCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AuxCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the command name.</p>
+<p>Returns: AdminCommandNames.AUX_COMMAND</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.AuxCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#AuxCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.AuxCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the Aux communication command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: Aux communication command message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ByeCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ByeCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ByeCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ByeCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the ShutdownCommand.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ByeCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ByeCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ByeCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the command name.</p>
+<p>Returns: AdminCommandNames.SHUTDOWN</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ByeCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ByeCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ByeCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the Shutdown command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: Shutdown command message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.CheckStatusCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CheckStatusCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#CheckStatusCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.CheckStatusCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the check_status command.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.CheckStatusCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#CheckStatusCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.CheckStatusCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get thee command name.</p>
+<p>Returns: AdminCommandNames.CHECK_STATUSv</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.CheckStatusCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#CheckStatusCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.CheckStatusCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the check_status command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: status message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.CommandProcessor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CommandProcessor</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#CommandProcessor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>The CommandProcessor is responsible for processing a command from parent process.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.CommandProcessor.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#CommandProcessor.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.CommandProcessor.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get command name that this processor will handle.</p>
+<p>Returns: name of the command</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.CommandProcessor.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#CommandProcessor.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.CommandProcessor.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the specified command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Return: reply message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ResetErrorsCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ResetErrorsCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ResetErrorsCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ResetErrorsCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the reset_errors command.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ResetErrorsCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ResetErrorsCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ResetErrorsCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the command name.</p>
+<p>Returns: AdminCommandNames.RESET_ERRORS</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ResetErrorsCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ResetErrorsCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ResetErrorsCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the reset_errors command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: reset_errors command message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ShowErrorsCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ShowErrorsCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ShowErrorsCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ShowErrorsCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the show_errors command.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ShowErrorsCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ShowErrorsCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ShowErrorsCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the command name.</p>
+<p>Returns: AdminCommandNames.SHOW_ERRORS</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ShowErrorsCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ShowErrorsCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ShowErrorsCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the show_errors command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: show_errors command message</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ShowStatsCommand">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ShowStatsCommand</span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ShowStatsCommand"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ShowStatsCommand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nvflare.private.fed.client.admin_commands.CommandProcessor" title="nvflare.private.fed.client.admin_commands.CommandProcessor"><code class="xref py py-class docutils literal notranslate"><span class="pre">CommandProcessor</span></code></a></p>
+<p>To implement the show_stats command.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ShowStatsCommand.get_command_name">
+<span class="sig-name descname"><span class="pre">get_command_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ShowStatsCommand.get_command_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ShowStatsCommand.get_command_name" title="Permalink to this definition">¶</a></dt>
+<dd><p>To get the command name.</p>
+<p>Returns: AdminCommandNames.SHOW_STATS</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nvflare.private.fed.client.admin_commands.ShowStatsCommand.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.shareable.html#nvflare.apis.shareable.Shareable" title="nvflare.apis.shareable.Shareable"><span class="pre">Shareable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fl_ctx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="nvflare.apis.fl_context.html#nvflare.apis.fl_context.FLContext" title="nvflare.apis.fl_context.FLContext"><span class="pre">FLContext</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvflare/private/fed/client/admin_commands.html#ShowStatsCommand.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nvflare.private.fed.client.admin_commands.ShowStatsCommand.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called to process the abort_task command.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – process data</p></li>
+<li><p><strong>fl_ctx</strong> – FLContext</p></li>
+</ul>
+</dd>
+</dl>
+<p>Returns: show_stats command message</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="nvflare.private.fed.client.admin.html" class="btn btn-neutral float-left" title="nvflare.private.fed.client.admin module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nvflare.private.fed.client.admin_msg_sender.html" class="btn btn-neutral float-right" title="nvflare.private.fed.client.admin_msg_sender module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

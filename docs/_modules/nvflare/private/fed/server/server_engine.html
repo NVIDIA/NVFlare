@@ -1,0 +1,1031 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.server.server_engine &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.server.server_engine</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.server.server_engine</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">multiprocessing</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pickle</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">shlex</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span> <span class="nn">multiprocessing.connection</span> <span class="kn">import</span> <span class="n">Client</span> <span class="k">as</span> <span class="n">CommandClient</span>
+<span class="kn">from</span> <span class="nn">multiprocessing.connection</span> <span class="kn">import</span> <span class="n">Listener</span>
+<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span class="n">Lock</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.client</span> <span class="kn">import</span> <span class="n">Client</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_component</span> <span class="kn">import</span> <span class="n">FLComponent</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AdminCommandNames</span><span class="p">,</span>
+    <span class="n">FLContextKey</span><span class="p">,</span>
+    <span class="n">MachineStatus</span><span class="p">,</span>
+    <span class="n">ReservedTopic</span><span class="p">,</span>
+    <span class="n">ReturnCode</span><span class="p">,</span>
+    <span class="n">RunProcessKey</span><span class="p">,</span>
+    <span class="n">ServerCommandKey</span><span class="p">,</span>
+    <span class="n">ServerCommandNames</span><span class="p">,</span>
+    <span class="n">SnapshotKey</span><span class="p">,</span>
+    <span class="n">WorkspaceConstants</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">FLContextManager</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_snapshot</span> <span class="kn">import</span> <span class="n">RunSnapshot</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.impl.job_def_manager</span> <span class="kn">import</span> <span class="n">JobDefManagerSpec</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.shareable</span> <span class="kn">import</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">make_reply</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.utils.common_utils</span> <span class="kn">import</span> <span class="n">get_open_ports</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.utils.fl_context_utils</span> <span class="kn">import</span> <span class="n">get_serializable_data</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.workspace</span> <span class="kn">import</span> <span class="n">Workspace</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.zip_utils</span> <span class="kn">import</span> <span class="n">zip_directory_to_bytes</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.admin_defs</span> <span class="kn">import</span> <span class="n">Message</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">RequestHeader</span><span class="p">,</span> <span class="n">TrainingTopic</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.server_json_config</span> <span class="kn">import</span> <span class="n">ServerJsonConfigurator</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.scheduler_constants</span> <span class="kn">import</span> <span class="n">ShareableHeader</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.info_collector</span> <span class="kn">import</span> <span class="n">InfoCollector</span>
+<span class="kn">from</span> <span class="nn">nvflare.widgets.widget</span> <span class="kn">import</span> <span class="n">Widget</span><span class="p">,</span> <span class="n">WidgetID</span>
+
+<span class="kn">from</span> <span class="nn">.admin</span> <span class="kn">import</span> <span class="n">ClientReply</span>
+<span class="kn">from</span> <span class="nn">.client_manager</span> <span class="kn">import</span> <span class="n">ClientManager</span>
+<span class="kn">from</span> <span class="nn">.job_runner</span> <span class="kn">import</span> <span class="n">JobRunner</span>
+<span class="kn">from</span> <span class="nn">.run_manager</span> <span class="kn">import</span> <span class="n">RunManager</span>
+<span class="kn">from</span> <span class="nn">.server_engine_internal_spec</span> <span class="kn">import</span> <span class="n">EngineInfo</span><span class="p">,</span> <span class="n">RunInfo</span><span class="p">,</span> <span class="n">ServerEngineInternalSpec</span>
+<span class="kn">from</span> <span class="nn">.server_status</span> <span class="kn">import</span> <span class="n">ServerStatus</span>
+
+
+<div class="viewcode-block" id="ClientConnection"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ClientConnection">[docs]</a><span class="k">class</span> <span class="nc">ClientConnection</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">client</span>
+
+<div class="viewcode-block" id="ClientConnection.send"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ClientConnection.send">[docs]</a>    <span class="k">def</span> <span class="nf">send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ClientConnection.recv"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ClientConnection.recv">[docs]</a>    <span class="k">def</span> <span class="nf">recv</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span></div></div>
+
+
+<div class="viewcode-block" id="ServerEngine"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine">[docs]</a><span class="k">class</span> <span class="nc">ServerEngine</span><span class="p">(</span><span class="n">ServerEngineInternalSpec</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">server</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">client_manager</span><span class="p">:</span> <span class="n">ClientManager</span><span class="p">,</span> <span class="n">snapshot_persistor</span><span class="p">,</span> <span class="n">workers</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Server engine.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            server: server</span>
+<span class="sd">            args: arguments</span>
+<span class="sd">            client_manager (ClientManager): client manager.</span>
+<span class="sd">            workers: number of worker threads.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># TODO:: clean up the server function / requirement here should be BaseServer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server</span> <span class="o">=</span> <span class="n">server</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="n">args</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">execution_exception_run_processes</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conf</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># TODO:: does this class need client manager?</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_manager</span> <span class="o">=</span> <span class="n">client_manager</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">widgets</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">WidgetID</span><span class="o">.</span><span class="n">INFO_COLLECTOR</span><span class="p">:</span> <span class="n">InfoCollector</span><span class="p">(),</span>
+            <span class="c1"># WidgetID.FED_EVENT_RUNNER: ServerFedEventRunner()</span>
+        <span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span> <span class="o">=</span> <span class="n">EngineInfo</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">workers</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;workers must &gt;= 1 but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">workers</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">executor</span> <span class="o">=</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">workers</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span> <span class="o">=</span> <span class="n">snapshot_persistor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn_lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">job_runner</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">job_def_manager</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_lock</span> <span class="o">=</span> <span class="n">multiprocessing</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_get_server_app_folder</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">APP_PREFIX</span> <span class="o">+</span> <span class="s2">&quot;server&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_get_client_app_folder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">APP_PREFIX</span> <span class="o">+</span> <span class="n">client_name</span>
+
+    <span class="k">def</span> <span class="nf">_get_run_folder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+
+<div class="viewcode-block" id="ServerEngine.get_engine_info"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_engine_info">[docs]</a>    <span class="k">def</span> <span class="nf">get_engine_info</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EngineInfo</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">app_names</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STARTED</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STOPPED</span>
+
+        <span class="k">for</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">run_folder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span>
+            <span class="n">app_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">run_folder</span><span class="p">,</span> <span class="s2">&quot;fl_app.txt&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">app_file</span><span class="p">):</span>
+                <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">app_file</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">app_names</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">app_names</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;?&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_run_info"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_run_info">[docs]</a>    <span class="k">def</span> <span class="nf">get_run_info</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RunInfo</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">get_run_info</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="ServerEngine.create_parent_connection"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.create_parent_connection">[docs]</a>    <span class="k">def</span> <span class="nf">create_parent_connection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">port</span><span class="p">):</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">address</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span> <span class="o">=</span> <span class="n">CommandClient</span><span class="p">(</span><span class="n">address</span><span class="p">,</span> <span class="n">authkey</span><span class="o">=</span><span class="s2">&quot;parent process secret password&quot;</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+            <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+                <span class="k">pass</span>
+
+        <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">heartbeat_to_parent</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[])</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ServerEngine.heartbeat_to_parent"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.heartbeat_to_parent">[docs]</a>    <span class="k">def</span> <span class="nf">heartbeat_to_parent</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn_lock</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">HEARTBEAT</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                <span class="c1"># The parent process can not be reached. Terminate the child process.</span>
+                <span class="k">break</span>
+        <span class="c1"># delay some time for the wrap up process before the child process self terminate.</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">killpg</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getpgid</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()),</span> <span class="mi">9</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.delete_job_id"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.delete_job_id">[docs]</a>    <span class="k">def</span> <span class="nf">delete_job_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num</span><span class="p">):</span>
+        <span class="n">job_id_folder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">WORKSPACE_PREFIX</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">num</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">job_id_folder</span><span class="p">):</span>
+            <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">job_id_folder</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_clients"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_clients">[docs]</a>    <span class="k">def</span> <span class="nf">get_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">Client</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">())</span></div>
+
+<div class="viewcode-block" id="ServerEngine.validate_clients"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.validate_clients">[docs]</a>    <span class="k">def</span> <span class="nf">validate_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Client</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_all_clients_from_inputs</span><span class="p">(</span><span class="n">client_names</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.start_app_on_server"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.start_app_on_server">[docs]</a>    <span class="k">def</span> <span class="nf">start_app_on_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_number</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">job_clients</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">snapshot</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">run_number</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Server run_</span><span class="si">{</span><span class="n">run_number</span><span class="si">}</span><span class="s2"> already started.&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">app_root</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_run_folder</span><span class="p">(</span><span class="n">run_number</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_server_app_folder</span><span class="p">())</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">app_root</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s2">&quot;Server app does not exist. Please deploy the server app before starting.&quot;</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STARTING</span>
+
+            <span class="n">app_custom_folder</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">enable_byoc</span><span class="p">:</span>
+                <span class="n">app_custom_folder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">app_root</span><span class="p">,</span> <span class="s2">&quot;custom&quot;</span><span class="p">)</span>
+
+            <span class="n">open_ports</span> <span class="o">=</span> <span class="n">get_open_ports</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_start_runner_process</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">app_root</span><span class="p">,</span> <span class="n">run_number</span><span class="p">,</span> <span class="n">app_custom_folder</span><span class="p">,</span> <span class="n">open_ports</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">job_clients</span><span class="p">,</span> <span class="n">snapshot</span>
+            <span class="p">)</span>
+
+            <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_listen_command</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">open_ports</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">run_number</span><span class="p">))</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STARTED</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+    <span class="k">def</span> <span class="nf">_listen_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">listen_port</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+        <span class="n">address</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">listen_port</span><span class="p">))</span>
+        <span class="n">listener</span> <span class="o">=</span> <span class="n">Listener</span><span class="p">(</span><span class="n">address</span><span class="p">,</span> <span class="n">authkey</span><span class="o">=</span><span class="s2">&quot;parent process secret password&quot;</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">listener</span><span class="o">.</span><span class="n">accept</span><span class="p">()</span>
+
+        <span class="k">while</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">clients</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">PARTICIPANTS</span><span class="p">)</span>
+            <span class="n">job_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">conn</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="mf">0.1</span><span class="p">):</span>
+                    <span class="n">received_data</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+                    <span class="n">command</span> <span class="o">=</span> <span class="n">received_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">)</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="n">received_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">)</span>
+
+                    <span class="k">if</span> <span class="n">command</span> <span class="o">==</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">GET_CLIENTS</span><span class="p">:</span>
+                        <span class="n">return_data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">CLIENTS</span><span class="p">:</span> <span class="n">clients</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">:</span> <span class="n">job_id</span><span class="p">}</span>
+                        <span class="n">conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">return_data</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">command</span> <span class="o">==</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">AUX_SEND</span><span class="p">:</span>
+                        <span class="n">targets</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;targets&quot;</span><span class="p">)</span>
+                        <span class="n">topic</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;topic&quot;</span><span class="p">)</span>
+                        <span class="n">request</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;request&quot;</span><span class="p">)</span>
+                        <span class="n">timeout</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timeout&quot;</span><span class="p">)</span>
+                        <span class="n">fl_ctx</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fl_ctx&quot;</span><span class="p">)</span>
+                        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">aux_send</span><span class="p">(</span>
+                            <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">,</span> <span class="n">request</span><span class="o">=</span><span class="n">request</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span>
+                        <span class="p">)</span>
+                        <span class="n">conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replies</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to process the child process command: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ServerEngine.wait_for_complete"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.wait_for_complete">[docs]</a>    <span class="k">def</span> <span class="nf">wait_for_complete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                    <span class="n">command_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_command_conn</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">command_conn</span><span class="p">:</span>
+                        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">HEARTBEAT</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+                        <span class="n">command_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                    <span class="n">run_process_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+                    <span class="n">return_code</span> <span class="o">=</span> <span class="n">run_process_info</span><span class="p">[</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">CHILD_PROCESS</span><span class="p">]</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span>
+                    <span class="c1"># if process exit but with Execution exception</span>
+                    <span class="k">if</span> <span class="n">return_code</span> <span class="ow">and</span> <span class="n">return_code</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">execution_exception_run_processes</span><span class="p">[</span><span class="n">job_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">run_process_info</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STOPPED</span>
+                <span class="k">break</span></div>
+
+    <span class="k">def</span> <span class="nf">_start_runner_process</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">app_root</span><span class="p">,</span> <span class="n">run_number</span><span class="p">,</span> <span class="n">app_custom_folder</span><span class="p">,</span> <span class="n">open_ports</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">job_clients</span><span class="p">,</span> <span class="n">snapshot</span>
+    <span class="p">):</span>
+        <span class="n">new_env</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">app_custom_folder</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">new_env</span><span class="p">[</span><span class="s2">&quot;PYTHONPATH&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PYTHONPATH&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">pathsep</span> <span class="o">+</span> <span class="n">app_custom_folder</span>
+
+        <span class="n">listen_port</span> <span class="o">=</span> <span class="n">open_ports</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">snapshot</span><span class="p">:</span>
+            <span class="n">restore_snapshot</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">restore_snapshot</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">command_options</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">args</span><span class="o">.</span><span class="n">set</span><span class="p">:</span>
+            <span class="n">command_options</span> <span class="o">+=</span> <span class="s2">&quot; &quot;</span> <span class="o">+</span> <span class="n">t</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">executable</span>
+            <span class="o">+</span> <span class="s2">&quot; -m nvflare.private.fed.app.server.runner_process -m &quot;</span>
+            <span class="o">+</span> <span class="n">args</span><span class="o">.</span><span class="n">workspace</span>
+            <span class="o">+</span> <span class="s2">&quot; -s fed_server.json -r &quot;</span>
+            <span class="o">+</span> <span class="n">app_root</span>
+            <span class="o">+</span> <span class="s2">&quot; -n &quot;</span>
+            <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">run_number</span><span class="p">)</span>
+            <span class="o">+</span> <span class="s2">&quot; -p &quot;</span>
+            <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">listen_port</span><span class="p">)</span>
+            <span class="o">+</span> <span class="s2">&quot; -c &quot;</span>
+            <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">open_ports</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="o">+</span> <span class="s2">&quot; --set&quot;</span>
+            <span class="o">+</span> <span class="n">command_options</span>
+            <span class="o">+</span> <span class="s2">&quot; print_conf=True restore_snapshot=&quot;</span>
+            <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">restore_snapshot</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="c1"># use os.setsid to create new process group ID</span>
+
+        <span class="n">process</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="n">preexec_fn</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">setsid</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">new_env</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">job_id</span><span class="p">:</span>
+            <span class="n">job_id</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">job_clients</span><span class="p">:</span>
+            <span class="n">job_clients</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">clients</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="p">[</span><span class="n">run_number</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">RunProcessKey</span><span class="o">.</span><span class="n">LISTEN_PORT</span><span class="p">:</span> <span class="n">listen_port</span><span class="p">,</span>
+                <span class="n">RunProcessKey</span><span class="o">.</span><span class="n">CONNECTION</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">RunProcessKey</span><span class="o">.</span><span class="n">CHILD_PROCESS</span><span class="p">:</span> <span class="n">process</span><span class="p">,</span>
+                <span class="n">RunProcessKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">:</span> <span class="n">job_id</span><span class="p">,</span>
+                <span class="n">RunProcessKey</span><span class="o">.</span><span class="n">PARTICIPANTS</span><span class="p">:</span> <span class="n">job_clients</span><span class="p">,</span>
+            <span class="p">}</span>
+
+        <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">wait_for_complete</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">run_number</span><span class="p">])</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">process</span>
+
+<div class="viewcode-block" id="ServerEngine.get_job_clients"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_job_clients">[docs]</a>    <span class="k">def</span> <span class="nf">get_job_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">):</span>
+        <span class="n">job_clients</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">client_sites</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">site</span><span class="p">,</span> <span class="n">dispatch_info</span> <span class="ow">in</span> <span class="n">client_sites</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_client_from_name</span><span class="p">(</span><span class="n">site</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+                    <span class="n">job_clients</span><span class="p">[</span><span class="n">client</span><span class="o">.</span><span class="n">token</span><span class="p">]</span> <span class="o">=</span> <span class="n">client</span>
+        <span class="k">return</span> <span class="n">job_clients</span></div>
+
+<div class="viewcode-block" id="ServerEngine.remove_custom_path"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.remove_custom_path">[docs]</a>    <span class="k">def</span> <span class="nf">remove_custom_path</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s2">&quot;.*/run_.*/custom&quot;</span><span class="p">)</span>
+        <span class="n">custom_paths</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">regex</span><span class="o">.</span><span class="n">search</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">custom_paths</span><span class="p">:</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.abort_app_on_clients"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.abort_app_on_clients">[docs]</a>    <span class="k">def</span> <span class="nf">abort_app_on_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">clients</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STOPPED</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Server app has not started.&quot;</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STARTING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Server app is starting, please wait for started before abort.&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.abort_app_on_server"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.abort_app_on_server">[docs]</a>    <span class="k">def</span> <span class="nf">abort_app_on_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">job_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">return</span> <span class="s2">&quot;Server app has not started.&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Abort the server app run.&quot;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="n">command_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_command_conn</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">command_conn</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">AdminCommandNames</span><span class="o">.</span><span class="n">ABORT</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+                    <span class="n">command_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                    <span class="n">status_message</span> <span class="o">=</span> <span class="n">command_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Abort server: </span><span class="si">{</span><span class="n">status_message</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="n">child_process</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">CHILD_PROCESS</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">child_process</span><span class="p">:</span>
+                    <span class="n">child_process</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine_info</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">MachineStatus</span><span class="o">.</span><span class="n">STOPPED</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.check_app_start_readiness"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.check_app_start_readiness">[docs]</a>    <span class="k">def</span> <span class="nf">check_app_start_readiness</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">job_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Server app run_</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> has not started.&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.shutdown_server"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.shutdown_server">[docs]</a>    <span class="k">def</span> <span class="nf">shutdown_server</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">status</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="n">ServerStatus</span><span class="o">.</span><span class="n">STARTING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Server app is starting, please wait for started before shutdown.&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;FL server shutdown.&quot;</span><span class="p">)</span>
+
+        <span class="n">touch_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="s2">&quot;shutdown.fl&quot;</span><span class="p">)</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">server_shutdown</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">),</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="p">,</span> <span class="n">touch_file</span><span class="p">])</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">status</span> <span class="o">!=</span> <span class="n">ServerStatus</span><span class="o">.</span><span class="n">SHUTDOWN</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.restart_server"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.restart_server">[docs]</a>    <span class="k">def</span> <span class="nf">restart_server</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">status</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="n">ServerStatus</span><span class="o">.</span><span class="n">STARTING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Server is starting, please wait for started before restart.&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;FL server restart.&quot;</span><span class="p">)</span>
+
+        <span class="n">touch_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="s2">&quot;restart.fl&quot;</span><span class="p">)</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">server_shutdown</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">),</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="p">,</span> <span class="n">touch_file</span><span class="p">])</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">status</span> <span class="o">!=</span> <span class="n">ServerStatus</span><span class="o">.</span><span class="n">SHUTDOWN</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_widget"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_widget">[docs]</a>    <span class="k">def</span> <span class="nf">get_widget</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">widget_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Widget</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">widgets</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">widget_id</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_client_name_from_token"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_client_name_from_token">[docs]</a>    <span class="k">def</span> <span class="nf">get_client_name_from_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">client</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_all_clients"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_all_clients">[docs]</a>    <span class="k">def</span> <span class="nf">get_all_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_client_from_name"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_client_from_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_client_from_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_name</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_clients</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">client_name</span> <span class="o">==</span> <span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">c</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+    <span class="k">def</span> <span class="nf">_get_all_clients_from_inputs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>
+        <span class="n">clients</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">invalid_inputs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">:</span>
+            <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+            <span class="c1"># if item in self.get_all_clients():</span>
+            <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+                <span class="n">clients</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_client_from_name</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+                    <span class="n">clients</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">invalid_inputs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">clients</span><span class="p">,</span> <span class="n">invalid_inputs</span>
+
+<div class="viewcode-block" id="ServerEngine.get_app_data"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_app_data">[docs]</a>    <span class="k">def</span> <span class="nf">get_app_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]:</span>
+        <span class="n">fullpath_src</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="o">.</span><span class="n">file_upload_dir</span><span class="p">,</span> <span class="n">app_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">fullpath_src</span><span class="p">):</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;App folder &#39;</span><span class="si">{</span><span class="n">app_name</span><span class="si">}</span><span class="s2">&#39; does not exist in staging area.&quot;</span><span class="p">,</span> <span class="kc">None</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="n">zip_directory_to_bytes</span><span class="p">(</span><span class="n">fullpath_src</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">data</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_app_run_info"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_app_run_info">[docs]</a>    <span class="k">def</span> <span class="nf">get_app_run_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RunInfo</span><span class="p">:</span>
+        <span class="n">run_info</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="n">command_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_command_conn</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">command_conn</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">GET_RUN_INFO</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+                    <span class="n">command_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                    <span class="n">run_info</span> <span class="o">=</span> <span class="n">command_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get_app_run_info from run_</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">run_info</span></div>
+
+<div class="viewcode-block" id="ServerEngine.set_run_manager"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.set_run_manager">[docs]</a>    <span class="k">def</span> <span class="nf">set_run_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_manager</span><span class="p">:</span> <span class="n">RunManager</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span> <span class="o">=</span> <span class="n">run_manager</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">widget</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">widgets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">add_handler</span><span class="p">(</span><span class="n">widget</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.set_job_runner"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.set_job_runner">[docs]</a>    <span class="k">def</span> <span class="nf">set_job_runner</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_runner</span><span class="p">:</span> <span class="n">JobRunner</span><span class="p">,</span> <span class="n">job_manager</span><span class="p">:</span> <span class="n">JobDefManagerSpec</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">job_runner</span> <span class="o">=</span> <span class="n">job_runner</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">job_def_manager</span> <span class="o">=</span> <span class="n">job_manager</span></div>
+
+<div class="viewcode-block" id="ServerEngine.set_configurator"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.set_configurator">[docs]</a>    <span class="k">def</span> <span class="nf">set_configurator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conf</span><span class="p">:</span> <span class="n">ServerJsonConfigurator</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">conf</span><span class="p">,</span> <span class="n">ServerJsonConfigurator</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;conf must be ServerJsonConfigurator but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">conf</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conf</span> <span class="o">=</span> <span class="n">conf</span></div>
+
+<div class="viewcode-block" id="ServerEngine.build_component"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.build_component">[docs]</a>    <span class="k">def</span> <span class="nf">build_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">conf</span><span class="o">.</span><span class="n">build_component</span><span class="p">(</span><span class="n">config_dict</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.new_context"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.new_context">[docs]</a>    <span class="k">def</span> <span class="nf">new_context</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FLContext</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># return FLContext()</span>
+            <span class="k">return</span> <span class="n">FLContextManager</span><span class="p">(</span>
+                <span class="n">engine</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">identity_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">project_name</span><span class="p">,</span> <span class="n">job_id</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">public_stickers</span><span class="o">=</span><span class="p">{},</span> <span class="n">private_stickers</span><span class="o">=</span><span class="p">{}</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_component"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_component">[docs]</a>    <span class="k">def</span> <span class="nf">get_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">object</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">component_id</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.fire_event"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.fire_event">[docs]</a>    <span class="k">def</span> <span class="nf">fire_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">event_type</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_staging_path_of_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_staging_path_of_app">[docs]</a>    <span class="k">def</span> <span class="nf">get_staging_path_of_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="o">.</span><span class="n">file_upload_dir</span><span class="p">,</span> <span class="n">app_name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.deploy_app_to_server"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.deploy_app_to_server">[docs]</a>    <span class="k">def</span> <span class="nf">deploy_app_to_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">run_destination</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">app_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">app_staging_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">deploy_app</span><span class="p">(</span><span class="n">run_destination</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">APP_PREFIX</span> <span class="o">+</span> <span class="s2">&quot;server&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_workspace"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_workspace">[docs]</a>    <span class="k">def</span> <span class="nf">get_workspace</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Workspace</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">get_workspace</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ServerEngine.ask_to_stop"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.ask_to_stop">[docs]</a>    <span class="k">def</span> <span class="nf">ask_to_stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asked_to_stop</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="ServerEngine.deploy_app"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.deploy_app">[docs]</a>    <span class="k">def</span> <span class="nf">deploy_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">):</span>
+        <span class="n">fullpath_src</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="o">.</span><span class="n">file_upload_dir</span><span class="p">,</span> <span class="n">src</span><span class="p">)</span>
+        <span class="n">fullpath_dst</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_run_folder</span><span class="p">(</span><span class="n">job_id</span><span class="p">),</span> <span class="n">dst</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">fullpath_src</span><span class="p">):</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;App folder &#39;</span><span class="si">{</span><span class="n">src</span><span class="si">}</span><span class="s2">&#39; does not exist in staging area.&quot;</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">fullpath_dst</span><span class="p">):</span>
+            <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">fullpath_dst</span><span class="p">)</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">copytree</span><span class="p">(</span><span class="n">fullpath_src</span><span class="p">,</span> <span class="n">fullpath_dst</span><span class="p">)</span>
+
+        <span class="n">app_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_run_folder</span><span class="p">(</span><span class="n">job_id</span><span class="p">),</span> <span class="s2">&quot;fl_app.txt&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">app_file</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">app_file</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">app_file</span><span class="p">,</span> <span class="s2">&quot;wt&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">src</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServerEngine.remove_clients"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.remove_clients">[docs]</a>    <span class="k">def</span> <span class="nf">remove_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">clients</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_remove_dead_client</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+    <span class="k">def</span> <span class="nf">_remove_dead_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">remove_client</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">remove_client_data</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="o">.</span><span class="n">client_dead</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ServerEngine.register_aux_message_handler"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.register_aux_message_handler">[docs]</a>    <span class="k">def</span> <span class="nf">register_aux_message_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">message_handle_func</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">aux_runner</span><span class="o">.</span><span class="n">register_aux_message_handler</span><span class="p">(</span><span class="n">topic</span><span class="p">,</span> <span class="n">message_handle_func</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.send_aux_request"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.send_aux_request">[docs]</a>    <span class="k">def</span> <span class="nf">send_aux_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="p">[],</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sync_clients_from_main_process</span><span class="p">()</span>
+                <span class="n">targets</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_clients</span><span class="p">():</span>
+                    <span class="n">targets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">targets</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">aux_runner</span><span class="o">.</span><span class="n">send_aux_request</span><span class="p">(</span>
+                    <span class="n">targets</span><span class="o">=</span><span class="n">targets</span><span class="p">,</span> <span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">,</span> <span class="n">request</span><span class="o">=</span><span class="n">request</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">{}</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to send the aux_message: </span><span class="si">{</span><span class="n">topic</span><span class="si">}</span><span class="s2"> with exception: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.sync_clients_from_main_process"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.sync_clients_from_main_process">[docs]</a>    <span class="k">def</span> <span class="nf">sync_clients_from_main_process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn_lock</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">GET_CLIENTS</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">return_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+            <span class="n">clients</span> <span class="o">=</span> <span class="n">return_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">CLIENTS</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">clients</span> <span class="o">=</span> <span class="n">clients</span></div>
+
+<div class="viewcode-block" id="ServerEngine.parent_aux_send"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.parent_aux_send">[docs]</a>    <span class="k">def</span> <span class="nf">parent_aux_send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="p">[],</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn_lock</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">AUX_SEND</span><span class="p">,</span>
+                <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;targets&quot;</span><span class="p">:</span> <span class="n">targets</span><span class="p">,</span>
+                    <span class="s2">&quot;topic&quot;</span><span class="p">:</span> <span class="n">topic</span><span class="p">,</span>
+                    <span class="s2">&quot;request&quot;</span><span class="p">:</span> <span class="n">request</span><span class="p">,</span>
+                    <span class="s2">&quot;timeout&quot;</span><span class="p">:</span> <span class="n">timeout</span><span class="p">,</span>
+                    <span class="s2">&quot;fl_ctx&quot;</span><span class="p">:</span> <span class="n">get_serializable_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">),</span>
+                <span class="p">},</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">return_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">return_data</span></div>
+
+<div class="viewcode-block" id="ServerEngine.aux_send"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.aux_send">[docs]</a>    <span class="k">def</span> <span class="nf">aux_send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">targets</span><span class="p">:</span> <span class="p">[],</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="c1"># Send the aux messages through admin_server</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">set_peer_props</span><span class="p">(</span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_all_public_props</span><span class="p">())</span>
+
+        <span class="n">message</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">ReservedTopic</span><span class="o">.</span><span class="n">AUX_COMMAND</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">request</span><span class="p">))</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_RUN</span><span class="p">)))</span>
+        <span class="n">requests</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">targets</span><span class="p">:</span>
+            <span class="n">requests</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">n</span><span class="p">:</span> <span class="n">message</span><span class="p">})</span>
+
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="o">.</span><span class="n">send_requests</span><span class="p">(</span><span class="n">requests</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">replies</span><span class="p">:</span>
+            <span class="n">client_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_client_name_from_token</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">client_token</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">results</span><span class="p">[</span><span class="n">client_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                    <span class="n">results</span><span class="p">[</span><span class="n">client_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">make_reply</span><span class="p">(</span><span class="n">ReturnCode</span><span class="o">.</span><span class="n">COMMUNICATION_ERROR</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Received unexpected reply from client: </span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2">, &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;message body:</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="o">.</span><span class="n">body</span><span class="si">}</span><span class="s2"> processing topic:</span><span class="si">{</span><span class="n">topic</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">results</span><span class="p">[</span><span class="n">client_name</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">results</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_command_conn"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_command_conn">[docs]</a>    <span class="k">def</span> <span class="nf">get_command_conn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+        <span class="c1"># this function need to be called with self.lock</span>
+        <span class="n">port</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">LISTEN_PORT</span><span class="p">)</span>
+        <span class="n">command_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">CONNECTION</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">command_conn</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">address</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span>
+                <span class="n">command_conn</span> <span class="o">=</span> <span class="n">CommandClient</span><span class="p">(</span><span class="n">address</span><span class="p">,</span> <span class="n">authkey</span><span class="o">=</span><span class="s2">&quot;client process secret password&quot;</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+                <span class="n">command_conn</span> <span class="o">=</span> <span class="n">ClientConnection</span><span class="p">(</span><span class="n">command_conn</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">run_processes</span><span class="p">[</span><span class="n">job_id</span><span class="p">][</span><span class="n">RunProcessKey</span><span class="o">.</span><span class="n">CONNECTION</span><span class="p">]</span> <span class="o">=</span> <span class="n">command_conn</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">command_conn</span></div>
+
+<div class="viewcode-block" id="ServerEngine.persist_components"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.persist_components">[docs]</a>    <span class="k">def</span> <span class="nf">persist_components</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">completed</span><span class="p">:</span> <span class="nb">bool</span><span class="p">):</span>
+
+        <span class="c1"># Call the State Persistor to persist all the component states</span>
+        <span class="c1"># 1. call every component to generate the component states data</span>
+        <span class="c1">#    Make sure to include the current round number</span>
+        <span class="c1"># 2. call persistence API to save the component states</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">job_id</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_job_id</span><span class="p">()</span>
+            <span class="n">snapshot</span> <span class="o">=</span> <span class="n">RunSnapshot</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">component_id</span><span class="p">,</span> <span class="n">component</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">component</span><span class="p">,</span> <span class="n">FLComponent</span><span class="p">):</span>
+                    <span class="n">snapshot</span><span class="o">.</span><span class="n">set_component_snapshot</span><span class="p">(</span>
+                        <span class="n">component_id</span><span class="o">=</span><span class="n">component_id</span><span class="p">,</span> <span class="n">component_state</span><span class="o">=</span><span class="n">component</span><span class="o">.</span><span class="n">get_persist_state</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+                    <span class="p">)</span>
+
+            <span class="n">snapshot</span><span class="o">.</span><span class="n">set_component_snapshot</span><span class="p">(</span>
+                <span class="n">component_id</span><span class="o">=</span><span class="n">SnapshotKey</span><span class="o">.</span><span class="n">FL_CONTEXT</span><span class="p">,</span> <span class="n">component_state</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">get_serializable_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span><span class="o">.</span><span class="n">props</span><span class="p">)</span>
+            <span class="p">)</span>
+
+            <span class="n">workspace</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">WORKSPACE_OBJECT</span><span class="p">)</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">zip_directory_to_bytes</span><span class="p">(</span><span class="n">workspace</span><span class="o">.</span><span class="n">get_run_dir</span><span class="p">(</span><span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">CURRENT_RUN</span><span class="p">)),</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">snapshot</span><span class="o">.</span><span class="n">set_component_snapshot</span><span class="p">(</span><span class="n">component_id</span><span class="o">=</span><span class="n">SnapshotKey</span><span class="o">.</span><span class="n">WORKSPACE</span><span class="p">,</span> <span class="n">component_state</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">data</span><span class="p">})</span>
+
+            <span class="n">job_info</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">JOB_INFO</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">job_info</span><span class="p">:</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn_lock</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">GET_CLIENTS</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                    <span class="n">return_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+                    <span class="n">job_id</span> <span class="o">=</span> <span class="n">return_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">)</span>
+                    <span class="n">job_clients</span> <span class="o">=</span> <span class="n">return_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">CLIENTS</span><span class="p">)</span>
+                    <span class="n">fl_ctx</span><span class="o">.</span><span class="n">set_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">JOB_INFO</span><span class="p">,</span> <span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">job_clients</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="p">(</span><span class="n">job_id</span><span class="p">,</span> <span class="n">job_clients</span><span class="p">)</span> <span class="o">=</span> <span class="n">job_info</span>
+            <span class="n">snapshot</span><span class="o">.</span><span class="n">set_component_snapshot</span><span class="p">(</span>
+                <span class="n">component_id</span><span class="o">=</span><span class="n">SnapshotKey</span><span class="o">.</span><span class="n">JOB_INFO</span><span class="p">,</span>
+                <span class="n">component_state</span><span class="o">=</span><span class="p">{</span><span class="n">SnapshotKey</span><span class="o">.</span><span class="n">JOB_CLIENTS</span><span class="p">:</span> <span class="n">job_clients</span><span class="p">,</span> <span class="n">SnapshotKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">:</span> <span class="n">job_id</span><span class="p">},</span>
+            <span class="p">)</span>
+
+            <span class="n">snapshot</span><span class="o">.</span><span class="n">completed</span> <span class="o">=</span> <span class="n">completed</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">snapshot_location</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">snapshot</span><span class="o">=</span><span class="n">snapshot</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">completed</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;persist the snapshot to: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">snapshot_location</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;The snapshot: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">snapshot_location</span><span class="si">}</span><span class="s2"> has been removed.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to persist the components. </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.restore_components"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.restore_components">[docs]</a>    <span class="k">def</span> <span class="nf">restore_components</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">:</span> <span class="n">RunSnapshot</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">component_id</span><span class="p">,</span> <span class="n">component</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">component</span><span class="o">.</span><span class="n">restore</span><span class="p">(</span><span class="n">snapshot</span><span class="o">.</span><span class="n">get_component_snapshot</span><span class="p">(</span><span class="n">component_id</span><span class="o">=</span><span class="n">component_id</span><span class="p">),</span> <span class="n">fl_ctx</span><span class="p">)</span>
+
+        <span class="n">fl_ctx</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">snapshot</span><span class="o">.</span><span class="n">get_component_snapshot</span><span class="p">(</span><span class="n">component_id</span><span class="o">=</span><span class="n">SnapshotKey</span><span class="o">.</span><span class="n">FL_CONTEXT</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="ServerEngine.dispatch"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.dispatch">[docs]</a>    <span class="k">def</span> <span class="nf">dispatch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topic</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Shareable</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_manager</span><span class="o">.</span><span class="n">aux_runner</span><span class="o">.</span><span class="n">dispatch</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">,</span> <span class="n">request</span><span class="o">=</span><span class="n">request</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="o">=</span><span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.show_stats"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.show_stats">[docs]</a>    <span class="k">def</span> <span class="nf">show_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+        <span class="n">stats</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="n">command_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_command_conn</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">command_conn</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">SHOW_STATS</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+                    <span class="n">command_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                    <span class="n">stats</span> <span class="o">=</span> <span class="n">command_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get_stats from run_</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">stats</span></div>
+
+<div class="viewcode-block" id="ServerEngine.get_errors"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.get_errors">[docs]</a>    <span class="k">def</span> <span class="nf">get_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">):</span>
+        <span class="n">stats</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="n">command_conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_command_conn</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">command_conn</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">COMMAND</span><span class="p">:</span> <span class="n">ServerCommandNames</span><span class="o">.</span><span class="n">GET_ERRORS</span><span class="p">,</span> <span class="n">ServerCommandKey</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span> <span class="p">{}}</span>
+                    <span class="n">command_conn</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+                    <span class="n">stats</span> <span class="o">=</span> <span class="n">command_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get_stats from run_</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">stats</span></div>
+
+    <span class="k">def</span> <span class="nf">_send_admin_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">requests</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ClientReply</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="o">.</span><span class="n">send_requests</span><span class="p">(</span><span class="n">requests</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="n">timeout_secs</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ServerEngine.check_client_resources"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.check_client_resources">[docs]</a>    <span class="k">def</span> <span class="nf">check_client_resources</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resource_reqs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+        <span class="n">requests</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">site_name</span><span class="p">,</span> <span class="n">resource_requirements</span> <span class="ow">in</span> <span class="n">resource_reqs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="c1"># assume server resource is unlimited</span>
+            <span class="k">if</span> <span class="n">site_name</span> <span class="o">==</span> <span class="s2">&quot;server&quot;</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">CHECK_RESOURCE</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">resource_requirements</span><span class="p">))</span>
+            <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_client_from_name</span><span class="p">(</span><span class="n">site_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+                <span class="n">requests</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">client</span><span class="o">.</span><span class="n">token</span><span class="p">:</span> <span class="n">request</span><span class="p">})</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">requests</span><span class="p">:</span>
+            <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_admin_requests</span><span class="p">(</span><span class="n">requests</span><span class="p">,</span> <span class="mi">15</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">replies</span><span class="p">:</span>
+            <span class="n">site_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_client_name_from_token</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">client_token</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="p">:</span>
+                <span class="n">resp</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">site_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">resp</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">ShareableHeader</span><span class="o">.</span><span class="n">CHECK_RESOURCE_RESULT</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+                    <span class="n">resp</span><span class="o">.</span><span class="n">get_header</span><span class="p">(</span><span class="n">ShareableHeader</span><span class="o">.</span><span class="n">RESOURCE_RESERVE_TOKEN</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">site_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+<div class="viewcode-block" id="ServerEngine.cancel_client_resources"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.cancel_client_resources">[docs]</a>    <span class="k">def</span> <span class="nf">cancel_client_resources</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">resource_check_results</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span> <span class="n">resource_reqs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span>
+    <span class="p">):</span>
+        <span class="n">requests</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">site_name</span><span class="p">,</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">resource_check_results</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">check_result</span><span class="p">,</span> <span class="n">token</span> <span class="o">=</span> <span class="n">result</span>
+            <span class="k">if</span> <span class="n">check_result</span> <span class="ow">and</span> <span class="n">token</span><span class="p">:</span>
+                <span class="n">resource_requirements</span> <span class="o">=</span> <span class="n">resource_reqs</span><span class="p">[</span><span class="n">site_name</span><span class="p">]</span>
+                <span class="n">request</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">CANCEL_RESOURCE</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">resource_requirements</span><span class="p">))</span>
+                <span class="n">request</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">ShareableHeader</span><span class="o">.</span><span class="n">RESOURCE_RESERVE_TOKEN</span><span class="p">,</span> <span class="n">token</span><span class="p">)</span>
+                <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_client_from_name</span><span class="p">(</span><span class="n">site_name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+                    <span class="n">requests</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">client</span><span class="o">.</span><span class="n">token</span><span class="p">:</span> <span class="n">request</span><span class="p">})</span>
+        <span class="k">if</span> <span class="n">requests</span><span class="p">:</span>
+            <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_admin_requests</span><span class="p">(</span><span class="n">requests</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.start_client_job"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.start_client_job">[docs]</a>    <span class="k">def</span> <span class="nf">start_client_job</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_id</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">):</span>
+        <span class="n">requests</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">site</span><span class="p">,</span> <span class="n">dispatch_info</span> <span class="ow">in</span> <span class="n">client_sites</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">resource_requirement</span> <span class="o">=</span> <span class="n">dispatch_info</span><span class="o">.</span><span class="n">resource_requirements</span>
+            <span class="n">token</span> <span class="o">=</span> <span class="n">dispatch_info</span><span class="o">.</span><span class="n">token</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">TrainingTopic</span><span class="o">.</span><span class="n">START_JOB</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">resource_requirement</span><span class="p">))</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">RequestHeader</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="n">job_id</span><span class="p">)</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">ShareableHeader</span><span class="o">.</span><span class="n">RESOURCE_RESERVE_TOKEN</span><span class="p">,</span> <span class="n">token</span><span class="p">)</span>
+            <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_client_from_name</span><span class="p">(</span><span class="n">site</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+                <span class="n">requests</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">client</span><span class="o">.</span><span class="n">token</span><span class="p">:</span> <span class="n">request</span><span class="p">})</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">requests</span><span class="p">:</span>
+            <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_admin_requests</span><span class="p">(</span><span class="n">requests</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">replies</span></div>
+
+<div class="viewcode-block" id="ServerEngine.stop_all_jobs"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.stop_all_jobs">[docs]</a>    <span class="k">def</span> <span class="nf">stop_all_jobs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fl_ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">job_runner</span><span class="o">.</span><span class="n">stop_all_runs</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServerEngine.close"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.ServerEngine.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="o">.</span><span class="n">shutdown</span><span class="p">()</span></div></div>
+
+
+<div class="viewcode-block" id="server_shutdown"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.server_shutdown">[docs]</a><span class="k">def</span> <span class="nf">server_shutdown</span><span class="p">(</span><span class="n">server</span><span class="p">,</span> <span class="n">touch_file</span><span class="p">):</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">touch_file</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">utime</span><span class="p">(</span><span class="n">touch_file</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">server</span><span class="o">.</span><span class="n">fl_shutdown</span><span class="p">()</span>
+        <span class="n">server</span><span class="o">.</span><span class="n">admin_server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">server</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">ServerStatus</span><span class="o">.</span><span class="n">SHUTDOWN</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="copy_new_server_properties"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.copy_new_server_properties">[docs]</a><span class="k">def</span> <span class="nf">copy_new_server_properties</span><span class="p">(</span><span class="n">server</span><span class="p">,</span> <span class="n">new_server</span><span class="p">):</span>
+    <span class="c1"># server.model_manager = new_server.model_manager</span>
+    <span class="c1"># server.model_saver = new_server.model_saver</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">builder</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">builder</span>
+
+    <span class="n">server</span><span class="o">.</span><span class="n">wait_after_min_clients</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">wait_after_min_clients</span>
+
+    <span class="n">server</span><span class="o">.</span><span class="n">outbound_filters</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">outbound_filters</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">inbound_filters</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">inbound_filters</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">cmd_modules</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">cmd_modules</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">processors</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">processors</span>
+
+    <span class="c1"># server.task_name = new_server.task_name</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">min_num_clients</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">min_num_clients</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">max_num_clients</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">max_num_clients</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">current_round</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">current_round</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">num_rounds</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">num_rounds</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">start_round</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">start_round</span>
+
+    <span class="c1"># server.heart_beat_timeout = new_server.heart_beat_timeout</span>
+    <span class="c1"># server.handlers = new_server.handlers</span>
+
+    <span class="c1"># clients = server.client_manager.clients</span>
+    <span class="c1"># server.client_manager = new_server.client_manager</span>
+    <span class="c1"># server.client_manager.clients = clients</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">min_num_clients</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">min_num_clients</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">max_num_clients</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">max_num_clients</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">logger</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">client_manager</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">disabled</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="n">server</span><span class="o">.</span><span class="n">reset_tokens</span><span class="p">()</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">contributed_clients</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+    <span class="c1"># server.accumulator.clear()</span>
+
+    <span class="n">server</span><span class="o">.</span><span class="n">fl_ctx</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">fl_ctx</span>
+
+    <span class="n">server</span><span class="o">.</span><span class="n">controller</span> <span class="o">=</span> <span class="n">new_server</span><span class="o">.</span><span class="n">controller</span></div>
+    <span class="c1"># server.model_aggregator = new_server.model_aggregator</span>
+    <span class="c1"># server.model_saver = new_server.model_saver</span>
+    <span class="c1"># server.shareable_generator = new_server.shareable_generator</span>
+
+
+<div class="viewcode-block" id="set_up_run_config"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.server_engine.html#nvflare.private.fed.server.server_engine.set_up_run_config">[docs]</a><span class="k">def</span> <span class="nf">set_up_run_config</span><span class="p">(</span><span class="n">server</span><span class="p">,</span> <span class="n">conf</span><span class="p">):</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">heart_beat_timeout</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">heartbeat_timeout</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">runner_config</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">runner_config</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">handlers</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">handlers</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

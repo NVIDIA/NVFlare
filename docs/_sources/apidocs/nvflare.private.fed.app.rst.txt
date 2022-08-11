@@ -1,0 +1,30 @@
+nvflare.private.fed.app package
+===============================
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   nvflare.private.fed.app.client
+   nvflare.private.fed.app.deployer
+   nvflare.private.fed.app.server
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 4
+
+   nvflare.private.fed.app.default_app_validator
+   nvflare.private.fed.app.fl_app_validator
+   nvflare.private.fed.app.fl_conf
+
+Module contents
+---------------
+
+.. automodule:: nvflare.private.fed.app
+   :members:
+   :undoc-members:
+   :show-inheritance:

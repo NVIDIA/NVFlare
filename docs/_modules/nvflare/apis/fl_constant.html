@@ -1,0 +1,470 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.apis.fl_constant &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.apis.fl_constant</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.apis.fl_constant</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+
+
+<div class="viewcode-block" id="ReturnCode"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.ReturnCode">[docs]</a><span class="k">class</span> <span class="nc">ReturnCode</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">OK</span> <span class="o">=</span> <span class="s2">&quot;OK&quot;</span>
+
+    <span class="n">BAD_PEER_CONTEXT</span> <span class="o">=</span> <span class="s2">&quot;BAD_PEER_CONTEXT&quot;</span>
+    <span class="n">BAD_REQUEST_DATA</span> <span class="o">=</span> <span class="s2">&quot;BAD_REQUEST_DATA&quot;</span>
+    <span class="n">BAD_TASK_DATA</span> <span class="o">=</span> <span class="s2">&quot;BAD_TASK_DATA&quot;</span>
+    <span class="n">COMMUNICATION_ERROR</span> <span class="o">=</span> <span class="s2">&quot;COMMUNICATION_ERROR&quot;</span>
+    <span class="n">ERROR</span> <span class="o">=</span> <span class="s2">&quot;ERROR&quot;</span>
+    <span class="n">EXECUTION_EXCEPTION</span> <span class="o">=</span> <span class="s2">&quot;EXECUTION_EXCEPTION&quot;</span>
+    <span class="n">EXECUTION_RESULT_ERROR</span> <span class="o">=</span> <span class="s2">&quot;EXECUTION_RESULT_ERROR&quot;</span>
+    <span class="n">HANDLER_EXCEPTION</span> <span class="o">=</span> <span class="s2">&quot;HANDLER_EXCEPTION&quot;</span>
+    <span class="n">MISSING_PEER_CONTEXT</span> <span class="o">=</span> <span class="s2">&quot;MISSING_PEER_CONTEXT&quot;</span>
+    <span class="n">RUN_MISMATCH</span> <span class="o">=</span> <span class="s2">&quot;RUN_MISMATCH&quot;</span>
+    <span class="n">TASK_ABORTED</span> <span class="o">=</span> <span class="s2">&quot;TASK_ABORTED&quot;</span>
+    <span class="n">TASK_DATA_FILTER_ERROR</span> <span class="o">=</span> <span class="s2">&quot;TASK_DATA_FILTER_ERROR&quot;</span>
+    <span class="n">TASK_RESULT_FILTER_ERROR</span> <span class="o">=</span> <span class="s2">&quot;TASK_RESULT_FILTER_ERROR&quot;</span>
+    <span class="n">TASK_UNKNOWN</span> <span class="o">=</span> <span class="s2">&quot;TASK_UNKNOWN&quot;</span>
+    <span class="n">TASK_UNSUPPORTED</span> <span class="o">=</span> <span class="s2">&quot;TASK_UNSUPPORTED&quot;</span>
+    <span class="n">TOPIC_UNKNOWN</span> <span class="o">=</span> <span class="s2">&quot;TOPIC_UNKNOWN&quot;</span>
+    <span class="n">MODEL_UNRECOGNIZED</span> <span class="o">=</span> <span class="s2">&quot;MODEL_UNRECOGNIZED&quot;</span>
+    <span class="n">VALIDATE_TYPE_UNKNOWN</span> <span class="o">=</span> <span class="s2">&quot;VALIDATE_TYPE_UNKNOWN&quot;</span>
+    <span class="n">EMPTY_RESULT</span> <span class="o">=</span> <span class="s2">&quot;EMPTY_RESULT&quot;</span>
+
+    <span class="n">SERVER_NOT_READY</span> <span class="o">=</span> <span class="s2">&quot;SERVER_NOT_READY&quot;</span></div>
+
+
+<div class="viewcode-block" id="MachineStatus"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.MachineStatus">[docs]</a><span class="k">class</span> <span class="nc">MachineStatus</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Constants for machine status.</span>
+
+<span class="sd">    Status Lifecycle</span>
+<span class="sd">        STOPPED &lt;-&gt; STARTING -&gt; STARTED -&gt; STOPPING -&gt; STOPPED</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">STARTING</span> <span class="o">=</span> <span class="s2">&quot;starting&quot;</span>
+    <span class="n">STARTED</span> <span class="o">=</span> <span class="s2">&quot;started&quot;</span>
+    <span class="n">STOPPING</span> <span class="o">=</span> <span class="s2">&quot;stopping&quot;</span>
+    <span class="n">STOPPED</span> <span class="o">=</span> <span class="s2">&quot;stopped&quot;</span></div>
+
+
+<div class="viewcode-block" id="ReservedKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.ReservedKey">[docs]</a><span class="k">class</span> <span class="nc">ReservedKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">MANAGER</span> <span class="o">=</span> <span class="s2">&quot;__manager__&quot;</span>
+    <span class="n">ENGINE</span> <span class="o">=</span> <span class="s2">&quot;__engine__&quot;</span>
+    <span class="n">AUX_RUNNER</span> <span class="o">=</span> <span class="s2">&quot;__aux_runner__&quot;</span>
+    <span class="n">RUN_NUM</span> <span class="o">=</span> <span class="s2">&quot;__run_num__&quot;</span>
+    <span class="n">IDENTITY_NAME</span> <span class="o">=</span> <span class="s2">&quot;__identity_name__&quot;</span>  <span class="c1"># identity of the endpoint (e.g. client name)</span>
+    <span class="n">PEER_CTX</span> <span class="o">=</span> <span class="s2">&quot;__peer_ctx__&quot;</span>
+    <span class="n">RC</span> <span class="o">=</span> <span class="s2">&quot;__rc__&quot;</span>
+    <span class="n">COOKIE_JAR</span> <span class="o">=</span> <span class="s2">&quot;__cookie_jar__&quot;</span>
+    <span class="n">WORKSPACE_ROOT</span> <span class="o">=</span> <span class="s2">&quot;__workspace_root__&quot;</span>
+    <span class="n">APP_ROOT</span> <span class="o">=</span> <span class="s2">&quot;__app_root__&quot;</span>
+    <span class="n">CLIENT_NAME</span> <span class="o">=</span> <span class="s2">&quot;__client_name__&quot;</span>
+    <span class="n">TASK_NAME</span> <span class="o">=</span> <span class="s2">&quot;__task_name__&quot;</span>
+    <span class="n">TASK_DATA</span> <span class="o">=</span> <span class="s2">&quot;__task_data__&quot;</span>
+    <span class="n">TASK_RESULT</span> <span class="o">=</span> <span class="s2">&quot;__task_result__&quot;</span>
+    <span class="n">TASK_ID</span> <span class="o">=</span> <span class="s2">&quot;__task_id__&quot;</span>
+    <span class="n">EVENT_ID</span> <span class="o">=</span> <span class="s2">&quot;__event_id__&quot;</span>
+    <span class="n">IS_RESEND</span> <span class="o">=</span> <span class="s2">&quot;__is_resend__&quot;</span>
+    <span class="n">RUNNER</span> <span class="o">=</span> <span class="s2">&quot;__runner__&quot;</span>
+    <span class="n">WORKFLOW</span> <span class="o">=</span> <span class="s2">&quot;__workflow__&quot;</span>
+    <span class="n">REPLY</span> <span class="o">=</span> <span class="s2">&quot;__reply__&quot;</span>
+    <span class="n">EVENT_ORIGIN</span> <span class="o">=</span> <span class="s2">&quot;__event_origin__&quot;</span>
+    <span class="n">EVENT_ORIGIN_SITE</span> <span class="o">=</span> <span class="s2">&quot;__event_origin_site__&quot;</span>
+    <span class="n">EVENT_DATA</span> <span class="o">=</span> <span class="s2">&quot;__event_data__&quot;</span>
+    <span class="n">EVENT_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;__event_scope__&quot;</span>
+    <span class="n">RUN_ABORT_SIGNAL</span> <span class="o">=</span> <span class="s2">&quot;__run_abort_signal__&quot;</span>
+    <span class="n">SHAREABLE</span> <span class="o">=</span> <span class="s2">&quot;__shareable__&quot;</span>
+    <span class="n">ARGS</span> <span class="o">=</span> <span class="s2">&quot;__args__&quot;</span>
+    <span class="n">WORKSPACE_OBJECT</span> <span class="o">=</span> <span class="s2">&quot;__workspace_object__&quot;</span>
+    <span class="n">RANK_NUMBER</span> <span class="o">=</span> <span class="s2">&quot;__rank_number__&quot;</span>
+    <span class="n">NUM_OF_PROCESSES</span> <span class="o">=</span> <span class="s2">&quot;__num_of_processes__&quot;</span>
+    <span class="n">FROM_RANK_NUMBER</span> <span class="o">=</span> <span class="s2">&quot;__from_rank_number__&quot;</span>
+    <span class="n">SECURE_MODE</span> <span class="o">=</span> <span class="s2">&quot;__secure_mode__&quot;</span>
+    <span class="n">SP_END_POINT</span> <span class="o">=</span> <span class="s2">&quot;__sp_end_point__&quot;</span>
+    <span class="n">JOB_INFO</span> <span class="o">=</span> <span class="s2">&quot;__job_info__&quot;</span>
+    <span class="n">CURRENT_JOB_ID</span> <span class="o">=</span> <span class="s2">&quot;__current_job_id__&quot;</span>
+    <span class="n">JOB_RUN_NUMBER</span> <span class="o">=</span> <span class="s2">&quot;__job_run_number__&quot;</span></div>
+
+
+<div class="viewcode-block" id="FLContextKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.FLContextKey">[docs]</a><span class="k">class</span> <span class="nc">FLContextKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">TASK_NAME</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">TASK_NAME</span>
+    <span class="n">TASK_DATA</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">TASK_DATA</span>
+    <span class="n">TASK_RESULT</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">TASK_RESULT</span>
+    <span class="n">TASK_ID</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">TASK_ID</span>
+    <span class="n">EVENT_ID</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">EVENT_ID</span>
+    <span class="n">EVENT_ORIGIN</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">EVENT_ORIGIN</span>
+    <span class="n">EVENT_ORIGIN_SITE</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">EVENT_ORIGIN_SITE</span>
+    <span class="n">EVENT_DATA</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">EVENT_DATA</span>
+    <span class="n">EVENT_SCOPE</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">EVENT_SCOPE</span>
+    <span class="n">CLIENT_NAME</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">CLIENT_NAME</span>
+    <span class="n">WORKSPACE_ROOT</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">WORKSPACE_ROOT</span>
+    <span class="n">CURRENT_RUN</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">RUN_NUM</span>
+    <span class="n">APP_ROOT</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">APP_ROOT</span>
+    <span class="n">PEER_CONTEXT</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">PEER_CTX</span>
+    <span class="n">IS_CLIENT_TASK_RESEND</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">IS_RESEND</span>
+    <span class="n">RUNNER</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">RUNNER</span>
+    <span class="n">WORKFLOW</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">WORKFLOW</span>
+    <span class="n">SHAREABLE</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">SHAREABLE</span>
+    <span class="n">RUN_ABORT_SIGNAL</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">RUN_ABORT_SIGNAL</span>
+    <span class="n">ARGS</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">ARGS</span>
+    <span class="n">REPLY</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">REPLY</span>
+    <span class="n">WORKSPACE_OBJECT</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">WORKSPACE_OBJECT</span>
+    <span class="n">RANK_NUMBER</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">RANK_NUMBER</span>
+    <span class="n">NUM_OF_PROCESSES</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">NUM_OF_PROCESSES</span>
+    <span class="n">FROM_RANK_NUMBER</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">FROM_RANK_NUMBER</span>
+    <span class="n">SECURE_MODE</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">SECURE_MODE</span>
+    <span class="n">SP_END_POINT</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">SP_END_POINT</span>
+    <span class="n">JOB_INFO</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">JOB_INFO</span>
+    <span class="n">CURRENT_JOB_ID</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">CURRENT_JOB_ID</span>
+    <span class="n">JOB_RUN_NUMBER</span> <span class="o">=</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">JOB_RUN_NUMBER</span></div>
+
+
+<div class="viewcode-block" id="ReservedTopic"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.ReservedTopic">[docs]</a><span class="k">class</span> <span class="nc">ReservedTopic</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">END_RUN</span> <span class="o">=</span> <span class="s2">&quot;__end_run__&quot;</span>
+    <span class="n">ABORT_ASK</span> <span class="o">=</span> <span class="s2">&quot;__abort_task__&quot;</span>
+    <span class="n">AUX_COMMAND</span> <span class="o">=</span> <span class="s2">&quot;__aux_command__&quot;</span></div>
+
+
+<div class="viewcode-block" id="AdminCommandNames"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.AdminCommandNames">[docs]</a><span class="k">class</span> <span class="nc">AdminCommandNames</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">SUBMIT_JOB</span> <span class="o">=</span> <span class="s2">&quot;submit_job&quot;</span>
+    <span class="n">LIST_JOBS</span> <span class="o">=</span> <span class="s2">&quot;list_jobs&quot;</span>
+    <span class="n">DOWNLOAD_JOB</span> <span class="o">=</span> <span class="s2">&quot;download_job&quot;</span>
+    <span class="n">ABORT_JOB</span> <span class="o">=</span> <span class="s2">&quot;abort_job&quot;</span>
+    <span class="n">DELETE_JOB</span> <span class="o">=</span> <span class="s2">&quot;delete_job&quot;</span>
+    <span class="n">CLONE_JOB</span> <span class="o">=</span> <span class="s2">&quot;clone_job&quot;</span>
+    <span class="n">DELETE_WORKSPACE</span> <span class="o">=</span> <span class="s2">&quot;delete_workspace&quot;</span>
+    <span class="n">DEPLOY_APP</span> <span class="o">=</span> <span class="s2">&quot;deploy_app&quot;</span>
+    <span class="n">START_APP</span> <span class="o">=</span> <span class="s2">&quot;start_app&quot;</span>
+    <span class="n">CHECK_STATUS</span> <span class="o">=</span> <span class="s2">&quot;check_status&quot;</span>
+    <span class="n">ABORT</span> <span class="o">=</span> <span class="s2">&quot;abort&quot;</span>
+    <span class="n">ABORT_TASK</span> <span class="o">=</span> <span class="s2">&quot;abort_task&quot;</span>
+    <span class="n">REMOVE_CLIENT</span> <span class="o">=</span> <span class="s2">&quot;remove_client&quot;</span>
+    <span class="n">SHUTDOWN</span> <span class="o">=</span> <span class="s2">&quot;shutdown&quot;</span>
+    <span class="n">RESTART</span> <span class="o">=</span> <span class="s2">&quot;restart&quot;</span>
+    <span class="n">SET_TIMEOUT</span> <span class="o">=</span> <span class="s2">&quot;set_timeout&quot;</span>
+    <span class="n">SHOW_STATS</span> <span class="o">=</span> <span class="s2">&quot;show_stats&quot;</span>
+    <span class="n">SHOW_ERRORS</span> <span class="o">=</span> <span class="s2">&quot;show_errors&quot;</span>
+    <span class="n">RESET_ERRORS</span> <span class="o">=</span> <span class="s2">&quot;reset_errors&quot;</span>
+    <span class="n">AUX_COMMAND</span> <span class="o">=</span> <span class="s2">&quot;aux_command&quot;</span></div>
+
+
+<div class="viewcode-block" id="ServerCommandNames"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.ServerCommandNames">[docs]</a><span class="k">class</span> <span class="nc">ServerCommandNames</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">GET_RUN_INFO</span> <span class="o">=</span> <span class="s2">&quot;get_run_info&quot;</span>
+    <span class="n">GET_TASK</span> <span class="o">=</span> <span class="s2">&quot;get_task&quot;</span>
+    <span class="n">SUBMIT_UPDATE</span> <span class="o">=</span> <span class="s2">&quot;submit_update&quot;</span>
+    <span class="n">AUX_COMMUNICATE</span> <span class="o">=</span> <span class="s2">&quot;aux_communicate&quot;</span>
+    <span class="n">HEARTBEAT</span> <span class="o">=</span> <span class="s2">&quot;heartbeat&quot;</span>
+    <span class="n">GET_CLIENTS</span> <span class="o">=</span> <span class="s2">&quot;get_clients&quot;</span>
+    <span class="n">AUX_SEND</span> <span class="o">=</span> <span class="s2">&quot;aux_send&quot;</span>
+    <span class="n">SHOW_STATS</span> <span class="o">=</span> <span class="s2">&quot;show_stats&quot;</span>
+    <span class="n">GET_ERRORS</span> <span class="o">=</span> <span class="s2">&quot;get_errors&quot;</span></div>
+
+
+<div class="viewcode-block" id="ServerCommandKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.ServerCommandKey">[docs]</a><span class="k">class</span> <span class="nc">ServerCommandKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">COMMAND</span> <span class="o">=</span> <span class="s2">&quot;command&quot;</span>
+    <span class="n">DATA</span> <span class="o">=</span> <span class="s2">&quot;data&quot;</span>
+    <span class="n">FL_CONTEXT</span> <span class="o">=</span> <span class="s2">&quot;fl_context&quot;</span>
+    <span class="n">PEER_FL_CONTEXT</span> <span class="o">=</span> <span class="s2">&quot;peer_fl_ctx&quot;</span>
+    <span class="n">SHAREABLE</span> <span class="o">=</span> <span class="s2">&quot;shareable&quot;</span>
+    <span class="n">TASK_NAME</span> <span class="o">=</span> <span class="s2">&quot;task_name&quot;</span>
+    <span class="n">TASK_ID</span> <span class="o">=</span> <span class="s2">&quot;task_id&quot;</span>
+    <span class="n">FL_CLIENT</span> <span class="o">=</span> <span class="s2">&quot;fl_client&quot;</span>
+    <span class="n">TOPIC</span> <span class="o">=</span> <span class="s2">&quot;topic&quot;</span>
+    <span class="n">AUX_REPLY</span> <span class="o">=</span> <span class="s2">&quot;aux_reply&quot;</span>
+    <span class="n">JOB_ID</span> <span class="o">=</span> <span class="s2">&quot;job_id&quot;</span>
+    <span class="n">CLIENTS</span> <span class="o">=</span> <span class="s2">&quot;clients&quot;</span>
+    <span class="n">COLLECTOR</span> <span class="o">=</span> <span class="s2">&quot;collector&quot;</span></div>
+
+
+<div class="viewcode-block" id="FedEventHeader"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.FedEventHeader">[docs]</a><span class="k">class</span> <span class="nc">FedEventHeader</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">TIMESTAMP</span> <span class="o">=</span> <span class="s2">&quot;_timestamp&quot;</span>
+    <span class="n">EVENT_TYPE</span> <span class="o">=</span> <span class="s2">&quot;_event_type&quot;</span>
+    <span class="n">DIRECTION</span> <span class="o">=</span> <span class="s2">&quot;_direction&quot;</span>
+    <span class="n">ORIGIN</span> <span class="o">=</span> <span class="s2">&quot;_origin&quot;</span>
+    <span class="n">TARGETS</span> <span class="o">=</span> <span class="s2">&quot;_targets&quot;</span></div>
+
+
+<div class="viewcode-block" id="EventScope"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.EventScope">[docs]</a><span class="k">class</span> <span class="nc">EventScope</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">FEDERATION</span> <span class="o">=</span> <span class="s2">&quot;federation&quot;</span>
+    <span class="n">LOCAL</span> <span class="o">=</span> <span class="s2">&quot;local&quot;</span></div>
+
+
+<div class="viewcode-block" id="NonSerializableKeys"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.NonSerializableKeys">[docs]</a><span class="k">class</span> <span class="nc">NonSerializableKeys</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">KEYS</span> <span class="o">=</span> <span class="p">[</span><span class="n">ReservedKey</span><span class="o">.</span><span class="n">ENGINE</span><span class="p">,</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">MANAGER</span><span class="p">,</span> <span class="n">ReservedKey</span><span class="o">.</span><span class="n">RUNNER</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="LogMessageTag"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.LogMessageTag">[docs]</a><span class="k">class</span> <span class="nc">LogMessageTag</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">DEBUG</span> <span class="o">=</span> <span class="s2">&quot;log/debug&quot;</span>
+    <span class="n">ERROR</span> <span class="o">=</span> <span class="s2">&quot;log/error&quot;</span>
+    <span class="n">EXCEPTION</span> <span class="o">=</span> <span class="s2">&quot;log/exception&quot;</span>
+    <span class="n">INFO</span> <span class="o">=</span> <span class="s2">&quot;log/info&quot;</span>
+    <span class="n">WARNING</span> <span class="o">=</span> <span class="s2">&quot;log/warning&quot;</span>
+    <span class="n">CRITICAL</span> <span class="o">=</span> <span class="s2">&quot;log/critical&quot;</span>
+    <span class="n">LOG_RECORD</span> <span class="o">=</span> <span class="s2">&quot;log_record&quot;</span></div>
+
+
+<div class="viewcode-block" id="SnapshotKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.SnapshotKey">[docs]</a><span class="k">class</span> <span class="nc">SnapshotKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">FL_CONTEXT</span> <span class="o">=</span> <span class="s2">&quot;fl_context&quot;</span>
+    <span class="n">SERVER_RUNNER</span> <span class="o">=</span> <span class="s2">&quot;_Server_Runner&quot;</span>
+    <span class="n">WORKSPACE</span> <span class="o">=</span> <span class="s2">&quot;_workspace&quot;</span>
+    <span class="n">JOB_INFO</span> <span class="o">=</span> <span class="s2">&quot;_job_info&quot;</span>
+    <span class="n">JOB_ID</span> <span class="o">=</span> <span class="s2">&quot;_job_id&quot;</span>
+    <span class="n">JOB_CLIENTS</span> <span class="o">=</span> <span class="s2">&quot;_job_clients&quot;</span></div>
+
+
+<div class="viewcode-block" id="RunProcessKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.RunProcessKey">[docs]</a><span class="k">class</span> <span class="nc">RunProcessKey</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">LISTEN_PORT</span> <span class="o">=</span> <span class="s2">&quot;_listen_port&quot;</span>
+    <span class="n">CONNECTION</span> <span class="o">=</span> <span class="s2">&quot;_comm_conn&quot;</span>
+    <span class="n">CHILD_PROCESS</span> <span class="o">=</span> <span class="s2">&quot;_child_process&quot;</span>
+    <span class="n">STATUS</span> <span class="o">=</span> <span class="s2">&quot;_status&quot;</span>
+    <span class="n">JOB_ID</span> <span class="o">=</span> <span class="s2">&quot;_job_id&quot;</span>
+    <span class="n">PARTICIPANTS</span> <span class="o">=</span> <span class="s2">&quot;_participants&quot;</span></div>
+
+
+<div class="viewcode-block" id="SystemComponents"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.SystemComponents">[docs]</a><span class="k">class</span> <span class="nc">SystemComponents</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="n">JOB_SCHEDULER</span> <span class="o">=</span> <span class="s2">&quot;job_scheduler&quot;</span>
+    <span class="n">JOB_MANAGER</span> <span class="o">=</span> <span class="s2">&quot;job_manager&quot;</span>
+    <span class="n">JOB_RUNNER</span> <span class="o">=</span> <span class="s2">&quot;job_runner&quot;</span>
+    <span class="n">SERVER_RUNNER</span> <span class="o">=</span> <span class="s2">&quot;server_runner&quot;</span>
+    <span class="n">CLIENT_RUNNER</span> <span class="o">=</span> <span class="s2">&quot;client_runner&quot;</span>
+    <span class="n">CHECK_RESOURCE_PROCESSOR</span> <span class="o">=</span> <span class="s2">&quot;check_resource_processor&quot;</span>
+    <span class="n">CANCEL_RESOURCE_PROCESSOR</span> <span class="o">=</span> <span class="s2">&quot;cancel_resource_processor&quot;</span>
+    <span class="n">RESOURCE_MANAGER</span> <span class="o">=</span> <span class="s2">&quot;resource_manager&quot;</span>
+    <span class="n">RESOURCE_CONSUMER</span> <span class="o">=</span> <span class="s2">&quot;resource_consumer&quot;</span></div>
+
+
+<div class="viewcode-block" id="WorkspaceConstants"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.fl_constant.html#nvflare.apis.fl_constant.WorkspaceConstants">[docs]</a><span class="k">class</span> <span class="nc">WorkspaceConstants</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;hard coded file names inside the workspace folder.&quot;&quot;&quot;</span>
+
+    <span class="n">LOGGING_CONFIG</span> <span class="o">=</span> <span class="s2">&quot;log.config&quot;</span>
+    <span class="n">AUDIT_LOG</span> <span class="o">=</span> <span class="s2">&quot;audit.log&quot;</span>
+
+    <span class="c1"># these two files is used by shell scripts to determine restart / shutdown</span>
+    <span class="n">RESTART_FILE</span> <span class="o">=</span> <span class="s2">&quot;restart.fl&quot;</span>
+    <span class="n">SHUTDOWN_FILE</span> <span class="o">=</span> <span class="s2">&quot;shutdown.fl&quot;</span>
+
+    <span class="n">WORKSPACE_PREFIX</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">APP_PREFIX</span> <span class="o">=</span> <span class="s2">&quot;app_&quot;</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

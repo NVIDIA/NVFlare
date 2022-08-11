@@ -1,0 +1,669 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.client.communicator &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.client.communicator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.client.communicator</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">socket</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span> <span class="nn">grpc</span>
+<span class="kn">from</span> <span class="nn">google.protobuf.struct_pb2</span> <span class="kn">import</span> <span class="n">Struct</span>
+
+<span class="kn">import</span> <span class="nn">nvflare.private.fed.protos.federated_pb2</span> <span class="k">as</span> <span class="nn">fed_msg</span>
+<span class="kn">import</span> <span class="nn">nvflare.private.fed.protos.federated_pb2_grpc</span> <span class="k">as</span> <span class="nn">fed_service</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.filter</span> <span class="kn">import</span> <span class="n">Filter</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_exception</span> <span class="kn">import</span> <span class="n">FLCommunicationError</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">SpecialTaskName</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.client.client_engine_internal_spec</span> <span class="kn">import</span> <span class="n">ClientEngineInternalSpec</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.utils.fed_utils</span> <span class="kn">import</span> <span class="n">make_context_data</span><span class="p">,</span> <span class="n">make_shareable_data</span><span class="p">,</span> <span class="n">shareable_to_modeldata</span>
+
+
+<span class="k">def</span> <span class="nf">_get_client_state</span><span class="p">(</span><span class="n">project_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Client&#39;s metadata used to authenticate and communicate.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        project_name: FL study project name</span>
+<span class="sd">        token: client token</span>
+<span class="sd">        ssid: service session ID</span>
+<span class="sd">        fl_ctx: FLContext</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A ClientState message</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">state_message</span> <span class="o">=</span> <span class="n">fed_msg</span><span class="o">.</span><span class="n">ClientState</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="o">=</span><span class="n">ssid</span><span class="p">)</span>
+    <span class="n">state_message</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">project_name</span>
+    <span class="c1"># state_message.meta.job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)</span>
+
+    <span class="n">context_data</span> <span class="o">=</span> <span class="n">make_context_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+    <span class="n">state_message</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;fl_context&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">context_data</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">state_message</span>
+
+
+<span class="k">def</span> <span class="nf">_get_client_ip</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return localhost IP.</span>
+
+<span class="sd">    More robust than ``socket.gethostbyname(socket.gethostname())``. See</span>
+<span class="sd">    https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776</span>
+<span class="sd">    for more details.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The host IP</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">SOCK_DGRAM</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">s</span><span class="o">.</span><span class="n">connect</span><span class="p">((</span><span class="s2">&quot;10.255.255.255&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>  <span class="c1"># doesn&#39;t even have to be reachable</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">getsockname</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="s2">&quot;127.0.0.1&quot;</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">s</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">ip</span>
+
+
+<span class="k">def</span> <span class="nf">_get_communication_data</span><span class="p">(</span><span class="n">shareable</span><span class="p">,</span> <span class="n">client_state</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">execute_task_name</span><span class="p">):</span>
+    <span class="n">contrib</span> <span class="o">=</span> <span class="n">fed_msg</span><span class="o">.</span><span class="n">Contribution</span><span class="p">()</span>
+    <span class="c1"># set client auth. data</span>
+    <span class="n">contrib</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">client_state</span><span class="p">)</span>
+    <span class="n">contrib</span><span class="o">.</span><span class="n">task_name</span> <span class="o">=</span> <span class="n">execute_task_name</span>
+
+    <span class="n">current_model</span> <span class="o">=</span> <span class="n">shareable_to_modeldata</span><span class="p">(</span><span class="n">shareable</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+    <span class="n">contrib</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">current_model</span><span class="p">)</span>
+
+    <span class="n">s</span> <span class="o">=</span> <span class="n">Struct</span><span class="p">()</span>
+    <span class="n">contrib</span><span class="o">.</span><span class="n">meta_data</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">contrib</span>
+
+
+<div class="viewcode-block" id="Communicator"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator">[docs]</a><span class="k">class</span> <span class="nc">Communicator</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">ssl_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">secure_train</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">retry_timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
+        <span class="n">client_state_processors</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Filter</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">compression</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To init the Communicator.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            ssl_args: SSL args</span>
+<span class="sd">            secure_train: True/False to indicate if secure train</span>
+<span class="sd">            retry_timeout: retry timeout in seconds</span>
+<span class="sd">            client_state_processors: Client state processor filters</span>
+<span class="sd">            compression: communicate compression algorithm</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ssl_args</span> <span class="o">=</span> <span class="n">ssl_args</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">secure_train</span> <span class="o">=</span> <span class="n">secure_train</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat_done</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="c1"># TODO: should we change this back?</span>
+        <span class="c1"># self.retry = int(math.ceil(float(retry_timeout) / 5))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">retry</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_state_processors</span> <span class="o">=</span> <span class="n">client_state_processors</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">compression</span> <span class="o">=</span> <span class="n">compression</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Communicator.set_up_channel"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.set_up_channel">[docs]</a>    <span class="k">def</span> <span class="nf">set_up_channel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">channel_dict</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Connect client to the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            channel_dict: grpc channel parameters</span>
+<span class="sd">            token: client token</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            An initialised grpc channel</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">secure_train</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ssl_args</span><span class="p">[</span><span class="s2">&quot;ssl_root_cert&quot;</span><span class="p">],</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">trusted_certs</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ssl_args</span><span class="p">[</span><span class="s2">&quot;ssl_private_key&quot;</span><span class="p">],</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">private_key</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ssl_args</span><span class="p">[</span><span class="s2">&quot;ssl_cert&quot;</span><span class="p">],</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">certificate_chain</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+            <span class="n">credentials</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">ssl_channel_credentials</span><span class="p">(</span>
+                <span class="n">certificate_chain</span><span class="o">=</span><span class="n">certificate_chain</span><span class="p">,</span> <span class="n">private_key</span><span class="o">=</span><span class="n">private_key</span><span class="p">,</span> <span class="n">root_certificates</span><span class="o">=</span><span class="n">trusted_certs</span>
+            <span class="p">)</span>
+
+            <span class="c1"># make sure that all headers are in lowercase,</span>
+            <span class="c1"># otherwise grpc throws an exception</span>
+            <span class="n">call_credentials</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">metadata_call_credentials</span><span class="p">(</span>
+                <span class="k">lambda</span> <span class="n">context</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">callback</span><span class="p">(((</span><span class="s2">&quot;x-custom-token&quot;</span><span class="p">,</span> <span class="n">token</span><span class="p">),),</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="c1"># use this if you want standard &quot;Authorization&quot; header</span>
+            <span class="c1"># call_credentials = grpc.access_token_call_credentials(</span>
+            <span class="c1">#     &quot;x-custom-token&quot;)</span>
+            <span class="n">composite_credentials</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">composite_channel_credentials</span><span class="p">(</span><span class="n">credentials</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">)</span>
+            <span class="n">channel</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">secure_channel</span><span class="p">(</span>
+                <span class="o">**</span><span class="n">channel_dict</span><span class="p">,</span> <span class="n">credentials</span><span class="o">=</span><span class="n">composite_credentials</span><span class="p">,</span> <span class="n">compression</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compression</span>
+            <span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">channel</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="o">**</span><span class="n">channel_dict</span><span class="p">,</span> <span class="n">compression</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compression</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">channel</span></div>
+
+<div class="viewcode-block" id="Communicator.client_registration"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.client_registration">[docs]</a>    <span class="k">def</span> <span class="nf">client_registration</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_name</span><span class="p">,</span> <span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Client&#39;s metadata used to authenticate and communicate.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_name: client name</span>
+<span class="sd">            servers: FL servers</span>
+<span class="sd">            project_name: FL study project name</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The client&#39;s token</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">local_ip</span> <span class="o">=</span> <span class="n">_get_client_ip</span><span class="p">()</span>
+
+        <span class="n">login_message</span> <span class="o">=</span> <span class="n">fed_msg</span><span class="o">.</span><span class="n">ClientLogin</span><span class="p">(</span><span class="n">client_name</span><span class="o">=</span><span class="n">client_name</span><span class="p">,</span> <span class="n">client_ip</span><span class="o">=</span><span class="n">local_ip</span><span class="p">)</span>
+        <span class="n">login_message</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">project_name</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_up_channel</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+            <span class="n">stub</span> <span class="o">=</span> <span class="n">fed_service</span><span class="o">.</span><span class="n">FederatedTrainingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">Register</span><span class="p">(</span><span class="n">login_message</span><span class="p">)</span>
+                    <span class="n">token</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">token</span>
+                    <span class="n">ssid</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">ssid</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">False</span>
+                    <span class="k">break</span>
+                <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">grpc_error</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">grpc_error_handler</span><span class="p">(</span>
+                        <span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">],</span>
+                        <span class="n">grpc_error</span><span class="p">,</span>
+                        <span class="s2">&quot;client_registration&quot;</span><span class="p">,</span>
+                        <span class="n">verbose</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">excep</span> <span class="o">=</span> <span class="n">FLCommunicationError</span><span class="p">(</span><span class="n">grpc_error</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grpc_error</span><span class="p">,</span> <span class="n">grpc</span><span class="o">.</span><span class="n">Call</span><span class="p">):</span>
+                        <span class="n">status_code</span> <span class="o">=</span> <span class="n">grpc_error</span><span class="o">.</span><span class="n">code</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNAUTHENTICATED</span> <span class="o">==</span> <span class="n">status_code</span><span class="p">:</span>
+                            <span class="k">raise</span> <span class="n">excep</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">excep</span>
+            <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span></div>
+
+<div class="viewcode-block" id="Communicator.getTask"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.getTask">[docs]</a>    <span class="k">def</span> <span class="nf">getTask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get a task from server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            servers: FL servers</span>
+<span class="sd">            project_name: FL study project name</span>
+<span class="sd">            token: client token</span>
+<span class="sd">            ssid: service session ID</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A CurrentTask message from server</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">task</span><span class="p">,</span> <span class="n">retry</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">retry</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_up_channel</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+            <span class="n">stub</span> <span class="o">=</span> <span class="n">fed_service</span><span class="o">.</span><span class="n">FederatedTrainingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+            <span class="k">while</span> <span class="n">retry</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                    <span class="n">task</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">GetTask</span><span class="p">(</span><span class="n">_get_client_state</span><span class="p">(</span><span class="n">project_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">))</span>
+                    <span class="c1"># Clear the stopping flag</span>
+                    <span class="c1"># if the connection to server recovered.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">False</span>
+
+                    <span class="n">end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+                    <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">task_name</span> <span class="o">==</span> <span class="n">SpecialTaskName</span><span class="o">.</span><span class="n">TRY_AGAIN</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;Received from </span><span class="si">{</span><span class="n">project_name</span><span class="si">}</span><span class="s2"> server &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot; (</span><span class="si">{</span><span class="n">task</span><span class="o">.</span><span class="n">ByteSize</span><span class="p">()</span><span class="si">}</span><span class="s2"> Bytes). getTask time: </span><span class="si">{</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">start_time</span><span class="si">}</span><span class="s2"> seconds&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;Received from </span><span class="si">{</span><span class="n">project_name</span><span class="si">}</span><span class="s2"> server &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot; (</span><span class="si">{</span><span class="n">task</span><span class="o">.</span><span class="n">ByteSize</span><span class="p">()</span><span class="si">}</span><span class="s2"> Bytes). getTask time: </span><span class="si">{</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">start_time</span><span class="si">}</span><span class="s2"> seconds&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">return</span> <span class="n">task</span>
+                <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">grpc_error</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">grpc_error_handler</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">],</span> <span class="n">grpc_error</span><span class="p">,</span> <span class="s2">&quot;getTask&quot;</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span>
+                    <span class="n">excep</span> <span class="o">=</span> <span class="n">FLCommunicationError</span><span class="p">(</span><span class="n">grpc_error</span><span class="p">)</span>
+                    <span class="n">retry</span> <span class="o">-=</span> <span class="mi">1</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">excep</span>
+
+        <span class="c1"># Failed to get global, return None</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="Communicator.submitUpdate"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.submitUpdate">[docs]</a>    <span class="k">def</span> <span class="nf">submitUpdate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">client_name</span><span class="p">,</span> <span class="n">shareable</span><span class="p">,</span> <span class="n">execute_task_name</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Submit the task execution result back to the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            servers: FL servers</span>
+<span class="sd">            project_name: server project name</span>
+<span class="sd">            token: client token</span>
+<span class="sd">            ssid: service session ID</span>
+<span class="sd">            fl_ctx: fl_ctx</span>
+<span class="sd">            client_name: client name</span>
+<span class="sd">            shareable: execution task result shareable</span>
+<span class="sd">            execute_task_name: execution task name</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A FederatedSummary message from the server.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">client_state</span> <span class="o">=</span> <span class="n">_get_client_state</span><span class="p">(</span><span class="n">project_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="n">client_state</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="n">client_name</span>
+        <span class="n">contrib</span> <span class="o">=</span> <span class="n">_get_communication_data</span><span class="p">(</span><span class="n">shareable</span><span class="p">,</span> <span class="n">client_state</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">,</span> <span class="n">execute_task_name</span><span class="p">)</span>
+
+        <span class="n">server_msg</span><span class="p">,</span> <span class="n">retry</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">retry</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_up_channel</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+            <span class="n">stub</span> <span class="o">=</span> <span class="n">fed_service</span><span class="o">.</span><span class="n">FederatedTrainingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+            <span class="k">while</span> <span class="n">retry</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Send submitUpdate to </span><span class="si">{</span><span class="n">project_name</span><span class="si">}</span><span class="s2"> server&quot;</span><span class="p">)</span>
+                    <span class="n">server_msg</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">SubmitUpdate</span><span class="p">(</span><span class="n">contrib</span><span class="p">)</span>
+                    <span class="c1"># Clear the stopping flag</span>
+                    <span class="c1"># if the connection to server recovered.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">False</span>
+
+                    <span class="n">end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Received comments: </span><span class="si">{</span><span class="n">server_msg</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">server_msg</span><span class="o">.</span><span class="n">comment</span><span class="si">}</span><span class="s2">.&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot; SubmitUpdate time: </span><span class="si">{</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">start_time</span><span class="si">}</span><span class="s2"> seconds&quot;</span>
+                    <span class="p">)</span>
+                    <span class="k">break</span>
+                <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">grpc_error</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grpc_error</span><span class="p">,</span> <span class="n">grpc</span><span class="o">.</span><span class="n">Call</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">grpc_error</span><span class="o">.</span><span class="n">details</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;Contrib&quot;</span><span class="p">):</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;submitUpdate failed: </span><span class="si">{</span><span class="n">grpc_error</span><span class="o">.</span><span class="n">details</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="k">break</span>  <span class="c1"># outdated contribution, no need to retry</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">grpc_error_handler</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">],</span> <span class="n">grpc_error</span><span class="p">,</span> <span class="s2">&quot;submitUpdate&quot;</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span>
+                    <span class="n">retry</span> <span class="o">-=</span> <span class="mi">1</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">server_msg</span></div>
+
+<div class="viewcode-block" id="Communicator.auxCommunicate"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.auxCommunicate">[docs]</a>    <span class="k">def</span> <span class="nf">auxCommunicate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">servers</span><span class="p">,</span> <span class="n">project_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">,</span> <span class="n">client_name</span><span class="p">,</span> <span class="n">shareable</span><span class="p">,</span> <span class="n">topic</span><span class="p">,</span> <span class="n">timeout</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Send the auxiliary communication message to the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            servers: FL servers</span>
+<span class="sd">            project_name: server project name</span>
+<span class="sd">            token: client token</span>
+<span class="sd">            ssid: service session ID</span>
+<span class="sd">            fl_ctx: fl_ctx</span>
+<span class="sd">            client_name: client name</span>
+<span class="sd">            shareable: aux message shareable</span>
+<span class="sd">            topic: aux message topic</span>
+<span class="sd">            timeout: aux communication timeout</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            An AuxReply message from server</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">client_state</span> <span class="o">=</span> <span class="n">_get_client_state</span><span class="p">(</span><span class="n">project_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span>
+        <span class="n">client_state</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="n">client_name</span>
+
+        <span class="n">aux_message</span> <span class="o">=</span> <span class="n">fed_msg</span><span class="o">.</span><span class="n">AuxMessage</span><span class="p">()</span>
+        <span class="c1"># set client auth. data</span>
+        <span class="n">aux_message</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">client_state</span><span class="p">)</span>
+
+        <span class="c1"># shareable.set_header(&quot;Topic&quot;, topic)</span>
+        <span class="n">aux_message</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">make_shareable_data</span><span class="p">(</span><span class="n">shareable</span><span class="p">))</span>
+        <span class="n">aux_message</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;fl_context&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">make_context_data</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">))</span>
+
+        <span class="n">server_msg</span><span class="p">,</span> <span class="n">retry</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">retry</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_up_channel</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+            <span class="n">stub</span> <span class="o">=</span> <span class="n">fed_service</span><span class="o">.</span><span class="n">FederatedTrainingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+            <span class="k">while</span> <span class="n">retry</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Send AuxMessage to </span><span class="si">{</span><span class="n">project_name</span><span class="si">}</span><span class="s2"> server&quot;</span><span class="p">)</span>
+                    <span class="n">server_msg</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">AuxCommunicate</span><span class="p">(</span><span class="n">aux_message</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+                    <span class="c1"># Clear the stopping flag</span>
+                    <span class="c1"># if the connection to server recovered.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">False</span>
+
+                    <span class="k">break</span>
+                <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">grpc_error</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">grpc_error_handler</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">project_name</span><span class="p">],</span> <span class="n">grpc_error</span><span class="p">,</span> <span class="s2">&quot;AuxCommunicate&quot;</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span>
+                    <span class="n">retry</span> <span class="o">-=</span> <span class="mi">1</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">server_msg</span></div>
+
+<div class="viewcode-block" id="Communicator.quit_remote"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.quit_remote">[docs]</a>    <span class="k">def</span> <span class="nf">quit_remote</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">servers</span><span class="p">,</span> <span class="n">task_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sending the last message to the server before leaving.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            servers: FL servers</span>
+<span class="sd">            task_name: project name</span>
+<span class="sd">            token: FL client token</span>
+<span class="sd">            fl_ctx: FLContext</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            server&#39;s reply to the last message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">server_message</span><span class="p">,</span> <span class="n">retry</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">retry</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_up_channel</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">task_name</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+            <span class="n">stub</span> <span class="o">=</span> <span class="n">fed_service</span><span class="o">.</span><span class="n">FederatedTrainingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+            <span class="k">while</span> <span class="n">retry</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Quitting server: </span><span class="si">{</span><span class="n">task_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="n">server_message</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">Quit</span><span class="p">(</span><span class="n">_get_client_state</span><span class="p">(</span><span class="n">task_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">))</span>
+                    <span class="c1"># Clear the stopping flag</span>
+                    <span class="c1"># if the connection to server recovered.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">False</span>
+
+                    <span class="n">end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Received comment from server: </span><span class="si">{</span><span class="n">server_message</span><span class="o">.</span><span class="n">comment</span><span class="si">}</span><span class="s2">. Quit time: </span><span class="si">{</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">start_time</span><span class="si">}</span><span class="s2"> seconds&quot;</span>
+                    <span class="p">)</span>
+                    <span class="k">break</span>
+                <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">grpc_error</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">grpc_error_handler</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">task_name</span><span class="p">],</span> <span class="n">grpc_error</span><span class="p">,</span> <span class="s2">&quot;quit_remote&quot;</span><span class="p">)</span>
+                    <span class="n">retry</span> <span class="o">-=</span> <span class="mi">1</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">server_message</span></div>
+
+<div class="viewcode-block" id="Communicator.send_heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.send_heartbeat">[docs]</a>    <span class="k">def</span> <span class="nf">send_heartbeat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">servers</span><span class="p">,</span> <span class="n">task_name</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">ssid</span><span class="p">,</span> <span class="n">client_name</span><span class="p">,</span> <span class="n">engine</span><span class="p">:</span> <span class="n">ClientEngineInternalSpec</span><span class="p">):</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">fed_msg</span><span class="o">.</span><span class="n">Token</span><span class="p">()</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">token</span> <span class="o">=</span> <span class="n">token</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">ssid</span> <span class="o">=</span> <span class="n">ssid</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="n">client_name</span>
+
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat_done</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_up_channel</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">task_name</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+                    <span class="n">stub</span> <span class="o">=</span> <span class="n">fed_service</span><span class="o">.</span><span class="n">FederatedTrainingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+                    <span class="c1"># retry the heartbeat call for 10 minutes</span>
+                    <span class="n">retry</span> <span class="o">=</span> <span class="mi">2</span>
+                    <span class="k">while</span> <span class="n">retry</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Send </span><span class="si">{</span><span class="n">task_name</span><span class="si">}</span><span class="s2"> heartbeat </span><span class="si">{</span><span class="n">token</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="n">job_ids</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_all_job_ids</span><span class="p">()</span>
+                            <span class="k">del</span> <span class="n">message</span><span class="o">.</span><span class="n">jobs</span><span class="p">[:]</span>
+                            <span class="n">message</span><span class="o">.</span><span class="n">jobs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">job_ids</span><span class="p">)</span>
+                            <span class="n">response</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">Heartbeat</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">_clean_up_runs</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+                            <span class="k">break</span>
+                        <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">grpc_error</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">grpc_error</span><span class="p">)</span>
+                            <span class="n">retry</span> <span class="o">-=</span> <span class="mi">1</span>
+                            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to send heartbeat. Will try again. Exception: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_clean_up_runs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">engine</span><span class="p">,</span> <span class="n">response</span><span class="p">):</span>
+        <span class="n">abort_runs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">abort_jobs</span><span class="p">))</span>
+        <span class="n">display_runs</span> <span class="o">=</span> <span class="s2">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">abort_runs</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">abort_runs</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">abort_runs</span><span class="p">:</span>
+                    <span class="n">engine</span><span class="o">.</span><span class="n">abort_app</span><span class="p">(</span><span class="n">job</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;These runs: </span><span class="si">{</span><span class="n">display_runs</span><span class="si">}</span><span class="s2"> are not running on the server. Aborted them.&quot;</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to clean up the runs: </span><span class="si">{</span><span class="n">display_runs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Communicator.grpc_error_handler"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.communicator.html#nvflare.private.fed.client.communicator.Communicator.grpc_error_handler">[docs]</a>    <span class="k">def</span> <span class="nf">grpc_error_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">,</span> <span class="n">grpc_error</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Handling grpc exceptions.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            service: FL service</span>
+<span class="sd">            grpc_error: grpc error</span>
+<span class="sd">            action: action to take</span>
+<span class="sd">            verbose: verbose to error print out</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">status_code</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grpc_error</span><span class="p">,</span> <span class="n">grpc</span><span class="o">.</span><span class="n">Call</span><span class="p">):</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">grpc_error</span><span class="o">.</span><span class="n">code</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">RESOURCE_EXHAUSTED</span> <span class="o">==</span> <span class="n">status_code</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">grpc_error</span><span class="o">.</span><span class="n">details</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;No token&quot;</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;No token for this client in current round. &quot;</span> <span class="s2">&quot;Waiting for server new round. &quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Action: </span><span class="si">{</span><span class="n">action</span><span class="si">}</span><span class="s2"> grpc communication error.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNAVAILABLE</span> <span class="o">==</span> <span class="n">status_code</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not connect to server: </span><span class="si">{</span><span class="n">service</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;target&#39;</span><span class="p">)</span><span class="si">}</span><span class="se">\t</span><span class="s2"> </span><span class="si">{</span><span class="n">grpc_error</span><span class="o">.</span><span class="n">details</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">if</span> <span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">OUT_OF_RANGE</span> <span class="o">==</span> <span class="n">status_code</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Server training has stopped.</span><span class="se">\t</span><span class="s2">&quot;</span> <span class="sa">f</span><span class="s2">&quot;Setting flag for stopping training. </span><span class="si">{</span><span class="n">grpc_error</span><span class="o">.</span><span class="n">details</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">should_stop</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">grpc_error</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

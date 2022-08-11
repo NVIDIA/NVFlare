@@ -1,0 +1,22 @@
+nvflare.app\_common.workflows package
+=====================================
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 4
+
+   nvflare.app_common.workflows.cross_site_model_eval
+   nvflare.app_common.workflows.cyclic_ctl
+   nvflare.app_common.workflows.global_model_eval
+   nvflare.app_common.workflows.scatter_and_gather
+   nvflare.app_common.workflows.scatter_and_gather_scaffold
+
+Module contents
+---------------
+
+.. automodule:: nvflare.app_common.workflows
+   :members:
+   :undoc-members:
+   :show-inheritance:

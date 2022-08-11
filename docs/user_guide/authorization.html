@@ -1,0 +1,514 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Authorization &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Federated Learning" href="federated_learning.html" />
+    <link rel="prev" title="NVIDIA FLARE Workspace" href="workspace.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="operation.html">Operating NVFLARE - Admin Client, Commands, FLAdminAPI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="job.html">Jobs: Defining Jobs and Multi-Job Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="workspace.html">NVIDIA FLARE Workspace</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Authorization</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#terminology-for-fl-authorization">Terminology for FL authorization</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#rights">Rights</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#rules">Rules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#roles">Roles</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#groups">Groups</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#define-authorization-policy">Define authorization policy</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#right-evaluation">Right Evaluation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#rule-evaluation">Rule Evaluation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#defined-rights">Defined Rights</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#defined-rules">Defined Rules</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#policy-definition-example">Policy definition example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#admin-command-authorizations">Admin command authorizations</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#upload-uploading-application-configuration-to-the-server">UPLOAD - uploading application configuration to the server.</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#deploy-deploy-the-application-to-a-site">DEPLOY - deploy the application to a site</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#train-training-related-actions-set-run-start-abort-training">TRAIN - training related actions (set run, start/abort training)</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#view-view-training-and-or-system-info-ls-head-tail-grep-pwd">VIEW - view training and/or system info (ls, head, tail, grep, pwd, …)</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#operate-application-operation-shutdown-restart-server-clients-sys-info">OPERATE - application operation (shutdown, restart server/clients, sys_info)</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="federated_learning.html">Federated Learning</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../user_guide.html">User Guide - Operations</a> &raquo;</li>
+      <li>Authorization</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/user_guide/authorization.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="authorization">
+<h1>Authorization<a class="headerlink" href="#authorization" title="Permalink to this heading">¶</a></h1>
+<p>NVIDIA FLARE implements a role-based authorization framework that determines what a user can or cannot do based on the user’s
+assigned roles configured through AuthPolicyBuilder at provisioning.</p>
+<section id="terminology-for-fl-authorization">
+<h2>Terminology for FL authorization<a class="headerlink" href="#terminology-for-fl-authorization" title="Permalink to this heading">¶</a></h2>
+<p>The following concepts are used in defining an authorization policy for NVIDIA FLARE.</p>
+<section id="rights">
+<h3>Rights<a class="headerlink" href="#rights" title="Permalink to this heading">¶</a></h3>
+<p>A right is a permission for a user to do certain things. For example, the right “train_all” allows the user to do
+training for all orgs in a group.</p>
+</section>
+<section id="rules">
+<h3>Rules<a class="headerlink" href="#rules" title="Permalink to this heading">¶</a></h3>
+<p>A rule is a policy that an org wants to enforce. For example, the rule “allow_byoc” allows BYOC code to be included in
+the application configurations deployed to the org’s site.</p>
+</section>
+<section id="roles">
+<h3>Roles<a class="headerlink" href="#roles" title="Permalink to this heading">¶</a></h3>
+<p>Even though there may be any number of users, they usually are categorized into several types that share the same
+authorization settings. Each such type is called a <em>role</em>. A user can be assigned to one or more roles.</p>
+</section>
+<section id="groups">
+<h3>Groups<a class="headerlink" href="#groups" title="Permalink to this heading">¶</a></h3>
+<p>Even though there could be many orgs in the study, they usually are categorized into several types that share the same
+authorization settings. Each such type is called a <em>group</em>. An org can be configured to belong to groups, with a group
+for specifying rules for sites of the org and a group for rights definitions.</p>
+</section>
+</section>
+<section id="define-authorization-policy">
+<h2>Define authorization policy<a class="headerlink" href="#define-authorization-policy" title="Permalink to this heading">¶</a></h2>
+<dl class="simple">
+<dt>Each org can specify its own policies:</dt><dd><ul class="simple">
+<li><p>Orgs that share the same authorization policies are put in the same group, and authorization policies are defined for the group.</p></li>
+<li><p>For each group, the permission matrix is defined for role-right combinations.</p></li>
+<li><p>For each group, permission values are defined for each rule.</p></li>
+</ul>
+</dd>
+</dl>
+<p>The Right Space is a 3D [group, role, right] matrix of permission values, and the Rule Space is a 2D [group, rule] matrix of permission values.</p>
+<section id="right-evaluation">
+<h3>Right Evaluation<a class="headerlink" href="#right-evaluation" title="Permalink to this heading">¶</a></h3>
+<p>To determine whether a user has a right on a site:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Determine the group(s) that the site belongs to</p></li>
+<li><p>Determine the role(s) of the user</p></li>
+<li><p>Check the Right Space for each [group, role, right] coordinate. If any point is True, then the result is True. This is what we call the “most generous” policy - as long as any of the user roles has the right in any of the groups the site belongs to, the right is granted. If there is no explicit definition for any point, the default value of the right is taken.</p></li>
+</ul>
+</div></blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Note that what is important is the user’s role(s). The user’s org is not considered except for deciding if a user is
+considered “self” for the site. This can in turn affect the right, for example, if site A is with group configured to
+allow “Operate Self” but not “Operate All” for role “lead_researcher”, a “lead_researcher” user of site A’s org can
+“Operate” on site A whereas a user that is only “lead_researcher” of another org does not have “Operate” rights.</p>
+</div>
+</section>
+<section id="rule-evaluation">
+<h3>Rule Evaluation<a class="headerlink" href="#rule-evaluation" title="Permalink to this heading">¶</a></h3>
+<p>Similar to right evaluation, we also adopt the “most generous” policy to determine the rule value of a site.</p>
+<p>Determine the group(s) that the site belongs to
+Check the Rule Space for each [group, rule] coordinate. If any point is True, then the result is True.
+If there is no explicit definition for any point, the default value of the rule is taken.</p>
+</section>
+<section id="defined-rights">
+<h3>Defined Rights<a class="headerlink" href="#defined-rights" title="Permalink to this heading">¶</a></h3>
+<p>Currently the following rights are defined:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Right</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Upload application</p></td>
+<td><p>whether the user is allowed to upload applications.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Deploy All</p></td>
+<td><p>whether all users of the corresponding role are allowed to deploy applications at sites of a certain group.</p></td>
+</tr>
+<tr class="row-even"><td><p>Deploy Self</p></td>
+<td><p>whether users of the corresponding role and of the same org as sites of a certain group are allowed to deploy applications.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Train All</p></td>
+<td><p>whether all users of the corresponding role are allowed to perform training actions at sites of a certain group.</p></td>
+</tr>
+<tr class="row-even"><td><p>Train Self</p></td>
+<td><p>whether users of the corresponding role and of the same org as sites of a certain group are allowed to perform training actions</p></td>
+</tr>
+<tr class="row-odd"><td><p>View All</p></td>
+<td><p>whether all users of the corresponding role are allowed to view information at sites of a certain group.</p></td>
+</tr>
+<tr class="row-even"><td><p>View Self</p></td>
+<td><p>whether users of the corresponding role and of the same org as sites of a certain group are allowed to view information</p></td>
+</tr>
+<tr class="row-odd"><td><p>Operate All</p></td>
+<td><p>whether all users of the corresponding role are allowed to operate at sites of a certain group.</p></td>
+</tr>
+<tr class="row-even"><td><p>Operate Self</p></td>
+<td><p>whether users of the corresponding role and of the same org as sites of a certain group are allowed to operate</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Rights are always in the context of a group, and note that as mentioned above, for evaluating Rights, the rights
+group of the site’s org is what is important, and the user’s org is only important when “All” and “Self” have
+different Rights in that group. Otherwise, the user’s role(s) are all that will matter for determining Rights.</p>
+</div>
+</section>
+<section id="defined-rules">
+<h3>Defined Rules<a class="headerlink" href="#defined-rules" title="Permalink to this heading">¶</a></h3>
+<p>Currently the following rules are defined:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Rule</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Allow BYOC</p></td>
+<td><p>whether BYOC code is allowed in application configurations</p></td>
+</tr>
+<tr class="row-odd"><td><p>Allow Custom Data List</p></td>
+<td><p>whether custom data list is allowed in application configurations</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For these rules to take effect, the user must provide the implementation of the <code class="docutils literal notranslate"><span class="pre">TrainConfigValidator</span></code>
+and edit the <code class="docutils literal notranslate"><span class="pre">config_fed_server.json</span></code>, otherwise they take no effect.</p>
+</div>
+</section>
+</section>
+<section id="policy-definition-example">
+<h2>Policy definition example<a class="headerlink" href="#policy-definition-example" title="Permalink to this heading">¶</a></h2>
+<p>The authorization policy is configured in the authz_policy section of study project YAML file: <a class="reference internal" href="../programming_guide/provisioning_system.html#id2"><span class="std std-ref">Default project.yml file</span></a>.  When
+using the provisioning tool to generate a set of packages, the authorization policy json file is included in the server’s
+startup kit zip file.</p>
+<p>Here is an example of the generated file:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+ <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0&quot;</span><span class="p">,</span>
+
+ <span class="s2">&quot;roles&quot;</span><span class="p">:</span> <span class="p">{</span>
+   <span class="s2">&quot;super&quot;</span><span class="p">:</span> <span class="s2">&quot;super user of system&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;lead_researcher&quot;</span><span class="p">:</span> <span class="s2">&quot;lead researcher of the study&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;site_researcher&quot;</span><span class="p">:</span> <span class="s2">&quot;site researcher of the study&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;site_it&quot;</span><span class="p">:</span> <span class="s2">&quot;site IT of the study&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;lead_it&quot;</span><span class="p">:</span> <span class="s2">&quot;lead IT of the study&quot;</span>
+ <span class="p">},</span>
+ <span class="s2">&quot;groups&quot;</span><span class="p">:</span> <span class="p">{</span>
+   <span class="s2">&quot;relaxed&quot;</span><span class="p">:</span> <span class="p">{</span>
+     <span class="s2">&quot;desc&quot;</span><span class="p">:</span> <span class="s2">&quot;the org group with relaxed policies&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;rules&quot;</span><span class="p">:</span> <span class="p">{</span>
+       <span class="s2">&quot;allow_byoc&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+       <span class="s2">&quot;allow_custom_datalist&quot;</span><span class="p">:</span> <span class="n">true</span>
+     <span class="p">}</span>
+   <span class="p">},</span>
+   <span class="s2">&quot;strict&quot;</span><span class="p">:</span> <span class="p">{</span>
+     <span class="s2">&quot;desc&quot;</span><span class="p">:</span> <span class="s2">&quot;the org group with strict policies&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;rules&quot;</span><span class="p">:</span> <span class="p">{</span>
+       <span class="s2">&quot;allow_byoc&quot;</span><span class="p">:</span> <span class="n">false</span><span class="p">,</span>
+       <span class="s2">&quot;allow_custom_datalist&quot;</span><span class="p">:</span> <span class="n">false</span>
+     <span class="p">}</span>
+   <span class="p">},</span>
+   <span class="s2">&quot;general&quot;</span><span class="p">:</span> <span class="p">{</span>
+     <span class="s2">&quot;desc&quot;</span><span class="p">:</span> <span class="s2">&quot;general group user rights&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;role_rights&quot;</span><span class="p">:</span> <span class="p">{</span>
+       <span class="s2">&quot;super&quot;</span><span class="p">:</span> <span class="p">{</span>
+         <span class="s2">&quot;operate_all&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+         <span class="s2">&quot;view_all&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+         <span class="s2">&quot;train_all&quot;</span><span class="p">:</span> <span class="n">true</span>
+       <span class="p">},</span>
+       <span class="s2">&quot;lead_researcher&quot;</span><span class="p">:</span> <span class="p">{</span>
+         <span class="s2">&quot;train_all&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+         <span class="s2">&quot;view_all&quot;</span><span class="p">:</span> <span class="n">true</span>
+       <span class="p">},</span>
+       <span class="s2">&quot;site_researcher&quot;</span><span class="p">:</span> <span class="p">{</span>
+         <span class="s2">&quot;train_self&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+         <span class="s2">&quot;view_self&quot;</span><span class="p">:</span> <span class="n">true</span>
+       <span class="p">},</span>
+       <span class="s2">&quot;lead_it&quot;</span><span class="p">:</span> <span class="p">{</span>
+         <span class="s2">&quot;operate_all&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+         <span class="s2">&quot;view_all&quot;</span><span class="p">:</span> <span class="n">true</span>
+       <span class="p">},</span>
+       <span class="s2">&quot;site_it&quot;</span><span class="p">:</span> <span class="p">{</span>
+         <span class="s2">&quot;operate_self&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+         <span class="s2">&quot;view_self&quot;</span><span class="p">:</span> <span class="n">true</span>
+       <span class="p">}</span>
+     <span class="p">}</span>
+   <span class="p">}</span>
+ <span class="p">},</span>
+ <span class="s2">&quot;users&quot;</span><span class="p">:</span> <span class="p">{</span>
+   <span class="s2">&quot;admin@nvidia.com&quot;</span><span class="p">:</span> <span class="p">{</span>
+     <span class="s2">&quot;org&quot;</span><span class="p">:</span> <span class="s2">&quot;nvidia&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;roles&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;super&quot;</span><span class="p">]</span>
+   <span class="p">},</span>
+   <span class="s2">&quot;researcher1@org2.com&quot;</span><span class="p">:</span> <span class="p">{</span>
+     <span class="s2">&quot;org&quot;</span><span class="p">:</span> <span class="s2">&quot;org2&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;roles&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;lead_it&quot;</span><span class="p">,</span> <span class="s2">&quot;site_researcher&quot;</span><span class="p">]</span>
+   <span class="p">},</span>
+   <span class="s2">&quot;researcher2@org1.com&quot;</span><span class="p">:</span> <span class="p">{</span>
+     <span class="s2">&quot;org&quot;</span><span class="p">:</span> <span class="s2">&quot;org1&quot;</span><span class="p">,</span>
+     <span class="s2">&quot;roles&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;site_researcher&quot;</span><span class="p">]</span>
+   <span class="p">}</span>
+ <span class="p">},</span>
+ <span class="s2">&quot;orgs&quot;</span><span class="p">:</span> <span class="p">{</span>
+   <span class="s2">&quot;org1&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;general&quot;</span><span class="p">,</span> <span class="s2">&quot;strict&quot;</span><span class="p">],</span>
+   <span class="s2">&quot;org2&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;general&quot;</span><span class="p">,</span> <span class="s2">&quot;relaxed&quot;</span><span class="p">],</span>
+   <span class="s2">&quot;nvidia&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;general&quot;</span><span class="p">]</span>
+ <span class="p">},</span>
+ <span class="s2">&quot;sites&quot;</span><span class="p">:</span> <span class="p">{</span>
+   <span class="s2">&quot;org1-a&quot;</span><span class="p">:</span> <span class="s2">&quot;org1&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;org1-b&quot;</span><span class="p">:</span> <span class="s2">&quot;org1&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;org2&quot;</span><span class="p">:</span> <span class="s2">&quot;org2&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;server&quot;</span><span class="p">:</span> <span class="s2">&quot;nvidia&quot;</span>
+ <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>A few highlights:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Each right has a default value. Default values are used for “holes” in the Right Space.</p></li>
+<li><p>Each rule has a default value. Default values are used for “holes” in the Rule Space.</p></li>
+<li><p>Each user is assigned to a single org and one or more roles;</p></li>
+<li><p>Each site is assigned a single org;</p></li>
+<li><p>Each org is assigned to one or more groups;</p></li>
+<li><p>In each group, a rule and/or right matrix is defined.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="admin-command-authorizations">
+<h2>Admin command authorizations<a class="headerlink" href="#admin-command-authorizations" title="Permalink to this heading">¶</a></h2>
+<p>Each command from the admin user is subject to authorization. The command is executed only if the authorization is passed.</p>
+<p>Commands are grouped into the following action groups for rights:</p>
+<section id="upload-uploading-application-configuration-to-the-server">
+<h3>UPLOAD - uploading application configuration to the server.<a class="headerlink" href="#upload-uploading-application-configuration-to-the-server" title="Permalink to this heading">¶</a></h3>
+<p>Command(s) in this group require the “upload application” right.
+Furthermore, if the application contains BYOC code, the site’s “allow_byoc” must be true.
+Furthermore, if the application contains a custom data list, the site’s “allow_custom_datalist” must be true.</p>
+</section>
+<section id="deploy-deploy-the-application-to-a-site">
+<h3>DEPLOY - deploy the application to a site<a class="headerlink" href="#deploy-deploy-the-application-to-a-site" title="Permalink to this heading">¶</a></h3>
+<p>Command(s) in this group require the “deploy all” or “deploy self” right.
+Furthermore, if the application contains BYOC code, the site’s “allow_byoc” must be true.
+Furthermore, if the application contains a custom data list, the site’s “allow_custom_datalist” must be true.</p>
+</section>
+<section id="train-training-related-actions-set-run-start-abort-training">
+<h3>TRAIN - training related actions (set run, start/abort training)<a class="headerlink" href="#train-training-related-actions-set-run-start-abort-training" title="Permalink to this heading">¶</a></h3>
+<p>Command(s) in this group require the “train all” or “train self” right.</p>
+</section>
+<section id="view-view-training-and-or-system-info-ls-head-tail-grep-pwd">
+<h3>VIEW - view training and/or system info (ls, head, tail, grep, pwd, …)<a class="headerlink" href="#view-view-training-and-or-system-info-ls-head-tail-grep-pwd" title="Permalink to this heading">¶</a></h3>
+<p>Command(s) in this group require the “view all” or “view self” right.</p>
+</section>
+<section id="operate-application-operation-shutdown-restart-server-clients-sys-info">
+<h3>OPERATE - application operation (shutdown, restart server/clients, sys_info)<a class="headerlink" href="#operate-application-operation-shutdown-restart-server-clients-sys-info" title="Permalink to this heading">¶</a></h3>
+<p>Command(s) in this group require the “operate all” or “operate self” right.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="workspace.html" class="btn btn-neutral float-left" title="NVIDIA FLARE Workspace" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="federated_learning.html" class="btn btn-neutral float-right" title="Federated Learning" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

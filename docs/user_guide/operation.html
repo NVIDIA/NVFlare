@@ -1,0 +1,515 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operating NVFLARE - Admin Client, Commands, FLAdminAPI &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="NVIDIA FLARE Application" href="application.html" />
+    <link rel="prev" title="Overview" href="overview.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Operating NVFLARE - Admin Client, Commands, FLAdminAPI</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#admin-command-prompt">Admin command prompt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fladminapi">FLAdminAPI</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#initialization">Initialization</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#usage">Usage</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#arguments-and-targets">Arguments and targets</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#return-structure">Return Structure</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#implementation-notes">Implementation Notes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#additional-and-complex-commands">Additional and Complex Commands</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#questions">Questions</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="job.html">Jobs: Defining Jobs and Multi-Job Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="workspace.html">NVIDIA FLARE Workspace</a></li>
+<li class="toctree-l2"><a class="reference internal" href="authorization.html">Authorization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="federated_learning.html">Federated Learning</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../user_guide.html">User Guide - Operations</a> &raquo;</li>
+      <li>Operating NVFLARE - Admin Client, Commands, FLAdminAPI</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/user_guide/operation.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="operating-nvflare-admin-client-commands-fladminapi">
+<span id="operating-nvflare"></span><h1>Operating NVFLARE - Admin Client, Commands, FLAdminAPI<a class="headerlink" href="#operating-nvflare-admin-client-commands-fladminapi" title="Permalink to this heading">¶</a></h1>
+<p>The FL system is operated by the packages of type admin configured at provisioning. The admin packages contain key and
+certificate files to connect and authenticate with the server, and the administration can be done through an included
+command prompt with <code class="docutils literal notranslate"><span class="pre">fl_admin.sh</span></code> or programmatically through the FLAdminAPI.</p>
+<section id="admin-command-prompt">
+<h2>Admin command prompt<a class="headerlink" href="#admin-command-prompt" title="Permalink to this heading">¶</a></h2>
+<p>After running <code class="docutils literal notranslate"><span class="pre">fl_admin.sh</span></code>, log in by following the prompt and entering the name of the participant that the admin
+package was provisioned for (or for poc mode, “admin” as the name and password).</p>
+<p>Typing “help” or “?” will display a list of the commands and a brief description for each. Typing “? ” before a command
+like “? check_status” or “?ls” will provide additional details for the usage of a command. Provided below is a list of
+commands shown as examples of how they may be run with a description.</p>
+<table class="colwidths-given docutils align-default">
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 18%" />
+<col style="width: 55%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Command</p></th>
+<th class="head"><p>Example</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>bye</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">bye</span></code></p></td>
+<td><p>Exit from the client</p></td>
+</tr>
+<tr class="row-odd"><td><p>help</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">help</span></code></p></td>
+<td><p>Get command help information</p></td>
+</tr>
+<tr class="row-even"><td><p>lpwd</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">lpwd</span></code></p></td>
+<td><p>Print local workspace root directory of the admin client</p></td>
+</tr>
+<tr class="row-odd"><td><p>info</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">info</span></code></p></td>
+<td><p>Show folder setup info (upload and download sources and destinations)</p></td>
+</tr>
+<tr class="row-even"><td><p>check_status</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">server</span></code></p></td>
+<td><p>The FL job id, FL server status, and the registered clients with their names and tokens are displayed. If training is running, the round information is also displayed.</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">client</span></code></p></td>
+<td><p>The name, token, and status of each connected client are displayed.</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">check_status</span> <span class="pre">client</span> <span class="pre">clientname</span></code></p></td>
+<td><p>The name, token, and status of the specified client with <em>clientname</em> are displayed.</p></td>
+</tr>
+<tr class="row-odd"><td><p>submit_job</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">submit_job</span> <span class="pre">job_folder_name</span></code></p></td>
+<td><p>Submits the job to the server.</p></td>
+</tr>
+<tr class="row-even"><td><p>list_jobs</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list_jobs</span></code></p></td>
+<td><p>Lists the jobs on the server. (Options: [-n name_prefix] [-d] [job_id_prefix])</p></td>
+</tr>
+<tr class="row-odd"><td><p>abort_job</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">abort_job</span> <span class="pre">job_id</span></code></p></td>
+<td><p>Aborts the job of the specified job_id if it is running or dispatched</p></td>
+</tr>
+<tr class="row-even"><td><p>clone_job</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">clone_job</span> <span class="pre">job_id</span></code></p></td>
+<td><p>Creates a copy of the specified job with a new job_id</p></td>
+</tr>
+<tr class="row-odd"><td><p>abort</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">job_id</span> <span class="pre">client</span></code></p></td>
+<td><p>Aborts the job for the specified job_id for all clients. Individual client jobs can be aborted by specifying <em>clientname</em>.</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">abort</span> <span class="pre">job_id</span> <span class="pre">server</span></code></p></td>
+<td><p>Aborts the server job for the specified job_id.</p></td>
+</tr>
+<tr class="row-odd"><td><p>abort_task</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">abort_task</span> <span class="pre">job_id</span> <span class="pre">clientname</span></code></p></td>
+<td><p>Aborts the running task for the specified job ID and client.</p></td>
+</tr>
+<tr class="row-even"><td><p>download_job</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">download_job</span> <span class="pre">job_id</span></code></p></td>
+<td><p>Download folder from the job store containing the job and workspace</p></td>
+</tr>
+<tr class="row-odd"><td><p>delete_job</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">delete_job</span> <span class="pre">job_id</span></code></p></td>
+<td><p>Delete the job from the job store</p></td>
+</tr>
+<tr class="row-even"><td><p>cat</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">server</span> <span class="pre">startup/fed_server.json</span> <span class="pre">-ns</span></code></p></td>
+<td><p>Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">clientname</span> <span class="pre">startup/docker.sh</span> <span class="pre">-bT</span></code></p></td>
+<td><p>Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)</p></td>
+</tr>
+<tr class="row-even"><td><p>grep</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">grep</span> <span class="pre">server</span> <span class="pre">&quot;info&quot;</span> <span class="pre">-i</span> <span class="pre">log.txt</span></code></p></td>
+<td><p>Search for a pattern in a file (-n: print line number; -i: ignore case)</p></td>
+</tr>
+<tr class="row-odd"><td><p>head</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">head</span> <span class="pre">clientname</span> <span class="pre">log.txt</span></code></p></td>
+<td><p>Print the first 10 lines of a file</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">head</span> <span class="pre">server</span> <span class="pre">log.txt</span> <span class="pre">-n</span> <span class="pre">15</span></code></p></td>
+<td><p>Print the first 15 lines of a file (-n: print the first N lines instead of the first 10)</p></td>
+</tr>
+<tr class="row-odd"><td><p>tail</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tail</span> <span class="pre">clientname</span> <span class="pre">log.txt</span></code></p></td>
+<td><p>Print the last 10 lines of a file</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tail</span> <span class="pre">server</span> <span class="pre">log.txt</span> <span class="pre">-n</span> <span class="pre">15</span></code></p></td>
+<td><p>Print the last 15 lines of a file (-n: output the last N lines instead of the last 10)</p></td>
+</tr>
+<tr class="row-odd"><td><p>ls</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">server</span> <span class="pre">-alt</span></code></p></td>
+<td><p>List files in workspace root directory (-a: all; -l: use a long listing format; -t: sort by modification time)</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">clientname</span> <span class="pre">-SR</span></code></p></td>
+<td><p>List files in workspace root directory (-S: sort by file size; -R: list subdirectories recursively)</p></td>
+</tr>
+<tr class="row-odd"><td><p>pwd</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pwd</span> <span class="pre">server</span></code></p></td>
+<td><p>Print the name of workspace root directory</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pwd</span> <span class="pre">clientname</span></code></p></td>
+<td><p>Print the name of workspace root directory</p></td>
+</tr>
+<tr class="row-odd"><td><p>sys_info</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">sys_info</span> <span class="pre">server</span></code></p></td>
+<td><p>Get system information</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">sys_info</span> <span class="pre">client</span> <span class="pre">*clientname*</span></code></p></td>
+<td><p>Get system information. Individual clients can be shutdown by specifying <em>clientname</em>.</p></td>
+</tr>
+<tr class="row-odd"><td><p>remove_client</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">remove_client</span> <span class="pre">clientname</span></code></p></td>
+<td><p>Issue command for server to release client before the 10 minute timeout to allow client to rejoin after manual restart.</p></td>
+</tr>
+<tr class="row-even"><td><p>restart</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">restart</span> <span class="pre">client</span></code></p></td>
+<td><p>Restarts all of the clients. Individual clients can be restarted by specifying <em>clientname</em>.</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">restart</span> <span class="pre">server</span></code></p></td>
+<td><p>Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.</p></td>
+</tr>
+<tr class="row-even"><td><p>shutdown</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">shutdown</span> <span class="pre">client</span></code></p></td>
+<td><p>Shuts down all of the clients. Individual clients can be shutdown by specifying <em>clientname</em>. Please note that this may not be instant but may take time for the command to take effect.</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">shutdown</span> <span class="pre">server</span></code></p></td>
+<td><p>Shuts down the active server. Clients must be shut down first before the server is shut down. Note this will not shut down the Overseer or other SPs.</p></td>
+</tr>
+<tr class="row-even"><td><p>get_active_sp</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">get_active_sp</span></code></p></td>
+<td><p>Get information on the active SP (service provider or FL server).</p></td>
+</tr>
+<tr class="row-odd"><td><p>list_sp</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list_sp</span></code></p></td>
+<td><p>Get data from last heartbeat of the active and available SP endpoint information.</p></td>
+</tr>
+<tr class="row-even"><td><p>promote_sp</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">promote_sp</span> <span class="pre">sp_end_point</span></code></p></td>
+<td><p>promote a specified SP to become the active SP (promote_sp example1.com:8002:8003)</p></td>
+</tr>
+<tr class="row-odd"><td><p>shutdown_system</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">shutdown_system</span></code></p></td>
+<td><p>Shut down entire system by setting the system state to shutdown through the overseer</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The commands <code class="docutils literal notranslate"><span class="pre">promote_sp</span></code> and <code class="docutils literal notranslate"><span class="pre">shutdown_system</span></code> both go to the Overseer and have a different mechanism of
+authorization than the other commands sent to the FL server. The Overseer keeps track of a list of privileged users,
+configured to be admin users with the role of “super”. Only users owning certificates whose cn is in the privileged
+user list can call these commands.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Outputs of any command can be redirected into a file by using the greater-than symbol “&gt;”, however there must be no
+whitespace before the filename. For example, you may run <code class="docutils literal notranslate"><span class="pre">sys_info</span> <span class="pre">server</span> <span class="pre">&gt;serverinfo.txt</span></code>. To only save the
+file output without printing it, use two greater-than symbols “&gt;&gt;” instead: <code class="docutils literal notranslate"><span class="pre">sys_info</span> <span class="pre">server</span> <span class="pre">&gt;&gt;serverinfo.txt</span></code>.</p>
+</div>
+</section>
+<section id="fladminapi">
+<h2>FLAdminAPI<a class="headerlink" href="#fladminapi" title="Permalink to this heading">¶</a></h2>
+<p><a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api.html#nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI" title="nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPI</span></code></a> is a wrapper for admin commands that can be issued
+by an admin client to the FL server. You can use a provisioned admin client’s certs and keys to initialize an instance
+of FLAdminAPI to programmatically submit commands to the FL server.</p>
+<section id="initialization">
+<h3>Initialization<a class="headerlink" href="#initialization" title="Permalink to this heading">¶</a></h3>
+<p>It is recommended to use the <a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api_runner.html#nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner" title="nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPIRunner</span></code></a> to
+initialize the API, or use it as a guide to write your own code to use the FLAdminAPI.</p>
+<p>Compared to before NVIDIA FLARE 2.1.0, the FLAdminAPI now requires an overseer_agent to be provided, and this is automatically
+created by the <a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api_runner.html#nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner" title="nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPIRunner</span></code></a> with the
+information in <code class="docutils literal notranslate"><span class="pre">fed_admin.json</span></code> in the provided admin_dir’s startup directory.</p>
+<p>Logging in is now automatically handled, and when there is a server cutover, the overseer_agent will provide the new SP
+endpoint information for the active server and the FLAdminAPI will reauthenticate so the commands will be sent to the
+new active server.</p>
+<p><code class="docutils literal notranslate"><span class="pre">logout()</span></code> function can be called to log out. Both <code class="docutils literal notranslate"><span class="pre">login()</span></code> and <code class="docutils literal notranslate"><span class="pre">logout()</span></code> are
+inherited from AdminAPI.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">api</span><span class="o">.</span><span class="n">logout</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>After using FLAdminAPI, the overseer_agent must be cleaned up with a call to:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">api</span><span class="o">.</span><span class="n">overseer_agent</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="usage">
+<h3>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h3>
+<p>See the example scripts <code class="docutils literal notranslate"><span class="pre">run_fl.py</span></code> in <a class="reference external" href="https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10">CIFAR-10</a> for
+an example of how to use the FLAdminAPI with FLAdminAPIRunner.</p>
+<p>You can use the example as inspiration to write your own code using the FLAdminAPI to operate your FL system.</p>
+</section>
+<section id="arguments-and-targets">
+<h3>Arguments and targets<a class="headerlink" href="#arguments-and-targets" title="Permalink to this heading">¶</a></h3>
+<p>The arguments required for each FLAdminAPI call are specified in <a class="reference internal" href="../apidocs/nvflare.fuel.hci.client.fl_admin_api_spec.html#nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec" title="nvflare.fuel.hci.client.fl_admin_api_spec.FLAdminAPISpec"><code class="xref py py-class docutils literal notranslate"><span class="pre">FLAdminAPI</span></code></a>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">target</span></code> when needed is where the action should take place. An argument of <code class="docutils literal notranslate"><span class="pre">target</span></code> as a string can be a
+singular target of “server” or a specific client name. Where <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is required and <code class="docutils literal notranslate"><span class="pre">targets</span></code> can
+be an optional list, the call can be submitted to multiple targets:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “server”, the command target is just the server and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is ignored</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “client” and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is empty, the command target is all clients</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “client” and <code class="docutils literal notranslate"><span class="pre">targets</span></code> is a list of strings, each a client name, the command target is all clients in the list <code class="docutils literal notranslate"><span class="pre">targets</span></code></p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">target_type</span></code> is “all” and the command supports it, the command target is the server and all clients</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="return-structure">
+<h3>Return Structure<a class="headerlink" href="#return-structure" title="Permalink to this heading">¶</a></h3>
+<p>FLAdminAPI calls return an FLAdminAPIResponse dictionary object of key value pairs consisting of a status of type APIStatus, a
+dictionary with details, and in some cases a raw response from the underlying call to AdminAPI (mainly useful for
+debugging).</p>
+</section>
+<section id="implementation-notes">
+<h3>Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permalink to this heading">¶</a></h3>
+<p>FLAdminAPI uses the underlying AdminAPI’s <code class="docutils literal notranslate"><span class="pre">do_command()</span></code> function to submit commands to the server, and you
+can also use this function directly for functions that are not wrapped in an FLAdminAPI function. Returns from AdminAPI
+are included in the FLAdminAPI reply under the “raw” key for some calls and error conditions.</p>
+</section>
+<section id="additional-and-complex-commands">
+<h3>Additional and Complex Commands<a class="headerlink" href="#additional-and-complex-commands" title="Permalink to this heading">¶</a></h3>
+<p>The functions <code class="docutils literal notranslate"><span class="pre">wait_until_server_status()</span></code>, <code class="docutils literal notranslate"><span class="pre">wait_until_client_status()</span></code>, and <code class="docutils literal notranslate"><span class="pre">wait_until_server_stats()</span></code> are
+included with the FLAdminAPI in NVIDIA FLARE as examples of useful functions that can be built with other calls in a
+loop with logic. These examples wait until the provided callback returns True, with the option to specify a timeout and
+interval to check the status or stats. There is a default callback to evaluate the reply in the included functions, and
+additional kwargs passed in will be available to the callback. Custom callbacks can be provided to add logic to handle
+checking for other conditions. For these example functions, a timeout should be set in case there are any error
+conditions that result in the system being stuck in a state where the callback never returns True.</p>
+<p>You can use the source code of these function as inspiration to create your own functions or logic that makes use of
+other FLAdminAPI calls.</p>
+</section>
+<section id="questions">
+<h3>Questions<a class="headerlink" href="#questions" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic">
+<li><p>Why do I get an error of “Command ___ not found in server or client cmds” even though I did not try any unspecified
+command?</p>
+<p>The underlying AdminAPI may have not have successfully logged in and obtained a list of available commands to register
+from the server. Please make sure that the server is accessible and the login is working.</p>
+</li>
+<li><p>Why does the AdminAPI return status APIStatus.SUCCESS even though an error occurred after issuing the command?</p>
+<p>If you send a raw command to the underlying AdminAPI with <code class="docutils literal notranslate"><span class="pre">do_command()</span></code>, AdminAPI returns APIStatus.SUCCESS if the
+command was successfully sent to the server and a reply obtained. FLAdminAPI’s calls make sense of the underlying
+server reply and returns a suitable status based on the reply.</p>
+</li>
+<li><p>After a while with the same command, why do I get a SUCCESS from FLAdminAPI but the raw reply contains an error of
+“not authenticated - no user”?</p>
+<p>The server has a timeout after which <code class="docutils literal notranslate"><span class="pre">login()</span></code> must be called again in order for the underlying AdminAPI to be
+authenticated.</p>
+</li>
+</ol>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="overview.html" class="btn btn-neutral float-left" title="Overview" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="application.html" class="btn btn-neutral float-right" title="NVIDIA FLARE Application" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

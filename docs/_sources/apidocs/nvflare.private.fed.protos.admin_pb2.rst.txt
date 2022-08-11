@@ -1,0 +1,7 @@
+nvflare.private.fed.protos.admin\_pb2 module
+============================================
+
+.. automodule:: nvflare.private.fed.protos.admin_pb2
+   :members:
+   :undoc-members:
+   :show-inheritance:

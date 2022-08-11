@@ -1,0 +1,395 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contributing &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="nvflare" href="apidocs/modules.html" />
+    <link rel="prev" title="Frequently Asked Questions" href="faq.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Contributing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#communicate-with-us">Communicate with us</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#the-contribution-process">The contribution process</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#preparing-pull-requests">Preparing pull requests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#submitting-pull-requests">Submitting pull requests</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#the-code-reviewing-process">The code reviewing process</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#reviewing-pull-requests">Reviewing pull requests</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>Contributing</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/contributing.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="contributing">
+<span id="id1"></span><h1>Contributing<a class="headerlink" href="#contributing" title="Permalink to this heading">¶</a></h1>
+<p>Welcome to NVIDIA FLARE! We’re excited you’re here and want to
+contribute. This documentation is intended for individuals and
+institutions interested in contributing to NVIDIA FLARE. NVIDIA FLARE is
+an open-source project and, as such, its success relies on its community
+of contributors willing to keep improving it. Your contribution will be
+a valued addition to the code base; we simply ask that you read this
+page and understand our contribution process, whether you are a seasoned
+open-source contributor or whether you are a first-time contributor.</p>
+<section id="communicate-with-us">
+<h2>Communicate with us<a class="headerlink" href="#communicate-with-us" title="Permalink to this heading">¶</a></h2>
+<p>We are happy to talk with you about your needs for NVIDIA FLARE and your
+ideas for contributing to the project. One way to do this is to create
+an issue discussing your thoughts. It might be that a very similar
+feature is under development or already exists, so an issue is a great
+starting point.</p>
+<section id="the-contribution-process">
+<h3>The contribution process<a class="headerlink" href="#the-contribution-process" title="Permalink to this heading">¶</a></h3>
+<p><em>Pull request early</em></p>
+<p>We encourage you to create pull requests early. It helps us track the
+contributions under development, whether they are ready to be merged or
+not. Change your pull request’s title, to begin with <code class="docutils literal notranslate"><span class="pre">[WIP]</span></code> and/or
+<a class="reference external" href="https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests#draft-pull-requests">create a draft pull
+request</a>
+until it is ready for formal review.</p>
+</section>
+</section>
+<section id="preparing-pull-requests">
+<h2>Preparing pull requests<a class="headerlink" href="#preparing-pull-requests" title="Permalink to this heading">¶</a></h2>
+<p>To ensure the code quality, NVIDIA FLARE relies on several linting tools
+(<a class="reference external" href="https://gitlab.com/pycqa/flake8">flake8 and its plugins</a>,
+<a class="reference external" href="https://github.com/psf/black">black</a> and
+<a class="reference external" href="https://github.com/timothycrosley/isort">isort</a>)</p>
+<p>This section highlights all the necessary preparation steps required
+before sending a pull request. To collaborate efficiently, please read
+through this section and follow them.</p>
+<ul class="simple">
+<li><p><a class="reference external" href="#checking-the-coding-style">Checking the coding style</a></p></li>
+<li><p><a class="reference external" href="#unit-testing">Unit testing</a></p></li>
+<li><p><a class="reference external" href="#building-the-documentation">Building documentation</a></p></li>
+<li><p><a class="reference external" href="#signing-your-work">Signing your work</a></p></li>
+</ul>
+<p>We check code style using flake8 and isort. A bash script
+(<code class="docutils literal notranslate"><span class="pre">runtest.sh</span></code>) is provided to run all tests locally.</p>
+<p>License information: all source code files should start with this
+paragraph:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+</pre></div>
+</div>
+<p>NVIDIA FLARE tests are located under test/. The unit test file names
+follow the <code class="docutils literal notranslate"><span class="pre">test_[module_name].py</span></code> pattern.</p>
+<p>The bash script <code class="docutils literal notranslate"><span class="pre">runtest.sh</span></code> will run unit tests also.</p>
+<p>To build the docs, first make sure you have all requirements</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python -m pip upgrade
+python -m pip install -r requirements-dev.txt
+</pre></div>
+</div>
+<p>To build the docs, please run.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./build_docs --html
+</pre></div>
+</div>
+<p>Once built, you can view the docs in <code class="docutils literal notranslate"><span class="pre">docs/_build</span> <span class="pre">folder</span></code>. To clean
+the docs, please run</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./build_docs --clean
+</pre></div>
+</div>
+<p>NVIDIA FLARE enforces the <a class="reference external" href="https://developercertificate.org/">Developer Certificate of
+Origin</a> (DCO) on all pull
+requests.</p>
+<p>For a detailed guide on signing commits, please see <a class="reference external" href="https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits">Signing
+commits</a>
+from GitHub.</p>
+<p>NVIDIA FLARE enforces commit signature verification, a security feature
+provided by GitHub. Developers are required to setup GPG keys as
+described in <a class="reference external" href="https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#gpg-commit-signature-verification">Commit Signature
+Verification</a>.</p>
+<p>Full text of the DCO:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Developer</span> <span class="n">Certificate</span> <span class="n">of</span> <span class="n">Origin</span>
+<span class="n">Version</span> <span class="mf">1.1</span>
+
+<span class="n">Copyright</span> <span class="p">(</span><span class="n">C</span><span class="p">)</span> <span class="mi">2004</span><span class="p">,</span> <span class="mi">2006</span> <span class="n">The</span> <span class="n">Linux</span> <span class="n">Foundation</span> <span class="ow">and</span> <span class="n">its</span> <span class="n">contributors</span><span class="o">.</span>
+<span class="mi">1</span> <span class="n">Letterman</span> <span class="n">Drive</span>
+<span class="n">Suite</span> <span class="n">D4700</span>
+<span class="n">San</span> <span class="n">Francisco</span><span class="p">,</span> <span class="n">CA</span><span class="p">,</span> <span class="mi">94129</span>
+
+<span class="n">Everyone</span> <span class="ow">is</span> <span class="n">permitted</span> <span class="n">to</span> <span class="n">copy</span> <span class="ow">and</span> <span class="n">distribute</span> <span class="n">verbatim</span> <span class="n">copies</span> <span class="n">of</span> <span class="n">this</span>
+<span class="n">license</span> <span class="n">document</span><span class="p">,</span> <span class="n">but</span> <span class="n">changing</span> <span class="n">it</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">allowed</span><span class="o">.</span>
+
+
+<span class="n">Developer</span><span class="s1">&#39;s Certificate of Origin 1.1</span>
+
+<span class="n">By</span> <span class="n">making</span> <span class="n">a</span> <span class="n">contribution</span> <span class="n">to</span> <span class="n">this</span> <span class="n">project</span><span class="p">,</span> <span class="n">I</span> <span class="n">certify</span> <span class="n">that</span><span class="p">:</span>
+
+<span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="n">The</span> <span class="n">contribution</span> <span class="n">was</span> <span class="n">created</span> <span class="ow">in</span> <span class="n">whole</span> <span class="ow">or</span> <span class="ow">in</span> <span class="n">part</span> <span class="n">by</span> <span class="n">me</span> <span class="ow">and</span> <span class="n">I</span>
+    <span class="n">have</span> <span class="n">the</span> <span class="n">right</span> <span class="n">to</span> <span class="n">submit</span> <span class="n">it</span> <span class="n">under</span> <span class="n">the</span> <span class="nb">open</span> <span class="n">source</span> <span class="n">license</span>
+    <span class="n">indicated</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">file</span><span class="p">;</span> <span class="ow">or</span>
+
+<span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="n">The</span> <span class="n">contribution</span> <span class="ow">is</span> <span class="n">based</span> <span class="n">upon</span> <span class="n">previous</span> <span class="n">work</span> <span class="n">that</span><span class="p">,</span> <span class="n">to</span> <span class="n">the</span> <span class="n">best</span>
+    <span class="n">of</span> <span class="n">my</span> <span class="n">knowledge</span><span class="p">,</span> <span class="ow">is</span> <span class="n">covered</span> <span class="n">under</span> <span class="n">an</span> <span class="n">appropriate</span> <span class="nb">open</span> <span class="n">source</span>
+    <span class="n">license</span> <span class="ow">and</span> <span class="n">I</span> <span class="n">have</span> <span class="n">the</span> <span class="n">right</span> <span class="n">under</span> <span class="n">that</span> <span class="n">license</span> <span class="n">to</span> <span class="n">submit</span> <span class="n">that</span>
+    <span class="n">work</span> <span class="k">with</span> <span class="n">modifications</span><span class="p">,</span> <span class="n">whether</span> <span class="n">created</span> <span class="ow">in</span> <span class="n">whole</span> <span class="ow">or</span> <span class="ow">in</span> <span class="n">part</span>
+    <span class="n">by</span> <span class="n">me</span><span class="p">,</span> <span class="n">under</span> <span class="n">the</span> <span class="n">same</span> <span class="nb">open</span> <span class="n">source</span> <span class="n">license</span> <span class="p">(</span><span class="n">unless</span> <span class="n">I</span> <span class="n">am</span>
+    <span class="n">permitted</span> <span class="n">to</span> <span class="n">submit</span> <span class="n">under</span> <span class="n">a</span> <span class="n">different</span> <span class="n">license</span><span class="p">),</span> <span class="k">as</span> <span class="n">indicated</span>
+    <span class="ow">in</span> <span class="n">the</span> <span class="n">file</span><span class="p">;</span> <span class="ow">or</span>
+
+<span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="n">The</span> <span class="n">contribution</span> <span class="n">was</span> <span class="n">provided</span> <span class="n">directly</span> <span class="n">to</span> <span class="n">me</span> <span class="n">by</span> <span class="n">some</span> <span class="n">other</span>
+    <span class="n">person</span> <span class="n">who</span> <span class="n">certified</span> <span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="ow">and</span> <span class="n">I</span> <span class="n">have</span> <span class="ow">not</span> <span class="n">modified</span>
+    <span class="n">it</span><span class="o">.</span>
+
+<span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="n">I</span> <span class="n">understand</span> <span class="ow">and</span> <span class="n">agree</span> <span class="n">that</span> <span class="n">this</span> <span class="n">project</span> <span class="ow">and</span> <span class="n">the</span> <span class="n">contribution</span>
+    <span class="n">are</span> <span class="n">public</span> <span class="ow">and</span> <span class="n">that</span> <span class="n">a</span> <span class="n">record</span> <span class="n">of</span> <span class="n">the</span> <span class="n">contribution</span> <span class="p">(</span><span class="n">including</span> <span class="nb">all</span>
+    <span class="n">personal</span> <span class="n">information</span> <span class="n">I</span> <span class="n">submit</span> <span class="k">with</span> <span class="n">it</span><span class="p">,</span> <span class="n">including</span> <span class="n">my</span> <span class="n">sign</span><span class="o">-</span><span class="n">off</span><span class="p">)</span> <span class="ow">is</span>
+    <span class="n">maintained</span> <span class="n">indefinitely</span> <span class="ow">and</span> <span class="n">may</span> <span class="n">be</span> <span class="n">redistributed</span> <span class="n">consistent</span> <span class="k">with</span>
+    <span class="n">this</span> <span class="n">project</span> <span class="ow">or</span> <span class="n">the</span> <span class="nb">open</span> <span class="n">source</span> <span class="n">license</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="n">involved</span><span class="o">.</span>
+</pre></div>
+</div>
+</section>
+<section id="submitting-pull-requests">
+<h2>Submitting pull requests<a class="headerlink" href="#submitting-pull-requests" title="Permalink to this heading">¶</a></h2>
+<p>All code changes to the dev branch must be done via <a class="reference external" href="https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests">pull
+requests</a>.
+1. Create a new ticket or take a known ticket from <a class="reference external" href="https://github.com/NVIDIA/NVFlare/issues">the issue
+list</a>. 2. Check if there’s
+already a branch dedicated to the task. 3. If the task has not been
+taken, <a class="reference external" href="https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork">create a new branch in your
+fork</a>
+of the codebase. Ideally, the new branch should be based on the latest
+<code class="docutils literal notranslate"><span class="pre">main</span></code> branch. 4. Make changes to the branch (<a class="reference external" href="https://chris.beams.io/posts/git-commit/">use detailed commit
+messages if possible</a>). 5.
+Make sure that new tests cover the changes and the changed codebase
+<a class="reference external" href="#unit-testing">passes all tests locally</a>. 6. <a class="reference external" href="https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request">Create a new pull
+request</a>
+from the task branch to the dev branch, with detailed descriptions of
+the purpose of this pull request. 7. Check <a class="reference external" href="https://github.com/NVIDIA/NVFlare/actions">the CI/CD status of the pull
+request</a>, make sure all
+CI/CD tests passed. 8. Assign 2 reviewers. One of the reviewers must be
+a code owner for this section of code. 9. Wait for reviews; if there are
+reviews, make point-to-point responses, make further code changes if
+needed. 10. If there are conflicts between the pull request branch and
+the main branch, pull the changes from the main and resolve the
+conflicts locally. 11. Reviewer and contributor may have discussions
+back and forth until all comments addressed. All conversations must be
+resolved for PR to pass. 12. Wait for the pull request to be merged.</p>
+<section id="the-code-reviewing-process">
+<h3>The code reviewing process<a class="headerlink" href="#the-code-reviewing-process" title="Permalink to this heading">¶</a></h3>
+</section>
+</section>
+<section id="reviewing-pull-requests">
+<h2>Reviewing pull requests<a class="headerlink" href="#reviewing-pull-requests" title="Permalink to this heading">¶</a></h2>
+<p>All code review comments should be specific, constructive, and
+actionable. 1. Check <a class="reference external" href="https://github.com/NVIDIA/NVFlare/actions">the CI/CD status of the pull
+request</a>, make sure all
+CI/CD tests passed before reviewing (contact the branch owner if
+needed). 1. Read carefully the descriptions of the pull request and the
+files changed, write comments if needed. 1. Make in-line comments to
+specific code segments, <a class="reference external" href="https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-reviews">request for
+changes</a>
+if needed. 1. Review any further code changes until all comments
+addressed by the contributors. 1. Merge the pull request to the main
+branch. 1. Close the corresponding task ticket on <a class="reference external" href="https://github.com/NVIDIA/NVFlare/issues">the issue
+list</a>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="faq.html" class="btn btn-neutral float-left" title="Frequently Asked Questions" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="apidocs/modules.html" class="btn btn-neutral float-right" title="nvflare" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

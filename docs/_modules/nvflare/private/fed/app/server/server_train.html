@@ -1,0 +1,420 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.app.server.server_train &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../../" id="documentation_options" src="../../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../../_static/jquery.js"></script>
+        <script src="../../../../../../_static/underscore.js"></script>
+        <script src="../../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../../_static/doctools.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.app.server.server_train</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.app.server.server_train</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;Federated server launching script.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">argparse</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">WorkspaceConstants</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.common.excepts</span> <span class="kn">import</span> <span class="n">ConfigError</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.security</span> <span class="kn">import</span> <span class="n">hash_password</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.authz</span> <span class="kn">import</span> <span class="n">AuthorizationService</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.sec.audit</span> <span class="kn">import</span> <span class="n">AuditService</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.sec.security_content_service</span> <span class="kn">import</span> <span class="n">SecurityContentService</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.utils.argument_utils</span> <span class="kn">import</span> <span class="n">parse_vars</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">AppFolderConstants</span><span class="p">,</span> <span class="n">SSLConstants</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.app.fl_conf</span> <span class="kn">import</span> <span class="n">FLServerStarterConfiger</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.admin</span> <span class="kn">import</span> <span class="n">FedAdminServer</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.fed_server</span> <span class="kn">import</span> <span class="n">FederatedServer</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.utils.fed_utils</span> <span class="kn">import</span> <span class="n">add_logfile_handler</span><span class="p">,</span> <span class="n">secure_content_check</span>
+<span class="kn">from</span> <span class="nn">nvflare.security.security</span> <span class="kn">import</span> <span class="n">EmptyAuthorizer</span><span class="p">,</span> <span class="n">FLAuthorizer</span>
+
+
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.server.server_train.html#nvflare.private.fed.app.server.server_train.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">version_info</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">9</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">version_info</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">7</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.&quot;</span><span class="p">)</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">()</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--workspace&quot;</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;WORKSPACE folder&quot;</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--fed_server&quot;</span><span class="p">,</span> <span class="s2">&quot;-s&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;an aggregation server specification json file&quot;</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;--set&quot;</span><span class="p">,</span> <span class="n">metavar</span><span class="o">=</span><span class="s2">&quot;KEY=VALUE&quot;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;*&quot;</span><span class="p">)</span>
+
+    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+    <span class="n">kv_list</span> <span class="o">=</span> <span class="n">parse_vars</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">set</span><span class="p">)</span>
+
+    <span class="n">config_folder</span> <span class="o">=</span> <span class="n">kv_list</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_folder&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">config_folder</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+        <span class="n">args</span><span class="o">.</span><span class="n">server_config</span> <span class="o">=</span> <span class="n">AppFolderConstants</span><span class="o">.</span><span class="n">CONFIG_FED_SERVER</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">args</span><span class="o">.</span><span class="n">server_config</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">config_folder</span><span class="p">,</span> <span class="n">AppFolderConstants</span><span class="o">.</span><span class="n">CONFIG_FED_SERVER</span><span class="p">)</span>
+
+    <span class="c1"># TODO:: remove env and train config since they are not core</span>
+    <span class="n">args</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;config&quot;</span><span class="p">,</span> <span class="n">AppFolderConstants</span><span class="o">.</span><span class="n">CONFIG_ENV</span><span class="p">)</span>
+    <span class="n">args</span><span class="o">.</span><span class="n">train_config</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;config&quot;</span><span class="p">,</span> <span class="n">AppFolderConstants</span><span class="o">.</span><span class="n">CONFIG_TRAIN</span><span class="p">)</span>
+    <span class="n">args</span><span class="o">.</span><span class="n">config_folder</span> <span class="o">=</span> <span class="n">config_folder</span>
+    <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span>
+    <span class="n">args</span><span class="o">.</span><span class="n">log_config</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">[</span><span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">RESTART_FILE</span><span class="p">,</span> <span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">SHUTDOWN_FILE</span><span class="p">]:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">f</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">f</span><span class="p">):</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Could not remove the </span><span class="si">{}</span><span class="s2"> file.  Please check your system before starting FL.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">)</span>
+
+        <span class="n">startup</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="s2">&quot;startup&quot;</span><span class="p">)</span>
+        <span class="n">conf</span> <span class="o">=</span> <span class="n">FLServerStarterConfiger</span><span class="p">(</span>
+            <span class="n">app_root</span><span class="o">=</span><span class="n">startup</span><span class="p">,</span>
+            <span class="n">server_config_file_name</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">fed_server</span><span class="p">,</span>
+            <span class="n">log_config_file_name</span><span class="o">=</span><span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">LOGGING_CONFIG</span><span class="p">,</span>
+            <span class="n">kv_list</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">set</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">log_level</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FL_LOG_LEVEL&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">numeric_level</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">logging</span><span class="p">,</span> <span class="n">log_level</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">numeric_level</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">numeric_level</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;loglevel debug enabled&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;loglevel info enabled&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;loglevel warn enabled&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;loglevel error enabled&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">critical</span><span class="p">(</span><span class="s2">&quot;loglevel critical enabled&quot;</span><span class="p">)</span>
+        <span class="n">conf</span><span class="o">.</span><span class="n">configure</span><span class="p">()</span>
+
+        <span class="n">log_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="s2">&quot;log.txt&quot;</span><span class="p">)</span>
+        <span class="n">add_logfile_handler</span><span class="p">(</span><span class="n">log_file</span><span class="p">)</span>
+
+        <span class="n">deployer</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">deployer</span>
+        <span class="n">secure_train</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">cmd_vars</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;secure_train&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">security_check</span><span class="p">(</span><span class="n">secure_train</span><span class="o">=</span><span class="n">secure_train</span><span class="p">,</span> <span class="n">content_folder</span><span class="o">=</span><span class="n">startup</span><span class="p">,</span> <span class="n">fed_server_config</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">fed_server</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Deploy the FL server</span>
+            <span class="n">services</span> <span class="o">=</span> <span class="n">deployer</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+
+            <span class="n">first_server</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">conf</span><span class="o">.</span><span class="n">config_data</span><span class="p">[</span><span class="s2">&quot;servers&quot;</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="c1"># allow command to overwrite the admin_host</span>
+            <span class="k">if</span> <span class="n">conf</span><span class="o">.</span><span class="n">cmd_vars</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;host&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+                <span class="n">first_server</span><span class="p">[</span><span class="s2">&quot;admin_host&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">cmd_vars</span><span class="p">[</span><span class="s2">&quot;host&quot;</span><span class="p">]</span>
+            <span class="n">admin_server</span> <span class="o">=</span> <span class="n">create_admin_server</span><span class="p">(</span>
+                <span class="n">services</span><span class="p">,</span>
+                <span class="n">server_conf</span><span class="o">=</span><span class="n">first_server</span><span class="p">,</span>
+                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+                <span class="n">secure_train</span><span class="o">=</span><span class="n">secure_train</span><span class="p">,</span>
+                <span class="n">app_validator</span><span class="o">=</span><span class="n">deployer</span><span class="o">.</span><span class="n">app_validator</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">admin_server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+            <span class="n">services</span><span class="o">.</span><span class="n">platform</span> <span class="o">=</span> <span class="s2">&quot;PT&quot;</span>
+
+            <span class="n">services</span><span class="o">.</span><span class="n">set_admin_server</span><span class="p">(</span><span class="n">admin_server</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">deployer</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Server started&quot;</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="n">ConfigError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;ConfigError:&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">ex</span><span class="p">))</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="security_check"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.server.server_train.html#nvflare.private.fed.app.server.server_train.security_check">[docs]</a><span class="k">def</span> <span class="nf">security_check</span><span class="p">(</span><span class="n">secure_train</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">content_folder</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fed_server_config</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To check the security content if running in security mode.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        secure_train (bool): if run in secure mode or not.</span>
+<span class="sd">        content_folder (str): the folder to check.</span>
+<span class="sd">        fed_server_config (str): fed_server.json</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># initialize the SecurityContentService.</span>
+    <span class="c1"># must do this before initializing other services since it may be needed by them!</span>
+    <span class="n">SecurityContentService</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">content_folder</span><span class="o">=</span><span class="n">content_folder</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">secure_train</span><span class="p">:</span>
+        <span class="n">insecure_list</span> <span class="o">=</span> <span class="n">secure_content_check</span><span class="p">(</span><span class="n">fed_server_config</span><span class="p">,</span> <span class="n">site_type</span><span class="o">=</span><span class="s2">&quot;server&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">insecure_list</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;The following files are not secure content.&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">insecure_list</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># initialize the AuditService, which is used by command processing.</span>
+    <span class="c1"># The Audit Service can be used in other places as well.</span>
+    <span class="n">AuditService</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">audit_file_name</span><span class="o">=</span><span class="n">WorkspaceConstants</span><span class="o">.</span><span class="n">AUDIT_LOG</span><span class="p">)</span>
+
+    <span class="c1"># Initialize the AuthorizationService. It is used by command authorization</span>
+    <span class="c1"># We use FLAuthorizer for policy processing.</span>
+    <span class="c1"># AuthorizationService depends on SecurityContentService to read authorization policy file.</span>
+    <span class="k">if</span> <span class="n">secure_train</span><span class="p">:</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">AuthorizationService</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">FLAuthorizer</span><span class="p">())</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">AuthorizationService</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">EmptyAuthorizer</span><span class="p">())</span>
+
+    <span class="k">if</span> <span class="n">err</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;AuthorizationService error: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">err</span><span class="p">))</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="create_admin_server"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.server.server_train.html#nvflare.private.fed.app.server.server_train.create_admin_server">[docs]</a><span class="k">def</span> <span class="nf">create_admin_server</span><span class="p">(</span>
+    <span class="n">fl_server</span><span class="p">:</span> <span class="n">FederatedServer</span><span class="p">,</span> <span class="n">server_conf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">secure_train</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">app_validator</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;To create the admin server.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        fl_server: fl_server</span>
+<span class="sd">        server_conf: server config</span>
+<span class="sd">        args: command args</span>
+<span class="sd">        secure_train: True/False</span>
+<span class="sd">        app_validator: application validator</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A FedAdminServer.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">users</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="c1"># Create a default user admin:admin for the POC insecure use case.</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">secure_train</span><span class="p">:</span>
+        <span class="n">users</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;admin&quot;</span><span class="p">:</span> <span class="n">hash_password</span><span class="p">(</span><span class="s2">&quot;admin&quot;</span><span class="p">)}</span>
+
+    <span class="n">root_cert</span> <span class="o">=</span> <span class="n">server_conf</span><span class="p">[</span><span class="n">SSLConstants</span><span class="o">.</span><span class="n">ROOT_CERT</span><span class="p">]</span> <span class="k">if</span> <span class="n">secure_train</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">server_cert</span> <span class="o">=</span> <span class="n">server_conf</span><span class="p">[</span><span class="n">SSLConstants</span><span class="o">.</span><span class="n">CERT</span><span class="p">]</span> <span class="k">if</span> <span class="n">secure_train</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">server_key</span> <span class="o">=</span> <span class="n">server_conf</span><span class="p">[</span><span class="n">SSLConstants</span><span class="o">.</span><span class="n">PRIVATE_KEY</span><span class="p">]</span> <span class="k">if</span> <span class="n">secure_train</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">admin_server</span> <span class="o">=</span> <span class="n">FedAdminServer</span><span class="p">(</span>
+        <span class="n">fed_admin_interface</span><span class="o">=</span><span class="n">fl_server</span><span class="o">.</span><span class="n">engine</span><span class="p">,</span>
+        <span class="n">users</span><span class="o">=</span><span class="n">users</span><span class="p">,</span>
+        <span class="n">cmd_modules</span><span class="o">=</span><span class="n">fl_server</span><span class="o">.</span><span class="n">cmd_modules</span><span class="p">,</span>
+        <span class="n">file_upload_dir</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="n">server_conf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;admin_storage&quot;</span><span class="p">,</span> <span class="s2">&quot;tmp&quot;</span><span class="p">)),</span>
+        <span class="n">file_download_dir</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="n">server_conf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;admin_storage&quot;</span><span class="p">,</span> <span class="s2">&quot;tmp&quot;</span><span class="p">)),</span>
+        <span class="n">allowed_shell_cmds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">host</span><span class="o">=</span><span class="n">server_conf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;admin_host&quot;</span><span class="p">,</span> <span class="s2">&quot;localhost&quot;</span><span class="p">),</span>
+        <span class="n">port</span><span class="o">=</span><span class="n">server_conf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;admin_port&quot;</span><span class="p">,</span> <span class="mi">5005</span><span class="p">),</span>
+        <span class="n">ca_cert_file_name</span><span class="o">=</span><span class="n">root_cert</span><span class="p">,</span>
+        <span class="n">server_cert_file_name</span><span class="o">=</span><span class="n">server_cert</span><span class="p">,</span>
+        <span class="n">server_key_file_name</span><span class="o">=</span><span class="n">server_key</span><span class="p">,</span>
+        <span class="n">accepted_client_cns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">app_validator</span><span class="o">=</span><span class="n">app_validator</span><span class="p">,</span>
+        <span class="n">download_job_url</span><span class="o">=</span><span class="n">server_conf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;download_job_url&quot;</span><span class="p">,</span> <span class="s2">&quot;http://&quot;</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">admin_server</span></div>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This is the main program when starting the NVIDIA FLARE server process.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

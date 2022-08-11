@@ -1,0 +1,280 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Programming Guide &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Controllers and Controller API" href="programming_guide/controllers.html" />
+    <link rel="prev" title="Federated Learning" href="user_guide/federated_learning.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Programming Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/controllers.html">Controllers and Controller API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/executor.html">Executors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/shareable.html">Shareable</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/fl_context.html">FLContext</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/fl_component.html">FLComponent</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/filters.html">Filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/provisioning_system.html">Provisioning in NVIDIA FLARE</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/high_availability.html">High Availability and Server Failover</a></li>
+<li class="toctree-l2"><a class="reference internal" href="programming_guide/system_architecture.html">System Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#code-structure">Code Structure</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>Programming Guide</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/programming_guide.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="programming-guide">
+<span id="id1"></span><h1>Programming Guide<a class="headerlink" href="#programming-guide" title="Permalink to this heading">¶</a></h1>
+<p>The NVIDIA FLARE Controller and Worker APIs are used to implement the task-based interaction defined in an <a class="reference internal" href="user_guide/application.html#nvidia-flare-application"><span class="std std-ref">NVIDIA FLARE Application</span></a>.
+In the application, the server configuration defines the components to be used in the controller workflow.
+For example, the server configuration may define the aggregator used to accumulate client task data, a persistor used to
+save models, and the shareable object used to exchange data.  The server configuration also defines the Controller
+workflow, for example the <a class="reference internal" href="programming_guide/controllers/scatter_and_gather_workflow.html#scatter-and-gather-workflow"><span class="std std-ref">Scatter and Gather Workflow</span></a>, that leverages these components with a series of tasks
+that are broadcast to the client participants for execution.</p>
+<p>The client configuration defines the set of tasks that are available for execution in a client worker, along with the
+path to the code that implements the task and any arguments required for executing the task.  There is not necessarily
+a one-to-one mapping between the tasks assigned in the server controller workflow and the client configuration.  A
+client may be configured to be capable of additional tasks or only a subset of the tasks in the global workflow.</p>
+<img alt="_images/controller_worker_flow.png" src="_images/controller_worker_flow.png" style="height: 350px;" />
+<p>The relationship between these components is shown in the previous diagram, where the server controller workflow defines
+task assignments that are broadcast and executed on the client worker.  The results of the client task execution are
+then returned to the server for aggregation.  As can be seen in the diagram, both on task assignment and task result
+submission, filtering can be applied on both the server and client side.</p>
+<p>NVIDIA FLARE is designed with a componentized architecture which allows users to bring customized components into the
+framework.</p>
+<p>This guide contains details on the key concepts, objects, and information you should know to implement your own components.</p>
+<p>If you want to use your components in an FL application, you will need to change the config in the application folder.
+Please refer to <a class="reference internal" href="user_guide/application.html#nvidia-flare-application"><span class="std std-ref">NVIDIA FLARE Application</span></a> for more details.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/controllers.html">Controllers and Controller API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/executor.html">Executors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/shareable.html">Shareable</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/data_exchange_object.html">Data Exchange Object (DXO)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/fl_context.html">FLContext</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/fl_component.html">FLComponent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/filters.html">Filters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/event_system.html">NVIDIA FLARE Event Mechanism</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/provisioning_system.html">Provisioning in NVIDIA FLARE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/high_availability.html">High Availability and Server Failover</a></li>
+<li class="toctree-l1"><a class="reference internal" href="programming_guide/system_architecture.html">System Architecture</a></li>
+</ul>
+</div>
+<section id="code-structure">
+<h2>Code Structure<a class="headerlink" href="#code-structure" title="Permalink to this heading">¶</a></h2>
+<p>Different components can be built on top of the APIs(<a class="reference internal" href="apidocs/nvflare.apis.html#module-nvflare.apis" title="nvflare.apis"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.apis</span></code></a>) in NVIDIA FLARE core, and you can now
+implement your own custom workflows. The concepts of aggregator, learnable, persistors, and shareable_generator which
+were fixed in the workflow have been decoupled from the core of NVIDIA FLARE and moved to <a class="reference internal" href="apidocs/nvflare.app_common.html#module-nvflare.app_common" title="nvflare.app_common"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.app_common</span></code></a>.
+This is also the package containing the reference implementation of the <a class="reference internal" href="programming_guide/controllers/scatter_and_gather_workflow.html#scatter-and-gather-workflow"><span class="std std-ref">Scatter and Gather Workflow</span></a>, and all of
+this can be used in your own workflow.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><a class="reference internal" href="apidocs/nvflare.apis.html#module-nvflare.apis" title="nvflare.apis"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.apis</span></code></a> - the generic class definitions</p></li>
+<li><p><a class="reference internal" href="apidocs/nvflare.app_common.html#module-nvflare.app_common" title="nvflare.app_common"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.app_common</span></code></a> - higher level controllers, workflows, and algorithms</p></li>
+<li><p><a class="reference internal" href="apidocs/nvflare.fuel.html#module-nvflare.fuel" title="nvflare.fuel"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.fuel</span></code></a> - supporting components of the provisioning and admin systems</p></li>
+<li><p><a class="reference internal" href="apidocs/nvflare.ha.html#module-nvflare.ha" title="nvflare.ha"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.ha</span></code></a> - overseer and overseer agent to support <a class="reference internal" href="programming_guide/high_availability.html#high-availability"><span class="std std-ref">High Availability and Server Failover</span></a></p></li>
+<li><p><a class="reference internal" href="apidocs/nvflare.lighter.html#module-nvflare.lighter" title="nvflare.lighter"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.lighter</span></code></a> - configuration, scripts, and Builders to support the provisioning tool</p></li>
+<li><p><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.poc</span></code> - configurations for the poc tool</p></li>
+<li><p><a class="reference internal" href="apidocs/nvflare.private.html#module-nvflare.private" title="nvflare.private"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.private</span></code></a> - low-level implementation of the platform and communication</p></li>
+<li><p><a class="reference internal" href="apidocs/nvflare.security.html#module-nvflare.security" title="nvflare.security"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.security</span></code></a> - authorization policies</p></li>
+<li><p><a class="reference internal" href="apidocs/nvflare.widgets.html#module-nvflare.widgets" title="nvflare.widgets"><code class="xref py py-mod docutils literal notranslate"><span class="pre">nvflare.widgets</span></code></a> - widgets that extend base functionality in the aux communication channel</p></li>
+</ul>
+</div></blockquote>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="user_guide/federated_learning.html" class="btn btn-neutral float-left" title="Federated Learning" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="programming_guide/controllers.html" class="btn btn-neutral float-right" title="Controllers and Controller API" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

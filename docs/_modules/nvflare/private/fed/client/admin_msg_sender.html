@@ -1,0 +1,376 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.client.admin_msg_sender &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.client.admin_msg_sender</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.client.admin_msg_sender</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;This is the FLAdmin Client to send the request message to the admin server.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">from</span> <span class="nn">multiprocessing.dummy</span> <span class="kn">import</span> <span class="n">Pool</span> <span class="k">as</span> <span class="n">ThreadPool</span>
+
+<span class="kn">import</span> <span class="nn">grpc</span>
+
+<span class="kn">import</span> <span class="nn">nvflare.private.fed.protos.admin_pb2</span> <span class="k">as</span> <span class="nn">admin_msg</span>
+<span class="kn">import</span> <span class="nn">nvflare.private.fed.protos.admin_pb2_grpc</span> <span class="k">as</span> <span class="nn">admin_service</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.admin_defs</span> <span class="kn">import</span> <span class="n">Message</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.utils.messageproto</span> <span class="kn">import</span> <span class="n">message_to_proto</span><span class="p">,</span> <span class="n">proto_to_message</span>
+
+<span class="kn">from</span> <span class="nn">.admin</span> <span class="kn">import</span> <span class="n">Sender</span>
+
+<span class="n">lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="AdminMessageSender"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_msg_sender.html#nvflare.private.fed.client.admin_msg_sender.AdminMessageSender">[docs]</a><span class="k">class</span> <span class="nc">AdminMessageSender</span><span class="p">(</span><span class="n">Sender</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;AdminMessageSender to send the request message to the admin server.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">client_name</span><span class="p">,</span>
+        <span class="n">root_cert</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">ssl_cert</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">private_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">server_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">secure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">is_multi_gpu</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">rank</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To init the AdminMessageSender.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_name: client name</span>
+<span class="sd">            root_cert: root certificate</span>
+<span class="sd">            ssl_cert: SSL certificate</span>
+<span class="sd">            private_key: private key</span>
+<span class="sd">            server_args: server args</span>
+<span class="sd">            secure: True/False</span>
+<span class="sd">            is_multi_gpu: True/False</span>
+<span class="sd">            rank: local process rank</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="n">client_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span> <span class="o">=</span> <span class="n">root_cert</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ssl_cert</span> <span class="o">=</span> <span class="n">ssl_cert</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">private_key</span> <span class="o">=</span> <span class="n">private_key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">secure</span> <span class="o">=</span> <span class="n">secure</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">servers</span> <span class="o">=</span> <span class="n">server_args</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">multi_gpu</span> <span class="o">=</span> <span class="n">is_multi_gpu</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">=</span> <span class="n">rank</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">pool</span> <span class="o">=</span> <span class="n">ThreadPool</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+
+<div class="viewcode-block" id="AdminMessageSender.send_reply"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_msg_sender.html#nvflare.private.fed.client.admin_msg_sender.AdminMessageSender.send_reply">[docs]</a>    <span class="k">def</span> <span class="nf">send_reply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Call to send the request message.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            message: request message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># self.send_client_reply(message)</span>
+            <span class="k">for</span> <span class="n">taskname</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_send_client_reply</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">taskname</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_send_client_reply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">taskname</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_set_up_channel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">[</span><span class="n">taskname</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+                <span class="n">stub</span> <span class="o">=</span> <span class="n">admin_service</span><span class="o">.</span><span class="n">AdminCommunicatingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+
+                <span class="n">reply</span> <span class="o">=</span> <span class="n">admin_msg</span><span class="o">.</span><span class="n">Reply</span><span class="p">()</span>
+                <span class="n">reply</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+                <span class="n">reply</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">message_to_proto</span><span class="p">(</span><span class="n">message</span><span class="p">))</span>
+                <span class="c1"># reply.message = message_to_proto(message)</span>
+                <span class="n">stub</span><span class="o">.</span><span class="n">SendReply</span><span class="p">(</span><span class="n">reply</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+<div class="viewcode-block" id="AdminMessageSender.retrieve_requests"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_msg_sender.html#nvflare.private.fed.client.admin_msg_sender.AdminMessageSender.retrieve_requests">[docs]</a>    <span class="k">def</span> <span class="nf">retrieve_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">Message</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Send the message to retrieve pending requests from the Server.</span>
+
+<span class="sd">        Returns: list of messages.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">messages</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">items</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_retrieve_client_requests</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
+                <span class="n">messages</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">messages</span></div>
+
+    <span class="k">def</span> <span class="nf">_retrieve_client_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">taskname</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">message_list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_set_up_channel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">[</span><span class="n">taskname</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+                <span class="n">stub</span> <span class="o">=</span> <span class="n">admin_service</span><span class="o">.</span><span class="n">AdminCommunicatingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+
+                <span class="n">client</span> <span class="o">=</span> <span class="n">admin_msg</span><span class="o">.</span><span class="n">Client</span><span class="p">()</span>
+                <span class="n">client</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+                <span class="n">messages</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">Retrieve</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">messages</span><span class="o">.</span><span class="n">message</span><span class="p">:</span>
+                    <span class="n">message_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proto_to_message</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">messages</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">message_list</span>
+
+<div class="viewcode-block" id="AdminMessageSender.send_result"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_msg_sender.html#nvflare.private.fed.client.admin_msg_sender.AdminMessageSender.send_result">[docs]</a>    <span class="k">def</span> <span class="nf">send_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Send the processor results to server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            message: message</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">taskname</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_set_up_channel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">servers</span><span class="p">[</span><span class="n">taskname</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+                        <span class="n">stub</span> <span class="o">=</span> <span class="n">admin_service</span><span class="o">.</span><span class="n">AdminCommunicatingStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+
+                        <span class="n">reply</span> <span class="o">=</span> <span class="n">admin_msg</span><span class="o">.</span><span class="n">Reply</span><span class="p">()</span>
+                        <span class="n">reply</span><span class="o">.</span><span class="n">client_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span>
+                        <span class="n">reply</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">message_to_proto</span><span class="p">(</span><span class="n">message</span><span class="p">))</span>
+                        <span class="n">stub</span><span class="o">.</span><span class="n">SendResult</span><span class="p">(</span><span class="n">reply</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                    <span class="k">pass</span></div>
+
+    <span class="k">def</span> <span class="nf">_set_up_channel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">channel_dict</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Connect client to the server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            channel_dict: grpc channel parameters</span>
+
+<span class="sd">        Returns: an initialised grpc channel</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">secure</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root_cert</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">trusted_certs</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">private_key</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">private_key</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ssl_cert</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">certificate_chain</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+            <span class="n">call_credentials</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">metadata_call_credentials</span><span class="p">(</span>
+                <span class="k">lambda</span> <span class="n">context</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">callback</span><span class="p">(((</span><span class="s2">&quot;x-custom-token&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_name</span><span class="p">),),</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">credentials</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">ssl_channel_credentials</span><span class="p">(</span>
+                <span class="n">certificate_chain</span><span class="o">=</span><span class="n">certificate_chain</span><span class="p">,</span> <span class="n">private_key</span><span class="o">=</span><span class="n">private_key</span><span class="p">,</span> <span class="n">root_certificates</span><span class="o">=</span><span class="n">trusted_certs</span>
+            <span class="p">)</span>
+
+            <span class="n">composite_credentials</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">composite_channel_credentials</span><span class="p">(</span><span class="n">credentials</span><span class="p">,</span> <span class="n">call_credentials</span><span class="p">)</span>
+            <span class="n">channel</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">secure_channel</span><span class="p">(</span><span class="o">**</span><span class="n">channel_dict</span><span class="p">,</span> <span class="n">credentials</span><span class="o">=</span><span class="n">composite_credentials</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">channel</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="o">**</span><span class="n">channel_dict</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">channel</span>
+
+<div class="viewcode-block" id="AdminMessageSender.close"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.client.admin_msg_sender.html#nvflare.private.fed.client.admin_msg_sender.AdminMessageSender.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

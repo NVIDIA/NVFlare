@@ -1,0 +1,341 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.app.deployer.server_deployer &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../../" id="documentation_options" src="../../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../../_static/jquery.js"></script>
+        <script src="../../../../../../_static/underscore.js"></script>
+        <script src="../../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../../_static/doctools.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.app.deployer.server_deployer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.app.deployer.server_deployer</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;FL Server deployer.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.event_type</span> <span class="kn">import</span> <span class="n">EventType</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">SystemComponents</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.workspace</span> <span class="kn">import</span> <span class="n">Workspace</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.fed_server</span> <span class="kn">import</span> <span class="n">FederatedServer</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.job_runner</span> <span class="kn">import</span> <span class="n">JobRunner</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.run_manager</span> <span class="kn">import</span> <span class="n">RunManager</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.fed.server.server_cmd_modules</span> <span class="kn">import</span> <span class="n">ServerCommandModules</span>
+
+
+<div class="viewcode-block" id="ServerDeployer"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.deployer.server_deployer.html#nvflare.private.fed.app.deployer.server_deployer.ServerDeployer">[docs]</a><span class="k">class</span> <span class="nc">ServerDeployer</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;FL Server deployer.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Init the ServerDeployer.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">services</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cmd_modules</span> <span class="o">=</span> <span class="n">ServerCommandModules</span><span class="o">.</span><span class="n">cmd_modules</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server_config</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">secure_train</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">app_validator</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">host</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enable_byoc</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">components</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">handlers</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ServerDeployer.build"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.deployer.server_deployer.html#nvflare.private.fed.app.deployer.server_deployer.ServerDeployer.build">[docs]</a>    <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">build_ctx</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To build the ServerDeployer.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            build_ctx: build context</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server_config</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;server_config&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">secure_train</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;secure_train&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">app_validator</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;app_validator&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">host</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;server_host&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enable_byoc</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;enable_byoc&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;snapshot_persistor&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;overseer_agent&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">components</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;server_components&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">handlers</span> <span class="o">=</span> <span class="n">build_ctx</span><span class="p">[</span><span class="s2">&quot;server_handlers&quot;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ServerDeployer.create_fl_server"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.deployer.server_deployer.html#nvflare.private.fed.app.deployer.server_deployer.ServerDeployer.create_fl_server">[docs]</a>    <span class="k">def</span> <span class="nf">create_fl_server</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">secure_train</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To create the FL Server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            args: command args</span>
+<span class="sd">            secure_train: True/False</span>
+
+<span class="sd">        Returns: FL Server</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># We only deploy the first server right now .....</span>
+        <span class="n">first_server</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">server_config</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">wait_after_min_clients</span> <span class="o">=</span> <span class="n">first_server</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;wait_after_min_clients&quot;</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+        <span class="n">heart_beat_timeout</span> <span class="o">=</span> <span class="mi">600</span>
+        <span class="k">if</span> <span class="n">first_server</span><span class="p">[</span><span class="s2">&quot;heart_beat_timeout&quot;</span><span class="p">]:</span>
+            <span class="n">heart_beat_timeout</span> <span class="o">=</span> <span class="n">first_server</span><span class="p">[</span><span class="s2">&quot;heart_beat_timeout&quot;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">:</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="n">first_server</span><span class="p">[</span><span class="s2">&quot;service&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;target&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">first_server</span><span class="p">[</span><span class="s2">&quot;service&quot;</span><span class="p">][</span><span class="s2">&quot;target&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">host</span> <span class="o">+</span> <span class="s2">&quot;:&quot;</span> <span class="o">+</span> <span class="n">target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">services</span> <span class="o">=</span> <span class="n">FederatedServer</span><span class="p">(</span>
+            <span class="n">project_name</span><span class="o">=</span><span class="n">first_server</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+            <span class="n">min_num_clients</span><span class="o">=</span><span class="n">first_server</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;min_num_clients&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="n">max_num_clients</span><span class="o">=</span><span class="n">first_server</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_num_clients&quot;</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span>
+            <span class="n">wait_after_min_clients</span><span class="o">=</span><span class="n">wait_after_min_clients</span><span class="p">,</span>
+            <span class="n">cmd_modules</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd_modules</span><span class="p">,</span>
+            <span class="n">heart_beat_timeout</span><span class="o">=</span><span class="n">heart_beat_timeout</span><span class="p">,</span>
+            <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+            <span class="n">secure_train</span><span class="o">=</span><span class="n">secure_train</span><span class="p">,</span>
+            <span class="n">enable_byoc</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">enable_byoc</span><span class="p">,</span>
+            <span class="n">snapshot_persistor</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">snapshot_persistor</span><span class="p">,</span>
+            <span class="n">overseer_agent</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">overseer_agent</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">first_server</span><span class="p">,</span> <span class="n">services</span></div>
+
+<div class="viewcode-block" id="ServerDeployer.deploy"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.deployer.server_deployer.html#nvflare.private.fed.app.deployer.server_deployer.ServerDeployer.deploy">[docs]</a>    <span class="k">def</span> <span class="nf">deploy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To deploy the FL server services.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            args: command args.</span>
+
+<span class="sd">        Returns: FL Server</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">first_server</span><span class="p">,</span> <span class="n">services</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_fl_server</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">secure_train</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">secure_train</span><span class="p">)</span>
+        <span class="n">services</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">grpc_args</span><span class="o">=</span><span class="n">first_server</span><span class="p">,</span> <span class="n">secure_train</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">secure_train</span><span class="p">)</span>
+
+        <span class="n">job_runner</span> <span class="o">=</span> <span class="n">JobRunner</span><span class="p">(</span><span class="n">workspace_root</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">)</span>
+        <span class="n">workspace</span> <span class="o">=</span> <span class="n">Workspace</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">workspace</span><span class="p">,</span> <span class="s2">&quot;server&quot;</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">config_folder</span><span class="p">)</span>
+        <span class="n">run_manager</span> <span class="o">=</span> <span class="n">RunManager</span><span class="p">(</span>
+            <span class="n">server_name</span><span class="o">=</span><span class="n">services</span><span class="o">.</span><span class="n">project_name</span><span class="p">,</span>
+            <span class="n">engine</span><span class="o">=</span><span class="n">services</span><span class="o">.</span><span class="n">engine</span><span class="p">,</span>
+            <span class="n">job_id</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="n">workspace</span><span class="o">=</span><span class="n">workspace</span><span class="p">,</span>
+            <span class="n">components</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">components</span><span class="p">,</span>
+            <span class="n">handlers</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">handlers</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">job_manager</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_MANAGER</span><span class="p">)</span>
+        <span class="n">services</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">set_run_manager</span><span class="p">(</span><span class="n">run_manager</span><span class="p">)</span>
+        <span class="n">services</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">set_job_runner</span><span class="p">(</span><span class="n">job_runner</span><span class="p">,</span> <span class="n">job_manager</span><span class="p">)</span>
+
+        <span class="n">run_manager</span><span class="o">.</span><span class="n">add_handler</span><span class="p">(</span><span class="n">job_runner</span><span class="p">)</span>
+        <span class="n">run_manager</span><span class="o">.</span><span class="n">add_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_RUNNER</span><span class="p">,</span> <span class="n">job_runner</span><span class="p">)</span>
+        <span class="n">fl_ctx</span> <span class="o">=</span> <span class="n">services</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">()</span>
+
+        <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_start_job_runner</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">job_runner</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">])</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+        <span class="n">services</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">fire_event</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">SYSTEM_START</span><span class="p">,</span> <span class="n">services</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">new_context</span><span class="p">())</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;deployed FL server trainer.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">services</span></div>
+
+    <span class="k">def</span> <span class="nf">_start_job_runner</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">job_runner</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">):</span>
+        <span class="n">job_runner</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fl_ctx</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ServerDeployer.close"><a class="viewcode-back" href="../../../../../../apidocs/nvflare.private.fed.app.deployer.server_deployer.html#nvflare.private.fed.app.deployer.server_deployer.ServerDeployer.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;To close the services.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">services</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">services</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

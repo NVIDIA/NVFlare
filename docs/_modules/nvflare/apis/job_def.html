@@ -1,0 +1,373 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.apis.job_def &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.apis.job_def</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.apis.job_def</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_constant</span> <span class="kn">import</span> <span class="n">SystemComponents</span>
+<span class="kn">from</span> <span class="nn">nvflare.apis.fl_context</span> <span class="kn">import</span> <span class="n">FLContext</span>
+
+<span class="c1"># this is treated as all online sites in job deploy_map</span>
+<span class="n">ALL_SITES</span> <span class="o">=</span> <span class="s2">&quot;@ALL&quot;</span>
+
+
+<div class="viewcode-block" id="RunStatus"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.RunStatus">[docs]</a><span class="k">class</span> <span class="nc">RunStatus</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+
+    <span class="n">SUBMITTED</span> <span class="o">=</span> <span class="s2">&quot;SUBMITTED&quot;</span>
+    <span class="n">APPROVED</span> <span class="o">=</span> <span class="s2">&quot;APPROVED&quot;</span>
+    <span class="n">DISPATCHED</span> <span class="o">=</span> <span class="s2">&quot;DISPATCHED&quot;</span>
+    <span class="n">RUNNING</span> <span class="o">=</span> <span class="s2">&quot;RUNNING&quot;</span>
+    <span class="n">FINISHED_COMPLETED</span> <span class="o">=</span> <span class="s2">&quot;FINISHED:COMPLETED&quot;</span>
+    <span class="n">FINISHED_ABORTED</span> <span class="o">=</span> <span class="s2">&quot;FINISHED:ABORTED&quot;</span>
+    <span class="n">FINISHED_EXECUTION_EXCEPTION</span> <span class="o">=</span> <span class="s2">&quot;FINISHED:EXECUTION_EXCEPTION&quot;</span>
+    <span class="n">FAILED_TO_RUN</span> <span class="o">=</span> <span class="s2">&quot;FAILED_TO_RUN&quot;</span></div>
+
+
+<div class="viewcode-block" id="JobDataKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.JobDataKey">[docs]</a><span class="k">class</span> <span class="nc">JobDataKey</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">DATA</span> <span class="o">=</span> <span class="s2">&quot;data&quot;</span>
+    <span class="n">META</span> <span class="o">=</span> <span class="s2">&quot;meta&quot;</span>
+    <span class="n">JOB_DATA</span> <span class="o">=</span> <span class="s2">&quot;job_data_&quot;</span>
+    <span class="n">WORKSPACE_DATA</span> <span class="o">=</span> <span class="s2">&quot;workspace_data_&quot;</span></div>
+
+
+<div class="viewcode-block" id="JobMetaKey"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.JobMetaKey">[docs]</a><span class="k">class</span> <span class="nc">JobMetaKey</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">JOB_ID</span> <span class="o">=</span> <span class="s2">&quot;job_id&quot;</span>
+    <span class="n">JOB_NAME</span> <span class="o">=</span> <span class="s2">&quot;name&quot;</span>
+    <span class="n">JOB_FOLDER_NAME</span> <span class="o">=</span> <span class="s2">&quot;job_folder_name&quot;</span>
+    <span class="n">STATUS</span> <span class="o">=</span> <span class="s2">&quot;status&quot;</span>
+    <span class="n">DEPLOY_MAP</span> <span class="o">=</span> <span class="s2">&quot;deploy_map&quot;</span>
+    <span class="n">RESOURCE_SPEC</span> <span class="o">=</span> <span class="s2">&quot;resource_spec&quot;</span>
+    <span class="n">CONTENT_LOCATION</span> <span class="o">=</span> <span class="s2">&quot;content_location&quot;</span>
+    <span class="n">RESULT_LOCATION</span> <span class="o">=</span> <span class="s2">&quot;result_location&quot;</span>
+    <span class="n">APPROVALS</span> <span class="o">=</span> <span class="s2">&quot;approvals&quot;</span>
+    <span class="n">MIN_CLIENTS</span> <span class="o">=</span> <span class="s2">&quot;min_clients&quot;</span>
+    <span class="n">MANDATORY_CLIENTS</span> <span class="o">=</span> <span class="s2">&quot;mandatory_clients&quot;</span>
+    <span class="n">SUBMIT_TIME</span> <span class="o">=</span> <span class="s2">&quot;submit_time&quot;</span>
+    <span class="n">SUBMIT_TIME_ISO</span> <span class="o">=</span> <span class="s2">&quot;submit_time_iso&quot;</span>
+    <span class="n">START_TIME</span> <span class="o">=</span> <span class="s2">&quot;start_time&quot;</span>
+    <span class="n">DURATION</span> <span class="o">=</span> <span class="s2">&quot;duration&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span></div>
+
+
+<div class="viewcode-block" id="Job"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.Job">[docs]</a><span class="k">class</span> <span class="nc">Job</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">resource_spec</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">],</span>
+        <span class="n">deploy_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
+        <span class="n">meta</span><span class="p">,</span>
+        <span class="n">min_sites</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">required_sites</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Job object containing the job metadata.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            job_id: Job ID</span>
+<span class="sd">            resource_spec: Resource specification with information on the resources of each client</span>
+<span class="sd">            deploy_map: Deploy map specifying each app and the sites that it should be deployed to</span>
+<span class="sd">            meta: full contents of the persisted metadata for the job for persistent storage</span>
+<span class="sd">            min_sites (int): minimum number of sites</span>
+<span class="sd">            required_sites: A list of required site names</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span> <span class="o">=</span> <span class="n">job_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resource_spec</span> <span class="o">=</span> <span class="n">resource_spec</span>  <span class="c1"># resource_requirements should be {site name: resource}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">deploy_map</span> <span class="o">=</span> <span class="n">deploy_map</span>  <span class="c1"># should be {app name: a list of sites}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">meta</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">min_sites</span> <span class="o">=</span> <span class="n">min_sites</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">required_sites</span> <span class="o">=</span> <span class="n">required_sites</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">required_sites</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">required_sites</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">dispatcher_id</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dispatch_time</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">submit_time</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_record</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># job id, dispatched time/UUID, finished time, completion code (normal, aborted)</span>
+
+<div class="viewcode-block" id="Job.get_deployment"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.Job.get_deployment">[docs]</a>    <span class="k">def</span> <span class="nf">get_deployment</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the deployment configuration.</span>
+
+<span class="sd">        ::</span>
+
+<span class="sd">            &quot;deploy_map&quot;: {</span>
+<span class="sd">                &quot;hello-numpy-sag-server&quot;: [</span>
+<span class="sd">                  &quot;server&quot;</span>
+<span class="sd">                ],</span>
+<span class="sd">                &quot;hello-numpy-sag-client&quot;: [</span>
+<span class="sd">                  &quot;client1&quot;,</span>
+<span class="sd">                  &quot;client2&quot;</span>
+<span class="sd">                ],</span>
+<span class="sd">                &quot;hello-numpy-sag-client3&quot;: [</span>
+<span class="sd">                  &quot;client3&quot;</span>
+<span class="sd">                ]</span>
+<span class="sd">              },</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Contents of deploy_map as a dictionary of strings of app names with their corresponding sites</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">deploy_map</span></div>
+
+<div class="viewcode-block" id="Job.get_application"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.Job.get_application">[docs]</a>    <span class="k">def</span> <span class="nf">get_application</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">:</span> <span class="n">FLContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Get the application content in bytes for the specified participant.&quot;&quot;&quot;</span>
+        <span class="c1"># application_name = self.get_application_name(participant)</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_engine</span><span class="p">()</span>
+        <span class="n">job_def_manager</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">SystemComponents</span><span class="o">.</span><span class="n">JOB_MANAGER</span><span class="p">)</span>
+        <span class="c1"># # if not isinstance(job_def_manager, JobDefManagerSpec):</span>
+        <span class="c1"># #     raise TypeError(f&quot;job_def_manager must be JobDefManagerSpec type. Got: {type(job_def_manager)}&quot;)</span>
+        <span class="k">return</span> <span class="n">job_def_manager</span><span class="o">.</span><span class="n">get_app</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app_name</span><span class="p">,</span> <span class="n">fl_ctx</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Job.get_application_name"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.Job.get_application_name">[docs]</a>    <span class="k">def</span> <span class="nf">get_application_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">participant</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get the application name for the specified participant.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">app</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">deploy_map</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">site</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">deploy_map</span><span class="p">[</span><span class="n">app</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">site</span> <span class="o">==</span> <span class="n">participant</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">app</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="Job.get_resource_requirements"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.Job.get_resource_requirements">[docs]</a>    <span class="k">def</span> <span class="nf">get_resource_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns app resource requirements.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A dict of {site_name: resource}</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">resource_spec</span></div>
+
+    <span class="k">def</span> <span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">job_id</span></div>
+
+
+<div class="viewcode-block" id="job_from_meta"><a class="viewcode-back" href="../../../apidocs/nvflare.apis.job_def.html#nvflare.apis.job_def.job_from_meta">[docs]</a><span class="k">def</span> <span class="nf">job_from_meta</span><span class="p">(</span><span class="n">meta</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Job</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Converts information in meta into a Job object.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        meta: dict of meta information</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A Job object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">job</span> <span class="o">=</span> <span class="n">Job</span><span class="p">(</span>
+        <span class="n">job_id</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">JOB_ID</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+        <span class="n">resource_spec</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">RESOURCE_SPEC</span><span class="p">,</span> <span class="p">{}),</span>
+        <span class="n">deploy_map</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">DEPLOY_MAP</span><span class="p">,</span> <span class="p">{}),</span>
+        <span class="n">meta</span><span class="o">=</span><span class="n">meta</span><span class="p">,</span>
+        <span class="n">min_sites</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">MIN_CLIENTS</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="n">required_sites</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">JobMetaKey</span><span class="o">.</span><span class="n">MANDATORY_CLIENTS</span><span class="p">,</span> <span class="p">[]),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">job</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

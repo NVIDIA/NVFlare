@@ -1,0 +1,7 @@
+nvflare.private.fed.client.process\_aux\_cmd module
+===================================================
+
+.. automodule:: nvflare.private.fed.client.process_aux_cmd
+   :members:
+   :undoc-members:
+   :show-inheritance:

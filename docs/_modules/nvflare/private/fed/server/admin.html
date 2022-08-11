@@ -1,0 +1,648 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed.server.admin &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../../" id="documentation_options" src="../../../../../_static/documentation_options.js"></script>
+        <script src="../../../../../_static/jquery.js"></script>
+        <script src="../../../../../_static/underscore.js"></script>
+        <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../../_static/doctools.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.private.fed.server.admin</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.private.fed.server.admin</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.conn</span> <span class="kn">import</span> <span class="n">Connection</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.reg</span> <span class="kn">import</span> <span class="n">CommandModule</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.audit</span> <span class="kn">import</span> <span class="n">CommandAudit</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.authz</span> <span class="kn">import</span> <span class="n">AuthorizationService</span><span class="p">,</span> <span class="n">AuthzCommandModule</span><span class="p">,</span> <span class="n">AuthzFilter</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.builtin</span> <span class="kn">import</span> <span class="n">new_command_register_with_builtin_module</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.constants</span> <span class="kn">import</span> <span class="n">ConnProps</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.file_transfer</span> <span class="kn">import</span> <span class="n">FileTransferModule</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.hci</span> <span class="kn">import</span> <span class="n">AdminServer</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.hci.server.login</span> <span class="kn">import</span> <span class="n">LoginModule</span><span class="p">,</span> <span class="n">SessionManager</span><span class="p">,</span> <span class="n">SimpleAuthenticator</span>
+<span class="kn">from</span> <span class="nn">nvflare.fuel.sec.audit</span> <span class="kn">import</span> <span class="n">Auditor</span><span class="p">,</span> <span class="n">AuditService</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.admin_defs</span> <span class="kn">import</span> <span class="n">Message</span>
+<span class="kn">from</span> <span class="nn">nvflare.private.defs</span> <span class="kn">import</span> <span class="n">ERROR_MSG_PREFIX</span>
+
+<span class="kn">from</span> <span class="nn">.app_authz</span> <span class="kn">import</span> <span class="n">AppAuthzService</span>
+
+
+<div class="viewcode-block" id="new_message"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.new_message">[docs]</a><span class="k">def</span> <span class="nf">new_message</span><span class="p">(</span><span class="n">conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">,</span> <span class="n">topic</span><span class="p">,</span> <span class="n">body</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
+    <span class="n">msg</span> <span class="o">=</span> <span class="n">Message</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">body</span><span class="p">)</span>
+    <span class="n">event_id</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">EVENT_ID</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">event_id</span><span class="p">:</span>
+        <span class="n">msg</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">EVENT_ID</span><span class="p">,</span> <span class="n">event_id</span><span class="p">)</span>
+
+    <span class="n">user_name</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">USER_NAME</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">user_name</span><span class="p">:</span>
+        <span class="n">msg</span><span class="o">.</span><span class="n">set_header</span><span class="p">(</span><span class="n">ConnProps</span><span class="o">.</span><span class="n">USER_NAME</span><span class="p">,</span> <span class="n">user_name</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">msg</span></div>
+
+
+<span class="k">class</span> <span class="nc">_Waiter</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span> <span class="o">=</span> <span class="n">req</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reply</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reply_time</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">class</span> <span class="nc">_Client</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">token</span> <span class="o">=</span> <span class="n">token</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_heard_time</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">outgoing_reqs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fnf_reqs</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># fire-and-forget requests</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">waiters</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># ref =&gt; waiter</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">waiter_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="n">waiter</span> <span class="o">=</span> <span class="n">_Waiter</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">outgoing_reqs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">waiter_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">waiters</span><span class="p">[</span><span class="n">req</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">waiter</span>
+
+        <span class="k">return</span> <span class="n">waiter</span>
+
+    <span class="k">def</span> <span class="nf">fire_and_forget</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reqs</span><span class="p">:</span> <span class="p">[</span><span class="n">Message</span><span class="p">]):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">reqs</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fnf_reqs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_outgoing_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_num_reqs</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">Message</span><span class="p">]:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span><span class="p">:</span>
+            <span class="c1"># reqs in outgoing_reqs have higher priority</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">outgoing_reqs</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">outgoing_reqs</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># no regular reqs - take fire-and-forget reqs</span>
+                <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fnf_reqs</span>
+
+            <span class="k">if</span> <span class="n">max_num_reqs</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">num_reqs</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">num_reqs</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">max_num_reqs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">q</span><span class="p">))</span>
+
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_reqs</span><span class="p">):</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">def</span> <span class="nf">accept_reply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reply</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_heard_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="n">ref_id</span> <span class="o">=</span> <span class="n">reply</span><span class="o">.</span><span class="n">get_ref_id</span><span class="p">()</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">waiter_lock</span><span class="p">:</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">waiters</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">ref_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">w</span><span class="p">:</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">reply</span> <span class="o">=</span> <span class="n">reply</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">reply_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">cancel_waiter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">waiter</span><span class="p">:</span> <span class="n">_Waiter</span><span class="p">):</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">waiter</span><span class="o">.</span><span class="n">req</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">waiter_lock</span><span class="p">:</span>
+            <span class="n">waiter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">waiters</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">waiter</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">req_lock</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">req</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">outgoing_reqs</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">outgoing_reqs</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="ClientReply"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.ClientReply">[docs]</a><span class="k">class</span> <span class="nc">ClientReply</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_token</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">reply</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Client reply.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_token (str): client token</span>
+<span class="sd">            req (Message): request</span>
+<span class="sd">            reply (Message): reply</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_token</span> <span class="o">=</span> <span class="n">client_token</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">request</span> <span class="o">=</span> <span class="n">req</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reply</span> <span class="o">=</span> <span class="n">reply</span></div>
+
+
+<span class="k">class</span> <span class="nc">_ClientReq</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">client</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span> <span class="o">=</span> <span class="n">req</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">waiter</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<div class="viewcode-block" id="check_client_replies"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.check_client_replies">[docs]</a><span class="k">def</span> <span class="nf">check_client_replies</span><span class="p">(</span><span class="n">replies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ClientReply</span><span class="p">],</span> <span class="n">client_sites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">command</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="n">display_sites</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">client_sites</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">replies</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2"> to the clients </span><span class="si">{</span><span class="n">display_sites</span><span class="si">}</span><span class="s2">: no replies.&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">replies</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">client_sites</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2"> to the clients </span><span class="si">{</span><span class="n">display_sites</span><span class="si">}</span><span class="s2">: not enough replies.&quot;</span><span class="p">)</span>
+
+    <span class="n">error_msg</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">client_name</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">replies</span><span class="p">,</span> <span class="n">client_sites</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">reply</span> <span class="ow">and</span> <span class="n">ERROR_MSG_PREFIX</span> <span class="ow">in</span> <span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="o">.</span><span class="n">body</span><span class="p">:</span>
+            <span class="n">error_msg</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\t</span><span class="si">{</span><span class="n">client_name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">reply</span><span class="o">.</span><span class="n">body</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="k">if</span> <span class="n">error_msg</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2"> to the following clients: </span><span class="se">\n</span><span class="si">{</span><span class="n">error_msg</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FedAdminServer"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer">[docs]</a><span class="k">class</span> <span class="nc">FedAdminServer</span><span class="p">(</span><span class="n">AdminServer</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">fed_admin_interface</span><span class="p">,</span>
+        <span class="n">users</span><span class="p">,</span>
+        <span class="n">cmd_modules</span><span class="p">,</span>
+        <span class="n">file_upload_dir</span><span class="p">,</span>
+        <span class="n">file_download_dir</span><span class="p">,</span>
+        <span class="n">allowed_shell_cmds</span><span class="p">,</span>
+        <span class="n">host</span><span class="p">,</span>
+        <span class="n">port</span><span class="p">,</span>
+        <span class="n">ca_cert_file_name</span><span class="p">,</span>
+        <span class="n">server_cert_file_name</span><span class="p">,</span>
+        <span class="n">server_key_file_name</span><span class="p">,</span>
+        <span class="n">accepted_client_cns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">app_validator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">download_job_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The FedAdminServer is the framework for developing admin commands.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fed_admin_interface: the server&#39;s federated admin interface</span>
+<span class="sd">            users: a dict of {username: pwd hash}</span>
+<span class="sd">            cmd_modules: a list of CommandModules</span>
+<span class="sd">            file_upload_dir: the directory for uploaded files</span>
+<span class="sd">            file_download_dir: the directory for files to be downloaded</span>
+<span class="sd">            allowed_shell_cmds: list of shell commands allowed. If not specified, all allowed.</span>
+<span class="sd">            host: the IP address of the admin server</span>
+<span class="sd">            port: port number of admin server</span>
+<span class="sd">            ca_cert_file_name: the root CA&#39;s cert file name</span>
+<span class="sd">            server_cert_file_name: server&#39;s cert, signed by the CA</span>
+<span class="sd">            server_key_file_name: server&#39;s private key file</span>
+<span class="sd">            accepted_client_cns: list of accepted Common Names from client, if specified</span>
+<span class="sd">            app_validator: Application folder validator.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cmd_reg</span> <span class="o">=</span> <span class="n">new_command_register_with_builtin_module</span><span class="p">(</span><span class="n">app_ctx</span><span class="o">=</span><span class="n">fed_admin_interface</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sai</span> <span class="o">=</span> <span class="n">fed_admin_interface</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">allowed_shell_cmds</span> <span class="o">=</span> <span class="n">allowed_shell_cmds</span>
+
+        <span class="n">authenticator</span> <span class="o">=</span> <span class="n">SimpleAuthenticator</span><span class="p">(</span><span class="n">users</span><span class="p">)</span>
+        <span class="n">sess_mgr</span> <span class="o">=</span> <span class="n">SessionManager</span><span class="p">()</span>
+        <span class="n">login_module</span> <span class="o">=</span> <span class="n">LoginModule</span><span class="p">(</span><span class="n">authenticator</span><span class="p">,</span> <span class="n">sess_mgr</span><span class="p">)</span>
+        <span class="n">cmd_reg</span><span class="o">.</span><span class="n">register_module</span><span class="p">(</span><span class="n">login_module</span><span class="p">)</span>
+
+        <span class="c1"># register filters - order is important!</span>
+        <span class="c1"># login_module is also a filter that determines if user is authenticated</span>
+        <span class="n">cmd_reg</span><span class="o">.</span><span class="n">add_filter</span><span class="p">(</span><span class="n">login_module</span><span class="p">)</span>
+
+        <span class="c1"># next is the authorization filter and command module</span>
+        <span class="n">authorizer</span> <span class="o">=</span> <span class="n">AuthorizationService</span><span class="o">.</span><span class="n">get_authorizer</span><span class="p">()</span>
+        <span class="n">authz_filter</span> <span class="o">=</span> <span class="n">AuthzFilter</span><span class="p">(</span><span class="n">authorizer</span><span class="o">=</span><span class="n">authorizer</span><span class="p">)</span>
+        <span class="n">cmd_reg</span><span class="o">.</span><span class="n">add_filter</span><span class="p">(</span><span class="n">authz_filter</span><span class="p">)</span>
+        <span class="n">authz_cmd_module</span> <span class="o">=</span> <span class="n">AuthzCommandModule</span><span class="p">(</span><span class="n">authorizer</span><span class="o">=</span><span class="n">authorizer</span><span class="p">)</span>
+        <span class="n">cmd_reg</span><span class="o">.</span><span class="n">register_module</span><span class="p">(</span><span class="n">authz_cmd_module</span><span class="p">)</span>
+
+        <span class="c1"># audit filter records commands to audit trail</span>
+        <span class="n">auditor</span> <span class="o">=</span> <span class="n">AuditService</span><span class="o">.</span><span class="n">get_auditor</span><span class="p">()</span>
+        <span class="c1"># TODO:: clean this up</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">auditor</span><span class="p">,</span> <span class="n">Auditor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;auditor must be Auditor but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">auditor</span><span class="p">)))</span>
+        <span class="n">audit_filter</span> <span class="o">=</span> <span class="n">CommandAudit</span><span class="p">(</span><span class="n">auditor</span><span class="p">)</span>
+        <span class="n">cmd_reg</span><span class="o">.</span><span class="n">add_filter</span><span class="p">(</span><span class="n">audit_filter</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">file_upload_dir</span> <span class="o">=</span> <span class="n">file_upload_dir</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">file_download_dir</span> <span class="o">=</span> <span class="n">file_download_dir</span>
+
+        <span class="n">AppAuthzService</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">app_validator</span><span class="p">)</span>
+        <span class="n">cmd_reg</span><span class="o">.</span><span class="n">register_module</span><span class="p">(</span>
+            <span class="n">FileTransferModule</span><span class="p">(</span>
+                <span class="n">upload_dir</span><span class="o">=</span><span class="n">file_upload_dir</span><span class="p">,</span>
+                <span class="n">download_dir</span><span class="o">=</span><span class="n">file_download_dir</span><span class="p">,</span>
+                <span class="n">upload_folder_authz_func</span><span class="o">=</span><span class="n">AppAuthzService</span><span class="o">.</span><span class="n">authorize_upload</span><span class="p">,</span>
+                <span class="n">download_job_url</span><span class="o">=</span><span class="n">download_job_url</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">cmd_reg</span><span class="o">.</span><span class="n">register_module</span><span class="p">(</span><span class="n">sess_mgr</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">cmd_modules</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cmd_modules</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;cmd_modules must be list but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmd_modules</span><span class="p">)))</span>
+
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">cmd_modules</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">CommandModule</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;cmd_modules must contain CommandModule but got element of type </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">m</span><span class="p">)))</span>
+                <span class="n">cmd_reg</span><span class="o">.</span><span class="n">register_module</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+
+        <span class="n">AdminServer</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="n">cmd_reg</span><span class="o">=</span><span class="n">cmd_reg</span><span class="p">,</span>
+            <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
+            <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span>
+            <span class="n">ca_cert</span><span class="o">=</span><span class="n">ca_cert_file_name</span><span class="p">,</span>
+            <span class="n">server_cert</span><span class="o">=</span><span class="n">server_cert_file_name</span><span class="p">,</span>
+            <span class="n">server_key</span><span class="o">=</span><span class="n">server_key_file_name</span><span class="p">,</span>
+            <span class="n">accepted_client_cns</span><span class="o">=</span><span class="n">accepted_client_cns</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">clients</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># token =&gt; _Client</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="mf">10.0</span>
+
+<div class="viewcode-block" id="FedAdminServer.client_heartbeat"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.client_heartbeat">[docs]</a>    <span class="k">def</span> <span class="nf">client_heartbeat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Receive client heartbeat.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            token: the session token of the client</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Client.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_lock</span><span class="p">:</span>
+            <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">client</span><span class="p">:</span>
+                <span class="n">client</span> <span class="o">=</span> <span class="n">_Client</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="p">[</span><span class="n">token</span><span class="p">]</span> <span class="o">=</span> <span class="n">client</span>
+            <span class="n">client</span><span class="o">.</span><span class="n">last_heard_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">client</span></div>
+
+<div class="viewcode-block" id="FedAdminServer.client_dead"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.client_dead">[docs]</a>    <span class="k">def</span> <span class="nf">client_dead</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Remove dead client.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            token: the session token of the client</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FedAdminServer.get_client_tokens"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.get_client_tokens">[docs]</a>    <span class="k">def</span> <span class="nf">get_client_tokens</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[]:</span>
+        <span class="sd">&quot;&quot;&quot;Get tokens of existing clients.&quot;&quot;&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+<div class="viewcode-block" id="FedAdminServer.send_request_to_client"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.send_request_to_client">[docs]</a>    <span class="k">def</span> <span class="nf">send_request_to_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">client_token</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ClientReply</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">Message</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;request must be Message but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">req</span><span class="p">)))</span>
+        <span class="n">reqs</span> <span class="o">=</span> <span class="p">{</span><span class="n">client_token</span><span class="p">:</span> <span class="n">req</span><span class="p">}</span>
+        <span class="n">replies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_requests</span><span class="p">(</span><span class="n">reqs</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">replies</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">replies</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">replies</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="FedAdminServer.send_request_to_clients"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.send_request_to_clients">[docs]</a>    <span class="k">def</span> <span class="nf">send_request_to_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="n">Message</span><span class="p">,</span> <span class="n">client_tokens</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">ClientReply</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">Message</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;request must be Message but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">req</span><span class="p">)))</span>
+        <span class="n">reqs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">client_tokens</span><span class="p">:</span>
+            <span class="n">reqs</span><span class="p">[</span><span class="n">token</span><span class="p">]</span> <span class="o">=</span> <span class="n">req</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_requests</span><span class="p">(</span><span class="n">reqs</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FedAdminServer.send_requests"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.send_requests">[docs]</a>    <span class="k">def</span> <span class="nf">send_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">requests</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">ClientReply</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Send requests to clients.</span>
+
+<span class="sd">        NOTE::</span>
+
+<span class="sd">            This method is to be used by a Command Handler to send requests to Clients.</span>
+<span class="sd">            Hence, it is run in the Command Handler&#39;s handling thread.</span>
+<span class="sd">            This is a blocking call - returned only after all responses are received or timeout.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            requests: A dict of requests: {client token: request or list of requests}</span>
+<span class="sd">            timeout_secs: how long to wait for reply before timeout</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A list of ClientReply</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">requests</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;requests must be a dict but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">requests</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">requests</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="n">timeout_secs</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="c1"># this is fire-and-forget!</span>
+            <span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">requests</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">client</span><span class="p">:</span>
+                    <span class="k">continue</span>
+
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                    <span class="n">reqs</span> <span class="o">=</span> <span class="n">r</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">reqs</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="p">]</span>
+
+                <span class="n">client</span><span class="o">.</span><span class="n">fire_and_forget</span><span class="p">(</span><span class="n">reqs</span><span class="p">)</span>
+            <span class="c1"># No replies</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># Regular requests</span>
+        <span class="n">client_reqs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">requests</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">client</span><span class="p">:</span>
+                    <span class="k">continue</span>
+
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                    <span class="n">reqs</span> <span class="o">=</span> <span class="n">r</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">reqs</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="p">]</span>
+
+                <span class="k">for</span> <span class="n">req</span> <span class="ow">in</span> <span class="n">reqs</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">Message</span><span class="p">):</span>
+                        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;request must be a Message but got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">req</span><span class="p">)))</span>
+                    <span class="n">client_reqs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_ClientReq</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">req</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send_client_reqs</span><span class="p">(</span><span class="n">client_reqs</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_send_client_reqs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_reqs</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">ClientReply</span><span class="p">]:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">client_reqs</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">result</span>
+
+        <span class="k">for</span> <span class="n">cr</span> <span class="ow">in</span> <span class="n">client_reqs</span><span class="p">:</span>
+            <span class="n">cr</span><span class="o">.</span><span class="n">waiter</span> <span class="o">=</span> <span class="n">cr</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">cr</span><span class="o">.</span><span class="n">req</span><span class="p">)</span>
+
+        <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">all_received</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">for</span> <span class="n">cr</span> <span class="ow">in</span> <span class="n">client_reqs</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">cr</span><span class="o">.</span><span class="n">waiter</span><span class="o">.</span><span class="n">reply_time</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">all_received</span> <span class="o">=</span> <span class="kc">False</span>
+                    <span class="k">break</span>
+
+            <span class="k">if</span> <span class="n">all_received</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="k">if</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span> <span class="o">&gt;</span> <span class="n">timeout_secs</span><span class="p">:</span>
+                <span class="c1"># timeout</span>
+                <span class="k">break</span>
+
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">cr</span> <span class="ow">in</span> <span class="n">client_reqs</span><span class="p">:</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ClientReply</span><span class="p">(</span><span class="n">client_token</span><span class="o">=</span><span class="n">cr</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="n">req</span><span class="o">=</span><span class="n">cr</span><span class="o">.</span><span class="n">waiter</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="n">reply</span><span class="o">=</span><span class="n">cr</span><span class="o">.</span><span class="n">waiter</span><span class="o">.</span><span class="n">reply</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="n">cr</span><span class="o">.</span><span class="n">waiter</span><span class="o">.</span><span class="n">reply_time</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># this client timed out</span>
+                <span class="n">cr</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">cancel_waiter</span><span class="p">(</span><span class="n">cr</span><span class="o">.</span><span class="n">waiter</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+<div class="viewcode-block" id="FedAdminServer.accept_reply"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.accept_reply">[docs]</a>    <span class="k">def</span> <span class="nf">accept_reply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_token</span><span class="p">,</span> <span class="n">reply</span><span class="p">:</span> <span class="n">Message</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Accept client reply.</span>
+
+<span class="sd">        NOTE::</span>
+<span class="sd">            This method is to be called by the FL Engine after a client&#39;s reply is received.</span>
+<span class="sd">            Hence, it is called from the FL Engine&#39;s message processing thread.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_token: session token of the client</span>
+<span class="sd">            reply: the reply message</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_heartbeat</span><span class="p">(</span><span class="n">client_token</span><span class="p">)</span>
+
+        <span class="n">ref_id</span> <span class="o">=</span> <span class="n">reply</span><span class="o">.</span><span class="n">get_ref_id</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">ref_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;protocol error: missing ref_id in reply from client </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">client_token</span><span class="p">)</span>
+
+        <span class="n">client</span><span class="o">.</span><span class="n">accept_reply</span><span class="p">(</span><span class="n">reply</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FedAdminServer.get_outgoing_requests"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.get_outgoing_requests">[docs]</a>    <span class="k">def</span> <span class="nf">get_outgoing_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_token</span><span class="p">,</span> <span class="n">max_reqs</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get outgoing request from a client.</span>
+
+<span class="sd">        NOTE::</span>
+<span class="sd">            This method is called by FL Engine to get outgoing messages to the client, so it</span>
+<span class="sd">            can send them to the client.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            client_token: session token of the client</span>
+<span class="sd">            max_reqs: max number of requests. 0 means unlimited.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            outgoing requests. A list of Message.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_lock</span><span class="p">:</span>
+            <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">client_token</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">client</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">client</span><span class="o">.</span><span class="n">get_outgoing_requests</span><span class="p">(</span><span class="n">max_reqs</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="FedAdminServer.stop"><a class="viewcode-back" href="../../../../../apidocs/nvflare.private.fed.server.admin.html#nvflare.private.fed.server.admin.FedAdminServer.stop">[docs]</a>    <span class="k">def</span> <span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sai</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

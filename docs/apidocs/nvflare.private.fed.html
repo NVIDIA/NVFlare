@@ -1,0 +1,357 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.private.fed package &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="nvflare.private.fed.app package" href="nvflare.private.fed.app.html" />
+    <link rel="prev" title="nvflare.private package" href="nvflare.private.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">API</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="nvflare.html">nvflare package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="nvflare.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="nvflare.apis.html">nvflare.apis package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.app_common.html">nvflare.app_common package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.fuel.html">nvflare.fuel package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.ha.html">nvflare.ha package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.lighter.html">nvflare.lighter package</a></li>
+<li class="toctree-l4 current"><a class="reference internal" href="nvflare.private.html">nvflare.private package</a><ul class="current">
+<li class="toctree-l5 current"><a class="reference internal" href="nvflare.private.html#subpackages">Subpackages</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.private.html#submodules">Submodules</a></li>
+<li class="toctree-l5"><a class="reference internal" href="nvflare.private.html#module-nvflare.private">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.security.html">nvflare.security package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.widgets.html">nvflare.widgets package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.html#module-nvflare">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="modules.html">nvflare</a> &raquo;</li>
+          <li><a href="nvflare.html">nvflare package</a> &raquo;</li>
+          <li><a href="nvflare.private.html">nvflare.private package</a> &raquo;</li>
+      <li>nvflare.private.fed package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/apidocs/nvflare.private.fed.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="nvflare-private-fed-package">
+<h1>nvflare.private.fed package<a class="headerlink" href="#nvflare-private-fed-package" title="Permalink to this heading">¶</a></h1>
+<section id="subpackages">
+<h2>Subpackages<a class="headerlink" href="#subpackages" title="Permalink to this heading">¶</a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.private.fed.app.html">nvflare.private.fed.app package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.app.html#subpackages">Subpackages</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.app.client.html">nvflare.private.fed.app.client package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.fed.app.client.html#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.fed.app.client.html#module-nvflare.private.fed.app.client">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.app.deployer.html">nvflare.private.fed.app.deployer package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.fed.app.deployer.html#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.fed.app.deployer.html#module-nvflare.private.fed.app.deployer">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.app.server.html">nvflare.private.fed.app.server package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.fed.app.server.html#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="nvflare.private.fed.app.server.html#module-nvflare.private.fed.app.server">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.app.html#submodules">Submodules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.app.default_app_validator.html">nvflare.private.fed.app.default_app_validator module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.app.fl_app_validator.html">nvflare.private.fed.app.fl_app_validator module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.app.fl_conf.html">nvflare.private.fed.app.fl_conf module</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.app.html#module-nvflare.private.fed.app">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.private.fed.client.html">nvflare.private.fed.client package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.client.html#submodules">Submodules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.admin.html">nvflare.private.fed.client.admin module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.admin_commands.html">nvflare.private.fed.client.admin_commands module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.admin_msg_sender.html">nvflare.private.fed.client.admin_msg_sender module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_aux_runner.html">nvflare.private.fed.client.client_aux_runner module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_engine.html">nvflare.private.fed.client.client_engine module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_engine_executor_spec.html">nvflare.private.fed.client.client_engine_executor_spec module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_engine_internal_spec.html">nvflare.private.fed.client.client_engine_internal_spec module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_executor.html">nvflare.private.fed.client.client_executor module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_json_config.html">nvflare.private.fed.client.client_json_config module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_req_processors.html">nvflare.private.fed.client.client_req_processors module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_run_manager.html">nvflare.private.fed.client.client_run_manager module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_runner.html">nvflare.private.fed.client.client_runner module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.client_status.html">nvflare.private.fed.client.client_status module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.command_agent.html">nvflare.private.fed.client.command_agent module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.communicator.html">nvflare.private.fed.client.communicator module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.comp_caller_cmd.html">nvflare.private.fed.client.comp_caller_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.fed_client.html">nvflare.private.fed.client.fed_client module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.fed_client_base.html">nvflare.private.fed.client.fed_client_base module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.info_coll_cmd.html">nvflare.private.fed.client.info_coll_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.process_aux_cmd.html">nvflare.private.fed.client.process_aux_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.scheduler_cmds.html">nvflare.private.fed.client.scheduler_cmds module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.shell_cmd.html">nvflare.private.fed.client.shell_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.sys_cmd.html">nvflare.private.fed.client.sys_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.training_cmds.html">nvflare.private.fed.client.training_cmds module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.client.validation_cmd.html">nvflare.private.fed.client.validation_cmd module</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.client.html#module-nvflare.private.fed.client">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.private.fed.protos.html">nvflare.private.fed.protos package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.protos.html#submodules">Submodules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.protos.admin_pb2.html">nvflare.private.fed.protos.admin_pb2 module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.protos.admin_pb2_grpc.html">nvflare.private.fed.protos.admin_pb2_grpc module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.protos.federated_pb2.html">nvflare.private.fed.protos.federated_pb2 module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.protos.federated_pb2_grpc.html">nvflare.private.fed.protos.federated_pb2_grpc module</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.protos.html#module-nvflare.private.fed.protos">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.private.fed.server.html">nvflare.private.fed.server package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.server.html#submodules">Submodules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.admin.html">nvflare.private.fed.server.admin module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.app_authz.html">nvflare.private.fed.server.app_authz module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.client_manager.html">nvflare.private.fed.server.client_manager module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.cmd_utils.html">nvflare.private.fed.server.cmd_utils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.comp_caller_cmd.html">nvflare.private.fed.server.comp_caller_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.fed_server.html">nvflare.private.fed.server.fed_server module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.info_coll_cmd.html">nvflare.private.fed.server.info_coll_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.job_cmds.html">nvflare.private.fed.server.job_cmds module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.job_meta_validator.html">nvflare.private.fed.server.job_meta_validator module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.job_runner.html">nvflare.private.fed.server.job_runner module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.run_manager.html">nvflare.private.fed.server.run_manager module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_aux_runner.html">nvflare.private.fed.server.server_aux_runner module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_cmd_modules.html">nvflare.private.fed.server.server_cmd_modules module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_command_agent.html">nvflare.private.fed.server.server_command_agent module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_commands.html">nvflare.private.fed.server.server_commands module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_engine.html">nvflare.private.fed.server.server_engine module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_engine_internal_spec.html">nvflare.private.fed.server.server_engine_internal_spec module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_json_config.html">nvflare.private.fed.server.server_json_config module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_runner.html">nvflare.private.fed.server.server_runner module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_state.html">nvflare.private.fed.server.server_state module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.server_status.html">nvflare.private.fed.server.server_status module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.shell_cmd.html">nvflare.private.fed.server.shell_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.sys_cmd.html">nvflare.private.fed.server.sys_cmd module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.server.training_cmds.html">nvflare.private.fed.server.training_cmds module</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.server.html#module-nvflare.private.fed.server">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nvflare.private.fed.utils.html">nvflare.private.fed.utils package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.utils.html#submodules">Submodules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.utils.fed_utils.html">nvflare.private.fed.utils.fed_utils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.utils.messageproto.html">nvflare.private.fed.utils.messageproto module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nvflare.private.fed.utils.numproto.html">nvflare.private.fed.utils.numproto module</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="nvflare.private.fed.utils.html#module-nvflare.private.fed.utils">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+<section id="module-nvflare.private.fed">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-nvflare.private.fed" title="Permalink to this heading">¶</a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="nvflare.private.html" class="btn btn-neutral float-left" title="nvflare.private package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nvflare.private.fed.app.html" class="btn btn-neutral float-right" title="nvflare.private.fed.app package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

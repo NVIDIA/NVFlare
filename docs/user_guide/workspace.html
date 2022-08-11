@@ -1,0 +1,355 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NVIDIA FLARE Workspace &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Authorization" href="authorization.html" />
+    <link rel="prev" title="Jobs: Defining Jobs and Multi-Job Execution" href="job.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../user_guide.html">User Guide - Operations</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="operation.html">Operating NVFLARE - Admin Client, Commands, FLAdminAPI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="application.html">NVIDIA FLARE Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="job.html">Jobs: Defining Jobs and Multi-Job Execution</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">NVIDIA FLARE Workspace</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#server">Server</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#accessing-server-side-workspace">Accessing server-side workspace</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#client">Client</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="authorization.html">Authorization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="federated_learning.html">Federated Learning</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../user_guide.html">User Guide - Operations</a> &raquo;</li>
+      <li>NVIDIA FLARE Workspace</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/user_guide/workspace.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="nvidia-flare-workspace">
+<h1>NVIDIA FLARE Workspace<a class="headerlink" href="#nvidia-flare-workspace" title="Permalink to this heading">¶</a></h1>
+<p>NVIDIA FLARE maintains a workspace for keeping the FL apps and execution results for different jobs
+under folders with the name of the <code class="docutils literal notranslate"><span class="pre">job_id</span></code>.</p>
+<p>The following is the workspace folder structure when running NVIDIA FLARE for the server and clients.</p>
+<section id="server">
+<span id="server-workspace"></span><h2>Server<a class="headerlink" href="#server" title="Permalink to this heading">¶</a></h2>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>/some_path_on_fl_server/fl_server_workspace_root/
+    admin_audit.log
+    log.txt
+    startup/
+        authorization.json
+        fed_server.json
+        log.config
+        readme.txt
+        rootCA.pem
+        server_context.tenseal
+        server.crt
+        server.key
+        signature.pkl
+        start.sh
+        stop_fl.sh
+        sub_start.sh
+    transfer/
+    aefdb0a3-6fbb-4c53-a677-b6951d6845a6/
+        app_server/
+            ...
+            config_fed_server.json
+        fl_app.txt
+        log.txt
+    baaf8789-e83f-4863-b085-3ca95303e6bc/
+        app_server/
+            ...
+            config/
+                config_fed_server.json
+        fl_app.txt
+        log.txt
+</pre></div>
+</div>
+<p>In each <code class="docutils literal notranslate"><span class="pre">job_id</span></code> folder, there is the <code class="docutils literal notranslate"><span class="pre">app_server</span></code> folder that contains the <a class="reference internal" href="application.html#application"><span class="std std-ref">NVIDIA FLARE Application</span></a> that is running
+on the server for this <code class="docutils literal notranslate"><span class="pre">job_id</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">log.txt</span></code> inside each <code class="docutils literal notranslate"><span class="pre">job_id</span></code> folder are the loggings of this job.</p>
+<p>While the <code class="docutils literal notranslate"><span class="pre">log.txt</span></code> under server folder is the log for the server control process.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">startup</span></code> folder contains the config and the scripts to start the FL server program.</p>
+<section id="accessing-server-side-workspace">
+<span id="access-server-workspace"></span><h3>Accessing server-side workspace<a class="headerlink" href="#accessing-server-side-workspace" title="Permalink to this heading">¶</a></h3>
+<p>When the job is running, each job will have a corresponding workspace under the <code class="docutils literal notranslate"><span class="pre">server</span></code> folder.</p>
+<p>When the job is finished, the server side workspace will be removed.
+The workspace will be saved into the JobStorage.</p>
+<p>You can issue the <code class="docutils literal notranslate"><span class="pre">download_job</span> <span class="pre">[JOB_ID]</span></code> in the admin client to download the server side workspace.</p>
+<p>The downloaded workspace will be in <code class="docutils literal notranslate"><span class="pre">[DOWNLOAD_DIR]/[JOB_ID]/workspace/</span></code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If you issue <code class="docutils literal notranslate"><span class="pre">download_job</span></code> before the job is finished, the workspace folder will be empty.</p>
+</div>
+</section>
+</section>
+<section id="client">
+<span id="client-workspace"></span><h2>Client<a class="headerlink" href="#client" title="Permalink to this heading">¶</a></h2>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>/some_path_on_fl_client/fl_client_workspace_root/
+    log.txt
+    startup/
+        client_context.tenseal
+        client.crt
+        client.key
+        fed_client.json
+        log.config
+        readme.txt
+        rootCA.pem
+        signature.pkl
+        start.sh
+        stop_fl.sh
+        sub_start.sh
+    transfer/
+    aefdb0a3-6fbb-4c53-a677-b6951d6845a6/
+        app_clientA/
+            ...
+            config_fed_client.json
+        fl_app.txt
+        log.txt
+    baaf8789-e83f-4863-b085-3ca95303e6bc/
+        app_clientA/
+            ...
+            config/
+                config_fed_client.json
+        fl_app.txt
+        log.txt
+</pre></div>
+</div>
+<p>In each <code class="docutils literal notranslate"><span class="pre">job_id</span></code> folder, there is the <code class="docutils literal notranslate"><span class="pre">app_clientname</span></code> folder that contains the <a class="reference internal" href="application.html#application"><span class="std std-ref">NVIDIA FLARE Application</span></a> that is running
+on the client for this <code class="docutils literal notranslate"><span class="pre">job_id</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">log.txt</span></code> inside each <code class="docutils literal notranslate"><span class="pre">job_id</span></code> folder are the loggings of this job.</p>
+<p>While the <code class="docutils literal notranslate"><span class="pre">log.txt</span></code> under client folder is the log for the client control process.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">startup</span></code> folder contains the config and the scripts to start the FL client program.</p>
+<p>The <a class="reference internal" href="../apidocs/nvflare.apis.workspace.html#nvflare.apis.workspace.Workspace" title="nvflare.apis.workspace.Workspace"><code class="xref py py-class docutils literal notranslate"><span class="pre">Workspace</span></code></a> object is available through the FLContext.
+From the Workspace, you can access each folder location accordingly</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">workspace</span> <span class="o">=</span> <span class="n">fl_ctx</span><span class="o">.</span><span class="n">get_prop</span><span class="p">(</span><span class="n">FLContextKey</span><span class="o">.</span><span class="n">WORKSPACE_OBJECT</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>                        <span class="n">other_folder</span> <span class="p">(</span><span class="n">app</span> <span class="n">defined</span><span class="p">)</span>
+
+        <span class="n">Args</span><span class="p">:</span>
+            <span class="n">root_dir</span><span class="p">:</span> <span class="n">root</span> <span class="n">directory</span> <span class="n">of</span> <span class="n">the</span> <span class="n">workspace</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">name</span> <span class="n">of</span> <span class="n">the</span> <span class="n">workspace</span>
+            <span class="n">config_folder</span><span class="p">:</span> <span class="n">where</span> <span class="n">to</span> <span class="n">find</span> <span class="n">required</span> <span class="n">config</span> <span class="n">inside</span> <span class="n">an</span> <span class="n">app</span>
+        <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        self.root_dir = root_dir</span>
+<span class="s2">        self.name = name</span>
+<span class="s2">        self.config_folder = config_folder</span>
+
+<span class="s2">    def get_startup_kit_dir(self) -&gt; str:</span>
+<span class="s2">        return os.path.join(self.root_dir, &quot;startup&quot;)</span>
+
+<span class="s2">    def get_root_dir(self) -&gt; str:</span>
+<span class="s2">        return self.root_dir</span>
+
+<span class="s2">    def get_run_dir(self, job_id: str) -&gt; str:</span>
+<span class="s2">        return os.path.join(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))</span>
+
+<span class="s2">    def get_app_dir(self, job_id: str) -&gt; str:</span>
+<span class="s2">        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.name)</span>
+
+<span class="s2">    def get_app_config_dir(self, job_id: str) -&gt; str:</span>
+<span class="s2">        return os.path.join(self.get_app_dir(job_id), self.config_folder)</span>
+
+<span class="s2">    def get_app_custom_dir(self, job_id: str) -&gt; str:</span>
+<span class="s2">        return os.path.join(self.get_app_dir(job_id), &quot;custom&quot;)</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="job.html" class="btn btn-neutral float-left" title="Jobs: Defining Jobs and Multi-Job Execution" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="authorization.html" class="btn btn-neutral float-right" title="Authorization" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>

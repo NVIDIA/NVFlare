@@ -1,0 +1,502 @@
+<!--
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nvflare.fuel.utils.wfconf &mdash; NVIDIA FLARE 2.1.0 documentation</title>
+      <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../../_static/css/additions.css" type="text/css" />
+    <link rel="shortcut icon" href="../../../../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+        <script src="../../../../_static/jquery.js"></script>
+        <script src="../../../../_static/underscore.js"></script>
+        <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../../_static/doctools.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" > 
+            <a href="../../../../index.html" class="icon icon-home"> NVIDIA FLARE
+          </a>
+              <div class="version">
+                2.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+  <style>
+    /* Sidebar header (and topbar for mobile) */
+    .wy-side-nav-search, .wy-nav-top {
+      background: #76b900;
+    }
+
+    .wy-side-nav-search a:link, .wy-nav-top a:link {
+      color: #fff;
+    }
+    .wy-side-nav-search a:visited, .wy-nav-top a:visited {
+      color: #fff;
+    }
+    .wy-side-nav-search a:hover, .wy-nav-top a:hover {
+      color: #fff;
+    }
+
+    .wy-menu-vertical a:link, .wy-menu-vertical a:visited {
+      color: #d9d9d9
+    }
+
+    .wy-menu-vertical a:active {
+      background-color: #76b900
+    }
+
+    .wy-side-nav-search>div.version {
+      color: rgba(0, 0, 0, 0.3)
+    }
+
+    .wy-nav-content {
+      max-width: 80%;
+    }
+
+    .floatleftcol {
+      float: left;
+      max-width: 60%;
+      padding-right: 20px;
+    }
+  </style>
+  
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../highlights.html">Highlights</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../flare_overview.html">NVIDIA FLARE Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../example_applications.html">Example Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../user_guide.html">User Guide - Operations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../programming_guide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../best_practices.html">Programming Best Practices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../apidocs/modules.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../appendix.html">Appendix</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">NVIDIA FLARE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+      <li>nvflare.fuel.utils.wfconf</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nvflare.fuel.utils.wfconf</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span> <span class="nn">nvflare.fuel.common.excepts</span> <span class="kn">import</span> <span class="n">ConfigError</span>
+
+<span class="kn">from</span> <span class="nn">.class_utils</span> <span class="kn">import</span> <span class="n">ModuleScanner</span><span class="p">,</span> <span class="n">get_class</span><span class="p">,</span> <span class="n">instantiate_class</span>
+<span class="kn">from</span> <span class="nn">.dict_utils</span> <span class="kn">import</span> <span class="n">extract_first_level_primitive</span><span class="p">,</span> <span class="n">merge_dict</span>
+<span class="kn">from</span> <span class="nn">.json_scanner</span> <span class="kn">import</span> <span class="n">JsonObjectProcessor</span><span class="p">,</span> <span class="n">JsonScanner</span><span class="p">,</span> <span class="n">Node</span>
+
+
+<div class="viewcode-block" id="ConfigContext"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.ConfigContext">[docs]</a><span class="k">class</span> <span class="nc">ConfigContext</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Object containing configuration context.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">app_root</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_json</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pass_num</span> <span class="o">=</span> <span class="mi">0</span></div>
+
+
+<span class="k">class</span> <span class="nc">_EnvUpdater</span><span class="p">(</span><span class="n">JsonObjectProcessor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vs</span><span class="p">,</span> <span class="n">element_filter</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">JsonObjectProcessor</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars</span> <span class="o">=</span> <span class="n">vs</span>
+        <span class="k">if</span> <span class="n">element_filter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">callable</span><span class="p">(</span><span class="n">element_filter</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;element_filter must be a callable function but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">element_filter</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">element_filter</span> <span class="o">=</span> <span class="n">element_filter</span>
+
+    <span class="k">def</span> <span class="nf">process_element</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">Node</span><span class="p">):</span>
+        <span class="n">element</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">element</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">element_filter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">element_filter</span><span class="p">(</span><span class="n">element</span><span class="p">):</span>
+                <span class="k">return</span>
+            <span class="n">element</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">substitute</span><span class="p">(</span><span class="n">element</span><span class="p">)</span>
+            <span class="n">parent_element</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">parent_element</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">position</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># parent is a list</span>
+                <span class="n">parent_element</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">position</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">element</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># parent is a dict</span>
+                <span class="n">parent_element</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">element</span>
+
+    <span class="k">def</span> <span class="nf">substitute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">element</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;{|}&quot;</span><span class="p">,</span> <span class="n">element</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="n">a</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">element</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vars</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">element</span> <span class="o">=</span> <span class="n">element</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">vars</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">element</span>
+
+
+<div class="viewcode-block" id="Configurator"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator">[docs]</a><span class="k">class</span> <span class="nc">Configurator</span><span class="p">(</span><span class="n">JsonObjectProcessor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">app_root</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">cmd_vars</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">env_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">wf_config_file_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">base_pkgs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">module_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">exclude_libs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">default_vars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">num_passes</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">element_filter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">var_processor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Base class of Configurator to parse JSON configuration.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            app_root: app root</span>
+<span class="sd">            cmd_vars: command vars</span>
+<span class="sd">            env_config: environment configuration</span>
+<span class="sd">            wf_config_file_name: config file name</span>
+<span class="sd">            base_pkgs: base packages</span>
+<span class="sd">            module_names: module names</span>
+<span class="sd">            exclude_libs: whether to exclude libs</span>
+<span class="sd">            default_vars: default vars</span>
+<span class="sd">            num_passes: number of passes</span>
+<span class="sd">            element_filter: element filter</span>
+<span class="sd">            var_processor: variable processor</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">JsonObjectProcessor</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">app_root</span><span class="p">,</span> <span class="nb">str</span><span class="p">),</span> <span class="s2">&quot;app_root must be str but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">app_root</span><span class="p">))</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">num_passes</span><span class="p">,</span> <span class="nb">int</span><span class="p">),</span> <span class="s2">&quot;num_passes must be int but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">num_passes</span><span class="p">))</span>
+        <span class="k">assert</span> <span class="n">num_passes</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;num_passes must &gt; 0&quot;</span>
+
+        <span class="k">if</span> <span class="n">cmd_vars</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cmd_vars</span><span class="p">,</span> <span class="nb">dict</span><span class="p">),</span> <span class="s2">&quot;cmd_vars must be dict but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmd_vars</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">env_config</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">),</span> <span class="s2">&quot;env_config must be dict but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">env_config</span><span class="p">))</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">wf_config_file_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">),</span> <span class="s2">&quot;wf_config_file_name must be str but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="nb">type</span><span class="p">(</span><span class="n">wf_config_file_name</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">assert</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">wf_config_file_name</span><span class="p">),</span> <span class="s2">&quot;wf_config_file_name </span><span class="si">{}</span><span class="s2"> is not a valid file&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="n">wf_config_file_name</span>
+        <span class="p">)</span>
+        <span class="k">assert</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">wf_config_file_name</span><span class="p">),</span> <span class="s2">&quot;wf_config_file_name </span><span class="si">{}</span><span class="s2"> does not exist&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">wf_config_file_name</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">default_vars</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">default_vars</span><span class="p">,</span> <span class="nb">dict</span><span class="p">),</span> <span class="s2">&quot;default_vars must be dict but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">default_vars</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">default_vars</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cmd_vars</span> <span class="o">=</span> <span class="n">cmd_vars</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">default_vars</span> <span class="o">=</span> <span class="n">default_vars</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">app_root</span> <span class="o">=</span> <span class="n">app_root</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env_config</span> <span class="o">=</span> <span class="n">env_config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wf_config_file_name</span> <span class="o">=</span> <span class="n">wf_config_file_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_passes</span> <span class="o">=</span> <span class="n">num_passes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">element_filter</span> <span class="o">=</span> <span class="n">element_filter</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">module_scanner</span> <span class="o">=</span> <span class="n">ModuleScanner</span><span class="p">(</span><span class="n">base_pkgs</span><span class="p">,</span> <span class="n">module_names</span><span class="p">,</span> <span class="n">exclude_libs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">all_vars</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars_from_cmd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars_from_env_config</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars_from_wf_config</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_ctx</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">var_processor</span> <span class="o">=</span> <span class="n">var_processor</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">wf_config_file_name</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wf_config_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">json_scanner</span> <span class="o">=</span> <span class="n">JsonScanner</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wf_config_data</span><span class="p">,</span> <span class="n">wf_config_file_name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_do_configure</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vars_from_cmd</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd_vars</span><span class="p">:</span>
+            <span class="n">vars_from_cmd</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd_vars</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">vars_from_cmd</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;APP_&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">value</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+                    <span class="n">vars_from_cmd</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">app_root</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+        <span class="n">vars_from_env_config</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">env_config</span><span class="p">:</span>
+            <span class="n">vars_from_env_config</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env_config</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">vars_from_env_config</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;APP_&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">value</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+                    <span class="n">vars_from_env_config</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">app_root</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+        <span class="n">vars_from_wf_conf</span> <span class="o">=</span> <span class="n">extract_first_level_primitive</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wf_config_data</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;determinism&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">wf_config_data</span><span class="p">:</span>
+            <span class="n">vars_from_wf_conf</span><span class="p">[</span><span class="s2">&quot;determinism&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wf_config_data</span><span class="p">[</span><span class="s2">&quot;determinism&quot;</span><span class="p">]</span>
+
+        <span class="c1"># precedence of vars (high to low):</span>
+        <span class="c1">#   vars_from_cmd, vars_from_config, vars_from_wf_conf</span>
+        <span class="c1"># func merge_dict(d1, d2) gives d2 higher precedence for the same key</span>
+        <span class="n">all_vars</span> <span class="o">=</span> <span class="n">merge_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">default_vars</span><span class="p">,</span> <span class="n">vars_from_wf_conf</span><span class="p">)</span>
+        <span class="n">all_vars</span> <span class="o">=</span> <span class="n">merge_dict</span><span class="p">(</span><span class="n">all_vars</span><span class="p">,</span> <span class="n">vars_from_env_config</span><span class="p">)</span>
+        <span class="n">all_vars</span> <span class="o">=</span> <span class="n">merge_dict</span><span class="p">(</span><span class="n">all_vars</span><span class="p">,</span> <span class="n">vars_from_cmd</span><span class="p">)</span>
+
+        <span class="c1"># update the wf_config with vars</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">all_vars</span> <span class="o">=</span> <span class="n">all_vars</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars_from_cmd</span> <span class="o">=</span> <span class="n">vars_from_cmd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars_from_env_config</span> <span class="o">=</span> <span class="n">vars_from_env_config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vars_from_wf_config</span> <span class="o">=</span> <span class="n">vars_from_wf_conf</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">var_processor</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">var_processor</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">all_vars</span><span class="p">,</span> <span class="n">app_root</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">app_root</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">json_scanner</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span><span class="n">_EnvUpdater</span><span class="p">(</span><span class="n">all_vars</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">element_filter</span><span class="p">))</span>
+
+        <span class="n">config_ctx</span> <span class="o">=</span> <span class="n">ConfigContext</span><span class="p">()</span>
+        <span class="n">config_ctx</span><span class="o">.</span><span class="n">vars</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_vars</span>
+        <span class="n">config_ctx</span><span class="o">.</span><span class="n">app_root</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">app_root</span>
+        <span class="n">config_ctx</span><span class="o">.</span><span class="n">config_json</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wf_config_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_ctx</span> <span class="o">=</span> <span class="n">config_ctx</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_config</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config_ctx</span><span class="p">)</span>
+
+        <span class="c1"># scan the wf_config again to create components</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_passes</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">config_ctx</span><span class="o">.</span><span class="n">pass_num</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">json_scanner</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="c1"># finalize configuration</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">finalize_config</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config_ctx</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Configurator.configure"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.configure">[docs]</a>    <span class="k">def</span> <span class="nf">configure</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_do_configure</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">ConfigError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;Config error in </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wf_config_file_name</span><span class="p">,</span> <span class="n">ex</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error processing config </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wf_config_file_name</span><span class="p">,</span> <span class="n">ex</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">ex</span></div>
+
+<div class="viewcode-block" id="Configurator.process_element"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.process_element">[docs]</a>    <span class="k">def</span> <span class="nf">process_element</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">Node</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_config_element</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config_ctx</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Configurator.process_args"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.process_args">[docs]</a>    <span class="k">def</span> <span class="nf">process_args</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">args</span></div>
+
+<div class="viewcode-block" id="Configurator.build_component"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.build_component">[docs]</a>    <span class="k">def</span> <span class="nf">build_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_dict</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">config_dict</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config_dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;component config must be dict but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">config_dict</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="n">config_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;disabled&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">class_args</span> <span class="o">=</span> <span class="n">config_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;args&quot;</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
+        <span class="n">class_args</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_args</span><span class="p">(</span><span class="n">class_args</span><span class="p">)</span>
+
+        <span class="n">class_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_class_path</span><span class="p">(</span><span class="n">config_dict</span><span class="p">)</span>
+
+        <span class="c1"># Handle the special case, if config pass in the class_attributes, use the user defined class attributes</span>
+        <span class="c1"># parameters directly.</span>
+        <span class="k">if</span> <span class="s2">&quot;class_attributes&quot;</span> <span class="ow">in</span> <span class="n">class_args</span><span class="p">:</span>
+            <span class="n">class_args</span> <span class="o">=</span> <span class="n">class_args</span><span class="p">[</span><span class="s2">&quot;class_attributes&quot;</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">instantiate_class</span><span class="p">(</span><span class="n">class_path</span><span class="p">,</span> <span class="n">class_args</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Configurator.get_class_path"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.get_class_path">[docs]</a>    <span class="k">def</span> <span class="nf">get_class_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_dict</span><span class="p">):</span>
+        <span class="k">if</span> <span class="s2">&quot;path&quot;</span> <span class="ow">in</span> <span class="n">config_dict</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">path_spec</span> <span class="o">=</span> <span class="n">config_dict</span><span class="p">[</span><span class="s2">&quot;path&quot;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">path_spec</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;path spec must be str but got </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">path_spec</span><span class="p">)))</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">path_spec</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;path spec must not be empty&quot;</span><span class="p">)</span>
+
+            <span class="n">class_path</span> <span class="o">=</span> <span class="nb">format</span><span class="p">(</span><span class="n">path_spec</span><span class="p">)</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="n">class_path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;invalid class path &#39;</span><span class="si">{}</span><span class="s2">&#39;: missing module name&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">class_path</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;name&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">config_dict</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;class name or path must be specified&quot;</span><span class="p">)</span>
+
+            <span class="n">class_name</span> <span class="o">=</span> <span class="n">config_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">class_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;class name must be str&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">class_name</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;class name must not be empty&quot;</span><span class="p">)</span>
+            <span class="n">module_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">module_scanner</span><span class="o">.</span><span class="n">get_module_name</span><span class="p">(</span><span class="n">class_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">module_name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s1">&#39;Cannot find component class &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">class_name</span><span class="p">))</span>
+            <span class="n">class_path</span> <span class="o">=</span> <span class="n">module_name</span> <span class="o">+</span> <span class="s2">&quot;.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">class_name</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">class_path</span></div>
+
+<div class="viewcode-block" id="Configurator.is_configured_subclass"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.is_configured_subclass">[docs]</a>    <span class="k">def</span> <span class="nf">is_configured_subclass</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_dict</span><span class="p">,</span> <span class="n">base_class</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">get_class</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_class_path</span><span class="p">(</span><span class="n">config_dict</span><span class="p">)),</span> <span class="n">base_class</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Configurator.start_config"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.start_config">[docs]</a>    <span class="k">def</span> <span class="nf">start_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_ctx</span><span class="p">:</span> <span class="n">ConfigContext</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="Configurator.process_config_element"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.process_config_element">[docs]</a>    <span class="k">def</span> <span class="nf">process_config_element</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_ctx</span><span class="p">:</span> <span class="n">ConfigContext</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">Node</span><span class="p">):</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="Configurator.finalize_config"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.Configurator.finalize_config">[docs]</a>    <span class="k">def</span> <span class="nf">finalize_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_ctx</span><span class="p">:</span> <span class="n">ConfigContext</span><span class="p">):</span>
+        <span class="k">pass</span></div></div>
+
+
+<div class="viewcode-block" id="get_component_refs"><a class="viewcode-back" href="../../../../apidocs/nvflare.fuel.utils.wfconf.html#nvflare.fuel.utils.wfconf.get_component_refs">[docs]</a><span class="k">def</span> <span class="nf">get_component_refs</span><span class="p">(</span><span class="n">component</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Get component reference.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        component: string for component</span>
+
+<span class="sd">    Returns: list of component and reference</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;name&quot;</span> <span class="ow">in</span> <span class="n">component</span><span class="p">:</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">component</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="s2">&quot;name&quot;</span>
+    <span class="k">elif</span> <span class="s2">&quot;path&quot;</span> <span class="ow">in</span> <span class="n">component</span><span class="p">:</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">component</span><span class="p">[</span><span class="s2">&quot;path&quot;</span><span class="p">]</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="s2">&quot;path&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s1">&#39;component has no &quot;name&quot; or &quot;path&#39;</span><span class="p">)</span>
+
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;#&quot;</span><span class="p">)</span>
+    <span class="n">component</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">parts</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, NVIDIA.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>  
+
+  <style>
+  a:link, a:visited {
+    color: #76b900;
+  }
+
+  a:hover {
+    color: #8c0;
+  }
+
+  p {
+    margin-bottom: 1em;
+  }
+
+  .rst-content dl dt {
+    font-weight: unset;
+    margin-bottom: 0;
+  }
+
+  .rst-content .section ul p {
+    margin-bottom: 0px;
+  }
+  </style>
+  
+
+</body>
+</html>
