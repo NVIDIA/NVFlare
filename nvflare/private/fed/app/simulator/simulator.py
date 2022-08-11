@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Federated server launching script."""
+"""Federated Simulator launching script."""
 
 import argparse
 import os
@@ -28,6 +28,7 @@ def parse_args():
     parser.add_argument("--clients", "-n", type=int, help="number of clients")
     parser.add_argument("--client_list", "-c", type=str, help="client names list")
     parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
+    parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     args = parser.parse_args()
     return args

@@ -29,9 +29,12 @@ from .server_deployer import ServerDeployer
 
 
 class SimulatorDeploy(ServerDeployer):
-    def __init__(self):
+    def __init__(self, ports=None):
         super().__init__()
-        self.open_ports = get_open_ports(2)
+        if ports:
+            self.open_ports = ports
+        else:
+            self.open_ports = get_open_ports(2)
         self.admin_storage = tempfile.mkdtemp()
 
     def create_fl_server(self, args, secure_train=False):

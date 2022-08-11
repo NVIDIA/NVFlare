@@ -14,7 +14,9 @@
 
 import logging
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -45,7 +47,6 @@ class SimulatorRunner(FLComponent):
         super().__init__()
         self.args = args
         self.ask_to_stop = False
-        self.run_client_index = -1
 
         self.simulator_root = None
         self.services = None
@@ -92,6 +93,17 @@ class SimulatorRunner(FLComponent):
                 sys.exit(-1)
 
             self._validate_client_names(meta, self.client_names)
+
+            if self.args.gpu:
+                gpus = self.args.gpu.split(",")
+                if len(gpus) <= 1:
+                    logging.error("Pleasse provide more than 1 GPU to run the Simulator with multi-GPUs.")
+                    sys.exit(-1)
+
+                if len(gpus) > len(self.client_names):
+                    logging.error(f"The number of clients ({len(self.client_names)} must be larger than "
+                                  f"the number of GPUS: ({len(gpus)})")
+                    sys.exit(-1)
 
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
@@ -166,6 +178,16 @@ class SimulatorRunner(FLComponent):
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_client_root)
 
+    def split_names(self, client_names: [], gpus: []):
+        split_names = []
+        for _ in gpus:
+            split_names.append([])
+        index = 0
+        for name in client_names:
+            split_names[index % len(gpus)].append(name)
+            index += 1
+        return split_names
+
     def run(self):
         try:
             self.logger.info("Deploy and start the Server App.")
@@ -176,8 +198,25 @@ class SimulatorRunner(FLComponent):
             while self.services.engine.engine_info.status != MachineStatus.STARTED:
                 time.sleep(1.0)
 
-            client_runner = SimulatorClientRunner(self.args, self.client_names, self.deployer)
-            client_runner.run()
+            if self.args.gpu:
+                gpus = self.args.gpu.split(",")
+                split_client_names = self.split_names(self.client_names, gpus)
+                for index in range(len(gpus)):
+                    command = (
+                            sys.executable
+                            + " -m nvflare.private.fed.app.simulator.client_run_process -o "
+                            + self.args.workspace
+                            + " -c "
+                            + ",".join([name for name in split_client_names[index]])
+                            + " -g "
+                            + gpus[index]
+                            + " -p "
+                            + ",".join([str(i) for i in self.deployer.open_ports])
+                    )
+                    _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
+            else:
+                client_runner = SimulatorClientRunner(self.args, self.client_names, self.deployer)
+                client_runner.run()
 
             server_thread.join()
         except BaseException as error:
