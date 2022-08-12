@@ -17,7 +17,9 @@
 import argparse
 import os
 import sys
+import threading
 
+from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
@@ -43,6 +45,12 @@ def main():
     args.job_id = "simulate_job"
     args.client_config = os.path.join(args.config_folder, "config_fed_client.json")
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
+
+    # start parent process checking thread
+    parent_pid = os.getppid()
+    stop_event = threading.Event()
+    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+    thread.start()
 
     os.chdir(args.workspace)
     AuthorizationService.initialize(EmptyAuthorizer())

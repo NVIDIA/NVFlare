@@ -71,7 +71,11 @@ class SimulatorRunner(FLComponent):
         self.args.job_id = "simulate_job"
         self.args.client_config = os.path.join(self.args.config_folder, "config_fed_client.json")
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
+        cwd = os.getcwd()
+        self.args.job_folder = os.path.join(cwd, self.args.job_folder)
 
+        if not os.path.exists(self.args.workspace):
+            os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
@@ -86,7 +90,7 @@ class SimulatorRunner(FLComponent):
             if not self.client_names:
                 self.client_names = self._extract_client_names_from_meta(meta)
             if not self.client_names:
-                self.logger.error("Please provide the client names list to run the simulator")
+                self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
                 sys.exit(1)
             if self.args.threads > len(self.client_names):
                 logging.error("The number of threads to run can not be larger then the number of clients.")
