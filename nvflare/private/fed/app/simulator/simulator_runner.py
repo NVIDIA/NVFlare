@@ -255,6 +255,9 @@ class SimulatorClientRunner(FLComponent):
         self.logger.info("Create the simulate clients.")
         for client_name in self.client_names:
             self.federated_clients.append(self.deployer.create_fl_client(client_name, self.args))
+            app_root = os.path.join(self.simulator_root, "app_" + client_name)
+            app_custom_folder = os.path.join(app_root, "custom")
+            sys.path.append(app_custom_folder)
 
         self.logger.info("Set the client status ready.")
         self._set_client_status()
