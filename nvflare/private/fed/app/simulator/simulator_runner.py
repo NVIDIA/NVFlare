@@ -39,6 +39,7 @@ from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -73,6 +74,9 @@ class SimulatorRunner(FLComponent):
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
+
+        log_file = os.path.join(self.args.workspace, "log.txt")
+        add_logfile_handler(log_file)
 
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)

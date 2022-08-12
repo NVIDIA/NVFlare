@@ -19,13 +19,14 @@ import os
 import sys
 import threading
 
-from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.defs import AppFolderConstants
+from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploy
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -51,6 +52,9 @@ def main():
     stop_event = threading.Event()
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
+
+    log_file = os.path.join(args.workspace, "client_run.log.txt")
+    add_logfile_handler(log_file)
 
     os.chdir(args.workspace)
     AuthorizationService.initialize(EmptyAuthorizer())
