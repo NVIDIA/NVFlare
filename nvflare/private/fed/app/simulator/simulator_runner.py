@@ -101,8 +101,10 @@ class SimulatorRunner(FLComponent):
                     sys.exit(-1)
 
                 if len(gpus) > len(self.client_names):
-                    logging.error(f"The number of clients ({len(self.client_names)} must be larger than "
-                                  f"the number of GPUS: ({len(gpus)})")
+                    logging.error(
+                        f"The number of clients ({len(self.client_names)} must be larger than "
+                        f"the number of GPUS: ({len(gpus)})"
+                    )
                     sys.exit(-1)
 
             # Deploy the FL server
@@ -167,7 +169,7 @@ class SimulatorRunner(FLComponent):
             for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
                 if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                     participants = ["server"]
-                    participants.extend([client.client_name for client in self.federated_clients])
+                    participants.extend([client for client in self.client_names])
 
                 for p in participants:
                     if p == "server":
@@ -203,15 +205,15 @@ class SimulatorRunner(FLComponent):
                 split_client_names = self.split_names(self.client_names, gpus)
                 for index in range(len(gpus)):
                     command = (
-                            sys.executable
-                            + " -m nvflare.private.fed.app.simulator.client_run_process -o "
-                            + self.args.workspace
-                            + " -c "
-                            + ",".join([name for name in split_client_names[index]])
-                            + " -g "
-                            + gpus[index]
-                            + " -p "
-                            + ",".join([str(i) for i in self.deployer.open_ports])
+                        sys.executable
+                        + " -m nvflare.private.fed.app.simulator.client_run_process -o "
+                        + self.args.workspace
+                        + " -c "
+                        + ",".join([name for name in split_client_names[index]])
+                        + " -g "
+                        + gpus[index]
+                        + " -p "
+                        + ",".join([str(i) for i in self.deployer.open_ports])
                     )
                     _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
             else:
@@ -238,7 +240,6 @@ class SimulatorRunner(FLComponent):
 
 
 class SimulatorClientRunner(FLComponent):
-
     def __init__(self, args, client_names: [], deployer):
         super().__init__()
         self.args = args
@@ -331,37 +332,40 @@ class SimulatorClientRunner(FLComponent):
         interval = 0
         last_run_client_index = -1  # indicates the last run client index
 
-        while not stop_run:
-            time.sleep(interval)
-            with lock:
-                if num_of_threads != len(self.federated_clients) or last_run_client_index == -1:
-                    client = self.get_next_run_client()
+        try:
+            while not stop_run:
+                time.sleep(interval)
+                with lock:
+                    if num_of_threads != len(self.federated_clients) or last_run_client_index == -1:
+                        client = self.get_next_run_client()
 
-                    # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
-                    # release the memory and resources.
-                    if self.run_client_index != last_run_client_index and last_run_client_index != -1:
-                        self.release_last_run_resources(last_run_client_index)
+                        # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
+                        # release the memory and resources.
+                        if self.run_client_index != last_run_client_index and last_run_client_index != -1:
+                            self.release_last_run_resources(last_run_client_index)
 
-                    last_run_client_index = self.run_client_index
+                        last_run_client_index = self.run_client_index
 
-            client.simulate_running = True
-            # Create the ClientRunManager and ClientRunner for the new client to run
-            if client.run_manager is None:
-                self.create_client_runner(client)
-                self.logger.info(f"Initialize ClientRunner for client: {client.client_name}")
+                client.simulate_running = True
+                # Create the ClientRunManager and ClientRunner for the new client to run
+                if client.run_manager is None:
+                    self.create_client_runner(client)
+                    self.logger.info(f"Initialize ClientRunner for client: {client.client_name}")
 
-            with client.run_manager.new_context() as fl_ctx:
-                client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-                self.fire_event(EventType.SWAP_IN, fl_ctx)
+                with client.run_manager.new_context() as fl_ctx:
+                    client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+                    self.fire_event(EventType.SWAP_IN, fl_ctx)
 
-                interval, task_processed = client_runner.run_one_task(fl_ctx)
-                self.logger.info(f"Finished one task run for client: {client.client_name}")
+                    interval, task_processed = client_runner.run_one_task(fl_ctx)
+                    self.logger.info(f"Finished one task run for client: {client.client_name}")
 
-                # if any client got the END_RUN event, stop the simulator run.
-                if client_runner.end_run_fired or client_runner.asked_to_stop:
-                    stop_run = True
-                    self.logger.info("End the Simulator run.")
-            client.simulate_running = False
+                    # if any client got the END_RUN event, stop the simulator run.
+                    if client_runner.end_run_fired or client_runner.asked_to_stop:
+                        stop_run = True
+                        self.logger.info("End the Simulator run.")
+                client.simulate_running = False
+        except BaseException as error:
+            self.logger.error(error)
 
     def release_last_run_resources(self, last_run_client_index):
         last_run_client = self.federated_clients[last_run_client_index]

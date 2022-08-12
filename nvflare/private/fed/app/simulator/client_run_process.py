@@ -71,4 +71,3 @@ if __name__ == "__main__":
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
 
     main()
-
