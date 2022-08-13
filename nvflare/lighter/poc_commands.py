@@ -15,10 +15,10 @@
 import json
 import os
 import random
-import subprocess
 import sys
 from typing import Dict, List, Optional
 
+from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 
@@ -160,24 +160,6 @@ def validate_gpu_ids(gpu_ids: list, host_gpu_ids: list):
             raise ValueError(f"gpu_id provided is not available in the host machine, available GPUs are {host_gpu_ids}")
 
 
-def get_host_gpu_ids() -> List[int]:
-    process = subprocess.Popen(["nvidia-smi", "--list-gpus"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    result = process.communicate()
-    st = process.poll()
-    rc = process.returncode
-    if rc > 0:
-        raise Exception("Failed to get host gpu device Ids", result[0])
-    else:
-        # 'GPU 0: NVIDIA GeForce RTX 3090 (UUID: GPU-xxxx-xxxx-xxxx-xxx)\n'
-        if result[0].startswith("GPU"):
-            gpus = result[0].split("\n")
-            gpu_ids = [int(gpu.split(":")[0].split(" ")[1]) for gpu in gpus[:-1]]
-        else:
-            gpu_ids = []
-
-    return gpu_ids
-
-
 def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
     if type(user_input_gpu_ids) == int and user_input_gpu_ids == -1:
         gpu_ids = host_gpu_ids
@@ -187,13 +169,17 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
     return gpu_ids
 
 
-def start_poc(poc_workspace: str, gpu_ids: List[int], white_list: list = []):
+def start_poc(poc_workspace: str, gpu_ids: List[int], white_list=None):
+    if white_list is None:
+        white_list = []
     print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, white_list={white_list}")
     validate_poc_workspace(poc_workspace)
     _run_poc(SC.CMD_START, poc_workspace, gpu_ids, excluded=[], white_list=white_list)
 
 
-def stop_poc(poc_workspace: str, white_list: list = []):
+def stop_poc(poc_workspace: str, white_list=None):
+    if white_list is None:
+        white_list = []
     print(f"stop_poc at {poc_workspace}")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
@@ -209,7 +195,7 @@ def _get_clients(package_commands: list) -> List[str]:
     return clients
 
 
-def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_list: list = []) -> list:
+def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_list=None) -> list:
     """
     :param cmd_type: start/stop
     :param poc_workspace:  poc workspace directory path
@@ -218,6 +204,8 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     :return:
     """
 
+    if white_list is None:
+        white_list = []
     package_commands = []
     for root, dirs, files in os.walk(poc_workspace):
         if root == poc_workspace:
@@ -261,7 +249,9 @@ def sync_process(cmd_path):
     subprocess.run(cmd_path.split(" "))
 
 
-def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: list, white_list=[]):
+def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: list, white_list=None):
+    if white_list is None:
+        white_list = []
     package_commands = _build_commands(cmd_type, poc_workspace, excluded, white_list)
 
     clients = _get_clients(package_commands)
