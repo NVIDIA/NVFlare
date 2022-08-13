@@ -103,7 +103,7 @@ We are using a built-in NVFLARE executor,
   },
 
 ```
-here we specify minimum of 5 rows (min_count), if the number of rows less than min_count, the job will fail.
+here we specify a minimum of 10 rows (min_count), if the number of rows less than min_count, the job will fail.
 In case, user will need to calculate histogram, user will need to provide the min/max value of given feature. 
 But instead of directly send the local min/max to server, we introduce some randomness to the min/max value. 
 
