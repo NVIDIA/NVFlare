@@ -73,6 +73,11 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                 self.cleanup_thread.join()
                 self.cleanup_thread = None
 
+    def _deallocate(self, resources):
+        for k, v in resources.items():
+            for i in v:
+                self.resources[k].appendleft(i)
+
     def _check_expired(self):
         while not self.stop_event.is_set():
             time.sleep(1)
@@ -87,9 +92,7 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
                         self.reserved_resources[k] = r, t
                 for token in tokens_to_remove:
                     reserved_resources, _ = self.reserved_resources.pop(token)
-                    for k in reserved_resources:
-                        for i in reserved_resources[k]:
-                            self.resources[k].append(i)
+                    self._deallocate(resources=reserved_resources)
                 self.logger.debug(f"current resources: {self.resources}, reserved_resources {self.reserved_resources}.")
 
     def _check_all_required_resource_available(self, resource_requirement: dict, fl_ctx: FLContext) -> bool:
@@ -137,9 +140,7 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
         with self.lock:
             if token and token in self.reserved_resources:
                 reserved_resources, _ = self.reserved_resources.pop(token)
-                for k in reserved_resources:
-                    for i in reserved_resources[k]:
-                        self.resources[k].appendleft(i)
+                self._deallocate(resources=reserved_resources)
                 self.log_debug(fl_ctx, f"cancelling resources: {reserved_resources}.")
                 self.log_debug(
                     fl_ctx, f"current resources: {self.resources}, reserved_resources {self.reserved_resources}."
@@ -167,6 +168,11 @@ class ListResourceManager(ResourceManagerSpec, FLComponent):
             self.log_debug(
                 fl_ctx, f"current resources: {self.resources}, reserved_resources {self.reserved_resources}."
             )
-            for k in resources:
-                for i in resources[k]:
-                    self.resources[k].append(i)
+            self._deallocate(resources=resources)
+
+    def report_resources(self, fl_ctx):
+        with self.lock:
+            return {
+                "resources": {k: list(self.resources[k]) for k in self.resources},
+                "reserved_resources": self.reserved_resources,
+            }
