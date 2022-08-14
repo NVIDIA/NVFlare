@@ -29,10 +29,6 @@ from nvflare.fuel.hci.shell_cmd_val import (
     ShellCommandValidator,
     TailValidator,
 )
-from nvflare.private.admin_defs import Message
-from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.server.admin import ClientReply, new_message
-from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 
 
 class _CommandExecutor(object):
@@ -41,85 +37,31 @@ class _CommandExecutor(object):
         self.validator = validator
 
     def authorize_command(self, conn: Connection, args: List[str]):
-        if len(args) < 2:
-            conn.append_error("syntax error: missing target")
-            return PreAuthzReturnCode.ERROR
-
-        shell_cmd_args = [self.cmd_name]
-        for a in args[2:]:
-            shell_cmd_args.append(a)
-
-        shell_cmd = join_args(shell_cmd_args)
+        shell_cmd = join_args(args)
 
         result = None
         if self.validator:
-            err, result = self.validator.validate(shell_cmd_args[1:])
+            err, result = self.validator.validate(args)
             if len(err) > 0:
                 conn.append_error(err)
                 return PreAuthzReturnCode.ERROR
 
         # validate the command and make sure file destinations are protected
-        err = self.validate_shell_command(shell_cmd_args, result)
+        err = self.validate_shell_command(args, result)
         if len(err) > 0:
             conn.append_error(err)
             return PreAuthzReturnCode.ERROR
 
-        site_name = args[1]
         conn.set_prop("shell_cmd", shell_cmd)
-        conn.set_prop("target_site", site_name)
-
-        if site_name == "server":
-            return PreAuthzReturnCode.REQUIRE_AUTHZ
-        else:
-            # client site authorization will be done by the client itself
-            return PreAuthzReturnCode.OK
+        return PreAuthzReturnCode.REQUIRE_AUTHZ
 
     def validate_shell_command(self, args: List[str], parse_result) -> str:
         return ""
 
     def execute_command(self, conn: Connection, args: List[str]):
-        target = conn.get_prop("target_site")
         shell_cmd = conn.get_prop("shell_cmd")
-        if target == "server":
-            # run the shell command on server
-            output = subprocess.getoutput(shell_cmd)
-            conn.append_string(output)
-            return
-
-        engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        clients, invalid_inputs = engine.validate_clients([target])
-        if len(invalid_inputs) > 0:
-            conn.append_error("invalid client: {}".format(target))
-            return
-
-        if len(clients) > 1:
-            conn.append_error("this command can only be applied to one client at a time")
-            return
-
-        valid_tokens = []
-        for c in clients:
-            valid_tokens.append(c.token)
-
-        req = new_message(conn=conn,
-                          topic=SysCommandTopic.SHELL,
-                          body=shell_cmd,
-                          require_authz=True)
-        server = conn.server
-        reply = server.send_request_to_client(req, valid_tokens[0], timeout_secs=server.timeout)
-        if reply is None:
-            conn.append_error("no reply from client - timed out")
-            return
-
-        if not isinstance(reply, ClientReply):
-            raise TypeError("reply must be ClientReply but got {}".format(type(reply)))
-        if reply.reply is None:
-            conn.append_error("no reply from client - timed out")
-            return
-        if not isinstance(reply.reply, Message):
-            raise TypeError("reply in ClientReply must be Message but got {}".format(type(reply.reply)))
-        conn.append_string(reply.reply.body)
+        output = subprocess.getoutput(shell_cmd)
+        conn.append_string(output)
 
     def get_usage(self):
         if self.validator:

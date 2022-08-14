@@ -17,11 +17,11 @@ from typing import List
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.security import verify_password
+from nvflare.fuel.hci.security import verify_password, IdentityKey
 from nvflare.fuel.hci.server.constants import ConnProps
 
 from .reg import CommandFilter
-from .sess import CHECK_SESSION_CMD_NAME, SessionManager
+from .sess import CHECK_SESSION_CMD_NAME, SessionManager, Session
 
 LOGIN_CMD_NAME = "_login"
 CERT_LOGIN_CMD_NAME = "_cert_login"
@@ -139,7 +139,11 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
-        session = self.session_mgr.create_session(user_name)
+        session = self.session_mgr.create_session(
+            user_name=user_name,
+            user_org='global',
+            user_role='super'
+        )
         conn.append_string("OK")
         conn.append_token(session.token)
 
@@ -152,19 +156,22 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
-        cn = conn.get_prop("_client_cn", None)
-        if cn is None:
+        identity = conn.get_prop(ConnProps.CLIENT_IDENTITY, None)
+        if identity is None:
             conn.append_string("REJECT")
             return
 
         user_name = args[1]
 
-        ok = self.authenticator.authenticate(user_name, cn, "cn")
+        ok = self.authenticator.authenticate(user_name, identity[IdentityKey.NAME], "cn")
         if not ok:
             conn.append_string("REJECT")
             return
 
-        session = self.session_mgr.create_session(user_name)
+        session = self.session_mgr.create_session(
+            user_name=identity[IdentityKey.NAME],
+            user_org=identity.get(IdentityKey.ORG, ''),
+            user_role=identity.get(IdentityKey.ROLE, ''))
         conn.append_string("OK")
         conn.append_token(session.token)
 
@@ -196,9 +203,12 @@ class LoginModule(CommandModule, CommandFilter):
 
         sess = self.session_mgr.get_session(token)
         if sess:
+            assert isinstance(sess, Session)
             sess.mark_active()
             conn.set_prop(ConnProps.SESSION, sess)
             conn.set_prop(ConnProps.USER_NAME, sess.user_name)
+            conn.set_prop(ConnProps.USER_ORG, sess.user_org)
+            conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
             conn.set_prop(ConnProps.TOKEN, token)
             return True
         else:

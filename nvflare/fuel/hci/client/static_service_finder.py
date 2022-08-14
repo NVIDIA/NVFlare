@@ -12,18 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Constants for file transfer command module."""
+from .api_spec import ServiceFinder
 
-SERVER_MODULE_NAME = "file_transfer"
-SERVER_CMD_UPLOAD_TEXT = "_upload_text_file"
-SERVER_CMD_DOWNLOAD_TEXT = "_download_text_file"
-SERVER_CMD_UPLOAD_BINARY = "_upload_binary_file"
-SERVER_CMD_DOWNLOAD_BINARY = "_download_binary_file"
-SERVER_CMD_UPLOAD_FOLDER = "_upload_folder"
-SERVER_CMD_SUBMIT_JOB = "_submit_job"
-SERVER_CMD_DOWNLOAD_JOB = "_download_job"
-SERVER_CMD_INFO = "_info"
 
-DOWNLOAD_URL_MARKER = "Download_URL:"
-UPLOAD_FOLDER_FQN = 'file_transfer.upload_folder'
-DOWNLOAD_FOLDER_FQN = 'file_transfer.download_folder'
+class StaticServiceFinder(ServiceFinder):
+
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        self.ssid = '1234'
+
+    def start(self, service_address_changed_cb):
+        service_address_changed_cb(self.host, self.port, self.ssid)

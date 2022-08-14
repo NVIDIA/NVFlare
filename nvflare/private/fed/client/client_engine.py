@@ -30,7 +30,7 @@ from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
-from nvflare.private.fed.utils.fed_utils import deploy_app
+from nvflare.private.fed.utils.app_deployer import AppDeployer
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
@@ -236,13 +236,32 @@ class ClientEngine(ClientEngineInternalSpec):
         self.executor.shutdown()
         return "Restart the client..."
 
-    def deploy_app(self, app_name: str, job_id: str, client_name: str, app_data) -> str:
+    def deploy_app(
+            self,
+            submitter_name: str,
+            submitter_org: str,
+            submitter_role: str,
+            app_name: str,
+            job_id: str,
+            client_name: str,
+            app_data) -> str:
+
         workspace = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
 
-        if deploy_app(app_name, client_name, workspace, app_data):
-            return f"Deployed app {app_name} to {client_name}"
-        else:
-            return f"{ERROR_MSG_PREFIX}: Failed to deploy_app"
+        app_deployer = AppDeployer(
+            site_name=client_name,
+            app_name=app_name,
+            workspace_path=workspace,
+            app_data=app_data,
+            submitter_name=submitter_name,
+            submitter_org=submitter_org,
+            submitter_role=submitter_role
+        )
+        err = app_deployer.deploy()
+        if err:
+            return f"{ERROR_MSG_PREFIX}: {err}"
+
+        return ""
 
     def delete_run(self, job_id: str) -> str:
         job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))

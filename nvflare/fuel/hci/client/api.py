@@ -22,21 +22,84 @@ import traceback
 from datetime import datetime
 from typing import List, Optional
 
-from nvflare.apis.overseer_spec import SP, OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
-from nvflare.fuel.hci.proto import make_error
-from nvflare.fuel.hci.reg import CommandModule, CommandRegister
-from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.fuel.hci.proto import make_error, ConfirmMethod
+from nvflare.fuel.hci.reg import CommandModule, CommandRegister, CommandEntry
 from nvflare.fuel.hci.table import Table
-from nvflare.ha.ha_admin_cmds import HACommandModule
 
-from .api_spec import AdminAPISpec, ReplyProcessor
+from .api_spec import AdminAPISpec, ServiceFinder, ReplyProcessor, CommandContext, CommandCtxKey, CommandInfo
 from .api_status import APIStatus
+
+_CMD_TYPE_UNKNOWN = 0
+_CMD_TYPE_CLIENT = 1
+_CMD_TYPE_SERVER = 2
+
+
+class _ServerReplyJsonProcessor(object):
+
+    def __init__(self, ctx: CommandContext):
+        api = ctx.get_api()
+        self.debug = api.debug
+        self.ctx = ctx
+
+    def process_server_reply(self, resp):
+        """Process the server reply and store the status/details into API's `command_result`
+        NOTE: this func is used for receive_and_process(), which is defined by conn!
+        This method does not tale CommandContext!
+
+        Args:
+            resp: The raw response that returns by the server.
+        """
+        if self.debug:
+            print("DEBUG: Server Reply: {}".format(resp))
+
+        ctx = self.ctx
+        assert isinstance(ctx, CommandContext)
+
+        # this resp is what is usually directly used to return, straight from server
+        ctx.set_command_result(resp)
+        reply_processor = ctx.get_reply_processor()
+        if reply_processor is None:
+            reply_processor = _DefaultReplyProcessor()
+
+        reply_processor.reply_start(ctx, resp)
+
+        if resp is not None:
+            data = resp["data"]
+            for item in data:
+                it = item["type"]
+                if it == "string":
+                    reply_processor.process_string(ctx, item["data"])
+                elif it == "success":
+                    reply_processor.process_success(ctx, item["data"])
+                elif it == "error":
+                    reply_processor.process_error(ctx, item["data"])
+                    break
+                elif it == "table":
+                    table = Table(None)
+                    table.set_rows(item["rows"])
+                    reply_processor.process_table(ctx, table)
+                elif it == "dict":
+                    reply_processor.process_dict(ctx, item["data"])
+                elif it == "token":
+                    reply_processor.process_token(ctx, item["data"])
+                elif it == "shutdown":
+                    reply_processor.process_shutdown(ctx, item["data"])
+                    break
+                else:
+                    reply_processor.protocol_error(ctx, "Invalid item type: " + it)
+                    break
+        else:
+            reply_processor.protocol_error(ctx, "Protocol Error")
+
+        reply_processor.reply_done(ctx)
 
 
 class _DefaultReplyProcessor(ReplyProcessor):
-    def process_shutdown(self, api: AdminAPI, msg: str):
+
+    def process_shutdown(self, ctx: CommandContext, msg: str):
+        api = ctx.get_prop(CommandCtxKey.API)
         api.shutdown_received = True
         api.shutdown_msg = msg
 
@@ -44,17 +107,20 @@ class _DefaultReplyProcessor(ReplyProcessor):
 class _LoginReplyProcessor(ReplyProcessor):
     """Reply processor for handling login and setting the token for the admin client."""
 
-    def process_string(self, api: AdminAPI, item: str):
+    def process_string(self, ctx: CommandContext, item: str):
+        api = ctx.get_api()
         api.login_result = item
 
-    def process_token(self, api: AdminAPI, token: str):
+    def process_token(self, ctx: CommandContext, token: str):
+        api = ctx.get_api()
         api.token = token
 
 
 class _CmdListReplyProcessor(ReplyProcessor):
     """Reply processor to register available commands after getting back a table of commands from the server."""
 
-    def process_table(self, api: AdminAPI, table: Table):
+    def process_table(self, ctx: CommandContext, table: Table):
+        api = ctx.get_api()
         for i in range(len(table.rows)):
             if i == 0:
                 # this is header
@@ -69,11 +135,14 @@ class _CmdListReplyProcessor(ReplyProcessor):
             desc = row[2]
             usage = row[3]
             confirm = row[4]
+            client_cmd = None
+            if len(row) > 5:
+                client_cmd = row[5]
 
             # if confirm == 'auth' and not client.require_login:
             # the user is not authenticated - skip this command
             # continue
-
+            print("add command: {}.{}.{}".format(scope, cmd_name, client_cmd))
             api.server_cmd_reg.add_command(
                 scope_name=scope,
                 cmd_name=cmd_name,
@@ -83,6 +152,8 @@ class _CmdListReplyProcessor(ReplyProcessor):
                 authz_func=None,
                 visible=True,
                 confirm=confirm,
+                client_cmd=client_cmd,
+                map_client_cmd=True
             )
 
         api.server_cmd_received = True
@@ -91,18 +162,14 @@ class _CmdListReplyProcessor(ReplyProcessor):
 class AdminAPI(AdminAPISpec):
     def __init__(
         self,
-        host=None,
-        port=None,
+        user_name: str,
+        service_finder: ServiceFinder,
         ca_cert: str = "",
         client_cert: str = "",
         client_key: str = "",
         upload_dir: str = "",
         download_dir: str = "",
-        server_cn=None,
         cmd_modules: Optional[List] = None,
-        overseer_agent: OverseerAgent = None,
-        auto_login: bool = False,
-        user_name: str = None,
         poc: bool = False,
         debug: bool = False,
     ):
@@ -116,9 +183,8 @@ class AdminAPI(AdminAPISpec):
             client_key: path to admin client Key file, by default provisioned as client.key
             upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
             download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
-            server_cn: server cn (only used for validating server cn)
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
-            overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
+            service_finder: used to obtain the primary service provider to set the host and port of the active server
             auto_login: Whether to use stored credentials to automatically log in (required to be True with OverseerAgent to provide high availability)
             user_name: Username to authenticate with FL server
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
@@ -127,7 +193,6 @@ class AdminAPI(AdminAPISpec):
         super().__init__()
         if cmd_modules is None:
             from .file_transfer import FileTransferModule
-
             cmd_modules = [FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)]
         elif not isinstance(cmd_modules, list):
             raise TypeError("cmd_modules must be a list, but got {}".format(type(cmd_modules)))
@@ -137,11 +202,19 @@ class AdminAPI(AdminAPISpec):
                     raise TypeError(
                         "cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m))
                     )
-        cmd_modules.append(HACommandModule())
+        assert isinstance(service_finder, ServiceFinder), \
+            "service_finder should be ServiceFinder but got {}".format(type(service_finder))
 
-        self.overseer_agent = overseer_agent
-        self.host = host
-        self.port = port
+        cmd_module = service_finder.get_command_module()
+        if cmd_module:
+            cmd_modules.append(cmd_module)
+
+        self.service_finder = service_finder
+        self.host = None
+        self.port = None
+        self.ssid = None
+        self.addr_lock = threading.Lock()
+
         self.poc = poc
         if self.poc:
             self.poc_key = "admin"
@@ -155,34 +228,27 @@ class AdminAPI(AdminAPISpec):
             if len(client_key) <= 0:
                 raise Exception("missing Client Key file name")
             self.client_key = client_key
-            if not isinstance(self.overseer_agent, OverseerAgent):
-                raise Exception("overseer_agent is missing but must be provided for secure context.")
-            self.overseer_agent.set_secure_context(
-                ca_path=self.ca_cert, cert_path=self.client_cert, prv_key_path=self.client_key
-            )
-        if self.overseer_agent:
-            self.overseer_agent.start(self._overseer_callback)
-        self.server_cn = server_cn
-        self.debug = debug
 
-        # for overseer agent
-        self.ssid = None
+            self.service_finder.set_secure_context(
+                ca_cert_path=self.ca_cert,
+                cert_path=self.client_cert,
+                private_key_path=self.client_key
+            )
+        self.debug = debug
 
         # for login
         self.token = None
         self.login_result = None
-        if auto_login:
-            self.auto_login = True
-            if not user_name:
-                raise Exception("for auto_login, user_name is required.")
-            self.user_name = user_name
+        if not user_name:
+            raise Exception("user_name is required.")
+        self.user_name = user_name
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
         self.client_cmd_reg = CommandRegister(app_ctx=self)
         self.server_cmd_received = False
 
         self.all_cmds = []
-        self._load_client_cmds(cmd_modules)
+        self.cmd_modules = cmd_modules
 
         # for shutdown
         self.shutdown_received = False
@@ -193,23 +259,21 @@ class AdminAPI(AdminAPISpec):
         self.sess_monitor_thread = None
         self.sess_monitor_active = False
 
-    def _overseer_callback(self, overseer_agent):
-        sp = overseer_agent.get_primary_sp()
-        self._set_primary_sp(sp)
+        self.service_finder.start(self._handle_sp_address_change)
 
-    def _set_primary_sp(self, sp: SP):
-        if sp and sp.primary is True:
-            if self.host != sp.name or self.port != int(sp.admin_port) or self.ssid != sp.service_session_id:
-                # if needing to log out of previous server, this may be where to issue server_execute("_logout")
-                self.host = sp.name
-                self.port = int(sp.admin_port)
-                self.ssid = sp.service_session_id
-                print(
-                    f"Got primary SP {self.host}:{sp.fl_port}:{self.port} from overseer. Host: {self.host} Admin_port: {self.port} SSID: {self.ssid}"
-                )
+    def _handle_sp_address_change(self, host: str, port: int, ssid: str):
+        # if needing to log out of previous server, this may be where to issue server_execute("_logout")
+        with self.addr_lock:
+            self.host = host
+            self.port = port
+            self.ssid = ssid
 
-                thread = threading.Thread(target=self._login_sp)
-                thread.start()
+        print(
+            f"Got service provider address: host={host} admin_port={port} SSID={ssid}"
+        )
+
+        thread = threading.Thread(target=self._login_sp)
+        thread.start()
 
     def _login_sp(self):
         if not self._auto_login():
@@ -243,11 +307,15 @@ class AdminAPI(AdminAPISpec):
             time.sleep(1.0)
         return False
 
-    def _load_client_cmds(self, cmd_modules):
+    def _load_client_cmds_from_modules(self, cmd_modules):
         if cmd_modules:
             for m in cmd_modules:
                 self.client_cmd_reg.register_module(m, include_invisible=False)
-        self.client_cmd_reg.finalize(self.register_command)
+
+    def _load_client_cmds_from_module_specs(self, cmd_module_specs):
+        if cmd_module_specs:
+            for m in cmd_module_specs:
+                self.client_cmd_reg.register_module_spec(m, include_invisible=False)
 
     def register_command(self, cmd_entry):
         self.all_cmds.append(cmd_entry.name)
@@ -304,6 +372,37 @@ class AdminAPI(AdminAPISpec):
         self.server_sess_active = False
         return resp
 
+    def get_command_list_from_server(self):
+        # get command list from server
+        self.server_cmd_received = False
+        self.server_execute("_commands", _CmdListReplyProcessor())
+        self.server_cmd_reg.finalize(self.register_command)
+        if not self.server_cmd_received:
+            return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
+
+        # prepare client modules
+        # we may have additional dynamically created cmd modules based on server commands
+        extra_module_specs = []
+        if self.server_cmd_reg.mapped_cmds:
+            for c in self.server_cmd_reg.mapped_cmds:
+                for m in self.cmd_modules:
+                    new_module_spec = m.generate_module_spec(c)
+                    if new_module_spec is not None:
+                        extra_module_specs.append(new_module_spec)
+
+        self._load_client_cmds_from_modules(self.cmd_modules)
+        if extra_module_specs:
+            self._load_client_cmds_from_module_specs(extra_module_specs)
+        self.client_cmd_reg.finalize(self.register_command)
+
+        self.server_sess_active = True
+        return {"status": APIStatus.SUCCESS, "details": "Login success"}
+
+    def is_ready(self) -> bool:
+        """Whether the API is ready for executing commands.
+        """
+        return self.token is not None
+
     def login(self, username: str):
         """Login using certification files and retrieve server side commands.
 
@@ -314,21 +413,15 @@ class AdminAPI(AdminAPISpec):
             A dict of status and details
         """
         self.login_result = None
-        self._try_command(f"_cert_login {username}", _LoginReplyProcessor())
+        print("trying to login with cert ...")
+        self.server_execute(f"_cert_login {username}", _LoginReplyProcessor())
         if self.login_result is None:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
         elif self.login_result == "REJECT":
             return {"status": APIStatus.ERROR_CERT, "details": "Incorrect user name or certificate"}
 
         # get command list from server
-        self.server_cmd_received = False
-        self._try_command("_commands", _CmdListReplyProcessor())
-        self.server_cmd_reg.finalize(self.register_command)
-        if not self.server_cmd_received:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
-
-        self.server_sess_active = True
-        return {"status": APIStatus.SUCCESS, "details": "Login success"}
+        return self.get_command_list_from_server()
 
     def login_with_poc(self, username: str, poc_key: str):
         """Login using key for proof of concept example.
@@ -341,23 +434,20 @@ class AdminAPI(AdminAPISpec):
             A dict of login status and details
         """
         self.login_result = None
-        self._try_command(f"_login {username} {poc_key}", _LoginReplyProcessor())
+        self.server_execute(f"_login {username} {poc_key}", _LoginReplyProcessor())
         if self.login_result is None:
             return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
         elif self.login_result == "REJECT":
             return {"status": APIStatus.ERROR_CERT, "details": "Incorrect user name or certificate"}
 
         # get command list from server
-        self.server_cmd_received = False
-        self._try_command("_commands", _CmdListReplyProcessor())
-        self.server_cmd_reg.finalize(self.register_command)
-        if not self.server_cmd_received:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
+        return self.get_command_list_from_server()
 
-        self.server_sess_active = True
-        return {"status": APIStatus.SUCCESS, "details": "Login success"}
+    def _send_to_sock(self, sock, ctx: CommandContext):
+        command = ctx.get_command()
+        json_processor = ctx.get_json_processor()
+        process_json_func = json_processor.process_server_reply
 
-    def _send_to_sock(self, sock, command, process_json_func):
         conn = Connection(sock, self)
         conn.append_command(command)
         if self.token:
@@ -370,96 +460,120 @@ class AdminAPI(AdminAPISpec):
                 make_error("Failed to communicate with Admin Server {} on {}".format(self.host, self.port))
             )
 
-    def _process_server_reply(self, resp):
-        """Process the server reply and store the status/details into API's `command_result`
-
-        Args:
-            resp: The raw response that returns by the server.
-        """
-        if self.debug:
-            print("DEBUG: Server Reply: {}".format(resp))
-        # this resp is what is usually directly used to return, straight from server
-        self.set_command_result(resp)
-        reply_processor = _DefaultReplyProcessor() if self.reply_processor is None else self.reply_processor
-
-        reply_processor.reply_start(self, resp)
-
-        if resp is not None:
-            data = resp["data"]
-            for item in data:
-                it = item["type"]
-                if it == "string":
-                    reply_processor.process_string(self, item["data"])
-                elif it == "success":
-                    reply_processor.process_success(self, item["data"])
-                elif it == "error":
-                    reply_processor.process_error(self, item["data"])
-                    break
-                elif it == "table":
-                    table = Table(None)
-                    table.set_rows(item["rows"])
-                    reply_processor.process_table(self, table)
-                elif it == "dict":
-                    reply_processor.process_dict(self, item["data"])
-                elif it == "token":
-                    reply_processor.process_token(self, item["data"])
-                elif it == "shutdown":
-                    reply_processor.process_shutdown(self, item["data"])
-                    break
-                else:
-                    reply_processor.protocol_error(self, "Invalid item type: " + it)
-                    break
-        else:
-            reply_processor.protocol_error(self, "Protocol Error")
-
-        reply_processor.reply_done(self)
-
-    def _try_command(self, command, reply_processor):
+    def _try_command(self, cmd_ctx: CommandContext):
         """Try to execute a command on server side.
 
         Args:
-            command: The command to execute.
-            reply_processor: An instance of ReplyProcessor
-
+            cmd_ctx: The command to execute.
         """
         # process_json_func can't return data because how "receive_and_process" is written.
-        self.reply_processor = reply_processor
-        process_json_func = self._process_server_reply
+
+        json_processor = _ServerReplyJsonProcessor(cmd_ctx)
+        process_json_func = json_processor.process_server_reply
+        cmd_ctx.set_json_processor(json_processor)
+
+        with self.addr_lock:
+            sp_host = self.host
+            sp_port = self.port
+
         try:
             if not self.poc:
                 # SSL communication
-                ctx = ssl.create_default_context()
-                ctx.verify_mode = ssl.CERT_REQUIRED
-                ctx.check_hostname = False
+                ssl_ctx = ssl.create_default_context()
+                ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+                ssl_ctx.check_hostname = False
 
-                ctx.load_verify_locations(self.ca_cert)
-                ctx.load_cert_chain(certfile=self.client_cert, keyfile=self.client_key)
+                ssl_ctx.load_verify_locations(self.ca_cert)
+                ssl_ctx.load_cert_chain(certfile=self.client_cert, keyfile=self.client_key)
 
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    with ctx.wrap_socket(sock) as ssock:
-                        ssock.connect((self.host, self.port))
-                        if self.server_cn:
-                            # validate server CN
-                            cn = get_certificate_common_name(ssock.getpeercert())
-                            if cn != self.server_cn:
-                                process_json_func(
-                                    make_error("wrong server: expecting {} but connected {}".format(self.server_cn, cn))
-                                )
-                                return
-
-                        self._send_to_sock(ssock, command, process_json_func)
+                    with ssl_ctx.wrap_socket(sock) as ssock:
+                        ssock.connect((sp_host, sp_port))
+                        self._send_to_sock(ssock, cmd_ctx)
             else:
                 # poc without certs
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.connect((self.host, self.port))
-                    self._send_to_sock(sock, command, process_json_func)
+                    sock.connect((sp_host, sp_port))
+                    self._send_to_sock(sock, cmd_ctx)
         except Exception as ex:
             if self.debug:
                 traceback.print_exc()
 
             process_json_func(
-                make_error("Failed to communicate with Admin Server {} on {}: {}".format(self.host, self.port, ex))
+                make_error("Failed to communicate with Admin Server {} on {}: {}".format(
+                    sp_host, sp_port, ex))
             )
+
+    def _get_command_detail(self, command):
+        """Get command details
+
+        Args:
+          command (str): command
+
+        Returns: tuple of (cmd_type, cmd_name, args, entries)
+        """
+        args = split_to_args(command)
+        cmd_name = args[0]
+
+        # check client side commands
+        entries = self.client_cmd_reg.get_command_entries(cmd_name)
+        if len(entries) > 0:
+            return _CMD_TYPE_CLIENT, cmd_name, args, entries
+
+        # check server side commands
+        entries = self.server_cmd_reg.get_command_entries(cmd_name)
+        if len(entries) > 0:
+            return _CMD_TYPE_SERVER, cmd_name, args, entries
+
+        return _CMD_TYPE_UNKNOWN, cmd_name, args, None
+
+    def check_command(self, command: str) -> CommandInfo:
+        """Checks the specified command for processing info
+
+        Args:
+            command: command to be checked
+
+        Returns: command processing info
+
+        """
+        cmd_type, cmd_name, args, entries = self._get_command_detail(command)
+
+        if cmd_type == _CMD_TYPE_UNKNOWN:
+            return CommandInfo.UNKNOWN
+
+        if len(entries) > 1:
+            return CommandInfo.AMBIGUOUS
+
+        ent = entries[0]
+        assert isinstance(ent, CommandEntry)
+        if ent.confirm == ConfirmMethod.AUTH:
+            return CommandInfo.CONFIRM_AUTH
+        elif ent.confirm == ConfirmMethod.PASSWORD:
+            return CommandInfo.CONFIRM_PWD
+        elif ent.confirm == ConfirmMethod.USER_NAME:
+            return CommandInfo.CONFIRM_USER_NAME
+        elif ent.confirm == ConfirmMethod.YESNO:
+            return CommandInfo.CONFIRM_YN
+        else:
+            return CommandInfo.OK
+
+    def _new_command_context(self, command, args, ent: CommandEntry):
+        ctx = CommandContext()
+        ctx.set_api(self)
+        ctx.set_command(command)
+        ctx.set_command_args(args)
+        ctx.set_command_entry(ent)
+        return ctx
+
+    def _do_client_command(self, command, args, ent: CommandEntry):
+        ctx = self._new_command_context(command, args, ent)
+        return_result = ent.handler(args, ctx)
+        result = ctx.get_command_result()
+        if return_result:
+            return return_result
+        if result is None:
+            return {"status": APIStatus.ERROR_RUNTIME, "details": "Client did not respond"}
+        return result
 
     def do_command(self, command):
         """A convenient method to call commands using string.
@@ -470,56 +584,47 @@ class AdminAPI(AdminAPISpec):
         Returns:
             Object containing status and details (or direct response from server, which originally was just time and data)
         """
-        args = split_to_args(command)
-        cmd_name = args[0]
-        self.set_command_result(None)
+        cmd_type, cmd_name, args, entries = self._get_command_detail(command)
+        if cmd_type == _CMD_TYPE_UNKNOWN:
+            return {
+                "status": APIStatus.ERROR_SYNTAX,
+                "details": f"Command {cmd_name} not found",
+            }
 
-        # check client side commands
-        entries = self.client_cmd_reg.get_command_entries(cmd_name)
         if len(entries) > 1:
             return {
                 "status": APIStatus.ERROR_SYNTAX,
-                "details": f"Ambiguous client command {cmd_name} - qualify with scope",
+                "details": f"Ambiguous command {cmd_name} - qualify with scope",
             }
-        elif len(entries) == 1:
-            self.set_command_result(None)
-            ent = entries[0]
-            return_result = ent.handler(args, self)
-            result = self.get_command_result()
-            if return_result:
-                return return_result
-            if result is None:
-                return {"status": APIStatus.ERROR_RUNTIME, "details": "Client did not respond"}
-            return result
 
-        # check server side commands
-        entries = self.server_cmd_reg.get_command_entries(cmd_name)
-        if len(entries) <= 0:
-            return {
-                "status": APIStatus.ERROR_SYNTAX,
-                "details": f"Command {cmd_name} not found in server or client cmds",
-            }
-        elif len(entries) > 1:
-            return {
-                "status": APIStatus.ERROR_SYNTAX,
-                "details": f"Ambiguous server command {cmd_name} - qualify with scope",
-            }
-        return self.server_execute(command)
+        ent = entries[0]
+        if cmd_type == _CMD_TYPE_CLIENT:
+            return self._do_client_command(
+                command=command,
+                args=args,
+                ent=ent
+            )
 
-    def server_execute(self, command, reply_processor=None):
+        # server command
         if not self.server_sess_active:
-            return {"status": APIStatus.ERROR_INACTIVE_SESSION, "details": "API session is inactive"}
+            return {"status": APIStatus.ERROR_INACTIVE_SESSION,
+                    "details": "Session is inactive"}
 
-        self.set_command_result(None)
+        return self.server_execute(command, cmd_entry=ent)
+
+    def server_execute(self, command, reply_processor=None, cmd_entry=None):
+        args = split_to_args(command)
+        ctx = self._new_command_context(command, args, cmd_entry)
         start = time.time()
-        self._try_command(command, reply_processor)
+        ctx.set_reply_processor(reply_processor)
+        self._try_command(ctx)
         secs = time.time() - start
         usecs = int(secs * 1000000)
 
         if self.debug:
             print(f"DEBUG: server_execute Done [{usecs} usecs] {datetime.now()}")
 
-        result = self.get_command_result()
+        result = ctx.get_command_result()
         if result is None:
             return {"status": APIStatus.ERROR_SERVER_CONNECTION, "details": "Server did not respond"}
         if "data" in result:
@@ -533,5 +638,4 @@ class AdminAPI(AdminAPISpec):
                         result.update({"status": APIStatus.ERROR_SERVER_CONNECTION})
         if "status" not in result:
             result.update({"status": APIStatus.SUCCESS})
-        self.set_command_result(result)
         return result

@@ -15,6 +15,7 @@
 import json
 import logging
 
+from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 
@@ -22,7 +23,8 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 class HACommandModule(CommandModule):
     """Command module with commands for management in relation to the high availability framework."""
 
-    def __init__(self):
+    def __init__(self, overseer_agent: OverseerAgent):
+        self.overseer_agent = overseer_agent
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_spec(self):
@@ -64,19 +66,19 @@ class HACommandModule(CommandModule):
         """
         return {
             "status": APIStatus.SUCCESS,
-            "details": str(api.overseer_agent._overseer_info),
-            "data": api.overseer_agent._overseer_info,
+            "details": str(self.overseer_agent._overseer_info),
+            "data": self.overseer_agent._overseer_info,
         }
 
     def get_active_sp(self, args, api):
-        return {"status": APIStatus.SUCCESS, "details": str(api.overseer_agent.get_primary_sp())}
+        return {"status": APIStatus.SUCCESS, "details": str(self.overseer_agent.get_primary_sp())}
 
     def promote_sp(self, args, api):
         if len(args) != 2:
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: promote_sp example1.com:8002:8003"}
 
         sp_end_point = args[1]
-        resp = api.overseer_agent.promote_sp(sp_end_point)
+        resp = self.overseer_agent.promote_sp(sp_end_point)
         if json.loads(resp.text).get("Error"):
             return {
                 "status": APIStatus.ERROR_RUNTIME,
@@ -104,7 +106,7 @@ class HACommandModule(CommandModule):
                 ),
             }
         print("Shutting down the system...")
-        resp = api.overseer_agent.set_state("shutdown")
+        resp = self.overseer_agent.set_state("shutdown")
         if json.loads(resp.text).get("Error"):
             return {
                 "status": APIStatus.ERROR_RUNTIME,

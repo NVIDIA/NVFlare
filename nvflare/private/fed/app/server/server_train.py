@@ -197,7 +197,6 @@ def create_admin_server(
         cmd_modules=fl_server.cmd_modules,
         file_upload_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
-        allowed_shell_cmds=None,
         host=server_conf.get("admin_host", "localhost"),
         port=server_conf.get("admin_port", 5005),
         ca_cert_file_name=root_cert,

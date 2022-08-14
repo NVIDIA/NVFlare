@@ -19,6 +19,14 @@ from typing import List
 from .table import Table
 
 
+class ConfirmMethod(object):
+
+    AUTH = 'auth'
+    PASSWORD = 'pwd'
+    YESNO = 'yesno'
+    USER_NAME = 'username'
+
+
 class Buffer(object):
     def __init__(self):
         """Buffer to append to for :class:`nvflare.fuel.hci.conn.Connection`."""

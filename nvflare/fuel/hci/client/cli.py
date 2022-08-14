@@ -19,19 +19,20 @@ import os
 import signal
 import time
 import traceback
+import sys, select
 from datetime import datetime
 from enum import Enum
 from functools import partial
 from typing import List, Optional
 
-from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
 
-from .api import AdminAPI
+from .api import AdminAPI, CommandInfo
 from .api_status import APIStatus
+from .api_spec import ServiceFinder
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -63,46 +64,42 @@ class AdminClient(cmd.Cmd):
         ca_cert: path to CA Cert file, by default provisioned rootCA.pem
         client_cert: path to admin client Cert file, by default provisioned as client.crt
         client_key: path to admin client Key file, by default provisioned as client.key
-        server_cn: server cn
-        require_login: whether to require login
         credential_type: what type of credential to use
         cmd_modules: command modules to load and register
-        overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
+        idp_agent: IdpAgent to obtain the primary service provider to set the host and port of the active server
         debug: whether to print debug messages. False by default.
     """
 
     def __init__(
         self,
-        host=None,
-        port: int = None,
         prompt: str = "> ",
+        credential_type: CredentialType=CredentialType.PASSWORD,
         ca_cert=None,
         client_cert=None,
         client_key=None,
         upload_dir="",
         download_dir="",
-        server_cn=None,
-        require_login: bool = False,
-        credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
-        overseer_agent: OverseerAgent = None,
+        service_finder: ServiceFinder = None,
         debug: bool = False,
     ):
         cmd.Cmd.__init__(self)
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = prompt
-        self.require_login = require_login
-        self.credential_type = credential_type
-        self.user_name = None
+        self.user_name = "admin"
         self.pwd = None
+        self.credential_type = credential_type
 
-        self.overseer_agent = overseer_agent
+        self.service_finder = service_finder
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
+        self.asked_to_stop = False
 
-        if not isinstance(overseer_agent, OverseerAgent):
-            raise TypeError("overseer_agent was not properly initialized.")
+        if not isinstance(service_finder, ServiceFinder):
+            raise TypeError("service_finder must be ServiceProvider but got {}.".format(
+                type(service_finder)))
+
         if not isinstance(credential_type, CredentialType):
             raise TypeError("invalid credential_type {}".format(credential_type))
 
@@ -120,17 +117,13 @@ class AdminClient(cmd.Cmd):
         self._get_login_creds()
 
         self.api = AdminAPI(
-            host=host,
-            port=port,
             ca_cert=ca_cert,
             client_cert=client_cert,
             client_key=client_key,
             upload_dir=upload_dir,
             download_dir=download_dir,
-            server_cn=server_cn,
             cmd_modules=modules,
-            overseer_agent=self.overseer_agent,
-            auto_login=True,
+            service_finder=self.service_finder,
             user_name=self.user_name,
             debug=self.debug,
             poc=poc,
@@ -164,8 +157,7 @@ class AdminClient(cmd.Cmd):
         called by inputting the EOF character, a message will display that the admin client is shutting down."""
         if arg != "logout":
             print("Shutting down admin client, please wait...")
-        if self.require_login:
-            self.api.server_execute("_logout")
+        self.api.logout()
         return True
 
     def do_lpwd(self, arg):
@@ -291,54 +283,40 @@ class AdminClient(cmd.Cmd):
             self._set_output_file(out_file, no_stdout)
 
         # check client command first
-        entries = self.api.client_cmd_reg.get_command_entries(cmd_name)
-        if len(entries) > 1:
-            self.write_string("Ambiguous client command {} - qualify with scope".format(cmd_name))
+        info = self.api.check_command(line)
+        if info == CommandInfo.UNKNOWN:
+            self.write_string("Undefined command {}".format(cmd_name))
             return
-        elif len(entries) == 1:
-            ent = entries[0]
-            resp = ent.handler(args, self.api)
-            self.print_resp(resp)
-            if resp.get("status") == APIStatus.ERROR_INACTIVE_SESSION:
-                return True
+        elif info == CommandInfo.AMBIGUOUS:
+            self.write_string("Ambiguous command {} - qualify with scope".format(cmd_name))
             return
-
-        entries = self.api.server_cmd_reg.get_command_entries(cmd_name)
-        if len(entries) <= 0:
-            self.write_string("Undefined server command {}".format(cmd_name))
-            return
-        elif len(entries) > 1:
-            self.write_string("Ambiguous server command {} - qualify with scope".format(cmd_name))
-            return
-
-        ent = entries[0]
-        confirm_method = ent.confirm
-        if ent.confirm == "auth":
+        elif info == CommandInfo.CONFIRM_AUTH:
             if self.credential_type == CredentialType.PASSWORD:
-                confirm_method = "pwd"
+                info = CommandInfo.CONFIRM_PWD
             elif self.user_name:
-                confirm_method = "username"
+                info = CommandInfo.CONFIRM_USER_NAME
             else:
-                confirm_method = "yesno"
+                info = CommandInfo.CONFIRM_YN
 
-        if confirm_method == "yesno":
+        if info == CommandInfo.CONFIRM_YN:
             answer = input("Are you sure (Y/N): ")
             answer = answer.lower()
             if answer != "y" and answer != "yes":
                 return
-        elif confirm_method == "username":
+        elif info == CommandInfo.CONFIRM_USER_NAME:
             answer = input("Confirm with User Name: ")
             if answer != self.user_name:
                 self.write_string("user name mismatch")
                 return
-        elif confirm_method == "pwd":
+        elif info == CommandInfo.CONFIRM_PWD:
             pwd = getpass.getpass("Enter password to confirm: ")
             if not verify_password(self.pwd, pwd):
                 self.write_string("Not authenticated")
                 return
 
+        # execute the command!
         start = time.time()
-        resp = self.api.server_execute(line)
+        resp = self.api.do_command(line)
         secs = time.time() - start
         usecs = int(secs * 1000000)
         done = "Done [{} usecs] {}".format(usecs, datetime.now())
@@ -351,11 +329,35 @@ class AdminClient(cmd.Cmd):
             self.write_string(self.api.shutdown_msg)
             return True
 
+    def _get_input(self, timeout):
+        # signal.alarm(1)
+        # try:
+        #     #result = (True, self.stdin.readline())
+        #     result = (True, input())
+        # except:
+        #     result = (False, "")
+        # signal.alarm(0)
+        # return True, input(">")
+
+        i, o, e = select.select([sys.stdin], [], [], 1)
+        if i:
+            print('has data')
+            #return True, 'ok'
+            return True, input(">")
+        else:
+            return False, ""
+
+    def ask_to_stop(self):
+        self.asked_to_stop = True
+
+    def interrupted(signum, frame):
+        "called when read times out"
+        print('interrupted!')
+
     def cmdloop(self, intro=None):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
         off the received input, and dispatch to action methods, passing them
         the remainder of the line as argument.
-
         Overriding what is in cmd.Cmd to handle exiting client on Ctrl+D (EOF).
         """
 
@@ -412,7 +414,7 @@ class AdminClient(cmd.Cmd):
 
         try:
             self.stdout.write("Waiting for token from successful login...\n")
-            while self.api.token is None:
+            while not self.api.is_ready():
                 time.sleep(1.0)
                 if self.api.shutdown_received:
                     return False
@@ -421,7 +423,7 @@ class AdminClient(cmd.Cmd):
             # above line was commented out, but if we want to use it, need to be logged in to call server_execute("_check_session") and consider how SP changes impact this
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
         finally:
-            self.overseer_agent.end()
+            self.service_finder.stop()
 
     def _get_login_creds(self):
         if self.credential_type == CredentialType.PASSWORD:

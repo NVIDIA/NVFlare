@@ -93,6 +93,7 @@ class ReservedKey(object):
     JOB_INFO = "__job_info__"
     CURRENT_JOB_ID = "__current_job_id__"
     JOB_RUN_NUMBER = "__job_run_number__"
+    JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
 
 
 class FLContextKey(object):
@@ -127,6 +128,7 @@ class FLContextKey(object):
     JOB_INFO = ReservedKey.JOB_INFO
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
     JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
+    JOB_DEPLOY_DETAIL = ReservedKey.JOB_DEPLOY_DETAIL
 
 
 class ReservedTopic(object):
@@ -158,6 +160,14 @@ class AdminCommandNames(object):
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     AUX_COMMAND = "aux_command"
+    SYS_INFO = "sys_info"
+    CALL = "call"
+    SHELL_PWD = "pwd"
+    SHELL_LS = "ls"
+    SHELL_CAT = "cat"
+    SHELL_HEAD = "head"
+    SHELL_TAIL = "tail"
+    SHELL_GREP = "grep"
 
 
 class ServerCommandNames(object):

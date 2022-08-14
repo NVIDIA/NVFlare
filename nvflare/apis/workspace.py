@@ -26,8 +26,13 @@ class Workspace:
             Workspace folder structure:
 
                 Workspace ROOT
+                    site_config
+                        authorization.json
+                        site.json
+                        ...
                     startup (optional)
                         provisioned content
+                        fed_client.json
                     run_1
                         config (required)
                             configurations

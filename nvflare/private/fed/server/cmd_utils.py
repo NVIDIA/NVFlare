@@ -14,11 +14,10 @@
 
 from typing import List
 
-from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
-from nvflare.security.security import Action, FLAuthzContext
+from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 
 
 class CommandUtil(object):
@@ -35,6 +34,10 @@ class CommandUtil(object):
     SITE_SERVER = "server"
     ALL_SITES = "@ALL"
     JOB_ID = "job_id"
+    JOB = "job"
+
+    def command_authz_required(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+        return PreAuthzReturnCode.REQUIRE_AUTHZ
 
     def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
         """Validate specified args and determine and set target type and target names in the Connection.
@@ -99,7 +102,7 @@ class CommandUtil(object):
         conn.set_prop(self.TARGET_CLIENTS, all_clients)
         return ""
 
-    def _authorize_actions(self, conn: Connection, args: List[str], actions):
+    def authorize_server_operation(self, conn: Connection, args: List[str]):
         err = self.validate_command_targets(conn, args)
         if err:
             conn.append_error(err)
@@ -107,68 +110,14 @@ class CommandUtil(object):
 
         target_type = conn.get_prop(self.TARGET_TYPE)
         authorize_server = False
-        authorize_clients = False
 
-        if target_type == self.TARGET_TYPE_SERVER:
+        if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
             authorize_server = True
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            authorize_clients = True
-        else:
-            # all
-            authorize_server = True
-            authorize_clients = True
-
-        sites = []
-        if authorize_clients:
-            client_names = conn.get_prop(self.TARGET_CLIENT_NAMES)
-
-            if client_names:
-                sites.extend(client_names)
 
         if authorize_server:
-            sites.append(self.SITE_SERVER)
-
-        authz_ctx = FLAuthzContext.new_authz_context(site_names=sites, actions=actions)
-        return True, authz_ctx
-
-    def authorize_view(self, conn: Connection, args: List[str]):
-        return self._authorize_actions(conn, args[1:], [Action.VIEW])
-
-    def authorize_train(self, conn: Connection, args: List[str]):
-        if len(args) != 3:
-            conn.append_error("syntax error: missing job_id and target")
-            return False, None
-
-        job_id = args[1].lower()
-
-        destination = job_id[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
-        conn.set_prop(self.JOB_ID, destination)
-
-        return self._authorize_actions(conn, args[2:], [Action.TRAIN])
-
-    def authorize_job_meta(self, conn: Connection, meta: dict, actions: List[str]):
-
-        deploy_map = meta.get("deploy_map")
-        if not deploy_map:
-            conn.append_error(f"deploy_map missing for job {self.get_job_name(meta)}")
-            return False, None
-
-        sites = set()
-        for app, site_list in deploy_map.items():
-            sites.update(site_list)
-
-        # Run-time might be a better spot for this
-        if self.ALL_SITES.casefold() in (site.casefold() for site in sites):
-            sites.add(self.SITE_SERVER)
-            engine = conn.app_ctx
-            clients = engine.get_clients()
-            sites.update([client.name for client in clients])
-
-        authz_ctx = FLAuthzContext.new_authz_context(site_names=list(sites), actions=actions)
-        return True, authz_ctx
-
-    def authorize_operate(self, conn: Connection, args: List[str]):
-        return self._authorize_actions(conn, args[1:], [Action.OPERATE])
+            return PreAuthzReturnCode.REQUIRE_AUTHZ
+        else:
+            return PreAuthzReturnCode.OK
 
     def send_request_to_clients(self, conn, message, process_client_replies=None):
         client_tokens = conn.get_prop(self.TARGET_CLIENT_TOKENS)

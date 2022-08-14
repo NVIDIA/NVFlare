@@ -15,7 +15,7 @@
 import json
 from typing import List
 
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
@@ -106,10 +106,17 @@ class DeployProcessor(RequestProcessor):
         job_id = req.get_header(RequestHeader.JOB_ID)
         app_name = req.get_header(RequestHeader.APP_NAME)
         client_name = engine.get_client_name()
-        result = engine.deploy_app(app_name=app_name, job_id=job_id, client_name=client_name, app_data=req.body)
-        if not result:
-            result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        err = engine.deploy_app(
+            submitter_name=req.get_header(RequestHeader.SUBMITTER_NAME, ''),
+            submitter_org=req.get_header(RequestHeader.SUBMITTER_ORG, ''),
+            submitter_role=req.get_header(RequestHeader.SUBMITTER_ROLE, ''),
+            app_name=app_name,
+            job_id=job_id,
+            client_name=client_name,
+            app_data=req.body)
+        if err:
+            return error_reply(err)
+        return ok_reply(f'deployed {app_name} to {client_name}')
 
 
 class DeleteRunNumberProcessor(RequestProcessor):

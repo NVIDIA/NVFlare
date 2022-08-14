@@ -29,6 +29,8 @@ class Session(object):
     def __init__(self):
         """Object keeping track of an admin client session with token and time data."""
         self.user_name = None
+        self.user_org = None
+        self.user_role = None
         self.start_time = None
         self.last_active_time = None
         self.token = None
@@ -84,11 +86,13 @@ class SessionManager(CommandModule):
         self.asked_to_stop = True
         self.monitor.join(timeout=10)
 
-    def create_session(self, user_name):
+    def create_session(self, user_name, user_org, user_role):
         """Creates new session with a new session token.
 
         Args:
             user_name: user name for session
+            user_org: org of the user
+            user_role: user's role
 
         Returns: Session
 
@@ -96,6 +100,8 @@ class SessionManager(CommandModule):
         token = make_session_token()
         sess = Session()
         sess.user_name = user_name
+        sess.user_role = user_role
+        sess.user_org = user_org
         sess.start_time = time.time()
         sess.last_active_time = sess.start_time
         sess.token = token
@@ -127,7 +133,8 @@ class SessionManager(CommandModule):
                     description="list user sessions",
                     usage="list_sessions",
                     handler_func=self.handle_list_sessions,
-                    visible=True,
+                    visible=False,
+                    enabled=False,
                 ),
                 CommandSpec(
                     name=CHECK_SESSION_CMD_NAME,
@@ -147,11 +154,13 @@ class SessionManager(CommandModule):
         with self.sess_update_lock:
             sess_list = list(self.sessions.values())
         sess_list.sort(key=lambda x: x.user_name, reverse=False)
-        table = conn.append_table(["User", "Session ID", "Start", "Last Active", "Idle"])
+        table = conn.append_table(["User", "Org", "Role", "Session ID", "Start", "Last Active", "Idle"])
         for s in sess_list:
             table.add_row(
                 [
                     s.user_name,
+                    s.user_org,
+                    s.user_role,
                     "{}".format(s.token),
                     time_to_string(s.start_time),
                     time_to_string(s.last_active_time),
