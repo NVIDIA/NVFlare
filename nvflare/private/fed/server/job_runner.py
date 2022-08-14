@@ -29,6 +29,7 @@ from nvflare.private.admin_defs import Message, ReturnCode, MsgHeader
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies, ClientReply
 from nvflare.private.fed.utils.app_deployer import AppDeployer
+from nvflare.apis.client import Client
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message):
@@ -58,35 +59,12 @@ class JobRunner(FLComponent):
         elif event_type in [EventType.JOB_COMPLETED, EventType.JOB_ABORTED, EventType.JOB_CANCELLED]:
             self._save_workspace(fl_ctx)
 
-    def _deploy_clients(self, job: Job, app_data, app_name, job_id, client_sites: List[str], fl_ctx):
-        engine = fl_ctx.get_engine()
-        # deploy app to all the client sites
-        admin_server = engine.server.admin_server
+    def _make_deploy_message(self, job: Job, app_data, app_name):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
         message.set_header(RequestHeader.REQUIRE_AUTHZ, True)
 
         message.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.SUBMIT_JOB)
-        message.set_header(RequestHeader.JOB_ID, job_id)
-        message.set_header(RequestHeader.APP_NAME, app_name)
-
-        message.set_header(RequestHeader.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
-        message.set_header(RequestHeader.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
-        message.set_header(RequestHeader.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
-
-        message.set_header(RequestHeader.USER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
-        message.set_header(RequestHeader.USER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
-        message.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
-
-        self.log_debug(fl_ctx, f"Send deploy command to the clients for run: {job_id}")
-        replies = _send_to_clients(admin_server, client_sites, engine, message)
-        return replies
-
-    def _make_deploy_message(self, job: Job, app_data, app_name, job_id):
-        message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
-        message.set_header(RequestHeader.REQUIRE_AUTHZ, True)
-
-        message.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.SUBMIT_JOB)
-        message.set_header(RequestHeader.JOB_ID, job_id)
+        message.set_header(RequestHeader.JOB_ID, job.job_id)
         message.set_header(RequestHeader.APP_NAME, app_name)
 
         message.set_header(RequestHeader.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
@@ -123,6 +101,7 @@ class JobRunner(FLComponent):
 
         client_deploy_requests = {}
         client_token_to_name = {}
+        client_token_to_reply = {}
         deploy_detail = []
         fl_ctx.set_prop(FLContextKey.JOB_DEPLOY_DETAIL, deploy_detail)
 
@@ -162,20 +141,18 @@ class JobRunner(FLComponent):
                         client_sites.append(p)
 
             if client_sites:
-                message = self._make_deploy_message(job, app_data, app_name, run_number)
+                message = self._make_deploy_message(job, app_data, app_name)
                 clients, invalid_inputs = engine.validate_clients(client_sites)
 
                 if invalid_inputs:
                     deploy_detail.append('invalid_clients: {}'.format(",".join(invalid_inputs)))
                     raise RuntimeError(f"invalid clients: {invalid_inputs}.")
 
-                for cc in zip(clients, client_sites):
-                    # cc is a tuple
-                    # cc[0] is a Client object; cc[1] is the client site name
-                    client_token_to_name[cc[0].token] = cc[1]
-
                 for c in clients:
-                    client_deploy_requests.update({c.token: message})
+                    assert isinstance(c, Client)
+                    client_token_to_name[c.token] = c.name
+                    client_deploy_requests[c.token] = message
+                    client_token_to_reply[c.token] = None
 
                 display_sites = ",".join(client_sites)
                 self.log_info(
@@ -188,19 +165,19 @@ class JobRunner(FLComponent):
         if client_deploy_requests:
             engine = fl_ctx.get_engine()
             admin_server = engine.server.admin_server
-            replies = admin_server.send_requests(
+            client_token_to_reply = admin_server.send_requests_and_get_reply_dict(
                 client_deploy_requests, timeout_secs=admin_server.timeout)
 
             # check replies and see whether required clients are okay
             failed_clients = []
-            for r in replies:
-                assert isinstance(r, ClientReply)
-                client_name = client_token_to_name[r.client_token]
-                if r.reply:
-                    rc = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+            for client_token, reply in client_token_to_reply.items():
+                client_name = client_token_to_name[client_token]
+                if reply:
+                    assert isinstance(reply, Message)
+                    rc = reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
                     if rc != ReturnCode.OK:
                         failed_clients.append(client_name)
-                        deploy_detail.append(f"{client_name}: {r.reply.body}")
+                        deploy_detail.append(f"{client_name}: {reply.body}")
                     else:
                         deploy_detail.append(f"{client_name}: OK")
                 else:

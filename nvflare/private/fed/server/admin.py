@@ -317,6 +317,29 @@ class FedAdminServer(AdminServer):
 
         return self.send_requests(reqs, timeout_secs)
 
+    def send_requests_and_get_reply_dict(self, requests: dict, timeout_secs=2.0) -> dict:
+        """Send requests to clients
+
+        Args:
+            requests: A dict of requests: {client token: request}
+            timeout_secs: how long to wait for reply before timeout
+
+        Returns:
+            A dict of {client token: reply}, where reply is a Message or None (no reply received)
+        """
+        result = {}
+        if requests:
+            for token, _ in requests.items():
+                result[token] = None
+
+            replies = self.send_requests(requests, timeout_secs)
+            for r in replies:
+                assert isinstance(r, ClientReply)
+                if r.reply:
+                    result[r.client_token] = r.reply
+
+        return result
+
     def send_requests(self, requests: dict, timeout_secs=2.0) -> [ClientReply]:
         """Send requests to clients.
 
