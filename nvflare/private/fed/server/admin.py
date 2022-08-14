@@ -334,10 +334,7 @@ class FedAdminServer(AdminServer):
 
             replies = self.send_requests(requests, timeout_secs)
             for r in replies:
-                assert isinstance(r, ClientReply)
-                if r.reply:
-                    result[r.client_token] = r.reply
-
+                result[r.client_token] = r.reply
         return result
 
     def send_requests(self, requests: dict, timeout_secs=2.0) -> [ClientReply]:
