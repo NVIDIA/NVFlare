@@ -1,0 +1,116 @@
+{
+    "data_path": "./dataset/HIGGS_UCI.csv",
+    "local_model_path": "model.json",
+    "global_model_path": "model_global.json",
+    "learning_rate": 0.1,
+    "objective": "binary:logistic",
+    "max_depth": 8,
+    "eval_metric": "auc",
+    "nthread": 4,
+    "data_index": {
+        "valid": {
+            "start": 0,
+            "end": 1000000
+        },
+        "site-1": {
+            "start": 1000000,
+            "end": 1003484,
+            "lr_scale": 0.0003484
+        },
+        "site-2": {
+            "start": 1003484,
+            "end": 1017421,
+            "lr_scale": 0.0013937
+        },
+        "site-3": {
+            "start": 1017421,
+            "end": 1048779,
+            "lr_scale": 0.0031358
+        },
+        "site-4": {
+            "start": 1048779,
+            "end": 1104528,
+            "lr_scale": 0.0055749
+        },
+        "site-5": {
+            "start": 1104528,
+            "end": 1191636,
+            "lr_scale": 0.0087108
+        },
+        "site-6": {
+            "start": 1191636,
+            "end": 1317071,
+            "lr_scale": 0.0125435
+        },
+        "site-7": {
+            "start": 1317071,
+            "end": 1487802,
+            "lr_scale": 0.0170731
+        },
+        "site-8": {
+            "start": 1487802,
+            "end": 1710798,
+            "lr_scale": 0.0222996
+        },
+        "site-9": {
+            "start": 1710798,
+            "end": 1993027,
+            "lr_scale": 0.0282229
+        },
+        "site-10": {
+            "start": 1993027,
+            "end": 2341459,
+            "lr_scale": 0.0348432
+        },
+        "site-11": {
+            "start": 2341459,
+            "end": 2763061,
+            "lr_scale": 0.0421602
+        },
+        "site-12": {
+            "start": 2763061,
+            "end": 3264803,
+            "lr_scale": 0.0501742
+        },
+        "site-13": {
+            "start": 3264803,
+            "end": 3853653,
+            "lr_scale": 0.058885
+        },
+        "site-14": {
+            "start": 3853653,
+            "end": 4536579,
+            "lr_scale": 0.0682926
+        },
+        "site-15": {
+            "start": 4536579,
+            "end": 5320551,
+            "lr_scale": 0.0783972
+        },
+        "site-16": {
+            "start": 5320551,
+            "end": 6212537,
+            "lr_scale": 0.0891986
+        },
+        "site-17": {
+            "start": 6212537,
+            "end": 7219505,
+            "lr_scale": 0.1006968
+        },
+        "site-18": {
+            "start": 7219505,
+            "end": 8348424,
+            "lr_scale": 0.1128919
+        },
+        "site-19": {
+            "start": 8348424,
+            "end": 9606263,
+            "lr_scale": 0.1257839
+        },
+        "site-20": {
+            "start": 9606263,
+            "end": 11000000,
+            "lr_scale": 0.1393737
+        }
+    }
+}
