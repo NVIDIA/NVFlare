@@ -19,19 +19,15 @@ import logging
 import os
 import sys
 
-from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
-from nvflare.fuel.hci.server.authz import AuthorizationService
-from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, secure_content_check
-from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init
 
 
 def main():
@@ -74,7 +70,7 @@ def main():
     try:
         os.chdir(args.workspace)
 
-        startup = os.path.join(args.workspace, "startup")
+        startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         conf = FLServerStarterConfiger(
             app_root=startup,
             server_config_file_name=args.fed_server,
@@ -92,13 +88,17 @@ def main():
             logger.critical("loglevel critical enabled")
         conf.configure()
 
-        log_file = os.path.join(args.workspace, "log.txt")
+        log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
         add_logfile_handler(log_file)
 
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
 
-        security_check(secure_train=secure_train, content_folder=startup, fed_server_config=args.fed_server)
+        security_init(secure_train=secure_train,
+                      site_org=conf.site_org,
+                      workspace_dir=args.workspace,
+                      app_validator=conf.app_validator,
+                      site_type=SiteType.SERVER)
 
         try:
             # Deploy the FL server
@@ -113,12 +113,10 @@ def main():
                 server_conf=first_server,
                 args=args,
                 secure_train=secure_train,
-                app_validator=deployer.app_validator,
             )
             admin_server.start()
 
             services.platform = "PT"
-
             services.set_admin_server(admin_server)
         finally:
             deployer.close()
@@ -131,46 +129,8 @@ def main():
         pass
 
 
-def security_check(secure_train: bool, content_folder: str, fed_server_config: str):
-    """To check the security content if running in security mode.
-
-    Args:
-        secure_train (bool): if run in secure mode or not.
-        content_folder (str): the folder to check.
-        fed_server_config (str): fed_server.json
-    """
-    # initialize the SecurityContentService.
-    # must do this before initializing other services since it may be needed by them!
-    SecurityContentService.initialize(content_folder=content_folder)
-
-    if secure_train:
-        insecure_list = secure_content_check(fed_server_config, site_type="server")
-        if len(insecure_list):
-            print("The following files are not secure content.")
-            for item in insecure_list:
-                print(item)
-            sys.exit(1)
-
-    # initialize the AuditService, which is used by command processing.
-    # The Audit Service can be used in other places as well.
-    AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
-
-    # Initialize the AuthorizationService. It is used by command authorization
-    # We use FLAuthorizer for policy processing.
-    # AuthorizationService depends on SecurityContentService to read authorization policy file.
-    if secure_train:
-        _, err = AuthorizationService.initialize(FLAuthorizer())
-    else:
-        _, err = AuthorizationService.initialize(EmptyAuthorizer())
-
-    if err:
-        print("AuthorizationService error: {}".format(err))
-        sys.exit(1)
-
-
 def create_admin_server(
-    fl_server: FederatedServer, server_conf=None, args=None, secure_train=False, app_validator=None
-):
+    fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
     """To create the admin server.
 
     Args:
@@ -178,7 +138,6 @@ def create_admin_server(
         server_conf: server config
         args: command args
         secure_train: True/False
-        app_validator: application validator
 
     Returns:
         A FedAdminServer.
@@ -203,7 +162,6 @@ def create_admin_server(
         server_cert_file_name=server_cert,
         server_key_file_name=server_key,
         accepted_client_cns=None,
-        app_validator=app_validator,
         download_job_url=server_conf.get("download_job_url", "http://"),
     )
     return admin_server

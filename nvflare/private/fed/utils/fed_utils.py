@@ -14,15 +14,25 @@
 
 import logging
 import pickle
+import json
+import os
+import sys
 from logging.handlers import RotatingFileHandler
 from multiprocessing.connection import Listener
 from typing import List
 
+from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.app_validation import AppValidator
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.sec.authz import AuthorizationService
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
+from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
+
+from .app_authz import AppAuthzService
 
 
 def shareable_to_modeldata(shareable, fl_ctx):
@@ -76,22 +86,26 @@ def listen_command(listen_port, engine, execute_func, logger):
             listener.close()
 
 
-def secure_content_check(config: str, site_type: str) -> List[str]:
+def _check_secure_content(site_type: str) -> List[str]:
     """To check the security contents.
 
     Args:
-        config (str): The fed_XXX config
         site_type (str): "server" or "client"
 
     Returns:
         A list of insecure content.
     """
-    insecure_list = []
-    data, sig = SecurityContentService.load_json(config)
-    if sig != LoadResult.OK:
-        insecure_list.append(config)
+    if site_type == SiteType.SERVER:
+        config_file_name = WorkspaceConstants.SERVER_STARTUP_CONFIG
+    else:
+        config_file_name = WorkspaceConstants.CLIENT_STARTUP_CONFIG
 
-    sites_to_check = data["servers"] if site_type == "server" else [data["client"]]
+    insecure_list = []
+    data, sig = SecurityContentService.load_json(config_file_name)
+    if sig != LoadResult.OK:
+        insecure_list.append(config_file_name)
+
+    sites_to_check = data["servers"] if site_type == SiteType.SERVER else [data["client"]]
 
     for site in sites_to_check:
         for filename in [SSLConstants.CERT, SSLConstants.PRIVATE_KEY, SSLConstants.ROOT_CERT]:
@@ -99,10 +113,66 @@ def secure_content_check(config: str, site_type: str) -> List[str]:
             if sig != LoadResult.OK:
                 insecure_list.append(site.get(filename))
 
-    if site_type == "server":
-        if "authorization.json" in SecurityContentService.security_content_manager.signature:
-            data, sig = SecurityContentService.load_json("authorization.json")
-            if sig != LoadResult.OK:
-                insecure_list.append("authorization.json")
+    if WorkspaceConstants.AUTHORIZATION_CONFIG in SecurityContentService.security_content_manager.signature:
+        data, sig = SecurityContentService.load_json(WorkspaceConstants.AUTHORIZATION_CONFIG)
+        if sig != LoadResult.OK:
+            insecure_list.append(WorkspaceConstants.AUTHORIZATION_CONFIG)
 
     return insecure_list
+
+
+def security_init(secure_train: bool,
+                  site_org: str,
+                  workspace_dir: str,
+                  app_validator: AppValidator,
+                  site_type: str):
+    """To check the security content if running in security mode.
+
+    Args:
+       secure_train (bool): if run in secure mode or not.
+       site_org: organization of the site
+       workspace_dir (str): the workspace to check.
+       app_validator: app validator for application validation
+       site_type (str): server or client. fed_client.json or fed_server.json
+    """
+    # initialize the SecurityContentService.
+    # must do this before initializing other services since it may be needed by them!
+    startup_dir = os.path.join(workspace_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
+    SecurityContentService.initialize(content_folder=startup_dir)
+
+    if secure_train:
+        insecure_list = _check_secure_content(site_type=site_type)
+        if len(insecure_list):
+            print("The following files are not secure content.")
+            for item in insecure_list:
+                print(item)
+            sys.exit(1)
+
+    # initialize the AuditService, which is used by command processing.
+    # The Audit Service can be used in other places as well.
+    audit_file_name = os.path.join(workspace_dir, WorkspaceConstants.AUDIT_LOG)
+    AuditService.initialize(audit_file_name)
+
+    if app_validator:
+        AppAuthzService.initialize(app_validator)
+
+    # Initialize the AuthorizationService. It is used by command authorization
+    # We use FLAuthorizer for policy processing.
+    # AuthorizationService depends on SecurityContentService to read authorization policy file.
+    authorizer = None
+    if secure_train:
+        site_dir = os.path.join(workspace_dir, WorkspaceConstants.SITE_FOLDER_NAME)
+        if os.path.exists(site_dir):
+            policy_config = os.path.join(site_dir, WorkspaceConstants.AUTHORIZATION_CONFIG)
+            if os.path.exists(policy_config):
+                policy_config = json.load(open(policy_config, "rt"))
+                authorizer = FLAuthorizer(site_org, policy_config)
+
+    if not authorizer:
+        authorizer = EmptyAuthorizer()
+
+    _, err = AuthorizationService.initialize(authorizer)
+
+    if err:
+        print("AuthorizationService error: {}".format(err))
+        sys.exit(1)

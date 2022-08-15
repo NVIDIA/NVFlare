@@ -83,7 +83,18 @@ def log_exception(logger: logging.Logger=None):
     else:
         exc_detail = traceback.format_exc()
 
+    if not logger:
+        logger = logging.getLogger()
+
     if logger:
         logger.error(exc_detail)
     else:
         print(exc_detail)
+
+
+def print_exception():
+    if is_secure():
+        exc_detail = _format_exc_securely()
+    else:
+        exc_detail = traceback.format_exc()
+    print(exc_detail)

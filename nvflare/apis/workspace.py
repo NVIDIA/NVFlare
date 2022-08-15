@@ -26,7 +26,7 @@ class Workspace:
             Workspace folder structure:
 
                 Workspace ROOT
-                    site_config
+                    site
                         authorization.json
                         site.json
                         ...
@@ -48,6 +48,9 @@ class Workspace:
         self.root_dir = root_dir
         self.name = name
         self.config_folder = config_folder
+
+    def get_site_config_dir(self) -> str:
+        return os.path.join(self.root_dir, "site")
 
     def get_startup_kit_dir(self) -> str:
         return os.path.join(self.root_dir, "startup")

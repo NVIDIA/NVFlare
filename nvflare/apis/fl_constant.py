@@ -266,9 +266,12 @@ class SystemComponents(object):
 
 class WorkspaceConstants:
     """hard coded file names inside the workspace folder."""
+    STARTUP_FOLDER_NAME = "startup"
+    SITE_FOLDER_NAME = "site"
 
     LOGGING_CONFIG = "log.config"
     AUDIT_LOG = "audit.log"
+    LOG_FILE_NAME = 'log.txt'
 
     # these two files is used by shell scripts to determine restart / shutdown
     RESTART_FILE = "restart.fl"
@@ -276,3 +279,16 @@ class WorkspaceConstants:
 
     WORKSPACE_PREFIX = ""
     APP_PREFIX = "app_"
+
+    SERVER_STARTUP_CONFIG = 'fed_server.json'
+    CLIENT_STARTUP_CONFIG = 'fed_client.json'
+    SERVER_JOB_CONFIG = 'config_fed_server.json'
+    CLIENT_JOB_CONFIG = 'config_fed_client.json'
+    AUTHORIZATION_CONFIG = 'authorization.json'
+    PRIVACY_CONFIG = 'privacy.json'
+
+
+class SiteType:
+
+    SERVER = "server"
+    CLIENT = "client"

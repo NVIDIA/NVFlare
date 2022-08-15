@@ -35,6 +35,7 @@ from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.fuel.sec.audit import AuditService
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
@@ -78,9 +79,9 @@ def main():
     config_folder = kv_list.get("config_folder", "")
     secure_train = kv_list.get("secure_train", True)
     if config_folder == "":
-        args.client_config = "config_fed_client.json"
+        args.client_config = WorkspaceConstants.CLIENT_JOB_CONFIG
     else:
-        args.client_config = os.path.join(config_folder, "config_fed_client.json")
+        args.client_config = os.path.join(config_folder, WorkspaceConstants.CLIENT_JOB_CONFIG)
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
 
@@ -94,9 +95,13 @@ def main():
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
+    # Initialize audit service since the job execution will need it!
+    audit_file_name = os.path.join(args.workspace, WorkspaceConstants.AUDIT_LOG)
+    AuditService.initialize(audit_file_name)
+
     print("starting the client .....")
 
-    startup = os.path.join(args.workspace, "startup")
+    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
     SecurityContentService.initialize(content_folder=startup)
 
     thread = None
@@ -114,7 +119,7 @@ def main():
 
     logging_setup(app_root, args, config_folder, startup)
 
-    log_file = os.path.join(args.workspace, args.job_id, "log.txt")
+    log_file = os.path.join(args.workspace, args.job_id, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
     logger = logging.getLogger("worker_process")
     logger.info("Worker_process started.")

@@ -89,6 +89,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.enable_byoc = False
         self.snapshot_persistor = None
         self.overseer_agent = None
+        self.site_org = ""
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -183,6 +184,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             "app_validator": self.app_validator,
             "server_config": self.config_data["servers"],
             "server_host": self.cmd_vars.get("host", None),
+            "site_org": self.cmd_vars.get("org", ""),
             "enable_byoc": self.enable_byoc,
             "snapshot_persistor": self.snapshot_persistor,
             "overseer_agent": self.overseer_agent,
@@ -193,6 +195,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         deployer = ServerDeployer()
         deployer.build(build_ctx)
         self.deployer = deployer
+        self.site_org = build_ctx["site_org"]
 
 
 class FLClientStarterConfiger(JsonConfigurator):
@@ -247,6 +250,8 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.enable_byoc = False
         self.base_deployer = None
         self.overseer_agent = None
+        self.site_org = ""
+        self.app_validator = None
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         """Process config element.
@@ -260,6 +265,10 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         if path == "enable_byoc":
             self.enable_byoc = element
+            return
+
+        if path == "app_validator" and isinstance(element, dict):
+            self.app_validator = self.build_component(element)
             return
 
         if path == "overseer_agent":
@@ -321,6 +330,7 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         build_ctx = {
             "client_name": self.cmd_vars.get("uid", ""),
+            "site_org": self.cmd_vars.get("org", ""),
             "server_config": self.config_data.get("servers", []),
             "client_config": self.config_data["client"],
             "secure_train": secure_train,
@@ -331,6 +341,9 @@ class FLClientStarterConfiger(JsonConfigurator):
             "client_handlers": self.handlers,
         }
 
+        custom_validators = [self.app_validator] if self.app_validator else []
+        self.app_validator = FLAppValidator(custom_validators=custom_validators)
+        self.site_org = build_ctx["site_org"]
         self.base_deployer = BaseClientDeployer()
         self.base_deployer.build(build_ctx)
 

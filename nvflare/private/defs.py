@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.apis.fl_constant import WorkspaceConstants
 
 
 class SpecialTaskName(object):
@@ -112,8 +113,8 @@ class AppFolderConstants:
 
     CONFIG_TRAIN = "config_train.json"
     CONFIG_ENV = "environment.json"
-    CONFIG_FED_SERVER = "config_fed_server.json"
-    CONFIG_FED_CLIENT = "config_fed_client.json"
+    CONFIG_FED_SERVER = WorkspaceConstants.SERVER_JOB_CONFIG
+    CONFIG_FED_CLIENT = WorkspaceConstants.CLIENT_JOB_CONFIG
 
 
 class SSLConstants:

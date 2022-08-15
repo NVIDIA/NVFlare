@@ -28,8 +28,6 @@ from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
 
-from nvflare.private.fed.utils.app_authz import AppAuthzService
-
 
 def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
     msg = Message(topic=topic, body=body)
@@ -175,7 +173,6 @@ class FedAdminServer(AdminServer):
         server_cert_file_name,
         server_key_file_name,
         accepted_client_cns=None,
-        app_validator=None,
         download_job_url=""
     ):
         """The FedAdminServer is the framework for developing admin commands.
@@ -221,8 +218,6 @@ class FedAdminServer(AdminServer):
 
         self.file_upload_dir = file_upload_dir
         self.file_download_dir = file_download_dir
-
-        AppAuthzService.initialize(app_validator)
 
         # YC: need to register FileTransferModule any more
         # since upload/download functions are to be implemented by other modules.
