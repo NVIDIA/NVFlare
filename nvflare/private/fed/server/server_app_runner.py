@@ -54,6 +54,3 @@ class ServerAppRunner:
         server.heart_beat_timeout = conf.heartbeat_timeout
         server.runner_config = conf.runner_config
         server.handlers = conf.handlers
-
-    def close(self):
-        pass

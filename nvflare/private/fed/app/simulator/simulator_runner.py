@@ -32,7 +32,7 @@ from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.defs import AppFolderConstants, EngineConstant
-from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploy
+from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
@@ -51,7 +51,7 @@ class SimulatorRunner(FLComponent):
 
         self.simulator_root = None
         self.services = None
-        self.deployer = SimulatorDeploy()
+        self.deployer = SimulatorDeployer()
         self.client_names = []
 
     def setup(self):

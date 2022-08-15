@@ -25,7 +25,7 @@ from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
-from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploy
+from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
@@ -72,7 +72,7 @@ def main():
     server_ports = []
     for part in args.server_ports.split(","):
         server_ports.append(int(part))
-    deployer = SimulatorDeploy(server_ports)
+    deployer = SimulatorDeployer(server_ports)
     client_runner = SimulatorClientRunner(args, client_names, deployer)
     client_runner.run()
 

@@ -20,7 +20,7 @@ from unittest.mock import patch
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploy
+from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
@@ -28,7 +28,7 @@ from nvflare.security.security import EmptyAuthorizer
 
 class TestSimulatorDeploy(unittest.TestCase):
     def setUp(self) -> None:
-        self.deployer = SimulatorDeploy()
+        self.deployer = SimulatorDeployer()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 

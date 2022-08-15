@@ -28,7 +28,7 @@ from .base_client_deployer import BaseClientDeployer
 from .server_deployer import ServerDeployer
 
 
-class SimulatorDeploy(ServerDeployer):
+class SimulatorDeployer(ServerDeployer):
     def __init__(self, ports=None):
         super().__init__()
         if ports:
@@ -41,7 +41,6 @@ class SimulatorDeploy(ServerDeployer):
         simulator_server = self._create_simulator_server_config(self.admin_storage)
 
         wait_after_min_clients = simulator_server.get("wait_after_min_clients", 10)
-        heart_beat_timeout = 600
         if simulator_server["heart_beat_timeout"]:
             heart_beat_timeout = simulator_server["heart_beat_timeout"]
 
@@ -50,7 +49,6 @@ class SimulatorDeploy(ServerDeployer):
             max_num_clients=simulator_server.get("max_num_clients", 100),
             wait_after_min_clients=wait_after_min_clients,
             cmd_modules=self.cmd_modules,
-            heart_beat_timeout=heart_beat_timeout,
             args=args,
             secure_train=secure_train,
             enable_byoc=self.enable_byoc,
