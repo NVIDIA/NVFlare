@@ -35,17 +35,17 @@ class BaseCrossValResultValidator(FinishJobResultValidator, ABC):
         server_run_dir = job_result["workspace_root"]
         cross_val_dir = os.path.join(server_run_dir, AppConstants.CROSS_VAL_DIR)
         if not os.path.exists(cross_val_dir):
-            self.logger.info(f"models dir {cross_val_dir} doesn't exist.")
+            self.logger.error(f"models dir {cross_val_dir} doesn't exist.")
             return False
 
         model_shareable_dir = os.path.join(cross_val_dir, AppConstants.CROSS_VAL_MODEL_DIR_NAME)
         if not os.path.exists(model_shareable_dir):
-            self.logger.info(f"model shareable directory {model_shareable_dir} doesn't exist.")
+            self.logger.error(f"model shareable directory {model_shareable_dir} doesn't exist.")
             return False
 
         result_shareable_dir = os.path.join(cross_val_dir, AppConstants.CROSS_VAL_RESULTS_DIR_NAME)
         if not os.path.exists(result_shareable_dir):
-            self.logger.info(f"result shareable directory {result_shareable_dir} doesn't exist.")
+            self.logger.error(f"result shareable directory {result_shareable_dir} doesn't exist.")
             return False
 
         # There should be three files in model_shareable
@@ -58,7 +58,7 @@ class BaseCrossValResultValidator(FinishJobResultValidator, ABC):
         for model_file_name in model_file_names:
             model_file = os.path.join(model_shareable_dir, model_file_name)
             if not os.path.exists(model_file):
-                self.logger.info(f"model {model_file} doesn't exist in model shareable directory.")
+                self.logger.error(f"model {model_file} doesn't exist in model shareable directory.")
                 return False
 
         # Check all the results
@@ -73,7 +73,7 @@ class BaseCrossValResultValidator(FinishJobResultValidator, ABC):
         for results_file_name in results_file_names:
             result_file = os.path.join(result_shareable_dir, results_file_name)
             if not os.path.exists(result_file):
-                self.logger.info(f"result {result_file} doesn't exist in result shareable directory.")
+                self.logger.error(f"result {result_file} doesn't exist in result shareable directory.")
                 return False
 
         return True
