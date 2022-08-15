@@ -15,6 +15,7 @@
 """Federated Simulator Multi-GPU client process launching script."""
 
 import argparse
+import logging
 import os
 import sys
 import threading
@@ -53,7 +54,11 @@ def main():
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    log_file = os.path.join(args.workspace, "client_run.log.txt")
+    log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
+    if not os.path.isfile(log_config_file_path):
+        log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+    log_file = os.path.join(args.workspace, "simulate_job", "client_run.log.txt")
     add_logfile_handler(log_file)
 
     os.chdir(args.workspace)

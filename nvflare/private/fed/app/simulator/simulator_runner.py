@@ -75,9 +75,6 @@ class SimulatorRunner(FLComponent):
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
 
-        log_file = os.path.join(self.args.workspace, "log.txt")
-        add_logfile_handler(log_file)
-
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
@@ -96,7 +93,7 @@ class SimulatorRunner(FLComponent):
             if not self.client_names:
                 self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
                 sys.exit(1)
-            if self.args.threads > len(self.client_names):
+            if self.args.threads and self.args.threads > len(self.client_names):
                 logging.error("The number of threads to run can not be larger then the number of clients.")
                 sys.exit(-1)
 
@@ -123,6 +120,8 @@ class SimulatorRunner(FLComponent):
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
 
+            log_file = os.path.join(self.args.workspace, "simulate_job", "log.txt")
+            add_logfile_handler(log_file)
             # self.create_clients(data_bytes, job_name, meta)
             return True
 
