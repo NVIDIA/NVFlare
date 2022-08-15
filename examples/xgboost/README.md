@@ -38,7 +38,11 @@ python3 -m pip install sklearn
 python3 -m pip install torch
 python3 -m pip install tensorboard
 ```
-
+(optional) if you would like to plot the TensorBoard event files as shown below, please also install
+```
+python3 -m pip install tensorflow
+python3 -m pip install seaborn
+```
 ### Set up FL workspace
 
 Follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to set up your POC ("proof of concept") workspace.
@@ -109,7 +113,30 @@ shutdown server
 > **_NOTE:_** For more information about the Admin client, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
 ## Results on 5- and 20-client under various training settings
-To be added....
+For comparison, we train a baseline model in a centralized manner with same round of training
+```
+python3 ./utils/baseline_centralized.py
+```
+
+Let's summarize the result of the experiments run above. We compare the AUC scores of 
+the model on a standalone validation set consisted of the first 1 million instances of HIGGS dataset.
+
+We provide a script for plotting the tensorboard records, running
+```
+python3 ./utils/plot_tensorboard_events.py
+```
+The resulting validation AUC curves (no smoothing) are shown below:
+![5 clients validation curve](./figs/5_client.png)
+![20 clients validation curve](./figs/20_client.png)
+
+As illustrated, we can have the following observations:
+- cyclic training performs ok under uniform split (the purple curve), however under non-uniform split, it will have significant performance drop (the brown curve)
+- bagging training performs better than cyclic under both uniform and non-uniform data splits (orange v.s. purple, red/green v.s. brown)
+- with uniform shrinkage, bagging will have significant performance drop under non-uniform split (green v.s. orange)
+- data-size dependent shrinkage will be able to recover the performance drop above (red v.s. green), and achieve almost the same performance as uniform data split (red v.s. orange) 
+- bagging under uniform data split (orange), and bagging with data-size dependent shrinkage under non-uniform data split(red), can achieve comparable/better performance as compared with centralized training baseline
+
+For model size, centralized training and cyclic training will have a model consisting of `num_round` trees, while the bagging models consist of `num_round * num_client` trees, since each round, bagging training boosts a forest consisting of individually trained trees from each client.
 
 ## Reference
 [1] Zhao, L. et al., "InPrivate Digging: Enabling Tree-based Distributed Data Mining with Differential Privacy," IEEE INFOCOM 2018 - IEEE Conference on Computer Communications, 2018, pp. 2087-2095
