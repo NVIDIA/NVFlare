@@ -18,6 +18,9 @@ import traceback
 import logging
 
 
+SECURE_LOGGING_VAR_NAME = "NVFLARE_SECURE_LOGGING"
+
+
 def is_secure() -> bool:
     """Is logging set in secure mode?
     This is controlled by the system environment variable NVFLARE_SECURE_LOGGING.
@@ -25,7 +28,7 @@ def is_secure() -> bool:
 
     Returns: whether logging is set in secure mode.
     """
-    secure_logging = os.environ.get("NVFLARE_SECURE_LOGGING", False)
+    secure_logging = os.environ.get(SECURE_LOGGING_VAR_NAME, False)
     if isinstance(secure_logging, str):
         secure_logging = secure_logging.lower()
         return secure_logging == '1' or secure_logging == 'true'
@@ -58,7 +61,7 @@ def _format_exc_securely():
         file_name = tb.tb_frame.f_code.co_filename
         func_name = tb.tb_frame.f_code.co_name
         line = tb.tb_lineno
-        line_text = 'File "{}", line {}, in {}'.format(file_name, line, func_name)
+        line_text = f'File "{file_name}", line {line}, in {func_name}'
 
         if not last_frame or last_frame.line_text != line_text:
             last_frame = _Frame(line_text)
@@ -71,17 +74,21 @@ def _format_exc_securely():
     for f in frames:
         result.append(f.line_text)
         if f.count > 1:
-            result.append("[Previous line repeated {} more times]".format(f.count-1))
+            result.append(f"[Previous line repeated {f.count-1} more times]")
 
     text = "\r\n  ".join(result)
-    return "{}\r\n{}".format(text, 'Exception Type: {}'.format(exc_type))
+    return "{}\r\n{}".format(text, f"Exception Type: {exc_type}")
+
+
+def _format_exc():
+    if is_secure():
+        return _format_exc_securely()
+    else:
+        return traceback.format_exc()
 
 
 def log_exception(logger: logging.Logger=None):
-    if is_secure():
-        exc_detail = _format_exc_securely()
-    else:
-        exc_detail = traceback.format_exc()
+    exc_detail = _format_exc()
 
     if not logger:
         logger = logging.getLogger()
@@ -93,8 +100,4 @@ def log_exception(logger: logging.Logger=None):
 
 
 def print_exception():
-    if is_secure():
-        exc_detail = _format_exc_securely()
-    else:
-        exc_detail = traceback.format_exc()
-    print(exc_detail)
+    print(_format_exc())
