@@ -252,78 +252,63 @@ By default save the result in JSON format. You are free to write another StatsWr
 The output of the json is like the followings
 ``` 
 { 
-     "metric": {
-        "site-1" : {
-            "dataset-1": {           
-                  "feature-1": metric_value
-                  "feature-2": metric_value
-                  ...
-            },
-            "dataset-2": {           
-                  "feature-1": metric_value
-                  "feature-2": metric_value
-                  ...
-            } 
+     "feature-1": {
+        "metric-1": {
+            "site-1-dataset-1" : metric_value
+            "site-1-dataset-2":  metric_value
+            "site-2-dataset-1":  metric_value
+            "site-2-dataset-2":  metric_value
+            ...
+            "Global-dataset-1": metric_value
+            "Global-dataset-2"  metric_value
+            }
         },
-        "site-2" : {
-            "dataset-1": {           
-                "feature-1": metric_value
-                "feature-2": metric_value
-                ...
-            },
-            "dataset-2": {           
-                "feature-1": metric_value
-                "feature-2": metric_value
-                ...
+        "metric-2": {
+            "site-1-dataset-1" : metric_value
+            "site-1-dataset-2":  metric_value
+            "site-2-dataset-1":  metric_value
+            "site-2-dataset-2":  metric_value
+            ...
+            "Global-dataset-1": metric_value
+            "Global-dataset-2"  metric_value
             }
-        }, 
+        },
         ...
-        "Global" : {
-            "dataset-1": {           
-                "feature-1": metric_value
-                "feature-2": metric_value
-                ...
-            },
-            "dataset-2": {           
-                "feature-1": metric_value
-                "feature-2": metric_value
-                ...
+     },  
+     "feature-2": {
+        "metric-1": {
+            "site-1-dataset-1" : metric_value
+            "site-1-dataset-2":  metric_value
+            "site-2-dataset-1":  metric_value
+            "site-2-dataset-2":  metric_value
+            ...
+            "Global-dataset-1": metric_value
+            "Global-dataset-2"  metric_value
             }
-        }
-     }
+        },
+        "metric-2": {
+            "site-1-dataset-1" : metric_value
+            "site-1-dataset-2":  metric_value
+            "site-2-dataset-1":  metric_value
+            "site-2-dataset-2":  metric_value
+            ...
+            "Global-dataset-1": metric_value
+            "Global-dataset-2"  metric_value
+            }
+        },
+        ...
+     },
 ```
 
+## 6. Visualization
+   with json format, the data can be easily visualied via pandas dataframe and plots. 
+   A visualization utility tools are showed in show_stats.py in visualization directory
+   You can run jupyter notebook visualization.ipynb
+
+```python
+    jupyter notebook  visualization.ipynb
 ```
+   you can some snapshots of the visualizations in ![stats](visualization/stats_df.png) and ![histogram plot](visualization/hist_plot.png)
 
-class Bin(NamedTuple):
-    # The low value of the bucket, inclusive.
-    low_value: float
 
-    # The high value of the bucket, exclusive (unless the highValue is positive infinity).
-    high_value: float
-
-    # quantile sample count could be fractional
-    sample_count: float
- 
-
-class HistogramType(IntEnum):
-    STANDARD = 0
-    QUANTILES = 1
-
-class Histogram(NamedTuple):
-    # The type of the histogram. A standard histogram has equal-width buckets.
-    # The quantiles type is used for when the histogram message is used to store
-    # quantile information (by using equal-count buckets with variable widths).
-
-    # The type of the histogram.
-    hist_type: HistogramType
-
-    # A list of buckets in the histogram, sorted from lowest bucket to highest bucket.
-    bins: List[Bin]
-
-    # An optional descriptive name of the histogram, to be used for labeling.
-    hist_name: Optional[str] = None
-
-Json format of histogram (NamedTuple) is a List of HisgramType (0), bin list and hist_name (null)
-    bin_list = [ [lower value_1, high_value_1, sample_count_1 ], ..., [lower value_n, high_value_n, sample_count_n ] ]
-    [ 0, bin_list, null]  
+   

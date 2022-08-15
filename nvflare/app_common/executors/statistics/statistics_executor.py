@@ -285,14 +285,10 @@ class StatisticsExecutor(Executor):
         return bin_range
 
     def _get_max_value(self, local_max_value: float):
+        r = random.uniform(self.min_random, self.max_random)
         if local_max_value == 0:
-            max_value = 1
-        elif 0 < local_max_value < 1e-3:
-            max_value = 1
-        elif 0 > local_max_value and abs(local_max_value) < 1e-3:
-            max_value = 0
+            max_value = (1+r)*1e-5
         else:
-            r = random.uniform(self.min_random, self.max_random)
             if local_max_value > 0:
                 max_value = local_max_value * (1 + r)
             else:
@@ -301,14 +297,10 @@ class StatisticsExecutor(Executor):
         return max_value
 
     def _get_min_value(self, local_min_value: float):
+        r = random.uniform(self.min_random, self.max_random)
         if local_min_value == 0:
-            min_value = -1
-        elif 0 < local_min_value < 1e-3:
-            min_value = 0
-        elif 0 > local_min_value and abs(local_min_value) < 1e-3:
-            min_value = -1
+            min_value = (1 - r)*1e-5
         else:
-            r = random.uniform(self.min_random, self.max_random)
             if local_min_value > 0:
                 min_value = local_min_value * (1 - r)
             else:

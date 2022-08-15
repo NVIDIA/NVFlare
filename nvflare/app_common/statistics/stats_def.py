@@ -44,9 +44,6 @@ class Bin(NamedTuple):
     # quantile sample count could be fractional
     sample_count: float
 
-    def to_json(self):
-        return {"low_value": self.low_value, "high_value": self.high_value, "sample_count": self.sample_count}
-
 
 class HistogramType(IntEnum):
     STANDARD = 0

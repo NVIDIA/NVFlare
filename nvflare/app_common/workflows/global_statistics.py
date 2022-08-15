@@ -24,6 +24,7 @@ from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.json_stats_file_persistor import JsonStatsFileWriter
 from nvflare.app_common.statistics.metic_config import MetricConfig
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
+from nvflare.app_common.statistics.stats_def import Histogram
 
 
 class GlobalStatistics(Controller):
@@ -60,7 +61,7 @@ class GlobalStatistics(Controller):
         pass
 
     def process_result_of_unknown_task(
-        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 
@@ -133,9 +134,37 @@ class GlobalStatistics(Controller):
 
     def _combine_all_metrics(self):
         result = {}
-        for metric in self.metric_configs:
-            result[metric] = self.client_metrics[metric]
-            result[metric].update({StC.GLOBAL: self.global_metrics[metric]})
+        filtered_client_metrics = [metric for metric in self.client_metrics if metric in self.metric_configs]
+        filtered_global_metrics = [metric for metric in self.global_metrics if metric in self.metric_configs]
+
+        for metric in filtered_client_metrics:
+            for client in self.client_metrics[metric]:
+                for ds in self.client_metrics[metric][client]:
+                    client_dataset = f"{client}-{ds}"
+                    for feature_name in self.client_metrics[metric][client][ds]:
+                        if feature_name not in result:
+                            result[feature_name] = {}
+                        if metric not in result[feature_name]:
+                            result[feature_name][metric] = {}
+
+                        if metric == StC.STATS_HISTOGRAM:
+                            hist: Histogram = self.client_metrics[metric][client][ds][feature_name]
+                            result[feature_name][metric][client_dataset] = hist.bins
+                        else:
+                            result[feature_name][metric][client_dataset] = \
+                                self.client_metrics[metric][client][ds][feature_name]
+
+        for metric in filtered_global_metrics:
+            for ds in self.global_metrics[metric]:
+                global_dataset = f"{StC.GLOBAL}-{ds}"
+                for feature_name in self.global_metrics[metric][ds]:
+                    if metric == StC.STATS_HISTOGRAM:
+                        hist: Histogram = self.global_metrics[metric][ds][feature_name]
+                        result[feature_name][metric][global_dataset] = hist.bins
+                    else:
+                        result[feature_name][metric].update({global_dataset:
+                                                                 self.global_metrics[metric][ds][feature_name]})
+
         return result
 
     def _get_target_metrics(self, ordered_metrics) -> List[MetricConfig]:

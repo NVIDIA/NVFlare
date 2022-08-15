@@ -15,8 +15,8 @@
           "mean": {},
           "sum": {},
           "stddev": {},
-          "histogram": { "*": {"bins": 10 },
-                         "Age": {"bins": 5, "range":[0,120]}
+          "histogram": { "*": {"bins": 20 },
+                         "Age": {"bins": 10, "range":[0,120]}
                        }
         },
         "writer_id": "stats_writer"

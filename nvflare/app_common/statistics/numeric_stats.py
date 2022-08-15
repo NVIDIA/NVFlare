@@ -42,7 +42,7 @@ T = TypeVar("T")
 
 
 def get_global_feature_data_types(
-    client_feature_dts: Dict[str, Dict[str, List[Feature]]]
+        client_feature_dts: Dict[str, Dict[str, List[Feature]]]
 ) -> Dict[str, Dict[str, DataType]]:
     global_feature_data_types = {}
     for client_name in client_feature_dts:
@@ -76,10 +76,10 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
             global_metrics[metric] = get_means(global_metrics[StC.STATS_SUM], global_metrics[StC.STATS_COUNT])
         elif metric == StC.STATS_MAX:
             for client_name in stats:
-                global_metrics[metric] = get_metric_values(stats[client_name], global_metrics[metric], max)
+                global_metrics[metric] = get_min_or_max_values(stats[client_name], global_metrics[metric], max)
         elif metric == StC.STATS_MIN:
             for client_name in stats:
-                global_metrics[metric] = get_metric_values(stats[client_name], global_metrics[metric], min)
+                global_metrics[metric] = get_min_or_max_values(stats[client_name], global_metrics[metric], min)
         elif metric == StC.STATS_HISTOGRAM:
             for client_name in stats:
                 global_metrics[metric] = accumulate_hists(stats[client_name], global_metrics[metric])
@@ -101,7 +101,7 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
 
 
 def accumulate_metrics(
-    metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]]
+        metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]]
 ) -> Dict[str, Dict[str, int]]:
     for ds_name in metrics:
         if ds_name not in global_metrics:
@@ -117,9 +117,8 @@ def accumulate_metrics(
     return global_metrics
 
 
-def get_metric_values(
-    metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]], fn2
-) -> Dict[str, Dict[str, int]]:
+def get_min_or_max_values(metrics: Dict[str, Dict[str, int]],
+                          global_metrics: Dict[str, Dict[str, int]], fn2) -> Dict[str, Dict[str, int]]:
     """
         use 2 argument function to calculate fn2(global, client), example, min, max
     :param metrics:
@@ -141,6 +140,18 @@ def get_metric_values(
                     global_metrics[ds_name][feature_name], feature_metrics[feature_name]
                 )
 
+    results = {}
+    for ds_name in global_metrics:
+        for feature_name in global_metrics[ds_name]:
+            if feature_name not in results:
+                results[feature_name] = global_metrics[ds_name][feature_name]
+            else:
+                results[feature_name] = fn2(results[feature_name], global_metrics[ds_name][feature_name])
+
+    for ds_name in global_metrics:
+        for feature_name in global_metrics[ds_name]:
+            global_metrics[ds_name][feature_name] = results[feature_name]
+
     return global_metrics
 
 
@@ -153,9 +164,8 @@ def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
 
 
 def accumulate_hists(
-    metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]]
+        metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]]
 ) -> Dict[str, Dict[str, Histogram]]:
-
     for ds_name in metrics:
         feature_hists = metrics[ds_name]
         if ds_name not in global_hists:
