@@ -96,6 +96,9 @@ class SimulatorRunner(FLComponent):
             if self.args.threads and self.args.threads > len(self.client_names):
                 logging.error("The number of threads to run can not be larger then the number of clients.")
                 sys.exit(-1)
+            if not (self.args.gpu or self.args.threads):
+                logging.error("Please provide the number of threads or provide gpu options to run the simulator.")
+                sys.exit(-1)
 
             self._validate_client_names(meta, self.client_names)
 
