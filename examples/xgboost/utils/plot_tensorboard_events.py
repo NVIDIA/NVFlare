@@ -27,33 +27,30 @@ centralized_path = "../workspaces/centralized/events.*"
 
 # bagging and cyclic need different handle
 experiments_bagging = {
-    5:
-        {
-            "higgs_5_bagging_uniform_split_uniform_lr": {"tag": "AUC"},
-            "higgs_5_bagging_exponential_split_uniform_lr": {"tag": "AUC"},
-            "higgs_5_bagging_exponential_split_scaled_lr": {"tag": "AUC"}
-        },
-    20:
-        {
-            "higgs_20_bagging_uniform_split_uniform_lr": {"tag": "AUC"},
-            "higgs_20_bagging_square_split_uniform_lr": {"tag": "AUC"},
-            "higgs_20_bagging_square_split_scaled_lr": {"tag": "AUC"}
-        }
+    5: {
+        "higgs_5_bagging_uniform_split_uniform_lr": {"tag": "AUC"},
+        "higgs_5_bagging_exponential_split_uniform_lr": {"tag": "AUC"},
+        "higgs_5_bagging_exponential_split_scaled_lr": {"tag": "AUC"},
+    },
+    20: {
+        "higgs_20_bagging_uniform_split_uniform_lr": {"tag": "AUC"},
+        "higgs_20_bagging_square_split_uniform_lr": {"tag": "AUC"},
+        "higgs_20_bagging_square_split_scaled_lr": {"tag": "AUC"},
+    },
 }
 experiments_cyclic = {
-    5:
-        {
-            "higgs_5_cyclic_uniform_split_uniform_lr": {"tag": "AUC"},
-            "higgs_5_cyclic_exponential_split_uniform_lr": {"tag": "AUC"}
-        },
-    20:
-        {
-            "higgs_20_cyclic_uniform_split_uniform_lr": {"tag": "AUC"},
-            "higgs_20_cyclic_square_split_uniform_lr": {"tag": "AUC"}
-        }
+    5: {
+        "higgs_5_cyclic_uniform_split_uniform_lr": {"tag": "AUC"},
+        "higgs_5_cyclic_exponential_split_uniform_lr": {"tag": "AUC"},
+    },
+    20: {
+        "higgs_20_cyclic_uniform_split_uniform_lr": {"tag": "AUC"},
+        "higgs_20_cyclic_square_split_uniform_lr": {"tag": "AUC"},
+    },
 }
 
 weight = 0.0
+
 
 def smooth(scalars, weight):  # Weight between 0 and 1
     last = scalars[0]  # First value in the plot (first timestep)
@@ -126,10 +123,13 @@ def main():
         # Pick first client for bagging experiments
         site = 1
         for config, exp in experiments_bagging[client_num].items():
-            job_id = find_job_id(workdir=os.path.join(client_results_root + str(client_num), client_pre + str(site)),
-                                 fl_app_name=config)
+            job_id = find_job_id(
+                workdir=os.path.join(client_results_root + str(client_num), client_pre + str(site)), fl_app_name=config
+            )
             print(f"Found run {job_id} for {config}")
-            record_path = os.path.join(client_results_root + str(client_num), client_pre + str(site), job_id, "*", "events.*")
+            record_path = os.path.join(
+                client_results_root + str(client_num), client_pre + str(site), job_id, "*", "events.*"
+            )
             eventfile = glob.glob(record_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]
@@ -137,12 +137,16 @@ def main():
             add_eventdata(data, config, eventfile, tag=exp["tag"])
 
         # Combine all clients' records for cyclic experiments
-        for site in range(1, client_num+1):
+        for site in range(1, client_num + 1):
             for config, exp in experiments_cyclic[client_num].items():
-                job_id = find_job_id(workdir=os.path.join(client_results_root + str(client_num), client_pre + str(site)),
-                                     fl_app_name=config)
+                job_id = find_job_id(
+                    workdir=os.path.join(client_results_root + str(client_num), client_pre + str(site)),
+                    fl_app_name=config,
+                )
                 print(f"Found run {job_id} for {config}")
-                record_path = os.path.join(client_results_root + str(client_num), client_pre + str(site), job_id, "*", "events.*")
+                record_path = os.path.join(
+                    client_results_root + str(client_num), client_pre + str(site), job_id, "*", "events.*"
+                )
                 eventfile = glob.glob(record_path, recursive=True)
                 assert len(eventfile) == 1, "No unique event file found!"
                 eventfile = eventfile[0]
@@ -151,6 +155,7 @@ def main():
 
         sns.lineplot(x="Round", y="AUC", hue="Config", data=data)
         plt.show()
+
 
 if __name__ == "__main__":
     main()
