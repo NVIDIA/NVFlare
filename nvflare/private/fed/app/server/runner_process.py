@@ -29,6 +29,7 @@ from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.fuel.sec.audit import AuditService
 
 
 def main():
@@ -61,10 +62,10 @@ def main():
     args.log_config = None
     args.snapshot = kv_list.get("restore_snapshot")
 
-    startup = os.path.join(args.workspace, "startup")
+    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
     logging_setup(startup)
 
-    log_file = os.path.join(args.workspace, args.job_id, "log.txt")
+    log_file = os.path.join(args.workspace, args.job_id, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
     logger = logging.getLogger("runner_process")
     logger.info("Runner_process started.")
@@ -74,6 +75,10 @@ def main():
         os.chdir(args.workspace)
 
         SecurityContentService.initialize(content_folder=startup)
+
+        # Initialize audit service since the job execution will need it!
+        audit_file_name = os.path.join(args.workspace, WorkspaceConstants.AUDIT_LOG)
+        AuditService.initialize(audit_file_name)
 
         conf = FLServerStarterConfiger(
             app_root=startup,

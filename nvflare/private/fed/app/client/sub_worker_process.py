@@ -24,7 +24,7 @@ import traceback
 from multiprocessing.connection import Client, Listener
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
@@ -32,6 +32,7 @@ from nvflare.fuel.common.multi_process_executor_constants import CommunicateData
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.fuel.sec.audit import AuditService
 
 
 class EventRelayer(FLComponent):
@@ -109,8 +110,12 @@ def main():
     listen_ports = list(map(int, args.ports.split("-")))
     # parent_port = args.parent_port
 
-    startup = os.path.join(args.workspace, "startup")
+    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
     SecurityContentService.initialize(content_folder=startup)
+
+    # Initialize audit service since the job execution will need it!
+    audit_file_name = os.path.join(args.workspace, WorkspaceConstants.AUDIT_LOG)
+    AuditService.initialize(audit_file_name)
 
     # local_rank = args.local_rank
     local_rank = int(os.environ["LOCAL_RANK"])
