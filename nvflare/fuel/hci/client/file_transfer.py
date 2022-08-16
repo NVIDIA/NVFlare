@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import traceback
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
@@ -28,6 +27,7 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.security.logging import secure_log_traceback
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
@@ -100,7 +100,7 @@ class _DownloadProcessor(ReplyProcessor):
                 self.table.add_row([file_name, str(num_bytes)])
                 self.data_received = True
         except Exception as ex:
-            traceback.print_exc()
+            secure_log_traceback()
             api.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": f"exception processing file: {ex}"})
 
 
@@ -130,7 +130,7 @@ class _DownloadFolderProcessor(ReplyProcessor):
                 }
             )
         except Exception as ex:
-            traceback.print_exc()
+            secure_log_traceback()
             api.set_command_result(
                 {
                     "status": APIStatus.ERROR_RUNTIME,

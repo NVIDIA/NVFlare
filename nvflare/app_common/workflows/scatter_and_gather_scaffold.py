@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
-import traceback
 
 import numpy as np
 
@@ -197,7 +197,6 @@ class ScatterAndGatherScaffold(ScatterAndGather):
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGatherScaffold Training.")
         except BaseException as e:
-            traceback.print_exc()
             error_msg = f"Exception in ScatterAndGatherScaffold control_flow: {e}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(str(e), fl_ctx)

@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import traceback
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import ReturnCode
@@ -230,7 +229,6 @@ class ScatterAndGather(Controller):
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
         except BaseException as e:
-            traceback.print_exc()
             error_msg = f"Exception in ScatterAndGather control_flow: {e}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(str(e), fl_ctx)

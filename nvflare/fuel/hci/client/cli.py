@@ -17,10 +17,11 @@ import getpass
 import json
 import os
 import time
-import traceback
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
+
+from nvflare.security.logging import secure_log_traceback
 
 try:
     import readline
@@ -237,7 +238,7 @@ class AdminClient(cmd.Cmd):
             self.write_stdout("\n")
         except BaseException as ex:
             if self.debug:
-                traceback.print_exc()
+                secure_log_traceback()
             self.write_stdout("exception occurred: {}".format(ex))
         self._close_output_file()
 

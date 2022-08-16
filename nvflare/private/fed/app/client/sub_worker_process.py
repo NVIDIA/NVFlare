@@ -20,7 +20,6 @@ import logging
 import os
 import threading
 import time
-import traceback
 from multiprocessing.connection import Client, Listener
 
 from nvflare.apis.fl_component import FLComponent
@@ -31,6 +30,7 @@ from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
+from nvflare.security.logging import secure_log_traceback
 
 
 class EventRelayer(FLComponent):
@@ -216,7 +216,7 @@ def execute(run_manager, local_rank, exe_conn, executor):
                     abort_signal.trigger(True)
                 break
     except Exception:
-        traceback.print_exc()
+        secure_log_traceback()
         print("If you abort client you can ignore this exception.")
 
 
@@ -245,7 +245,7 @@ def handle_event(run_manager, local_rank, exe_conn):
             elif command == CommunicateData.CLOSE:
                 break
     except Exception:
-        traceback.print_exc()
+        secure_log_traceback()
         print("If you abort client you can ignore this exception.")
 
 
