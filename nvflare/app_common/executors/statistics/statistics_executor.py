@@ -21,12 +21,16 @@ from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Statistics
+from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, MetricConfig, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.metic_config import MetricConfig
+from nvflare.app_common.executors.statistics.statistics_executor_exception import StatisticExecutorException
 from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
-from nvflare.app_common.statistics.stats_def import Feature, Histogram
-from nvflare.app_common.validation_exception import ValidationException
+
+"""
+    StatisticsExecutor is client-side executor that perform local statistics generation and communication to
+    FL Server global statistics controller.
+    The actual local statistics calculation would delegate to Statistics spec implementor.
+"""
 
 
 class StatisticsExecutor(Executor):
@@ -37,6 +41,32 @@ class StatisticsExecutor(Executor):
         min_random: float,
         max_random: float,
     ):
+        """
+
+        Args:
+            generator_id:  Id of the statistics component
+            min_count:     minimum of data records (or tabular data rows) that required in order to perform statistics calculation
+                           this is part the data privacy policy.
+                           todo: This configuration will be moved to site/data_privacy.json files
+            min_random:    minimum random noise -- used to protect min/max values before sending to server
+            max_random:    maximum random noise -- used to protect min/max values before sending to server
+                           min/max random is used to generate random noise between (min_random and max_random).
+                           for example, the random noise is to be within (0.1 and 0.3), 10% to 30% level. These noise
+                           will make local min values smaller than the true local min values, and max values larger than
+                           the true local max values. As result, the estimate global max and min values (i.e. with noise)
+                           are still bound the true global min/max values, in such that
+
+                              est. global min value <
+                                        true global min value <
+                                                  client's min value <
+                                                          client's max value <
+                                                                  true global max <
+                                                                           est. global max value
+
+                           todo: the min/max noise level range (min_random, max_random) will be moved to
+                           todo: site/data_privacy.json
+        """
+
         super().__init__()
         self.generator_id = generator_id
         self.min_count = min_count
@@ -77,10 +107,10 @@ class StatisticsExecutor(Executor):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
+        if abort_signal.triggered:
+            return make_reply(ReturnCode.TASK_ABORTED)
         try:
-            result = self.client_exec(task_name, shareable, fl_ctx, abort_signal)
-            if abort_signal.triggered:
-                return make_reply(ReturnCode.TASK_ABORTED)
+            result = self._client_exec(task_name, shareable, fl_ctx, abort_signal)
             if result:
                 dxo = DXO(data_kind=DataKind.ANALYTIC, data=result)
                 return dxo.to_shareable()
@@ -91,7 +121,7 @@ class StatisticsExecutor(Executor):
             self.log_exception(fl_ctx, f"Task {task_name} failed. Exception: {e.__str__()}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def _client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
@@ -117,6 +147,8 @@ class StatisticsExecutor(Executor):
                 result[StC.STATS_FEATURES] = ds_features
 
             result[metric_task] = metrics_result
+        else:
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
         return result
 
@@ -134,21 +166,16 @@ class StatisticsExecutor(Executor):
                 feature_name = feature.feature_name
                 count = self.get_count(ds_name, feature.feature_name, count_config, shareable, fl_ctx)
                 if count < self.min_count:
-                    raise ValidationException(
+                    raise StatisticExecutorException(
                         f" dataset {ds_name} feature{feature_name} item count is "
                         f"less than required minimum count {self.min_count} for client {client_name} "
                     )
-
-    def check_result(self, result, method_name: str):
-        if result is None:
-            raise NotImplementedError(f"{method_name} is not implemented")
 
     def get_count(
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
     ) -> int:
 
         result = self.stats_generator.count(dataset_name, feature_name)
-        self.check_result(result, metric_config.name)
         return result
 
     def get_sum(
@@ -156,7 +183,6 @@ class StatisticsExecutor(Executor):
     ) -> float:
 
         result = self.stats_generator.sum(dataset_name, feature_name)
-        self.check_result(result, metric_config.name)
         return result
 
     def get_mean(
@@ -169,7 +195,7 @@ class StatisticsExecutor(Executor):
         else:
             # user did not implement count and/or sum, call means directly.
             mean = self.stats_generator.mean(dataset_name, feature_name)
-            self.check_result(mean, metric_config.name)
+            # self._check_result(mean, metric_config.name)
             return mean
 
     def get_stddev(
@@ -177,7 +203,6 @@ class StatisticsExecutor(Executor):
     ) -> float:
 
         result = self.stats_generator.stddev(dataset_name, feature_name)
-        self.check_result(result, metric_config.name)
         return result
 
     def get_variance_with_mean(
@@ -186,7 +211,6 @@ class StatisticsExecutor(Executor):
         global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
         global_count = inputs[StC.STATS_GLOBAL_COUNT][dataset_name][feature_name]
         result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
-        self.check_result(result, "variance_with_mean")
         return result
 
     def get_histogram(
@@ -205,7 +229,6 @@ class StatisticsExecutor(Executor):
             )
 
         result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
-        self.check_result(result, "histogram")
         return result
 
     def get_max_value(
@@ -218,7 +241,6 @@ class StatisticsExecutor(Executor):
         user_bin_range = self.get_user_bin_range(feature_name, hist_config)
         if user_bin_range is None:
             client_max_value = self.stats_generator.max_value(dataset_name, feature_name)
-            self.check_result(client_max_value, metric_config.name)
             return self._get_max_value(client_max_value)
         else:
             return user_bin_range[1]
@@ -233,7 +255,6 @@ class StatisticsExecutor(Executor):
         user_bin_range = self.get_user_bin_range(feature_name, hist_config)
         if user_bin_range is None:
             client_min_value = self.stats_generator.min_value(dataset_name, feature_name)
-            self.check_result(client_min_value, metric_config.name)
             return self._get_min_value(client_min_value)
         else:
             return user_bin_range[0]
@@ -287,7 +308,7 @@ class StatisticsExecutor(Executor):
     def _get_max_value(self, local_max_value: float):
         r = random.uniform(self.min_random, self.max_random)
         if local_max_value == 0:
-            max_value = (1+r)*1e-5
+            max_value = (1 + r) * 1e-5
         else:
             if local_max_value > 0:
                 max_value = local_max_value * (1 + r)
@@ -299,7 +320,7 @@ class StatisticsExecutor(Executor):
     def _get_min_value(self, local_min_value: float):
         r = random.uniform(self.min_random, self.max_random)
         if local_min_value == 0:
-            min_value = (1 - r)*1e-5
+            min_value = -(1 - r) * 1e-5
         else:
             if local_min_value > 0:
                 min_value = local_min_value * (1 - r)

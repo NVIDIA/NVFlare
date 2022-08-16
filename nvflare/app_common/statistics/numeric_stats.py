@@ -10,39 +10,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 from math import sqrt
-from typing import Dict, List, Optional, TypeVar
+from typing import Dict, List, TypeVar
 
-import numpy as np
-
-
-class NpEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super(NpEncoder, self).default(obj)
-
-
+from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.stats_def import (  # NumericStatistics,; FeatureStatistics,; DatasetStatistics,
-    Bin,
-    BinRange,
-    DataType,
-    Feature,
-    Histogram,
-    HistogramType,
-)
 
 T = TypeVar("T")
 
 
 def get_global_feature_data_types(
-        client_feature_dts: Dict[str, Dict[str, List[Feature]]]
+    client_feature_dts: Dict[str, Dict[str, List[Feature]]]
 ) -> Dict[str, Dict[str, DataType]]:
     global_feature_data_types = {}
     for client_name in client_feature_dts:
@@ -101,7 +79,7 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
 
 
 def accumulate_metrics(
-        metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]]
+    metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]]
 ) -> Dict[str, Dict[str, int]]:
     for ds_name in metrics:
         if ds_name not in global_metrics:
@@ -117,16 +95,20 @@ def accumulate_metrics(
     return global_metrics
 
 
-def get_min_or_max_values(metrics: Dict[str, Dict[str, int]],
-                          global_metrics: Dict[str, Dict[str, int]], fn2) -> Dict[str, Dict[str, int]]:
+def get_min_or_max_values(
+    metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]], fn2
+) -> Dict[str, Dict[str, int]]:
     """
         use 2 argument function to calculate fn2(global, client), example, min, max
-    :param metrics:
-    :param global_metrics:
-    :param fn2:
-    :return: Dict[str, Dict[str, int]]
-    """
+        note: the global min/max values are min/max of all clients and all datasets
+    Args:
+        metrics: client's metric
+        global_metrics: global metrics
+        fn2: two-argument function such as min or max
 
+    Returns: Dict[dataset, Dict[feature, int]]
+
+    """
     for ds_name in metrics:
         if ds_name not in global_metrics:
             global_metrics[ds_name] = {}
@@ -164,7 +146,7 @@ def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
 
 
 def accumulate_hists(
-        metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]]
+    metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]]
 ) -> Dict[str, Dict[str, Histogram]]:
     for ds_name in metrics:
         feature_hists = metrics[ds_name]
@@ -219,53 +201,3 @@ def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, 
         numeric_ds_features[ds_name] = n_features
 
     return numeric_ds_features
-
-
-def dtype_to_data_type(dtype) -> DataType:
-    if dtype.char in np.typecodes["AllFloat"]:
-        return DataType.FLOAT
-    elif dtype.char in np.typecodes["AllInteger"] or dtype == bool:
-        return DataType.INT
-    elif np.issubdtype(dtype, np.datetime64) or np.issubdtype(dtype, np.timedelta64):
-        return DataType.DATETIME
-    else:
-        return DataType.STRING
-
-
-def get_std_histogram_buckets(nums: np.ndarray, num_bins: int = 10, br: Optional[BinRange] = None):
-    num_posinf = len(nums[np.isposinf(nums)])
-    num_neginf = len(nums[np.isneginf(nums)])
-    if br:
-        counts, buckets = np.histogram(nums, bins=num_bins, range=(br.min_value, br.max_value))
-    else:
-        counts, buckets = np.histogram(nums, bins=num_bins)
-
-    histogram_buckets: List[Bin] = []
-    for bucket_count in range(len(counts)):
-        # Add any negative or positive infinities to the first and last
-        # buckets in the histogram.
-        bucket_low_value = buckets[bucket_count]
-        bucket_high_value = buckets[bucket_count + 1]
-        bucket_sample_count = counts[bucket_count]
-        if bucket_count == 0 and num_neginf > 0:
-            bucket_low_value = float("-inf")
-            bucket_sample_count += num_neginf
-        elif bucket_count == len(counts) - 1 and num_posinf > 0:
-            bucket_high_value = float("inf")
-            bucket_sample_count += num_posinf
-
-        histogram_buckets.append(
-            Bin(low_value=bucket_low_value, high_value=bucket_high_value, sample_count=bucket_sample_count)
-        )
-
-    if buckets is not None and len(buckets) > 0:
-        bucket = None
-        if num_neginf:
-            bucket = Bin(low_value=float("-inf"), high_value=float("-inf"), sample_count=num_neginf)
-        if num_posinf:
-            bucket = Bin(low_value=float("inf"), high_value=float("inf"), sample_count=num_posinf)
-
-        if bucket:
-            histogram_buckets.append(bucket)
-
-    return histogram_buckets

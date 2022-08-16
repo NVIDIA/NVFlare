@@ -21,12 +21,9 @@ from pandas.core.series import Series
 from load_data_utils import get_app_paths, load_config
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import Statistics
-from nvflare.app_common.statistics.numeric_stats import (
-    get_std_histogram_buckets,
-    dtype_to_data_type
-)
-from nvflare.app_common.statistics.stats_def import BinRange, Histogram, HistogramType, Feature
+from nvflare.app_common.abstract.statistics_spec import Statistics,BinRange, Histogram, HistogramType, Feature
+from nvflare.app_common.statistics.numpy_utils import get_std_histogram_buckets
+from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type
 
 
 class DFStatistics(Statistics):

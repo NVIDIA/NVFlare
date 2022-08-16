@@ -19,10 +19,9 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, MetricConfig
 from nvflare.app_common.executors.statistics.statistics_executor import StatisticsExecutor
-from nvflare.app_common.statistics.metic_config import MetricConfig
-from nvflare.app_common.statistics.stats_def import Feature, HistogramType
-from nvflare.app_common.validation_exception import ValidationException
+from nvflare.app_common.executors.statistics.statistics_executor_exception import StatisticExecutorException
 
 from .mock_df_stats_generator import MockDFStatistics
 
@@ -65,7 +64,7 @@ class TestStatisticsExecutor:
         stats_executor = MockStatsExecutor(min_count=7, min_random=0.1, max_random=0.3)
         stats_executor.initialize(None)
 
-        with pytest.raises(ValidationException) as exc_info:
+        with pytest.raises(StatisticExecutorException) as exc_info:
             stats_executor.validate("site-1", stats_executor.get_numeric_features(), {}, None)
             msg = "nvflare.app_common.validation_exception.ValidationException:  dataset train featureAge item count is less than required minimum count 7 for client site-1"
             assert exc_info == msg
@@ -146,16 +145,16 @@ class TestStatisticsExecutor:
         assert 100 < est_max_value <= 100 * (1 + self.stats_executor.max_random)
 
         est_max_value = self.stats_executor._get_max_value(0)
-        assert est_max_value == 1
+        assert est_max_value > 1e-5
 
         est_max_value = self.stats_executor._get_max_value(1e-4)
-        assert est_max_value == 1
+        assert est_max_value > 1e-4
 
         est_max_value = self.stats_executor._get_max_value(0.6 * 1e-3)
-        assert 0.6 * 1e-3 < est_max_value == 1
+        assert 0.6 * 1e-3 < est_max_value
 
         est_max_value = self.stats_executor._get_max_value(-0.6 * 1e-3)
-        assert est_max_value == 0
+        assert est_max_value > -0.6 * 1e-3
 
         est_max_value = self.stats_executor._get_max_value(-1e-3)
         assert est_max_value >= -1e-3
@@ -181,10 +180,10 @@ class TestStatisticsExecutor:
         )
 
         est_min_value = self.stats_executor._get_min_value(0)
-        assert est_min_value == -1
+        assert est_min_value < 0
 
         est_min_value = self.stats_executor._get_min_value(1e-4)
-        assert est_min_value == 0
+        assert est_min_value < 1e-4
 
         est_min_value = self.stats_executor._get_min_value(-0.6 * 1e-3)
-        assert -0.6 * 1e-3 > est_min_value == -1
+        assert -0.6 * 1e-3 > est_min_value

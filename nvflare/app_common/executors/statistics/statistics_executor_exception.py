@@ -13,5 +13,5 @@
 # limitations under the License.
 
 
-class ValidationException(BaseException):
+class StatisticExecutorException(BaseException):
     pass

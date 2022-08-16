@@ -19,9 +19,15 @@ import pandas as pd
 from pandas.core.series import Series
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import Statistics
-from nvflare.app_common.statistics.numeric_stats import get_std_histogram_buckets
-from nvflare.app_common.statistics.stats_def import BinRange, DataType, Feature, Histogram, HistogramType
+from nvflare.app_common.abstract.statistics_spec import (
+    BinRange,
+    DataType,
+    Feature,
+    Histogram,
+    HistogramType,
+    Statistics,
+)
+from nvflare.app_common.statistics.numpy_utils import get_std_histogram_buckets
 
 
 class MockDFStatistics(Statistics):
@@ -57,7 +63,7 @@ class MockDFStatistics(Statistics):
         return df[feature_name].count()
 
     def sum(self, dataset_name: str, feature_name: str) -> float:
-        pass
+        raise NotImplementedError
 
     def mean(self, dataset_name: str, feature_name: str) -> float:
 
@@ -66,12 +72,12 @@ class MockDFStatistics(Statistics):
         return sum_value / count
 
     def stddev(self, dataset_name: str, feature_name: str) -> float:
-        pass
+        raise NotImplementedError
 
     def variance_with_mean(
         self, dataset_name: str, feature_name: str, global_mean: float, global_count: float
     ) -> float:
-        pass
+        raise NotImplementedError
 
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float

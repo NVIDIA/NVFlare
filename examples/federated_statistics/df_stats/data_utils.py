@@ -17,7 +17,7 @@ def get_poc_workspace():
 
 
 def parse_args(prog_name: str):
-    _parser = argparse.ArgumentParser(description="fed_stats parser")
+    _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument(
         "--prepare-data",
         dest="prepare_data",

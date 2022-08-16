@@ -17,8 +17,8 @@ import random
 
 import pandas as pd
 
-from nvflare.app_common.statistics.numeric_stats import dtype_to_data_type
-from nvflare.app_common.statistics.stats_def import Bin, DataType, Histogram, HistogramType
+from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Histogram, HistogramType
+from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type
 from nvflare.app_common.utils.json_utils import ObjectEncoder
 
 

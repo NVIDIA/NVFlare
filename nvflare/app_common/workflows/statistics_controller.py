@@ -20,15 +20,74 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.statistics_spec import Histogram, MetricConfig
+from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.json_stats_file_persistor import JsonStatsFileWriter
-from nvflare.app_common.statistics.metic_config import MetricConfig
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
-from nvflare.app_common.statistics.stats_def import Histogram
 
 
-class GlobalStatistics(Controller):
+class StatisticsController(Controller):
     def __init__(self, metric_configs: Dict[str, dict], writer_id: str):
+        """
+        Args:
+            metric_configs: defines the input statistic metrics to be computed and each metric's configuration.
+                            The key is one of metric names sum, count, mean, stddev, histogram
+                            the value is the arguments needed.
+                            all other metrics except histogram require no argument.
+                             "metric_configs": {
+                                  "count": {},
+                                  "mean": {},
+                                  "sum": {},
+                                  "stddev": {},
+                                  "histogram": { "*": {"bins": 20 },
+                                                 "Age": {"bins": 10, "range":[0,120]}
+                                               }
+                              },
+
+                            Histogram requires the following
+                            arguments:
+                               1) numbers of bins or buckets of the histogram
+                               2) the histogram range values [min, max]
+                               These arguments are different for each feature. Here are few examples:
+                                "histogram": { "*": {"bins": 20 },
+                                              "Age": {"bins": 10, "range":[0,120]
+                                              }
+                                The configuration specify that
+                                    feature 'Age' will have 10 bins for histogram and the range is within [0, 120)
+                                    for all other features, the default ("*") configuration is used, with bins = 20.
+                                    but the range of histogram is not specified, thus requires the Statistics controller
+                                    to dynamically estimate histogram range for each feature. Then this estimated global
+                                    range (est global min, est. global max) will be used as histogram range.
+
+                                    to dynamically estimated such histogram range, we need client to provide the local
+                                    min and max values in order to calculate the global bin and max value. But to protect
+                                    data privacy and avoid the data leak, the noise level is added to the local min/max
+                                    value before send to the controller. Therefore the controller only get the 'estimated'
+                                    values, the global min/max are estimated, or more accurately, noised global min/max
+                                    values.
+
+                                    Here is another example:
+
+                                    "histogram": { "density": {"bins": 10, "range":[0,120] }
+
+                                    in this example, there is no default histogram configuration for other features.
+
+                                    This will work correctly if there is only one feature called "density"
+                                    but will fail if there other features in the dataset
+
+                                In the following configuration
+                                 "metric_configs": {
+                                      "count": {},
+                                      "mean": {},
+                                      "stddev": {}
+                                }
+                                only count, mean and stddev metrics are specified, then the statistics_controller
+                                will only set tasks to calculate these three metrics
+
+
+            writer_id:    ID for StatisticsWriter. The StatisticWriter will save the result to output specified by the
+                          StatisticsWriter
+        """
         super().__init__()
         self.metric_configs: Dict[str, dict] = metric_configs
         self.writer_id = writer_id
@@ -36,13 +95,13 @@ class GlobalStatistics(Controller):
         self.client_metrics = {}
         self.global_metrics = {}
         self.client_features = {}
-
         self.result_callback_fns: Dict[str, Callable] = {
             StC.STATS_1st_METRICS: self.results_cb,
             StC.STATS_2nd_METRICS: self.results_cb,
         }
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+
         self.log_info(fl_ctx, f" {self.task_name} control flow started.")
         if abort_signal.triggered:
             return False
@@ -55,13 +114,16 @@ class GlobalStatistics(Controller):
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
 
     def start_controller(self, fl_ctx: FLContext):
-        pass
+        if self.metric_configs is None or len(self.metric_configs) == 0:
+            self.system_panic(
+                "At least one metric_config must be configured for task StatisticsController", fl_ctx=fl_ctx
+            )
 
     def stop_controller(self, fl_ctx: FLContext):
         pass
 
     def process_result_of_unknown_task(
-            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 
@@ -112,14 +174,23 @@ class GlobalStatistics(Controller):
                 else:
                     self.client_metrics[metric].update({client_name: metrics[metric]})
 
-            if metric_task == StC.STATS_1st_METRICS:
-                ds_features = client_result[StC.STATS_FEATURES]
-                if ds_features:
-                    self.client_features.update({client_name: ds_features})
-        else:
-            self.log_info(
-                fl_ctx, f"Ignore the client {client_name} result. {task_name} tasked returned error code: {rc}"
+            ds_features = client_result.get(StC.STATS_FEATURES, None)
+            if ds_features:
+                self.client_features.update({client_name: ds_features})
+
+        elif rc in [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNKNOWN]:
+            self.system_panic(
+                f"Failed in client-site statistics_executor for {client_name} during task {task_name}."
+                f"statistics controller is exiting.",
+                fl_ctx=fl_ctx,
             )
+        elif rc in [
+            ReturnCode.EXECUTION_RESULT_ERROR,
+            ReturnCode.TASK_DATA_FILTER_ERROR,
+            ReturnCode.TASK_RESULT_FILTER_ERROR,
+        ]:
+
+            self.system_panic("Execution result is not a shareable. statistics controller is exiting.", fl_ctx=fl_ctx)
 
         # Cleanup task result
         client_task.result = None
@@ -129,7 +200,7 @@ class GlobalStatistics(Controller):
         self.log_info(fl_ctx, "save statistics result to persistence store")
         ds_stats = self._combine_all_metrics()
 
-        writer: JsonStatsFileWriter = fl_ctx.get_engine().get_component(self.writer_id)
+        writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
         writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
 
     def _combine_all_metrics(self):
@@ -151,8 +222,9 @@ class GlobalStatistics(Controller):
                             hist: Histogram = self.client_metrics[metric][client][ds][feature_name]
                             result[feature_name][metric][client_dataset] = hist.bins
                         else:
-                            result[feature_name][metric][client_dataset] = \
-                                self.client_metrics[metric][client][ds][feature_name]
+                            result[feature_name][metric][client_dataset] = self.client_metrics[metric][client][ds][
+                                feature_name
+                            ]
 
         for metric in filtered_global_metrics:
             for ds in self.global_metrics[metric]:
@@ -162,8 +234,9 @@ class GlobalStatistics(Controller):
                         hist: Histogram = self.global_metrics[metric][ds][feature_name]
                         result[feature_name][metric][global_dataset] = hist.bins
                     else:
-                        result[feature_name][metric].update({global_dataset:
-                                                                 self.global_metrics[metric][ds][feature_name]})
+                        result[feature_name][metric].update(
+                            {global_dataset: self.global_metrics[metric][ds][feature_name]}
+                        )
 
         return result
 

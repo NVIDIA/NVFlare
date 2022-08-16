@@ -1,12 +1,12 @@
 # Objective
-Federated Statistics will provide pre-built-in NVFLARE federated statistics operators ( controller and executors) that 
-generate global statistics based on local client side statistics.
+Federated Statistics will provide built-in NVFLARE federated statistics operators ( controller and executors) that 
+will generate global statistics based on local client side statistics.
 
-At each clide site, we could have one more datasets (such as "train" and "test" datasets); each datasets may have many 
-features. For each named dataset, for each feature in the dataset, we will calculate the statistics and combined to produce 
-global statistics for the combined features. 
+At each clide site, we could have one or more datasets (such as "train" and "test" datasets); each dataset may have many 
+features. For each feature in the dataset, we will calculate the statistics and combined to produce 
+global statistics for all the numeric features. The output would be complete statistics for all datasets in clients and global.    
 
-These commonly used statistic metrics are count, sum, mean, std_dev and histogram for numerical data.
+The statistics generated are commonly used metrics: count, sum, mean, std_dev and histogram for the numerical features. 
 
 If the metric sum and count are selected, the mean will be calculated with count and sum. 
 
@@ -26,10 +26,10 @@ A client will only need to implement the "Statistics" class from statistics_spec
 ```mermaid
  
 sequenceDiagram
+    participant FileStore
     participant Server
     participant Client
     participant Stats_Generator
-    participant FileStore
     Server->>Client: task: Fed_Stats: metrics_task_1: count, sum, mean,std_dev, min, max 
     Client-->>Server: local metrics
     loop over clients

@@ -16,8 +16,8 @@ import os
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.stats_persistence import StatisticsWriter
 from nvflare.apis.storage import StorageException
+from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.utils.json_utils import ObjectEncoder
 from nvflare.fuel.utils.class_utils import get_class
 
@@ -44,7 +44,7 @@ class JsonStatsFileWriter(StatisticsWriter):
     ):
 
         full_uri = self.get_output_path(fl_ctx)
-        self.validate_directory(full_uri)
+        self._validate_directory(full_uri)
 
         data_exists = os.path.isfile(full_uri)
         if data_exists and not overwrite_existing:
@@ -63,7 +63,7 @@ class JsonStatsFileWriter(StatisticsWriter):
         self.log_info(fl_ctx, "job dir = " + self.job_dir)
         return os.path.join(self.job_dir, self.output_path)
 
-    def validate_directory(self, full_path: str):
+    def _validate_directory(self, full_path: str):
         if not os.path.isabs(full_path):
             raise ValueError(f"path {full_path} must be an absolute path.")
         parent_dir = os.path.dirname(full_path)

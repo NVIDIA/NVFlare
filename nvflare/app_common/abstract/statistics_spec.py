@@ -11,76 +11,173 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List
+from abc import ABC, abstractmethod
+from enum import IntEnum
+from typing import Dict, List, NamedTuple, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.statistics.stats_def import Feature, Histogram
+
+"""
+    Statistics defines methods that user need to implement in order to calculate the local statistics
+    Only the metrics required by data privacy (such as count) or individual metrics of interested need to implement
+
+"""
 
 
-class Statistics(FLComponent):
+class DataType(IntEnum):
+    INT = 0
+    FLOAT = 1
+    STRING = 2
+    BYTES = 3
+    STRUCT = 4
+    DATETIME = 5
+
+
+class BinRange(NamedTuple):
+    # The minimum value of the bucket, inclusive.
+    min_value: float
+    # The max value of the bucket, exclusive (unless the highValue is positive infinity).
+    max_value: float
+
+
+class Bin(NamedTuple):
+    # The low value of the bucket, inclusive.
+    low_value: float
+
+    # The high value of the bucket, exclusive (unless the highValue is positive infinity).
+    high_value: float
+
+    # quantile sample count could be fractional
+    sample_count: float
+
+
+class HistogramType(IntEnum):
+    STANDARD = 0
+    QUANTILES = 1
+
+
+class Histogram(NamedTuple):
+    # The type of the histogram. A standard histogram has equal-width buckets.
+    # The quantiles type is used for when the histogram message is used to store
+    # quantile information (by using equal-count buckets with variable widths).
+
+    # The type of the histogram.
+    hist_type: HistogramType
+
+    # A list of buckets in the histogram, sorted from lowest bucket to highest bucket.
+    bins: List[Bin]
+
+    # An optional descriptive name of the histogram, to be used for labeling.
+    hist_name: Optional[str] = None
+
+
+class Feature(NamedTuple):
+    feature_name: str
+    data_type: DataType
+
+
+class MetricConfig(NamedTuple):
+    # metric name
+    name: str
+
+    # metric configuration
+    config: dict
+
+
+class Statistics(FLComponent, ABC):
     def initialize(self, parts: dict, fl_ctx: FLContext):
-        """Initialize the Statistics generator object. This is called before the Statistics can perform calculation
-
-        This is called only once.
-
-        Args:
-            parts: components to be used by the Statistics generator
-            fl_ctx: FLContext of the running environment
         """
+        Args:
+            parts: parts: components to be used by the Statistics
+            fl_ctx: fl_ctx: FLContext of the running environment
+
+        Returns:
+
+        """
+
         pass
 
+    @abstractmethod
     def features(self) -> Dict[str, List[Feature]]:
         """
-           return feature names for each dataset.
-           For example, we have training and test datasets.
+           return Features for each dataset.
 
+           For example, we have training and test datasets.
            the method will return
            { "train": features1, "test": features2}
            where features1,2 are the list of Features with contains feature name and DataType
 
-        :return: Dict[<dataset_name>, List[Feature]]
-        """
-        pass
+        Returns:Dict[<dataset_name>, List[Feature]]
 
+        Raises:
+            NotImplementedError
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def count(self, dataset_name: str, feature_name: str) -> int:
         """
-            return count for given dataset and feature
+           return record count for given dataset and feature
+           to perform data privacy min_count check, count is always required
+        Args:
+            dataset_name:
+            feature_name:
 
-        :param dataset_name:
-        :param feature_name:
-        :return: count
+        Returns: number of total records
+
+        Raises:
+            NotImplementedError
+
         """
-        pass
+        raise NotImplementedError
 
     def sum(self, dataset_name: str, feature_name: str) -> float:
         """
-            get local sums for given dataset and feature
-        :param dataset_name:
-        :param feature_name:
-        :return: sum
+            calculate local sums for given dataset and feature
+        Args:
+            dataset_name:
+            feature_name:
+        Returns: sum of all records
+
+        Raises:
+            NotImplementedError will be raised when sum metric is configured but not implemented. If the sum is not
+            configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
+
         """
-        pass
+        raise NotImplementedError
 
     def mean(self, dataset_name: str, feature_name: str) -> float:
         """
-            get local means for given dataset and feature
-            if you already implemented the count and sum, there is no need to implement this method
 
-        :param dataset_name: data set
-        :param feature_name:
+        Args:
+            dataset_name: dataset name
+            feature_name: feature name
+
+        Returns: mean (average) value
+
+        Raises:
+            NotImplementedError will be raised when mean metric is configured but not implemented. If the mean is not
+            configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
+
         """
 
-        pass
+        raise NotImplementedError
 
     def stddev(self, dataset_name: str, feature_name: str) -> float:
         """
-          get local stddev value for given dataset and feature
-        :param dataset_name:
-        :param feature_name:
-        :return: dictionary of the feature name and stddev value
+            get local stddev value for given dataset and feature
+        Args:
+            dataset_name: dataset name
+            feature_name: feature name
+
+        Returns: local standard deviation
+
+        Raises:
+            NotImplementedError will be raised when stddev metric is configured but not implemented. If the stddev is not
+            configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
         """
-        pass
+        raise NotImplementedError
 
     def variance_with_mean(
         self,
@@ -97,57 +194,90 @@ class Statistics(FLComponent):
             N = global Count
             variance = (sum ( x - m)^2))/ (N-1)
 
-        :param dataset_name:
-        :param feature_name:
-        :param global_mean:
-        :param global_count:
-        :return: dictionary of the feature name and variance value
+            This is used to calculate global standard deviation.
+            Therefore, this method must implement if stddev metric is requested
+
+        Args:
+            dataset_name: dataset name
+            feature_name: feature name
+            global_mean:  global mean value
+            global_count: total count records across all sites
+
+        Returns: variance result
+
+        Raises:
+            NotImplementedError will be raised when stddev metric is configured but not implemented. If the stddev is not
+            configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
         """
-        pass
+
+        raise NotImplementedError
 
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
     ) -> Histogram:
         """
-          get local histograms based on given numbers of bins, and global range of the bins.
-          bin_range_min = global_min_value
-          bin_range_max = global_max_value
+        Args:
+            dataset_name: dataset name
+            feature_name: feature name
+            num_of_bins:  number of bins or buckets
+            global_min_value: global min value for the histogram range
+            global_max_value: global max value for the histogram range
 
-        :param dataset_name:
-        :param feature_name:
-        :param num_of_bins:
-        :param global_min_value:
-        :param global_max_value:
-        :return: histogram
+        Returns: histogram
+        Raises:
+            NotImplementedError will be raised when histogram metric is configured but not implemented. If the histogram
+             is not configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
         """
-        pass
+
+        raise NotImplementedError
 
     def max_value(self, dataset_name: str, feature_name: str) -> float:
         """
-        this method is needed to figure out the histogram global bucket/bin ranges.
-        But the actual max_values are not returned to FL Server. Only random modified
-        local max values are return to FL Server
-        :param dataset_name:
-        :param feature_name:
-        :return: local max value
+            This method is only needed when "histogram" metric is configured and the histogram range is not specified.
+            And the histogram range needs to dynamically estimated based on the client's local min/max values.
+            this method returns local max value. The actual max value will not directly return to the FL server.
+            the data privacy policy will add additional noise to the estimated value.
+
+        Args:
+            dataset_name: dataset name
+            feature_name: feature name
+
+        Returns: local max value
+
+        Raises:
+            NotImplementedError will be raised when histogram metric is configured and histogram range for the
+            given feature is not specified, and this method is not implemented. If the histogram
+            is not configured to be calculated; or the given feature histogram range is already specified.
+            no need to implement this method and NotImplementedError will not be raised.
         """
-        pass
+
+        raise NotImplementedError
 
     def min_value(self, dataset_name: str, feature_name: str) -> float:
         """
-        this method is needed to figure out the histogram global bucket/bin ranges.
-        But the actual min_values are not returned to FL Server. Only random modified
-        local min values are return to FL Server
+            This method is only needed when "histogram" metric is configured and the histogram range is not specified.
+            And the histogram range needs to dynamically estimated based on the client's local min/max values.
+            this method returns local min value. The actual min value will not directly return to the FL server.
+            the data privacy policy will add additional noise to the estimated value.
 
-        :param dataset_name:
-        :param feature_name:
-        :return: bool
+        Args:
+            dataset_name: dataset name
+            feature_name: feature name
+
+        Returns: local min value
+
+        Raises:
+            NotImplementedError will be raised when histogram metric is configured and histogram range for the
+            given feature is not specified, and this method is not implemented. If the histogram
+            is not configured to be calculated; or the given feature histogram range is already specified.
+            no need to implement this method and NotImplementedError will not be raised.
         """
-        pass
+
+        raise NotImplementedError
 
     def finalize(self):
-        """Called to finalize the Statistic calculator (close/release resources gracefully).
-
+        """
+        Called to finalize the Statistic calculator (close/release resources gracefully).
         After this call, the Learner will be destroyed.
 
         """

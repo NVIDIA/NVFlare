@@ -18,13 +18,11 @@ from nvflare.app_common.statistics.numeric_stats import get_min_or_max_values
 
 
 class TestNumericStats:
-
     def test_get_min_or_max_values(self):
-        client_metrics = {"site-1": {'train': {"Age": 0},
-                                     'test': {"Age": 2}},
-                          "site-2": {'train': {"Age": 1},
-                                     'test': {"Age": 3}},
-                          }
+        client_metrics = {
+            "site-1": {"train": {"Age": 0}, "test": {"Age": 2}},
+            "site-2": {"train": {"Age": 1}, "test": {"Age": 3}},
+        }
 
         global_metrics: Dict[str, Dict[str, int]] = {}
         for client in client_metrics:
@@ -32,7 +30,7 @@ class TestNumericStats:
             print("get_min_or_max_values =", global_metrics)
             global_metrics = get_min_or_max_values(metrics, global_metrics, min)
 
-        assert (global_metrics == {'test': {'Age': 0}, 'train': {'Age': 0}})
+        assert global_metrics == {"test": {"Age": 0}, "train": {"Age": 0}}
 
         global_metrics: Dict[str, Dict[str, int]] = {}
         for client in client_metrics:
@@ -40,4 +38,4 @@ class TestNumericStats:
             print("get_min_or_max_values =", global_metrics)
             global_metrics = get_min_or_max_values(metrics, global_metrics, max)
 
-        assert (global_metrics == {'test': {'Age': 3}, 'train': {'Age': 3}})
+        assert global_metrics == {"test": {"Age": 3}, "train": {"Age": 3}}

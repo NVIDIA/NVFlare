@@ -18,10 +18,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.workflows.global_statistics import GlobalStatistics
+from nvflare.app_common.workflows.statistics_controller import StatisticsController
 
 
-class MockGlobalStatistics(GlobalStatistics):
+class MockGlobalStatistics(StatisticsController):
     def __init__(self, metric_configs: Dict[str, dict], writer_id: str):
         super(MockGlobalStatistics, self).__init__(metric_configs, writer_id)
 

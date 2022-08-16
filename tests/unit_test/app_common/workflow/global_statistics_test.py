@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
-from nvflare.app_common.statistics.metic_config import MetricConfig
 
 from .mock_global_statistics import MockGlobalStatistics
 

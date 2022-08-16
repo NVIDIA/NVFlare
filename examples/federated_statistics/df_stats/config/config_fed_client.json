@@ -22,7 +22,7 @@
   "components": [
     {
       "id": "df_stats_generator",
-      "path": "df_stats_generator.DFStatistics",
+      "path": "df_statistics.DFStatistics",
       "args": {
         "data_path": "data.csv"
       }

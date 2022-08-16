@@ -18,7 +18,9 @@ This will create a poc at /tmp/nvflare/poc with n = 2 clients.
 
 ## 2. Download the example data
 In this example, we are using UCI (University of California, Irwin) [adult dataset](https://archive.ics.uci.edu/ml/datasets/adult)
-We split the training data and test data into two clients (one client with training, and another client with test dataset) 
+The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
+so we assigned the training data and test data into two clients.
+
 
 ```applicaiton.conf
 
@@ -103,35 +105,17 @@ We are using a built-in NVFLARE executor,
   },
 
 ```
-here we specify a minimum of 10 rows (min_count), if the number of rows less than min_count, the job will fail.
-In case, user will need to calculate histogram, user will need to provide the min/max value of given feature. 
-But instead of directly send the local min/max to server, we introduce some randomness to the min/max value. 
+Here we specify a min_count = 10. It means each site should have at least 10 records. 
+This is required to protect data privacy. (Todo: this will be moved to data_privacy.json policy files) 
+if the number of record less than min_count, the job will fail.
 
-so that estimate min = min * ( 1 - random ); max = max * ( 1 + random )
-where random value is within min_random and max_random, in this example ( 0.1 and 0.3) ( data privacy police defined noise level)
+To generate histogram, user need to provide the range of the histogram for each feature; or 
+rely on the NVFlare to estimate the histogram range based on features local min, max values. 
 
-The estimated global min and max should be 
+To avoid real user's private data from min/max values, the data privacy policy will be applied 
+to add some noise to min and max values before they are returned to FL Server
 
-estimated global min <  all clients' min value and  global max >  all clients' max value
-and global min < global max
-
-We then use this estimate global min and max to dynamic calculate the histogram range for all histogram buckets ( client and global)
-if the feature range is not specified. 
-
-
-Then user need to implemented the local statistics generator, identified as "generator_id"
-```
-"components": [
-    {
-    "id": "df_stats_generator",
-    "path": "df_stats_generator.DFStatistics",
-    "args": {
-        "data_path" : "{workspace_dir}/{client_name}/data.csv",
-    }
-}
-```
-In this example, Data Frame Statistics generator is DFStatistics and it takes input data_path for each client.  
-
+In current example, we calculate tabular dataset statistics via Pandas DataFrame with DFStatistics
 
 ### 3.2 Specify Server side configuration
  
@@ -141,7 +125,7 @@ Here we use the built-in Controller, called GlobalStatistics. Here we selected a
 "workflows": [
     {
       "id": "fed_stats_controller",
-      "path": "nvflare.app_common.workflows.global_statistics.GlobalStatistics",
+      "path": "nvflare.app_common.workflows.statistics_controller.StatisticsController",
       "args": {
         "metric_configs": {
           "count": {},
@@ -158,20 +142,9 @@ Here we use the built-in Controller, called GlobalStatistics. Here we selected a
   ],
 ```
 In above configuration "*" indicate default feature.  Here we specify feature "Age" needs 5 bins and histogram range is within 0.120
-for all other features, the bin is 10, range is not specified, i.e. the ranges will be dynamically estimated. 
+for all other features, the bin is 10, range is not specified, i.e. the ranges will be dynamically estimated.
 
-We also defined a writer, so we writer to output path
-    ```
-    "components": [
-        {
-        "id": "stats_writer",
-        "path": "nvflare.app_common.statistics.stats_file_persistor.StatsFileWriter",
-        "args": {
-            "output_path": "statistics/stats.json"
-        }
-    }
-    ```
-If you using some class that is special handling to to encode Json, you can registered the JsonEncoder like the following
+the writer_id identify the output writer component, defined as 
 
 ```
  "components": [
@@ -179,17 +152,13 @@ If you using some class that is special handling to to encode Json, you can regi
       "id": "stats_writer",
       "path": "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter",
       "args": {
-        "output_path": "@workspace_dir@/statistics/adults_stats.json",
+        "output_path": "statistics/adults_stats.json",
         "json_encoder_path": "nvflare.app_common.utils.json_utils.ObjectEncoder"
       }
     }
-  ]
 ```
-by default "nvflare.app_common.utils.json_utils.ObjectEncoder" is used if the json_encoder_path is not specified
-
-"@workspace_dir@" is variable that will be replace by real poc workspace directory at runtime
-
-
+This configuration shows a JSON file output writer, output path indicates the file path in the job result store. 
+ 
 ### 3.3 write a local statistics generator 
 
    The statistics generator implements `Statistics` spec. 
@@ -200,25 +169,39 @@ class DFStatistics(Statistics):
     # rest of code 
 
 ```
-### 3.4 Start nvflare in poc mode
+### 3.4 prepare poc workspace
+
+Follow the quick start instructions to prepare POC workspace.
+``
+    nvflare poc --prepare
+``
+### 3.5 prepare data
 
 ```
-   nvflare -w <workspace> --start
+cd $NVFLARE_HOME/examples/federated_statistics/df_stats
+python data_utils.py -h 
+```
+it should show the help commands, to prepare the data, you can use
 
 ```
-or 
+python data_utils.py -prepare-data 
 ```
-   nvflare --start
+
+### 3.5 start nvflare in poc mode
 
 ```
-if the default poc workspace is used.
-
+nvflare poc --start
+```
+ 
 once you have done with above command, you are already login to the NVFLARE console (aka Admin Console) 
 
 
 ### 3.5 Submit job using flare console
 
-Inside the console, submit the job: `submit_job [PWD]/df_statistics` (replace `[PWD]` with your current path)
+Inside the console, submit the job:
+```
+submit_job federated_statistics/df_stats
+```
 
 For a complete list of available flare console commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
@@ -246,7 +229,7 @@ download_job [JOB_ID]
 After download, it will be available in the stated download directory under `[JOB_ID]/workspace/statistics` as  `adult_stats.json`
 
 ## 5. Output Format
-By default save the result in JSON format. You are free to write another StatsWriter to output in other format.
+By default, save the result in JSON format. You are free to write another StatsWriter to output in other format.
 
 ### JSON FORMAT
 The output of the json is like the followings
@@ -301,14 +284,14 @@ The output of the json is like the followings
 ```
 
 ## 6. Visualization
-   with json format, the data can be easily visualied via pandas dataframe and plots. 
+   with json format, the data can be easily visualized via pandas dataframe and plots. 
    A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb
 
 ```python
     jupyter notebook  visualization.ipynb
 ```
-   you can some snapshots of the visualizations in ![stats](visualization/stats_df.png) and ![histogram plot](visualization/hist_plot.png)
+   you can some snapshots of the visualizations in ![stats](demo/stats_df.png) and ![histogram plot](demo/hist_plot.png)
 
 
    
