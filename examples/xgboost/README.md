@@ -67,7 +67,17 @@ First, we prepare the configs for several training data splits and scenarios by 
 ```
 bash train_config_gen.sh
 ```
-This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, linear, and square.
+To be specific, this script calls the python script `./utils/prepare_train_config.py`. The arguments are:
+- site_num: total number of sites
+- nthread: nthread parameter for xgboost, this is set according to system resource 
+- size_total: total number of instances, for HIGGS dataset it is 11 million
+- size_valid: validation size, for the experiments here, it is 1 million, indicating the first 1 million instances will be used as standalone validation set. 
+- split_method: how to split the dataset, can be uniform, linear, square, and exponential
+- lr_mode: whether to use uniform or scaled shrinkage
+This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential. Users can further customize it for more experiments.
+> **_NOTE:_** The generated train config files will be stored in the folder `./train_configs`, and will be used by job_configs by specifying it with `config_fed_client.json` 
+
+
 ### Prepare job configs under various training schemes
 ```
 OPTION to consider:
