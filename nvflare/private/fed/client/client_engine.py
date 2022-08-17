@@ -18,7 +18,6 @@ import re
 import shutil
 import sys
 import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.fl_constant import MachineStatus
@@ -26,6 +25,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ClientStatusKey
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
@@ -266,6 +266,6 @@ def _shutdown_client(client, admin_agent, touch_file):
 
         admin_agent.shutdown()
     except BaseException as e:
-        traceback.print_exc()
-        print("FL client execution exception: " + str(e))
+        secure_log_traceback()
+        logging.getLogger().error(f"FL client execution exception: {secure_format_exception(e)}")
         # client.status = ClientStatus.TRAINING_EXCEPTION

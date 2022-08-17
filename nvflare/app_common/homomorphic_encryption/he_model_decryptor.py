@@ -29,6 +29,7 @@ from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
     count_encrypted_layers,
     load_tenseal_context_from_workspace,
 )
+from nvflare.security.logging import secure_format_exception
 
 
 class HEModelDecryptor(Filter):
@@ -124,7 +125,7 @@ class HEModelDecryptor(Filter):
             return self._process(shareable, fl_ctx)
         except BaseException as e:
             self.log_exception(fl_ctx, "error performing HE decryption")
-            raise ValueError(f"HEModelDecryptor Exception {e}")
+            raise ValueError(f"HEModelDecryptor Exception {secure_format_exception(e)}")
 
     def _process(self, shareable: Shareable, fl_ctx: FLContext):
         self.log_info(fl_ctx, "Running decryption...")

@@ -21,6 +21,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.security.logging import secure_format_exception
 
 
 class LearnerExecutor(Executor):
@@ -54,7 +55,7 @@ class LearnerExecutor(Executor):
                 if self.learner:
                     self.learner.abort(fl_ctx)
             except Exception as e:
-                self.log_exception(fl_ctx, f"learner abort exception: {e}")
+                self.log_exception(fl_ctx, f"learner abort exception: {secure_format_exception(e)}")
         elif event_type == EventType.END_RUN:
             self.finalize(fl_ctx)
 
@@ -66,7 +67,7 @@ class LearnerExecutor(Executor):
                 raise TypeError(f"learner must be Learner type. Got: {type(self.learner)}")
             self.learner.initialize(engine.get_all_components(), fl_ctx)
         except Exception as e:
-            self.log_exception(fl_ctx, f"learner initialize exception: {e}")
+            self.log_exception(fl_ctx, f"learner initialize exception: {secure_format_exception(e)}")
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
@@ -83,7 +84,7 @@ class LearnerExecutor(Executor):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"learner execute exception: {e}")
+            self.log_exception(fl_ctx, f"learner execute exception: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -136,4 +137,4 @@ class LearnerExecutor(Executor):
             if self.learner:
                 self.learner.finalize(fl_ctx)
         except Exception as e:
-            self.log_exception(fl_ctx, f"learner finalize exception: {e}")
+            self.log_exception(fl_ctx, f"learner finalize exception: {secure_format_exception(e)}")

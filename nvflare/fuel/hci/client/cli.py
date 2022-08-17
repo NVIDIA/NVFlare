@@ -17,10 +17,11 @@ import getpass
 import json
 import os
 import time
-import traceback
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
+
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 try:
     import readline
@@ -237,8 +238,8 @@ class AdminClient(cmd.Cmd):
             self.write_stdout("\n")
         except BaseException as ex:
             if self.debug:
-                traceback.print_exc()
-            self.write_stdout("exception occurred: {}".format(ex))
+                secure_log_traceback()
+            self.write_stdout(f"exception occurred: {secure_format_exception(ex)}")
         self._close_output_file()
 
     def _do_default(self, line):
@@ -275,7 +276,7 @@ class AdminClient(cmd.Cmd):
             try:
                 out_file = open(out_file_name, "w")
             except BaseException as ex:
-                self.write_error("cannot open file {}: {}".format(out_file_name, ex))
+                self.write_error(f"cannot open file {out_file_name}: {secure_format_exception(ex)}")
                 return
 
             self._set_output_file(out_file, no_stdout)

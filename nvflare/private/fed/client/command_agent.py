@@ -64,14 +64,13 @@ class CommandAgent(object):
                                 reply = command.process(data=data, fl_ctx=new_fl_ctx)
                                 if reply:
                                     conn.send(reply)
-            except Exception as e:
-                # traceback.print_exc()
+            except Exception:
                 print(f"Process communication exception: {self.listen_port}.")
             finally:
                 conn.close()
 
             listener.close()
-        except Exception as e:
+        except Exception:
             print(f"Could not create the listener for this process on port: {self.listen_port}.")
             pass
 

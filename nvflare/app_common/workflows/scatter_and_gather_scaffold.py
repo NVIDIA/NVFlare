@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
-import traceback
 
 import numpy as np
 
@@ -24,6 +24,7 @@ from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+from nvflare.security.logging import secure_format_exception
 
 
 class ScatterAndGatherScaffold(ScatterAndGather):
@@ -197,7 +198,6 @@ class ScatterAndGatherScaffold(ScatterAndGather):
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGatherScaffold Training.")
         except BaseException as e:
-            traceback.print_exc()
-            error_msg = f"Exception in ScatterAndGatherScaffold control_flow: {e}"
+            error_msg = f"Exception in ScatterAndGatherScaffold control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
-            self.system_panic(str(e), fl_ctx)
+            self.system_panic(secure_format_exception(e), fl_ctx)

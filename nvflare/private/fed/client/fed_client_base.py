@@ -28,6 +28,7 @@ from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import EngineConstant
+from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -109,7 +110,7 @@ class FederatedClientBase:
                     )
                     # fire_event(EventType.CLIENT_REGISTER, self.handlers, self.fl_ctx)
 
-            except FLCommunicationError as e:
+            except FLCommunicationError:
                 self.communicator.heartbeat_done = True
 
     def fetch_execute_task(self, project_name, fl_ctx: FLContext):
@@ -128,7 +129,7 @@ class FederatedClientBase:
 
             return task
         except FLCommunicationError as e:
-            self.logger.info(e)
+            self.logger.error(secure_format_exception(e))
             # self.communicator.heartbeat_done = True
 
     def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
@@ -153,7 +154,7 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e)
+            self.logger.error(secure_format_exception(e))
             # self.communicator.heartbeat_done = True
 
     def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
@@ -179,14 +180,14 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e)
+            self.logger.error(secure_format_exception(e))
             # self.communicator.heartbeat_done = True
 
     def send_heartbeat(self, project_name):
         try:
             if self.token:
                 self.communicator.send_heartbeat(self.servers, project_name, self.token, self.client_name)
-        except FLCommunicationError as e:
+        except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
     def heartbeat(self):

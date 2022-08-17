@@ -18,6 +18,7 @@ import time
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
+from nvflare.security.logging import secure_format_exception
 
 
 def api_command_wrapper(api_command_result):
@@ -195,13 +196,13 @@ class FLAdminAPIRunner:
                 print("api.shutdown(TargetType.ALL)")
                 api_command_wrapper(self.api.shutdown(TargetType.ALL))
         except RuntimeError as e:
-            print(f"There was an exception: {e}")
+            print(f"There was an exception: {secure_format_exception(e)}")
             if shutdown_on_error:
                 print("Attempting shutdown all...")
                 try:
                     api_command_wrapper(self.api.shutdown(TargetType.ALL))
                 except RuntimeError as e:
-                    print(f"There was an exception while attempting shutdown all: {e}")
+                    print(f"There was an exception while attempting shutdown all: {secure_format_exception(e)}")
 
     def attempt_login_until_success(self):
         logged_in = False

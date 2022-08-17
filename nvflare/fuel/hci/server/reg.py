@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import traceback
 from typing import List
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandRegister
+from nvflare.security.logging import secure_log_traceback
 
 from .constants import ConnProps
 
@@ -108,7 +108,7 @@ class ServerCommandRegister(CommandRegister):
         try:
             self._do_command(conn, command)
         except BaseException:
-            traceback.print_exc()
+            secure_log_traceback()
             conn.append_error("Exception Occurred")
 
     def close(self):

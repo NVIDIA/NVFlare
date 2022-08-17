@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -184,7 +185,9 @@ class ClientRunner(FLComponent):
                 )
                 return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
         except RuntimeError as e:
-            self.log_exception(fl_ctx, f"Critical RuntimeError happened with Exception {e}: Aborting the RUN!")
+            self.log_exception(
+                fl_ctx, f"Critical RuntimeError happened with Exception {secure_format_exception(e)}: Aborting the RUN!"
+            )
             self.asked_to_stop = True
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
         except BaseException:
@@ -309,7 +312,7 @@ class ClientRunner(FLComponent):
             self._try_run()
         except BaseException as e:
             with self.engine.new_context() as fl_ctx:
-                self.log_exception(fl_ctx, "processing error in RUN execution: {}".format(e))
+                self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
         finally:
             # in case any task is still running, abort it
             self._abort_current_task()

@@ -26,6 +26,7 @@ from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -115,7 +116,7 @@ def main():
         trainer.close()
 
     except ConfigError as ex:
-        print("ConfigError:", str(ex))
+        print(f"ConfigError: {secure_format_exception(ex)}")
     finally:
         # shutil.rmtree(workspace)
         pass

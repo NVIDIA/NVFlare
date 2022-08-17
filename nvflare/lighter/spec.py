@@ -14,11 +14,11 @@
 
 import os
 import shutil
-import traceback
 from abc import ABC
 from typing import List
 
 from nvflare.apis.utils.format_check import name_check
+from nvflare.security.logging import secure_log_traceback
 
 
 class Participant(object):
@@ -167,12 +167,12 @@ class Provisioner(object):
             for b in self.builders[::-1]:
                 b.finalize(ctx)
 
-        except BaseException as ex:
+        except BaseException:
             prod_dir = ctx.get("current_prod_dir")
             if prod_dir:
                 shutil.rmtree(prod_dir)
             print("Exception raised during provision.  Incomplete prod_n folder removed.")
-            traceback.print_exc()
+            secure_log_traceback()
         finally:
             wip_dir = ctx.get("wip_dir")
             if wip_dir:

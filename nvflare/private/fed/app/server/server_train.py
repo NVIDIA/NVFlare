@@ -26,6 +26,7 @@ from nvflare.fuel.sec.security_content_service import LoadResult, SecurityConten
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.admin import FedAdminServer
+from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 
@@ -115,7 +116,7 @@ def main():
         logger.info("Server started")
 
     except ConfigError as ex:
-        print("ConfigError:", str(ex))
+        print(f"ConfigError: {secure_format_exception(ex)}")
     finally:
         pass
 

@@ -20,6 +20,7 @@ import threading
 from nvflare.fuel.hci.conn import Connection, receive_til_end
 from nvflare.fuel.hci.proto import validate_proto
 from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.security.logging import secure_format_exception
 
 from .reg import ServerCommandRegister
 
@@ -84,8 +85,8 @@ class _MsgHandler(socketserver.BaseRequestHandler):
 
             if not conn.ended:
                 conn.close()
-        except BaseException as exc:
-            self.logger.error(f"Admin connection terminated due to exception: {str(exc)}")
+        except BaseException as ex:
+            self.logger.error(f"Admin connection terminated due to exception: {secure_format_exception(ex)}")
             if self.logger.getEffectiveLevel() <= logging.DEBUG:
                 self.logger.exception("Admin connection error")
         finally:

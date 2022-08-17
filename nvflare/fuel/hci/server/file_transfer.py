@@ -15,7 +15,6 @@
 import os
 import shutil
 import tempfile
-import traceback
 from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -30,6 +29,7 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.security.logging import secure_log_traceback
 
 
 class FileTransferModule(CommandModule):
@@ -195,7 +195,7 @@ class FileTransferModule(CommandModule):
             else:
                 return True, None
         except BaseException:
-            traceback.print_exc()
+            secure_log_traceback()
             conn.append_error("exception occurred")
             return False, None
         finally:
@@ -232,7 +232,7 @@ class FileTransferModule(CommandModule):
             b64str = bytes_to_b64str(data)
             conn.append_string(b64str)
         except BaseException:
-            traceback.print_exc()
+            secure_log_traceback()
             conn.append_error("exception occurred")
 
     def info(self, conn: Connection, args: List[str]):
