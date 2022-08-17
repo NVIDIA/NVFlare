@@ -11,11 +11,17 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
 import grpc
 
 from nvflare.app_common.mpi_proxy import mpi_pb2_grpc
-from nvflare.app_common.mpi_proxy.mpi_pb2 import AllgatherRequest, AllreduceRequest, DataType, ReduceOperation, \
-    BroadcastRequest
+from nvflare.app_common.mpi_proxy.mpi_pb2 import (
+    AllgatherRequest,
+    AllreduceRequest,
+    BroadcastRequest,
+    DataType,
+    ReduceOperation,
+)
 
 
 def all_gather(stub):
@@ -49,9 +55,7 @@ def broadcast(stub):
     print(reply.receive_buffer.decode())
 
 
-channel = grpc.insecure_channel('localhost:55442')
-grpc_stub = mpi_pb2_grpc.FederatedStub(channel)
-
-broadcast(grpc_stub)
-
-
+if __name__ == "__main__":
+    channel = grpc.insecure_channel("localhost:55442")
+    grpc_stub = mpi_pb2_grpc.FederatedStub(channel)
+    broadcast(grpc_stub)

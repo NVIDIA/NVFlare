@@ -1,0 +1,21 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "mpi_train"
+      ],
+      "executor": {
+        "path": "mpi_execute.MPIExecutor",
+        "args": {
+          "server_key_path": "server-key.pem",
+          "server_cert_path": "server-cert.pem",
+          "client_key_path": "client-key.pem",
+          "client_cert_path": "client-cert.pem"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": []
+}

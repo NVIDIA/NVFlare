@@ -40,6 +40,7 @@ class MPIExecutor(Executor):
         client_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
         sequence_number = 0
         rounds = 10
+        result = Shareable()
 
         self.log_info(fl_ctx, f"Running MPIExecutor client training in {client_name}...")
         while not (abort_signal.triggered or sequence_number > rounds):
@@ -60,5 +61,4 @@ class MPIExecutor(Executor):
             )
             sequence_number += 1
         self.log_info(fl_ctx, "Training finished. Returning shareable...")
-        model = Shareable()
-        return model
+        return result

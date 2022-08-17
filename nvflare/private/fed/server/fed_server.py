@@ -559,8 +559,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self._handle_state_check(context, state_check)
             self._ssid_check(request.client, context)
 
-            self.logger.info("getting AuxCommunicate request")
-
             contribution = request
 
             client = self.client_manager.validate_client(contribution.client, context)
@@ -613,7 +611,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     command_conn = self.engine.get_collective_command_conn(job_id)
                     participate_clients = len(self.engine.run_processes[job_id][RunProcessKey.PARTICIPANTS])
                     command_waiter = self.engine.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION_WAITER]
-                    self.logger.info(f"Collective communication: participate client num is {participate_clients}")
+                    self.logger.debug(f"Collective communication: participate client num is {participate_clients}")
                 if command_conn:
                     shareable.set_header(CollectiveCommShareableHeader.WORLD_SIZE, participate_clients)
                     with command_waiter.receive_all:

@@ -11,21 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 from array import array
 from concurrent import futures
 
 import grpc
 
+from nvflare.apis.collective_comm_constants import CollectiveCommRequestTopic, CollectiveCommShareableHeader
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
-from nvflare.app_common.mpi_proxy import mpi_pb2_grpc, mpi_pb2
-from nvflare.app_common.mpi_proxy.mpi_constants import MpiFields, MpiFunctions, MPI_PROXY_TOPIC
-from nvflare.app_common.mpi_proxy.mpi_pb2 import AllgatherReply, AllreduceReply, DataType, ReduceOperation, \
-    BroadcastReply
-
-logger = logging.getLogger(__name__)
+from nvflare.app_common.mpi_proxy import mpi_pb2_grpc
+from nvflare.app_common.mpi_proxy.mpi_pb2 import AllgatherReply, AllreduceReply, BroadcastReply, ReduceOperation
 
 
 class MpiLocalProxy(mpi_pb2_grpc.FederatedServicer):
@@ -49,92 +47,106 @@ class MpiLocalProxy(mpi_pb2_grpc.FederatedServicer):
     # ULONGLONG = 9
     TYPE_CODE_MAP = ["b", "B", "i", "I", "l", "L", "f", "d", "q", "Q"]
 
-    def __init__(self, fl_context: FLContext):
+    def __init__(self, server_key_path, server_cert_path, client_cert_path, fl_context: FLContext):
+        self._logger = logging.getLogger(__name__)
+        self._server_key_path = server_key_path
+        self._server_cert_path = server_cert_path
+        self._client_cert_path = client_cert_path
         self.fl_context = fl_context
         self.port = get_open_ports(1)[0]
-        self.server_future = None
-        logger.info(f"MPI Proxy port: {self.port}")
+        self.grpc_server = None
+        self._logger.info(f"MPI Proxy port: {self.port}")
 
     def start(self):
-        """ Start MPI proxy server on localhost"""
+        """Start MPI proxy server on localhost"""
 
         executor = futures.ThreadPoolExecutor(max_workers=MpiLocalProxy.NUM_THREADS)
-        self.server_future = executor.submit(self._run_grpc_server, executor=executor)
+        self.grpc_server = grpc.server(executor, options=MpiLocalProxy.GRPC_OPTIONS, compression=grpc.Compression.Gzip)
+        mpi_pb2_grpc.add_FederatedServicer_to_server(self, self.grpc_server)
+        local_address = "0.0.0.0:" + str(self.port)
 
-        logger.debug("GRPC server started")
+        with open(self._server_key_path, "rb") as f:
+            private_key = f.read()
+        with open(self._server_cert_path, "rb") as f:
+            certificate_chain = f.read()
+        with open(self._client_cert_path, "rb") as f:
+            root_ca = f.read()
+
+        server_credentials = grpc.ssl_server_credentials(
+            (
+                (
+                    private_key,
+                    certificate_chain,
+                ),
+            ),
+            root_certificates=root_ca,
+            require_client_auth=True,
+        )
+        self.grpc_server.add_secure_port(local_address, server_credentials)
+        self.grpc_server.start()
+
+        self._logger.info(f"MPI Proxy on port {self.port} has started")
 
     def stop(self):
         """Stop the proxy server"""
-        self.server.stop()
-        logger.info(f"MPI Proxy on port {self.port} has stopped")
-
-    def wait(self):
-        """Wait till GRPC server ends"""
-        if self.server_future:
-            self.server_future.result()
+        if self.grpc_server:
+            self.grpc_server.stop(0)
+        self._logger.info(f"MPI Proxy on port {self.port} has stopped")
 
     # Servicer implementation
     def Allgather(self, request, context):
         shareable = Shareable()
-        shareable[MpiFields.MPI_FUNC] = MpiFunctions.ALL_GATHER
-        shareable[MpiFields.SEQUENCE_NUMBER] = request.sequence_number
-        shareable[MpiFields.WORLD_RANK] = request.rank
-        shareable[MpiFields.BUFFER] = array("B", request.send_buffer)
+        shareable.set_header(CollectiveCommShareableHeader.IS_COLLECTIVE_AUX, True)
+        shareable.set_header(CollectiveCommShareableHeader.SEQUENCE_NUMBER, request.sequence_number)
+        shareable.set_header(CollectiveCommShareableHeader.RANK, request.rank)
+        shareable.set_header(CollectiveCommShareableHeader.BUFFER, array("B", request.send_buffer))
 
         engine = self.fl_context.get_engine()
-        result = engine.send_aux_request(
-            topic=MPI_PROXY_TOPIC, request=shareable, timeout=30.0, fl_ctx=self.fl_context
+        result: Shareable = engine.send_aux_request(
+            topic=CollectiveCommRequestTopic.ALL_GATHER, request=shareable, timeout=30.0, fl_ctx=self.fl_context
         )
-        buffer = result[MpiFields.BUFFER]
+        buffer = result.get_header(CollectiveCommShareableHeader.BUFFER)
 
         return AllgatherReply(receive_buffer=buffer.tobytes())
 
     def Allreduce(self, request, context):
         shareable = Shareable()
-        shareable[MpiFields.MPI_FUNC] = MpiFunctions.ALL_REDUCE
-        shareable[MpiFields.SEQUENCE_NUMBER] = request.sequence_number
-        shareable[MpiFields.RANK] = request.rank
+        shareable.set_header(CollectiveCommShareableHeader.IS_COLLECTIVE_AUX, True)
+        shareable.set_header(CollectiveCommShareableHeader.SEQUENCE_NUMBER, request.sequence_number)
+        shareable.set_header(CollectiveCommShareableHeader.RANK, request.rank)
 
         type_code = MpiLocalProxy.TYPE_CODE_MAP[request.data_type]
-
-        shareable[MpiFields.BUFFER] = array(type_code, request.send_buffer)
-        shareable[MpiFields.DATA_TYPE] = DataType.Name(request.data_type)
-        shareable[MpiFields.REDUCE_OPERATION] = ReduceOperation.Name(request.reduce_operation)
+        shareable.set_header(CollectiveCommShareableHeader.BUFFER, array(type_code, request.send_buffer))
+        shareable.set_header(
+            CollectiveCommShareableHeader.REDUCE_FUNCTION, ReduceOperation.Name(request.reduce_operation)
+        )
 
         engine = self.fl_context.get_engine()
         result = engine.send_aux_request(
-            topic=MPI_PROXY_TOPIC, request=shareable, timeout=30.0, fl_ctx=self.fl_context
+            topic=CollectiveCommRequestTopic.ALL_REDUCE, request=shareable, timeout=30.0, fl_ctx=self.fl_context
         )
-        buffer = result[MpiFields.BUFFER]
+        buffer = result.get_header(CollectiveCommShareableHeader.BUFFER)
 
         return AllreduceReply(receive_buffer=buffer.tobytes())
 
     def Broadcast(self, request, context):
         shareable = Shareable()
-        shareable[MpiFields.MPI_FUNC] = MpiFunctions.BROADCAST
-        shareable[MpiFields.SEQUENCE_NUMBER] = request.sequence_number
-        shareable[MpiFields.BUFFER] = array("B", request.send_buffer)
-        shareable[MpiFields.RANK] = request.rank
-        shareable[MpiFields.ROOT] = request.root
+        shareable.set_header(CollectiveCommShareableHeader.IS_COLLECTIVE_AUX, True)
+        shareable.set_header(CollectiveCommShareableHeader.SEQUENCE_NUMBER, request.sequence_number)
+        shareable.set_header(CollectiveCommShareableHeader.RANK, request.rank)
+        shareable.set_header(CollectiveCommShareableHeader.BUFFER, array("B", request.send_buffer))
+        shareable.set_header(CollectiveCommShareableHeader.ROOT, request.root)
 
         engine = self.fl_context.get_engine()
         result = engine.send_aux_request(
-            topic=MPI_PROXY_TOPIC, request=shareable, timeout=30.0, fl_ctx=self.fl_context
+            topic=CollectiveCommRequestTopic.BROADCAST, request=shareable, timeout=30.0, fl_ctx=self.fl_context
         )
-        buffer = result[MpiFields.BUFFER]
+        buffer = result.get_header(CollectiveCommShareableHeader.BUFFER)
 
         return BroadcastReply(receive_buffer=buffer.tobytes())
 
-    def _run_grpc_server(self, executor: futures.ThreadPoolExecutor):
-        server = grpc.server(
-            executor,
-            options=MpiLocalProxy.GRPC_OPTIONS,
-            compression=grpc.Compression.Gzip)
-
-        mpi_pb2_grpc.add_FederatedServicer_to_server(self, server)
-        local_port = "localhost:" + str(self.port)
-        server.add_insecure_port(local_port)
-        server.start()
-        logger.info(f"MPI Proxy is started on {local_port}")
-        server.wait_for_termination()
-        return server
+    def _print_request(self, func_name, request, type_code):
+        buffer_array = array(type_code, request.send_buffer).tolist()
+        self._logger.info(
+            f"{func_name}: seq: {request.sequence_number}, rank: {request.rank}," f"buffer to list: {buffer_array}"
+        )

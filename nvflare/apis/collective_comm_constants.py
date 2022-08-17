@@ -30,7 +30,6 @@ class CollectiveCommShareableHeader:
     BUFFER = "_buffer"
     SEQUENCE_NUMBER = "_sequence_number"
     RANK = "_rank"
-    COLLECTIVE_FUNC = "_collective_func"
     REDUCE_FUNCTION = "_reduce_function"
     ROOT = "_root"
 

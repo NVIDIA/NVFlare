@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import mpi_pb2 as federated__pb2
+from nvflare.app_common.mpi_proxy import mpi_pb2 as federated__pb2
 
 
 class FederatedStub(object):

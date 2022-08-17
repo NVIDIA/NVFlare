@@ -62,7 +62,7 @@ class CollectiveCommWidget(FLComponent):
         result = Shareable()
         result.set_header(CollectiveCommShareableHeader.BUFFER, self._buffer)
         self._sequence_number = sequence_number + 1
-        self._buffer = 0
+        self._buffer = None
         return result
 
     def _handle_request(self, topic: str, request: Shareable):
@@ -79,4 +79,7 @@ class CollectiveCommWidget(FLComponent):
         if topic not in self._function:
             raise CollectiveCommHandleError(f"topic {topic} is not supported.")
         func = self._function[topic]
-        self._buffer = func(request=request, world_size=self._world_size, buffer=self._buffer)
+        buffer_in = request.get_header(CollectiveCommShareableHeader.BUFFER)
+        result = func(request=request, world_size=self._world_size, buffer=self._buffer)
+        if result is not None:
+            self._buffer = result
