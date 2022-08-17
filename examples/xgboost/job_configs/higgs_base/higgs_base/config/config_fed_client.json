@@ -24,9 +24,9 @@
       "id": "xgboost-learner",
       "path": "custom.xgboost_higgs_learner.XGBoostHiggsLearner",
       "args": {
-        "train_config_filename": "config_train_5_exponential.json",
+        "train_config_filename": "config_train.json",
         "num_parallel_tree": 5,
-        "lr_mode": "uniform"
+        "lr_mode": "scaled"
       }
     }
   ]

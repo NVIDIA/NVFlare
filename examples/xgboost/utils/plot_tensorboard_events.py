@@ -30,7 +30,7 @@ experiments_bagging = {
     5: {
         "higgs_5_bagging_uniform_split_uniform_lr": {"tag": "AUC"},
         "higgs_5_bagging_exponential_split_uniform_lr": {"tag": "AUC"},
-        "higgs_5_bagging_exponential_split_scaled_lr": {"tag": "AUC"},
+        "higgs_base": {"tag": "AUC"},
     },
     20: {
         "higgs_20_bagging_uniform_split_uniform_lr": {"tag": "AUC"},

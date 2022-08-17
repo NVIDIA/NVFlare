@@ -79,11 +79,20 @@ This will generate data splits for two client sizes: 5 and 20, and 3 split condi
 
 
 ### Prepare job configs under various training schemes
+We then prepare the job configs for NVFlare jobs corresponding to various settings by running
 ```
-OPTION to consider:
-This part is pre-generated 
-shall we also write scripts for generating the folders in ./job_configs???
+bash job_config_gen.sh
 ```
+To be specific, this script calls the python script `./utils/prepare_job_config.py`. It modifies settings from a base config `./job_configs/higgs_base`, and relies on the train_configs generated in the last step.
+
+Here, we generated in total 10 different configs: five for each of the 5/20-client settings:
+- bagging training with uniform data split and uniform shrinkage 
+- bagging training with non-uniform data split and uniform shrinkage 
+- bagging training with non-uniform data split and scaled shrinkage
+- cyclic training with uniform data split 
+- cyclic training with non-uniform data split 
+
+Note that cyclic training always use uniform shrinkage 
 
 ### Start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.

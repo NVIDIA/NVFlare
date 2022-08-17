@@ -1,9 +1,0 @@
-{
-  "name": "higgs_5_bagging_exponential_split_scaled_lr",
-  "resource_spec": {},
-  "deploy_map": {
-    "higgs_5_bagging_exponential_split_scaled_lr": [
-      "@ALL"
-    ]
-  }
-}

@@ -1,9 +1,0 @@
-{
-  "name": "higgs_20_bagging_square_split_uniform_lr",
-  "resource_spec": {},
-  "deploy_map": {
-    "higgs_20_bagging_square_split_uniform_lr": [
-      "@ALL"
-    ]
-  }
-}

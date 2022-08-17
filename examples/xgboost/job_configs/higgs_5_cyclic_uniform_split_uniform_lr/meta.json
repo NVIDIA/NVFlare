@@ -1,9 +1,0 @@
-{
-  "name": "higgs_5_cyclic_uniform_split_uniform_lr",
-  "resource_spec": {},
-  "deploy_map": {
-    "higgs_5_cyclic_uniform_split_uniform_lr": [
-      "@ALL"
-    ]
-  }
-}
