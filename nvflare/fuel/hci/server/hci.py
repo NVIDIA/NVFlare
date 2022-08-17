@@ -24,6 +24,8 @@ from nvflare.fuel.hci.security import get_certificate_common_name
 
 from .reg import ServerCommandRegister
 
+logger = logging.getLogger(__name__)
+
 
 class _MsgHandler(socketserver.BaseRequestHandler):
     """Message handler.
@@ -40,6 +42,8 @@ class _MsgHandler(socketserver.BaseRequestHandler):
                 cn = get_certificate_common_name(self.request.getpeercert())
                 conn.set_prop("_client_cn", cn)
                 valid = self.server.validate_client_cn(cn)
+                ssl_version = self.request.version()
+                logger.debug(f"TLS version for admin connection: {ssl_version}")
             else:
                 valid = True
 
@@ -117,6 +121,8 @@ class AdminServer(socketserver.ThreadingTCPServer):
                 )
 
             ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            # This feature is only supported on 3.7+
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             ctx.verify_mode = ssl.CERT_REQUIRED
             ctx.load_verify_locations(ca_cert)
             ctx.load_cert_chain(certfile=server_cert, keyfile=server_key)
@@ -135,7 +141,6 @@ class AdminServer(socketserver.ThreadingTCPServer):
         self.accepted_client_cns = accepted_client_cns
         self.cmd_reg = cmd_reg
         cmd_reg.finalize()
-        self.logger = logging.getLogger(self.__class__.__name__)
 
     def validate_client_cn(self, cn):
         if self.accepted_client_cns:
@@ -150,7 +155,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
         if self._thread.is_alive():
             self._thread.join()
 
-        self.logger.info(f"Admin Server {self.host} on Port {self.port} shutdown!")
+        logger.info(f"Admin Server {self.host} on Port {self.port} shutdown!")
 
     def set_command_registry(self, cmd_reg: ServerCommandRegister):
         if cmd_reg:
@@ -169,5 +174,5 @@ class AdminServer(socketserver.ThreadingTCPServer):
             self._thread.start()
 
     def _run(self):
-        self.logger.info(f"Starting Admin Server {self.host} on Port {self.port}")
+        logger.info(f"Starting Admin Server {self.host} on Port {self.port}")
         self.serve_forever()
