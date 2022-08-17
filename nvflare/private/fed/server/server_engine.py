@@ -32,7 +32,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.security.logging import secure_log_traceback
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
@@ -420,7 +420,7 @@ def start_server_training(server, args, app_root, run_number):
 
         server.start_run(run_number, app_root, conf, args)
     except BaseException as e:
-        logging.getLogger().warning("FL server execution exception: " + str(e))
+        logging.getLogger().warning(f"FL server execution exception: {secure_format_exception(e)}")
         secure_log_traceback()
     finally:
         server.status = ServerStatus.STOPPED

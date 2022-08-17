@@ -23,6 +23,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.security.logging import secure_format_exception
 
 
 class CyclicController(Controller):
@@ -133,9 +134,9 @@ class CyclicController(Controller):
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:
-            error_msg = f"Cyclic control_flow exception {e}"
+            error_msg = f"Cyclic control_flow exception {secure_format_exception(e)}"
             self.log_error(fl_ctx, error_msg)
-            self.system_panic(str(e), fl_ctx)
+            self.system_panic(secure_format_exception(e), fl_ctx)
 
     def stop_controller(self, fl_ctx: FLContext):
         self.persistor.save(learnable=self.last_learnable, fl_ctx=fl_ctx)

@@ -156,7 +156,7 @@ class ProcessExecutor(ClientExecutor):
             try:
                 address = ("localhost", self.listen_port)
                 self.conn_client = Client(address, authkey="client process secret password".encode())
-            except Exception as e:
+            except Exception:
                 pass
 
     def create_pipe(self):
@@ -300,7 +300,7 @@ class ProcessExecutor(ClientExecutor):
                     try:
                         os.killpg(os.getpgid(client.process.pid), 9)
                         self.logger.debug("kill signal sent")
-                    except Exception as e:
+                    except Exception:
                         pass
                     client.process.terminate()
                     self.logger.debug("terminated")

@@ -96,11 +96,11 @@ class ServerRunner(FLComponent):
 
                 with self.engine.new_context() as fl_ctx:
                     wf.responder.control_flow(self.abort_signal, fl_ctx)
-            except WorkflowError as e:
+            except WorkflowError:
                 with self.engine.new_context() as fl_ctx:
                     self.log_exception(fl_ctx, "Fatal error occurred in workflow {}. Aborting the RUN".format(wf.id))
                 self.abort_signal.trigger(True)
-            except BaseException as e:
+            except BaseException:
                 with self.engine.new_context() as fl_ctx:
                     self.log_exception(fl_ctx, "exception in workflow {}".format(wf.id))
             finally:
@@ -296,7 +296,7 @@ class ServerRunner(FLComponent):
                 for f in filter_list:
                     try:
                         task_data = f.process(task_data, fl_ctx)
-                    except BaseException as ex:
+                    except BaseException:
                         self.log_exception(
                             fl_ctx,
                             "processing error in task data filter {}; asked client to try again later".format(type(f)),

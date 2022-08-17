@@ -25,7 +25,7 @@ from nvflare.fuel.hci.proto import make_error
 from nvflare.fuel.hci.reg import CommandModule, CommandRegister
 from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.fuel.hci.table import Table
-from nvflare.security.logging import secure_log_traceback
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
@@ -320,7 +320,9 @@ class AdminAPI(AdminAPISpec):
                 secure_log_traceback()
 
             process_json_func(
-                make_error("Failed to communicate with Admin Server {} on {}: {}".format(self.host, self.port, ex))
+                make_error(
+                    f"Failed to communicate with Admin Server {self.host} on {self.port}: {secure_format_exception(ex)}"
+                )
             )
 
     def do_command(self, command):

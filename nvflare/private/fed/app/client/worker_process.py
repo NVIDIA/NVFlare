@@ -33,7 +33,7 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
-from nvflare.security.logging import secure_log_traceback
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
@@ -179,7 +179,7 @@ def main():
         client_runner.run(app_root, args)
     except BaseException as e:
         secure_log_traceback()
-        print("FL client execution exception: " + str(e))
+        print(f"FL client execution exception: {secure_format_exception(e)}")
     finally:
         # if federated_client:
         #     federated_client.stop_listen = True

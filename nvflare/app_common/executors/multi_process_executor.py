@@ -127,7 +127,7 @@ class MultiProcessExecutor(Executor):
                     return_data = self.conn_clients[0][CommunicationMetaData.HANDLE_CONN].recv()
                     # update the fl_ctx from the child process return data.
                     fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
-                except BaseException as e:
+                except BaseException:
                     # Warning: Have to set fire_event=False, otherwise it will cause dead loop on the event handling!!!
                     self.log_warning(
                         fl_ctx, f"Failed to relay the event to child processes. Event: {event_type}", fire_event=False
@@ -245,7 +245,7 @@ class MultiProcessExecutor(Executor):
             try:
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
-            except BaseException as e:
+            except BaseException:
                 time.sleep(1.0)
                 pass
         return conn
@@ -289,7 +289,7 @@ class MultiProcessExecutor(Executor):
                     shareable = return_data[CommunicationMetaData.SHAREABLE]
                     fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
                     return shareable
-        except BaseException as e:
+        except BaseException:
             self.log_error(fl_ctx, "Multi-Process Execution error.")
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
@@ -312,7 +312,7 @@ class MultiProcessExecutor(Executor):
         try:
             os.killpg(os.getpgid(self.exe_process.pid), 9)
             self.logger.debug("kill signal sent")
-        except Exception as e:
+        except Exception:
             pass
 
         if self.exe_process:

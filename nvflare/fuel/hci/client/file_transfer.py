@@ -27,7 +27,7 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.security.logging import secure_log_traceback
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api_spec import AdminAPISpec, ReplyProcessor
 from .api_status import APIStatus
@@ -101,7 +101,12 @@ class _DownloadProcessor(ReplyProcessor):
                 self.data_received = True
         except Exception as ex:
             secure_log_traceback()
-            api.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": f"exception processing file: {ex}"})
+            api.set_command_result(
+                {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": f"exception processing file: {secure_format_exception(ex)}",
+                }
+            )
 
 
 class _DownloadFolderProcessor(ReplyProcessor):
@@ -134,7 +139,7 @@ class _DownloadFolderProcessor(ReplyProcessor):
             api.set_command_result(
                 {
                     "status": APIStatus.ERROR_RUNTIME,
-                    "details": "exception processing reply: {}".format(ex),
+                    "details": f"exception processing reply: {secure_format_exception(ex)}",
                 }
             )
 

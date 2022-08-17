@@ -185,7 +185,7 @@ class HEModelEncryptor(Filter):
         try:
             new_dxo = self._process(dxo, fl_ctx)
             new_dxo.update_shareable(shareable)
-        except BaseException as e:
+        except BaseException:
             self.log_exception(fl_ctx, "Exception occurred")
 
         return shareable

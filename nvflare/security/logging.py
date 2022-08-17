@@ -41,13 +41,13 @@ class _Frame(object):
         self.count = 1
 
 
-def _format_exc_securely():
+def _format_exc_securely() -> str:
     """
     Mimic traceback.format_exc() but exclude detailed call info and exception detail since
     they might contain sensitive info.
 
-    Returns: a formatted string of current exception and call stack.
-
+    Returns:
+        A formatted string of current exception and call stack.
     """
     exc_type, exc_obj, tb = sys.exc_info()
     result = ["Traceback (most recent call last):"]
@@ -78,7 +78,7 @@ def _format_exc_securely():
     return "{}\r\n{}".format(text, f"Exception Type: {exc_type}")
 
 
-def format_exc():
+def secure_format_traceback() -> str:
     if is_secure():
         return _format_exc_securely()
     else:
@@ -86,9 +86,16 @@ def format_exc():
 
 
 def secure_log_traceback(logger: logging.Logger = None):
-    exc_detail = format_exc()
+    exc_detail = secure_format_traceback()
 
     if not logger:
         logger = logging.getLogger()
 
     logger.error(exc_detail)
+
+
+def secure_format_exception(e: BaseException) -> str:
+    if is_secure():
+        return str(type(e))
+    else:
+        return str(e)

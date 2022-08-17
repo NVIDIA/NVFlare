@@ -20,7 +20,7 @@ import time
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
-from nvflare.security.logging import secure_log_traceback
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class Sender(object):
@@ -190,7 +190,7 @@ class FedAdminAgent(object):
                             ), "processor for topic {} failed to produce valid reply".format(topic)
                     except BaseException as e:
                         secure_log_traceback()
-                        reply = error_reply("exception_occurred: {}".format(e))
+                        reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
                 else:
                     reply = error_reply("invalid_request")
 

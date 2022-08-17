@@ -30,6 +30,7 @@ from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -237,7 +238,7 @@ class CrossSiteModelEval(Controller):
                 self.log_debug(fl_ctx, "Checking standing tasks to see if cross site validation finished.")
                 time.sleep(self._task_check_period)
         except BaseException as e:
-            error_msg = f"Exception in cross site validator control_flow: {e.__str__()}"
+            error_msg = f"Exception in cross site validator control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
 
@@ -471,14 +472,14 @@ class CrossSiteModelEval(Controller):
         try:
             bytes_to_save = dxo.to_bytes()
         except Exception as e:
-            raise ValueError(f"Unable to extract shareable contents. Exception: {(e.__str__())}") from e
+            raise ValueError(f"Unable to extract shareable contents. Exception: {secure_format_exception(e)}")
 
         # Save contents to path
         try:
             with open(data_filename, "wb") as f:
                 f.write(bytes_to_save)
         except Exception as e:
-            raise ValueError(f"Unable to save shareable contents: {str(e)}") from e
+            raise ValueError(f"Unable to save shareable contents: {secure_format_exception(e)}")
 
         self.log_debug(fl_ctx, f"Saved cross validation model with name: {name}.")
 
@@ -498,7 +499,7 @@ class CrossSiteModelEval(Controller):
 
             self.log_debug(fl_ctx, f"Loading cross validation shareable content with name: {name}.")
         except Exception as e:
-            raise ValueError(f"Exception in loading shareable content for {name}: {str(e)}")
+            raise ValueError(f"Exception in loading shareable content for {name}: {secure_format_exception(e)}")
 
         return dxo
 

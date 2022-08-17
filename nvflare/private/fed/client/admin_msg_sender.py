@@ -116,8 +116,8 @@ class AdminMessageSender(Sender):
                 messages = stub.Retrieve(client)
                 for i in messages.message:
                     message_list.append(proto_to_message(i))
-        except Exception as e:
-            messages = None
+        except Exception:
+            message_list = None
         return message_list
 
     def send_result(self, message: Message):

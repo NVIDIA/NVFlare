@@ -23,6 +23,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -229,9 +230,9 @@ class ScatterAndGather(Controller):
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
         except BaseException as e:
-            error_msg = f"Exception in ScatterAndGather control_flow: {e}"
+            error_msg = f"Exception in ScatterAndGather control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
-            self.system_panic(str(e), fl_ctx)
+            self.system_panic(secure_format_exception(e), fl_ctx)
 
     def stop_controller(self, fl_ctx: FLContext) -> None:
         self._phase = AppConstants.PHASE_FINISHED

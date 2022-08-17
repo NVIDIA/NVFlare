@@ -19,6 +19,7 @@ import re
 from typing import List
 
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.security.logging import secure_format_exception
 
 from .class_utils import ModuleScanner, get_class, instantiate_class
 from .dict_utils import extract_first_level_primitive, merge_dict
@@ -200,9 +201,9 @@ class Configurator(JsonObjectProcessor):
         try:
             self._do_configure()
         except ConfigError as ex:
-            raise ConfigError("Config error in {}: {}".format(self.wf_config_file_name, ex))
+            raise ConfigError(f"Config error in {self.wf_config_file_name}: {secure_format_exception(ex)}")
         except Exception as ex:
-            print("Error processing config {}: {}".format(self.wf_config_file_name, ex))
+            print(f"Error processing config {self.wf_config_file_name}: {secure_format_exception(ex)}")
             raise ex
 
     def process_element(self, node: Node):

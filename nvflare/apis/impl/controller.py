@@ -27,6 +27,7 @@ from nvflare.apis.responder import Responder
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 from .any_relay_manager import AnyRelayTaskManager
@@ -847,7 +848,8 @@ class Controller(Responder, ControllerSpec, ABC):
                             task.exception = ex
                         except BaseException as ex:
                             self.log_exception(
-                                fl_ctx, "Exception {} raised in task_done_cb on task={}".format(ex, exit_task)
+                                fl_ctx,
+                                f"Exception {secure_format_exception(ex)} raised in task_done_cb on task={exit_task}",
                             )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = ex

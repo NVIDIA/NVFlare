@@ -15,7 +15,7 @@
 import logging
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
-from nvflare.security.logging import format_exc
+from nvflare.security.logging import secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
@@ -213,7 +213,7 @@ class FLComponent(object):
         """
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
-        ex_text = format_exc()
+        ex_text = secure_format_traceback()
         self.logger.error(ex_text)
 
         if fire_event:

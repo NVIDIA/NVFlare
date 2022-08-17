@@ -126,7 +126,7 @@ def main():
         try:
             address = ("localhost", listen_port)
             event_conn = Client(address, authkey=CommunicationMetaData.PARENT_PASSWORD.encode())
-        except Exception as e:
+        except Exception:
             time.sleep(1.0)
             pass
 
