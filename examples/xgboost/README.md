@@ -92,7 +92,8 @@ Here, we generated in total 10 different configs: five for each of the 5/20-clie
 - cyclic training with uniform data split 
 - cyclic training with non-uniform data split 
 
-Note that cyclic training always use uniform shrinkage 
+Cyclic training always use uniform shrinkage 
+> **_NOTE:_** The generated job config files will be stored in the folder `./job_configs`
 
 ### Start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.
