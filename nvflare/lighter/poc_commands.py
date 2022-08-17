@@ -15,12 +15,13 @@
 import json
 import os
 import random
-import sys
-from typing import Dict, List, Optional
 import subprocess
+import sys
 import time
+from typing import Dict, List, Optional
 
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
+from nvflare.lighter.cli_exception import CLIException
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 
@@ -78,8 +79,9 @@ def get_stop_cmd(poc_workspace: str, service_dir_name: str):
 def check_nvflare_home():
     nvflare_home = os.getenv("NVFLARE_HOME")
     if not nvflare_home:
-        print("NVFLARE_HOME environment variable is not set. Please set NVFLARE_HOME=<NVFLARE install dir>")
-        sys.exit(1)
+        raise CLIException(
+            "NVFLARE_HOME environment variable is not set. Please set NVFLARE_HOME=<NVFLARE install dir>"
+        )
     return nvflare_home
 
 
@@ -98,11 +100,9 @@ def get_upload_dir(poc_workspace: str) -> str:
             console_config = json.load(f)
             upload_dir = console_config[SC.FLARE_CONSOLE]["upload_dir"]
     except IOError as e:
-        print(f"failed to load {console_config_path} {e}")
-        sys.exit(3)
+        raise CLIException(f"failed to load {console_config_path} {e}")
     except json.decoder.JSONDecodeError as e:
-        print(f"failed to load {console_config_path}, please double check the configuration {e}")
-        sys.exit(4)
+        raise CLIException(f"failed to load {console_config_path}, please double check the configuration {e}")
 
     return upload_dir
 
@@ -156,15 +156,15 @@ def is_poc_ready(poc_workspace: str):
 
 def validate_poc_workspace(poc_workspace: str):
     if not is_poc_ready(poc_workspace):
-        print(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
-        sys.exit(1)
+        raise CLIException(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
 
 
 def validate_gpu_ids(gpu_ids: list, host_gpu_ids: list):
     for gpu_id in gpu_ids:
         if gpu_id not in host_gpu_ids:
-            print(f"gpu_id provided is not available in the host machine, available GPUs are {host_gpu_ids}")
-            sys.exit(2)
+            raise CLIException(
+                f"gpu_id provided is not available in the host machine, available GPUs are {host_gpu_ids}"
+            )
 
 
 def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
@@ -176,21 +176,28 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
     return gpu_ids
 
 
-def start_poc(poc_workspace: str, gpu_ids: List[int], white_list=None):
+def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=None):
     if white_list is None:
         white_list = []
-    print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, white_list={white_list}")
+    if excluded is None:
+        excluded = []
+    print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, white_list={white_list}")
     validate_poc_workspace(poc_workspace)
-    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, excluded=[], white_list=white_list)
+    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
-def stop_poc(poc_workspace: str, white_list=None):
+def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     if white_list is None:
         white_list = []
+    if excluded is None:
+        excluded = [SC.FLARE_CONSOLE]
+    else:
+        excluded.append(SC.FLARE_CONSOLE)
+
     print(f"stop_poc at {poc_workspace}")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
-    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=[], white_list=white_list)
+    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
 def _get_clients(package_commands: list) -> List[str]:
@@ -238,7 +245,6 @@ def prepare_env(gpu_ids: Optional[List[int]] = None):
 
 
 def async_process(cmd_path, gpu_ids: Optional[List[int]] = None):
-
     my_env = prepare_env(gpu_ids)
     if my_env:
         subprocess.Popen(cmd_path.split(" "), env=my_env)
@@ -277,12 +283,12 @@ def clean_poc(poc_workspace: str):
         shutil.rmtree(poc_workspace, ignore_errors=True)
         print(f"{poc_workspace} is removed")
     else:
-        print(f"{poc_workspace} is not valid poc directory")
-        sys.exit(2)
+        raise CLIException(f"{poc_workspace} is not valid poc directory")
 
 
 def def_poc_parser(sub_cmd):
-    poc_parser = sub_cmd.add_parser("poc")
+    cmd = "poc"
+    poc_parser = sub_cmd.add_parser(cmd)
     poc_parser.add_argument(
         "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
     )
@@ -293,6 +299,14 @@ def def_poc_parser(sub_cmd):
         nargs="?",
         default="all",
         help="package directory, default to all = all packages, only used for start/stop-poc commands when specified",
+    )
+    poc_parser.add_argument(
+        "-ex",
+        "--exclude",
+        type=str,
+        nargs="?",
+        default="",
+        help="exclude package directory during --start or --stop, default to " ", i.e. nothing to exclude",
     )
     poc_parser.add_argument(
         "-gpu",
@@ -310,6 +324,7 @@ def def_poc_parser(sub_cmd):
     poc_parser.add_argument(
         "--clean", dest="clean_poc", action="store_const", const=clean_poc, help="cleanup poc workspace"
     )
+    return {cmd: poc_parser}
 
 
 def is_poc(cmd_args) -> bool:
@@ -321,11 +336,22 @@ def is_poc(cmd_args) -> bool:
     )
 
 
+def get_local_host_gpu_ids():
+    try:
+        return get_host_gpu_ids()
+    except Exception as e:
+        raise CLIException(f"Failed to get host gpu ids:{e}")
+
+
 def handle_poc_cmd(cmd_args):
     if cmd_args.package != "all":
         white_list = [cmd_args.package]
     else:
         white_list = []
+
+    excluded = None
+    if cmd_args.exclude != "":
+        excluded = [cmd_args.exclude]
 
     check_nvflare_home()
 
@@ -334,12 +360,12 @@ def handle_poc_cmd(cmd_args):
         poc_workspace = DEFAULT_WORKSPACE
 
     if cmd_args.start_poc:
-        gpu_ids = get_gpu_ids(cmd_args.gpu, get_host_gpu_ids())
-        start_poc(poc_workspace, gpu_ids, white_list)
+        gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
+        start_poc(poc_workspace, gpu_ids, excluded, white_list)
     elif cmd_args.prepare_poc:
         prepare_poc(cmd_args.number_of_clients, poc_workspace)
     elif cmd_args.stop_poc:
-        stop_poc(poc_workspace, white_list)
+        stop_poc(poc_workspace, excluded, white_list)
     elif cmd_args.clean_poc:
         clean_poc(poc_workspace)
     else:
