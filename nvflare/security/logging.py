@@ -21,11 +21,13 @@ SECURE_LOGGING_VAR_NAME = "NVFLARE_SECURE_LOGGING"
 
 
 def is_secure() -> bool:
-    """Is logging set in secure mode?
+    """Checks if logging is set to secure mode.
+
     This is controlled by the system environment variable NVFLARE_SECURE_LOGGING.
     To set secure mode, set this var to 'true' or '1'.
 
-    Returns: whether logging is set in secure mode.
+    Returns:
+        A boolean indicates whether logging is set in secure mode.
     """
     secure_logging = os.environ.get(SECURE_LOGGING_VAR_NAME, False)
     if isinstance(secure_logging, str):
@@ -42,8 +44,7 @@ class _Frame(object):
 
 
 def _format_exc_securely() -> str:
-    """
-    Mimic traceback.format_exc() but exclude detailed call info and exception detail since
+    """Mimics traceback.format_exc() but exclude detailed call info and exception detail since
     they might contain sensitive info.
 
     Returns:
@@ -79,6 +80,15 @@ def _format_exc_securely() -> str:
 
 
 def secure_format_traceback() -> str:
+    """Formats the traceback of the current exception and returns a string without sensitive info.
+
+    If secure mode is set, only include file names, line numbers and func names.
+        Exception info only includes the type of the exception.
+    If secure mode is not set, return the result of traceback.format_exc().
+
+    Returns:
+        A formatted string
+    """
     if is_secure():
         return _format_exc_securely()
     else:
@@ -86,6 +96,16 @@ def secure_format_traceback() -> str:
 
 
 def secure_log_traceback(logger: logging.Logger = None):
+    """Logs the traceback.
+
+    If secure mode is set, the traceback only includes file names, line numbers and func names;
+        and only the type of the exception.
+    If secure mode is not set, the traceback will be logged normally as traceback.print_exc().
+
+    Args:
+       logger: if not None, this logger is used to log the traceback detail. If None, the root logger will be used.
+
+    """
     exc_detail = secure_format_traceback()
 
     if not logger:
@@ -95,6 +115,17 @@ def secure_log_traceback(logger: logging.Logger = None):
 
 
 def secure_format_exception(e: BaseException) -> str:
+    """Formats the specified exception and return a string without sensitive info.
+
+    If secure mode is set, only return the type of the exception;
+    If secure mode is not set, return the result of str(e).
+
+    Args:
+       e: the exception to be formatted
+
+    Returns:
+        A formatted exception string.
+    """
     if is_secure():
         return str(type(e))
     else:
