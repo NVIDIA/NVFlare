@@ -17,6 +17,8 @@ import os
 import random
 import sys
 from typing import Dict, List, Optional
+import subprocess
+import time
 
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
@@ -231,8 +233,6 @@ def prepare_env(gpu_ids: Optional[List[int]] = None):
 
 
 def async_process(cmd_path, gpu_ids: Optional[List[int]] = None):
-    import subprocess
-    import time
 
     my_env = prepare_env(gpu_ids)
     if my_env:
@@ -244,8 +244,6 @@ def async_process(cmd_path, gpu_ids: Optional[List[int]] = None):
 
 
 def sync_process(cmd_path):
-    import subprocess
-
     subprocess.run(cmd_path.split(" "))
 
 
@@ -277,7 +275,7 @@ def clean_poc(poc_workspace: str):
         raise ValueError(f"{poc_workspace} is not valid poc directory")
 
 
-def def_poc_parser(sub_cmd, prog_name: str):
+def def_poc_parser(sub_cmd):
     poc_parser = sub_cmd.add_parser("poc")
     poc_parser.add_argument(
         "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
@@ -318,29 +316,25 @@ def is_poc(cmd_args) -> bool:
 
 
 def handle_poc_cmd(cmd_args):
-    try:
-        if cmd_args.package != "all":
-            white_list = [cmd_args.package]
-        else:
-            white_list = []
+    if cmd_args.package != "all":
+        white_list = [cmd_args.package]
+    else:
+        white_list = []
 
-        check_nvflare_home()
+    check_nvflare_home()
 
-        poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
-        if poc_workspace is None or len(poc_workspace.strip()) == 0:
-            poc_workspace = DEFAULT_WORKSPACE
+    poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
+    if poc_workspace is None or len(poc_workspace.strip()) == 0:
+        poc_workspace = DEFAULT_WORKSPACE
 
-        if cmd_args.start_poc:
-            gpu_ids = get_gpu_ids(cmd_args.gpu, get_host_gpu_ids())
-            start_poc(poc_workspace, gpu_ids, white_list)
-        elif cmd_args.prepare_poc:
-            prepare_poc(cmd_args.number_of_clients, poc_workspace)
-        elif cmd_args.stop_poc:
-            stop_poc(poc_workspace, white_list)
-        elif cmd_args.clean_poc:
-            clean_poc(poc_workspace)
-        else:
-            raise Exception(f"unable to handle poc command:{cmd_args}")
-    except Exception as e:
-        print(e)
-        sys.exit(1)
+    if cmd_args.start_poc:
+        gpu_ids = get_gpu_ids(cmd_args.gpu, get_host_gpu_ids())
+        start_poc(poc_workspace, gpu_ids, white_list)
+    elif cmd_args.prepare_poc:
+        prepare_poc(cmd_args.number_of_clients, poc_workspace)
+    elif cmd_args.stop_poc:
+        stop_poc(poc_workspace, white_list)
+    elif cmd_args.clean_poc:
+        clean_poc(poc_workspace)
+    else:
+        raise Exception(f"unable to handle poc command:{cmd_args}")
