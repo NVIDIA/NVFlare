@@ -78,7 +78,8 @@ def get_stop_cmd(poc_workspace: str, service_dir_name: str):
 def check_nvflare_home():
     nvflare_home = os.getenv("NVFLARE_HOME")
     if not nvflare_home:
-        raise ValueError("NVFLARE_HOME environment variable is not set. Please set NVFLARE_HOME=<NVFLARE install dir>")
+        print("NVFLARE_HOME environment variable is not set. Please set NVFLARE_HOME=<NVFLARE install dir>")
+        sys.exit(1)
     return nvflare_home
 
 
@@ -97,9 +98,11 @@ def get_upload_dir(poc_workspace: str) -> str:
             console_config = json.load(f)
             upload_dir = console_config[SC.FLARE_CONSOLE]["upload_dir"]
     except IOError as e:
-        raise ValueError(f"failed to load {console_config_path} {e}")
+        print(f"failed to load {console_config_path} {e}")
+        sys.exit(3)
     except json.decoder.JSONDecodeError as e:
-        raise ValueError(f"failed to load {console_config_path}, please double check the configuration {e}")
+        print(f"failed to load {console_config_path}, please double check the configuration {e}")
+        sys.exit(4)
 
     return upload_dir
 
@@ -153,13 +156,15 @@ def is_poc_ready(poc_workspace: str):
 
 def validate_poc_workspace(poc_workspace: str):
     if not is_poc_ready(poc_workspace):
-        raise Exception(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
+        print(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
+        sys.exit(1)
 
 
 def validate_gpu_ids(gpu_ids: list, host_gpu_ids: list):
     for gpu_id in gpu_ids:
         if gpu_id not in host_gpu_ids:
-            raise ValueError(f"gpu_id provided is not available in the host machine, available GPUs are {host_gpu_ids}")
+            print(f"gpu_id provided is not available in the host machine, available GPUs are {host_gpu_ids}")
+            sys.exit(2)
 
 
 def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
@@ -272,7 +277,8 @@ def clean_poc(poc_workspace: str):
         shutil.rmtree(poc_workspace, ignore_errors=True)
         print(f"{poc_workspace} is removed")
     else:
-        raise ValueError(f"{poc_workspace} is not valid poc directory")
+        print(f"{poc_workspace} is not valid poc directory")
+        sys.exit(2)
 
 
 def def_poc_parser(sub_cmd):
