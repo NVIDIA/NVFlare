@@ -47,7 +47,6 @@ class SimulatorDeployer(ServerDeployer):
         self.services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
             max_num_clients=simulator_server.get("max_num_clients", 100),
-            wait_after_min_clients=wait_after_min_clients,
             cmd_modules=self.cmd_modules,
             args=args,
             secure_train=secure_train,

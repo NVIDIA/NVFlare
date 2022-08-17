@@ -41,8 +41,8 @@ class SimulatorServer(FederatedServer):
     def __init__(
         self,
         project_name=None,
+        min_num_clients=2,
         max_num_clients=10,
-        wait_after_min_clients=10,
         cmd_modules=None,
         heart_beat_timeout=600,
         handlers: Optional[List[FLComponent]] = None,
@@ -54,8 +54,8 @@ class SimulatorServer(FederatedServer):
     ):
         super().__init__(
             project_name,
+            min_num_clients,
             max_num_clients,
-            wait_after_min_clients,
             cmd_modules,
             heart_beat_timeout,
             handlers,
