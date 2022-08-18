@@ -17,17 +17,24 @@ from typing import List
 
 
 def get_host_gpu_ids() -> List:
-    process = subprocess.Popen(["nvidia-smi", "--list-gpus"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    result = process.communicate()
-    rc = process.returncode
-    if rc > 0:
-        raise Exception("Failed to get host gpu device Ids", result[0])
-    else:
-        # 'GPU 0: NVIDIA GeForce RTX 3090 (UUID: GPU-xxxx-xxxx-xxxx-xxx)\n'
-        if result[0].startswith("GPU"):
-            gpus = result[0].split("\n")
-            gpu_ids = [int(gpu.split(":")[0].split(" ")[1]) for gpu in gpus[:-1]]
+    try:
+        process = subprocess.Popen(
+            ["nvidia-smi", "--list-gpus"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        result = process.communicate()
+        rc = process.returncode
+        if rc > 0:
+            raise Exception("Failed to get host gpu device Ids", result[0])
         else:
-            gpu_ids = []
+            # 'GPU 0: NVIDIA GeForce RTX 3090 (UUID: GPU-xxxx-xxxx-xxxx-xxx)\n'
+            if result[0].startswith("GPU"):
+                gpus = result[0].split("\n")
+                gpu_ids = [int(gpu.split(":")[0].split(" ")[1]) for gpu in gpus[:-1]]
+            else:
+                gpu_ids = []
+    except FileNotFoundError as e:
+        print(f"Failed to get gpu device Ids {e}")
+        print("Assume no gpu device in the host")
+        gpu_ids = []
 
     return gpu_ids
