@@ -22,8 +22,10 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from multiprocessing.connection import Client, Listener
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
@@ -41,6 +43,7 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
+from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 
 
 class SimulatorRunner(FLComponent):
@@ -259,12 +262,15 @@ class SimulatorClientRunner(FLComponent):
         self.run_client_index = -1
 
         self.simulator_root = os.path.join(self.args.workspace, "simulate_job")
+        self.client_config = None
+        self.deploy_args = None
 
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
         for client_name in self.client_names:
-            self.federated_clients.append(self.deployer.create_fl_client(client_name, self.args))
+            client, self.client_config, self.deploy_args = self.deployer.create_fl_client(client_name, self.args)
+            self.federated_clients.append(client)
             app_root = os.path.join(self.simulator_root, "app_" + client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
@@ -337,12 +343,13 @@ class SimulatorClientRunner(FLComponent):
             self.logger.error(error)
         finally:
             for client in self.federated_clients:
-                client.engine.shutdown()
+                # client.engine.shutdown()
+                client.close()
             # self.deployer.close()
 
     def run_client_thread(self, num_of_threads, lock):
         stop_run = False
-        interval = 0
+        interval = 5
         last_run_client_index = -1  # indicates the last run client index
 
         try:
@@ -360,33 +367,52 @@ class SimulatorClientRunner(FLComponent):
                         last_run_client_index = self.run_client_index
 
                 client.simulate_running = True
-                # Create the ClientRunManager and ClientRunner for the new client to run
-                if client.run_manager is None:
-                    self.create_client_runner(client)
-                    self.logger.info(f"Initialize ClientRunner for client: {client.client_name}")
+                stop_run = self.do_one_task(client)
 
-                with client.run_manager.new_context() as fl_ctx:
-                    client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-                    self.fire_event(EventType.SWAP_IN, fl_ctx)
-
-                    interval, task_processed = client_runner.run_one_task(fl_ctx)
-                    self.logger.info(f"Finished one task run for client: {client.client_name}")
-
-                    # if any client got the END_RUN event, stop the simulator run.
-                    if client_runner.end_run_fired or client_runner.asked_to_stop:
-                        stop_run = True
-                        self.logger.info("End the Simulator run.")
                 client.simulate_running = False
         except BaseException as error:
             self.logger.error(error)
 
+    def do_one_task(self, client):
+        open_port = get_open_ports(1)[0]
+        command = (
+                sys.executable
+                + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
+                + self.args.workspace
+                + " --port "
+                + str(open_port)
+        )
+        _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
+
+        conn = self._create_connection(open_port)
+
+        data = {
+            "client": client,
+            "client_config": self.client_config,
+            "deploy_args": self.deploy_args
+        }
+        conn.send(data)
+        stop_run = conn.recv()
+        return stop_run
+
+    def _create_connection(self, open_port):
+        conn = None
+        while not conn:
+            try:
+                address = ("localhost", open_port)
+                conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
+            except BaseException as e:
+                time.sleep(1.0)
+                pass
+        return conn
+
     def release_last_run_resources(self, last_run_client_index):
         last_run_client = self.federated_clients[last_run_client_index]
-        with last_run_client.run_manager.new_context() as fl_ctx:
-            self.fire_event(EventType.SWAP_OUT, fl_ctx)
-
-            fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
-            last_run_client.run_manager = None
+        # with last_run_client.run_manager.new_context() as fl_ctx:
+        #     self.fire_event(EventType.SWAP_OUT, fl_ctx)
+        #
+        #     fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
+        #     last_run_client.run_manager = None
         self.logger.info(f"Clean up ClientRunner for : {last_run_client.client_name} ")
 
     def get_next_run_client(self):

@@ -23,6 +23,8 @@ from nvflare.private.aux_runner import AuxRunner
 
 from .client_engine_executor_spec import ClientEngineExecutorSpec
 
+fnf_lock = threading.Lock()
+
 
 class ClientAuxRunner(AuxRunner):
     """ClientAuxRunner to send the aux messages to the server.
@@ -31,6 +33,7 @@ class ClientAuxRunner(AuxRunner):
     it is added as an event handler!
 
     """
+    # fnf_lock = threading.Lock()
 
     def __init__(self):
         """To init the ClientAuxRunner."""
@@ -40,7 +43,7 @@ class ClientAuxRunner(AuxRunner):
         self.asked_to_stop = False
         self.engine = None
         self.fnf_requests = []
-        self.fnf_lock = threading.Lock()
+        # self.fnf_lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         AuxRunner.handle_event(self, event_type, fl_ctx)
@@ -79,7 +82,7 @@ class ClientAuxRunner(AuxRunner):
 
         if timeout <= 0.0:
             # this is fire-and-forget request
-            with self.fnf_lock:
+            with fnf_lock:
                 self.fnf_requests.append(req_to_send)
             return make_reply(ReturnCode.OK)
 
@@ -121,7 +124,7 @@ class ClientAuxRunner(AuxRunner):
                 bulk = Shareable()
                 bulk.set_header(ReservedHeaderKey.TOPIC, topic)
                 bulk.set_peer_props(fl_ctx.get_all_public_props())
-                with self.fnf_lock:
+                with fnf_lock:
                     bulk[self.DATA_KEY_BULK] = self.fnf_requests
                     reply = self.engine.aux_send(topic=topic, request=bulk, timeout=15.0, fl_ctx=fl_ctx)
                     rc = reply.get_return_code()

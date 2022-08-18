@@ -76,15 +76,15 @@ class SimulatorDeployer(ServerDeployer):
         federated_client.register()
         federated_client.start_heartbeat()
         federated_client.run_manager = None
-        servers = [{t["name"]: t["service"]} for t in client_config.get("servers")]
-        admin_agent = self.create_admin_agent(
-            sorted(servers)[0],
-            federated_client,
-            args,
-        )
-        admin_agent.start()
+        # servers = [{t["name"]: t["service"]} for t in client_config.get("servers")]
+        # admin_agent = self.create_admin_agent(
+        #     sorted(servers)[0],
+        #     federated_client,
+        #     args,
+        # )
+        # admin_agent.start()
 
-        return federated_client
+        return federated_client, client_config, args
 
     def create_admin_agent(self, server_args, federated_client: FederatedClient, args, rank=0):
         sender = AdminMessageSender(

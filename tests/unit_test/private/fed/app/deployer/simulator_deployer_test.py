@@ -62,5 +62,5 @@ class TestSimulatorDeploy(unittest.TestCase):
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
         args = parser.parse_args(['job_folder', '-o' + workspace, '-n 2', '-t 1'])
-        client = self.deployer.create_fl_client("client0", args)
+        client, _, _ = self.deployer.create_fl_client("client0", args)
         assert isinstance(client, FederatedClient)
