@@ -287,47 +287,6 @@ class SimulatorClientRunner(FLComponent):
             client.simulate_running = False
             client.status = ClientStatus.STARTED
 
-    def create_client_runner(self, client):
-        """Create the ClientRunner for the client to run the ClientApp.
-
-        Args:
-            client: the client to run
-
-        """
-        app_client_root = client.app_client_root
-        args = client.args
-        client_config_file_name = os.path.join(app_client_root, args.client_config)
-        conf = ClientJsonConfigurator(
-            config_file_name=client_config_file_name,
-        )
-        conf.configure()
-        workspace = Workspace(args.workspace, client.client_name, args.config_folder)
-        run_manager = ClientRunManager(
-            client_name=client.client_name,
-            job_id=args.job_id,
-            workspace=workspace,
-            client=client,
-            components=conf.runner_config.components,
-            handlers=conf.runner_config.handlers,
-            conf=conf,
-        )
-        client.run_manager = run_manager
-        with run_manager.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=False)
-            fl_ctx.set_prop(EngineConstant.FL_TOKEN, client.token, private=False)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
-            fl_ctx.set_prop(FLContextKey.APP_ROOT, app_client_root, private=True, sticky=True)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.SECURE_MODE, False, private=True, sticky=True)
-
-            client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
-            client_runner.init_run(app_client_root, args)
-            run_manager.add_handler(client_runner)
-            fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
-
-            # self.start_command_agent(args, client_runner, federated_client, fl_ctx)
-
     def run(self):
         try:
             self.create_clients()
@@ -358,14 +317,13 @@ class SimulatorClientRunner(FLComponent):
                 with lock:
                     if num_of_threads != len(self.federated_clients) or last_run_client_index == -1:
                         client = self.get_next_run_client()
-
-                        # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
-                        # release the memory and resources.
-                        if self.run_client_index != last_run_client_index and last_run_client_index != -1:
-                            self.release_last_run_resources(last_run_client_index)
-
-                        last_run_client_index = self.run_client_index
-
+                        # # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
+                        # # release the memory and resources.
+                        # if self.run_client_index != last_run_client_index and last_run_client_index != -1:
+                        #     self.release_last_run_resources(last_run_client_index)
+                        #
+                        # last_run_client_index = self.run_client_index
+                        #
                 client.simulate_running = True
                 stop_run = self.do_one_task(client)
 
@@ -405,15 +363,6 @@ class SimulatorClientRunner(FLComponent):
                 time.sleep(1.0)
                 pass
         return conn
-
-    def release_last_run_resources(self, last_run_client_index):
-        last_run_client = self.federated_clients[last_run_client_index]
-        # with last_run_client.run_manager.new_context() as fl_ctx:
-        #     self.fire_event(EventType.SWAP_OUT, fl_ctx)
-        #
-        #     fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
-        #     last_run_client.run_manager = None
-        self.logger.info(f"Clean up ClientRunner for : {last_run_client.client_name} ")
 
     def get_next_run_client(self):
         # Find the next client which is not currently running

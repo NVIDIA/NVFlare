@@ -150,6 +150,7 @@ class ClientTaskWorker(FLComponent):
             self.logger.error(error)
         finally:
             conn.send(stop_run)
+            admin_agent.shutdown()
 
 
 def _create_connection(listen_port):
@@ -187,3 +188,4 @@ if __name__ == "__main__":
     """
 
     main()
+    os._exit(0)
