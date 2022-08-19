@@ -14,24 +14,20 @@ must be registered for the class. A few decomposers for commonly used classes ar
 pre-registered with the module.
 
 FOBS throws :code:`TypeError` exception when it encounters an object with no decomposer
-registered.
+registered. For example,
+::
+    TypeError: can not serialize 'xxx' object
 
 Usage
 -----
 
 FOBS defines following 4 functions, similar to Pickle,
 
-* :code:`serialize(obj)`: Serializes obj and returns bytes
-* :code:`serialize_stream(obj, stream)`: Serializes obj and writes the result to stream
-* :code:`deserialize(data)`: Deserializes the data and returns an object
-* :code:`deserialize_stream(stream)`: Reads data from stream and deserializes it into an object
+* :code:`dumps(obj)`: Serializes obj and returns bytes
+* :code:`dump(obj, stream)`: Serializes obj and writes the result to stream
+* :code:`loads(data)`: Deserializes the data and returns an object
+* :code:`load(stream)`: Reads data from stream and deserializes it into an object
 
-Following aliases are defined to make the function more familiar to Pickle/JSON users,
-::
-    load = deserialize_stream
-    loads = deserialize
-    dump = serialize_stream
-    dumps = serialize
 
 Examples,
 ::
@@ -56,7 +52,15 @@ Decomposers are very similar to serializers, except that they don't have to conv
 into bytes directly, they can just break the object into other objects that are serializable.
 
 An object is serializable if its type is supported by MessagePack or a decomposer is
-registered for its class. MessagePack supports following types natively,
+registered for its class.
+
+FOBS recursively decomposes objects till all objects are of types supported by MessagePack.
+Decomposing looping must be avoided, which causes stack overflow. Decomposers form a loop
+when one class is decomposed into another class which is eventually decomposed into the
+original class. For example, this scenario forms the simplest loop: X decomposes into Y
+and Y decomposes back into X.
+
+MessagePack supports following types natively,
 
 * None
 * bool
@@ -69,24 +73,29 @@ registered for its class. MessagePack supports following types natively,
 * list
 * dict
 
-FOBS recursively decomposes objects till all objects are of types supported by MessagePack.
-Decomposing looping must be avoided, which causes stack overflow. Decomposers form a loop
-when one class is decomposed into another class which is eventually decomposed into the
-original class. For example, this scenario forms the simplest loop: X decomposes into Y
-and Y decomposes back into X.
-
 Decomposers for following classes are included with `fobs` module and auto-registered,
 
+* tuple
+* set
 * datetime
+* Shareable
+* FLContext
+* DXO
+* Client
+* RunSnapshot
+* Workspace
+* Signal
+* AnalyticsDataType
+* argparse.Namespace
+* Learnable
+* _CtxPropReq
+* _EventReq
+* _EventStats
 * numpy.float32
 * numpy.float64
 * numpy.int32
 * numpy.int64
 * numpy.ndarray
-* Learnable
-* Shareable
-* FLContext
-* DXO
 
 All classes defined in :code:`fobs/decomposers` folder are automatically registered.
 Other decomposers must be registered manually like this,
