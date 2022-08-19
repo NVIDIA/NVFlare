@@ -146,3 +146,6 @@ wrksp/*
 
 # IDE
 *.iml
+
+# Jupyter Notebook
+.ipynb_checkpoints
