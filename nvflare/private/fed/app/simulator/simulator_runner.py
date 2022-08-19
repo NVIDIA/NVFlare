@@ -22,28 +22,23 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing.connection import Client, Listener
+from multiprocessing.connection import Client
 
-from nvflare.apis.event_type import EventType
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
-from nvflare.apis.workspace import Workspace
+from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.private.defs import AppFolderConstants, EngineConstant
+from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
-from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
-from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
-from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 
 
 class SimulatorRunner(FLComponent):
@@ -308,50 +303,59 @@ class SimulatorClientRunner(FLComponent):
 
     def run_client_thread(self, num_of_threads, lock):
         stop_run = False
-        interval = 5
-        last_run_client_index = -1  # indicates the last run client index
+        interval = 1
+        client_to_run = None  # indicates the next client to run
 
         try:
             while not stop_run:
                 time.sleep(interval)
                 with lock:
-                    if num_of_threads != len(self.federated_clients) or last_run_client_index == -1:
+                    if not client_to_run:
                         client = self.get_next_run_client()
-                        # # if the last run_client is not the next one to run again, clear the run_manager and ClientRunner to
-                        # # release the memory and resources.
-                        # if self.run_client_index != last_run_client_index and last_run_client_index != -1:
-                        #     self.release_last_run_resources(last_run_client_index)
-                        #
-                        # last_run_client_index = self.run_client_index
-                        #
+                    else:
+                        client = client_to_run
+
                 client.simulate_running = True
-                stop_run = self.do_one_task(client)
+                stop_run, client_to_run = self.do_one_task(client, num_of_threads, lock)
 
                 client.simulate_running = False
         except BaseException as error:
             self.logger.error(error)
 
-    def do_one_task(self, client):
+    def do_one_task(self, client, num_of_threads, lock):
         open_port = get_open_ports(1)[0]
         command = (
-                sys.executable
-                + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
-                + self.args.workspace
-                + " --port "
-                + str(open_port)
+            sys.executable
+            + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
+            + self.args.workspace
+            + " --port "
+            + str(open_port)
         )
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
 
         conn = self._create_connection(open_port)
 
-        data = {
-            "client": client,
-            "client_config": self.client_config,
-            "deploy_args": self.deploy_args
-        }
+        data = {"client": client, "client_config": self.client_config, "deploy_args": self.deploy_args}
         conn.send(data)
-        stop_run = conn.recv()
-        return stop_run
+
+        while True:
+            stop_run = conn.recv()
+
+            with lock:
+                if num_of_threads != len(self.federated_clients):
+                    next_client = self.get_next_run_client()
+                else:
+                    next_client = client
+            if next_client.client_name == client.client_name:
+                conn.send(True)
+            else:
+                conn.send(False)
+                break
+
+            if stop_run:
+                break
+
+        return stop_run, next_client
 
     def _create_connection(self, open_port):
         conn = None

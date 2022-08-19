@@ -114,8 +114,6 @@ class ClientTaskWorker(FLComponent):
             interval, task_processed = client_runner.run_one_task(fl_ctx)
             self.logger.info(f"Finished one task run for client: {client.client_name}")
 
-            self.release_resources(client)
-
             # if any client got the END_RUN event, stop the simulator run.
             if client_runner.end_run_fired or client_runner.asked_to_stop:
                 stop_run = True
@@ -131,7 +129,7 @@ class ClientTaskWorker(FLComponent):
         self.logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
     def run(self, args, conn):
-        stop_run = False
+        admin_agent = None
         try:
             data = conn.recv()
             client = data["client"]
@@ -145,12 +143,20 @@ class ClientTaskWorker(FLComponent):
             servers = [{t["name"]: t["service"]} for t in client_config.get("servers")]
             admin_agent = self.create_admin_agent(sorted(servers)[0], client, deploy_args)
             admin_agent.start()
-            intereval, stop_run = self.do_one_task(client)
+            while True:
+                _, stop_run = self.do_one_task(client)
+                conn.send(stop_run)
+
+                continue_run = conn.recv()
+                if not continue_run:
+                    self.release_resources(client)
+                    break
+
         except BaseException as error:
             self.logger.error(error)
         finally:
-            conn.send(stop_run)
-            admin_agent.shutdown()
+            if admin_agent:
+                admin_agent.shutdown()
 
 
 def _create_connection(listen_port):
