@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import threading
+import time
 from multiprocessing.connection import Listener
 
 from nvflare.apis.event_type import EventType
@@ -184,8 +185,13 @@ def main():
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    task_worker = ClientTaskWorker()
-    task_worker.run(args, conn)
+    try:
+        task_worker = ClientTaskWorker()
+        task_worker.run(args, conn)
+    finally:
+        stop_event.set()
+        conn.close()
+        AuditService.close()
 
 
 if __name__ == "__main__":
@@ -194,4 +200,5 @@ if __name__ == "__main__":
     """
 
     main()
+    time.sleep(2)
     os._exit(0)

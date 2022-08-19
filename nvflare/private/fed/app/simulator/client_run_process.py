@@ -54,27 +54,31 @@ def main():
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
-    if not os.path.isfile(log_config_file_path):
-        log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, "simulate_job", "client_run.log.txt")
-    add_logfile_handler(log_file)
+    try:
+        log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
+        if not os.path.isfile(log_config_file_path):
+            log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
+        logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+        log_file = os.path.join(args.workspace, "simulate_job", "client_run.log.txt")
+        add_logfile_handler(log_file)
 
-    os.chdir(args.workspace)
-    AuthorizationService.initialize(EmptyAuthorizer())
-    AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+        os.chdir(args.workspace)
+        AuthorizationService.initialize(EmptyAuthorizer())
+        AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    client_names = args.client_names.split(",")
-    server_ports = []
-    for part in args.server_ports.split(","):
-        server_ports.append(int(part))
-    deployer = SimulatorDeployer(server_ports)
-    client_runner = SimulatorClientRunner(args, client_names, deployer)
-    client_runner.run()
+        client_names = args.client_names.split(",")
+        server_ports = []
+        for part in args.server_ports.split(","):
+            server_ports.append(int(part))
+        deployer = SimulatorDeployer(server_ports)
+        client_runner = SimulatorClientRunner(args, client_names, deployer)
+        client_runner.run()
+    finally:
+        stop_event.set()
+        AuditService.close()
 
 
 if __name__ == "__main__":
