@@ -1,0 +1,32 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "xgboost_train"
+      ],
+      "executor": {
+        "path": "xgboost_executor.XGBoostExecutor",
+        "args": {
+          "server_key_path": "server-key.pem",
+          "server_cert_path": "server-cert.pem",
+          "client_key_path": "client-key.pem",
+          "client_cert_path": "client-cert.pem",
+          "num_rounds": 20,
+          "train_data_str": "agaricus.txt.train",
+          "test_data_str": "agaricus.txt.test",
+          "xgboost_params": {
+            "max_depth": 8,
+            "eta": 0.1,
+            "objective": "binary:logistic",
+            "eval_metric": "auc",
+            "gpu_id": 0,
+            "tree_method": "gpu_hist"
+          }
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": []
+}

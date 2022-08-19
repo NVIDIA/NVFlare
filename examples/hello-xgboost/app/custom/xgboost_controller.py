@@ -21,13 +21,15 @@ from nvflare.apis.impl.controller import Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
+XGBOOST_TASK_NAME = "xgboost_train"
 
-class MPIController(Controller):
+
+class XGBoostController(Controller):
     def __init__(
         self,
         train_timeout: int = 300,
     ):
-        """MPI controller.
+        """XGBoostController.
 
         Args:
             train_timeout (int, optional): Time to wait for clients to do local training.
@@ -48,7 +50,7 @@ class MPIController(Controller):
             self.system_panic(reason="Collective communication failed", fl_ctx=fl_ctx)
 
     def start_controller(self, fl_ctx: FLContext) -> None:
-        self.log_info(fl_ctx, "Initializing MPIController workflow.")
+        self.log_info(fl_ctx, f"Initializing {self.__class__.__name__} workflow.")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
@@ -60,7 +62,7 @@ class MPIController(Controller):
             data.set_header(CollectiveCommShareableHeader.WORLD_SIZE, len(clients))
 
             train_task = Task(
-                name="mpi_train",
+                name=XGBOOST_TASK_NAME,
                 data=data,
                 timeout=self._train_timeout,
             )

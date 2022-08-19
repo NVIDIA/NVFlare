@@ -14,8 +14,8 @@
   ],
   "workflows": [
     {
-      "id": "mpi_controller",
-      "path": "mpi_controller.MPIController",
+      "id": "xgboost_controller",
+      "path": "xgboost_controller.XGBoostController",
       "args": {
         "train_timeout": 30000
       }

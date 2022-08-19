@@ -26,15 +26,34 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.mpi_proxy.mpi_local_proxy import MpiLocalProxy
 
+XGBOOST_TASK_NAME = "xgboost_train"
 
-class MPIExecutor(Executor):
-    def __init__(self, server_key_path, server_cert_path, client_cert_path, client_key_path):
+
+class XGBoostExecutor(Executor):
+    def __init__(
+        self,
+        server_key_path,
+        server_cert_path,
+        client_cert_path,
+        client_key_path,
+        num_rounds: int,
+        train_data_str,
+        test_data_str,
+        xgboost_params=None,
+    ):
         super().__init__()
         self._mpi_local_proxy = None
         self._server_key_path = server_key_path
         self._server_cert_path = server_cert_path
         self._client_cert_path = client_cert_path
         self._client_key_path = client_key_path
+
+        self._num_rounds = num_rounds
+        self._train_data_str = train_data_str
+        self._test_data_str = test_data_str
+        self._xgboost_params = (
+            xgboost_params if xgboost_params else {"max_depth": 2, "eta": 1, "objective": "binary:logistic"}
+        )
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -52,7 +71,7 @@ class MPIExecutor(Executor):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Executing {task_name}")
         try:
-            if task_name == "mpi_train":
+            if task_name == XGBOOST_TASK_NAME:
                 self._do_training(shareable, fl_ctx)
                 return make_reply(ReturnCode.OK)
             else:
@@ -76,21 +95,17 @@ class MPIExecutor(Executor):
         ]
         with xgb.rabit.RabitContext([e.encode() for e in rabit_env]):
             # Load file, file will not be sharded in federated mode.
-            dtrain = xgb.DMatrix("agaricus.txt.train")
-            dtest = xgb.DMatrix("agaricus.txt.test")
-
-            # Specify parameters via map, definition are same as c++ version
-            param = {"max_depth": 2, "eta": 1, "objective": "binary:logistic"}
+            dtrain = xgb.DMatrix(self._train_data_str)
+            dtest = xgb.DMatrix(self._test_data_str)
 
             # Specify validations set to watch performance
             watchlist = [(dtest, "eval"), (dtrain, "train")]
-            num_round = 20
 
             # Run training, all the features in training API is available.
             bst = xgb.train(
-                param,
+                self._xgboost_params,
                 dtrain,
-                num_round,
+                self._num_rounds,
                 evals=watchlist,
                 early_stopping_rounds=2,
                 verbose_eval=False,
