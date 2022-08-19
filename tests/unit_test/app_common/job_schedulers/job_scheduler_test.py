@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -55,6 +56,9 @@ class DummyResourceManager(ResourceManagerSpec):
         print(f"{self.name}: freeing resources {resources}")
         for k in resources:
             self.resources[k] += resources[k]
+
+    def report_resources(self, fl_ctx):
+        return self.resources
 
 
 class Site:

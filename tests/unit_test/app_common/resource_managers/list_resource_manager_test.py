@@ -183,4 +183,4 @@ class TestListResourceManager:
         with engine.new_context() as fl_ctx:
             list_resource_manager.handle_event(event_type=EventType.SYSTEM_END, fl_ctx=fl_ctx)
         assert list_resource_manager.reserved_resources == {}
-        assert list_resource_manager.resources == {"gpu": deque(["gpu_1", "gpu_2", "gpu_3", "gpu_0"])}
+        assert list_resource_manager.resources == {"gpu": deque(["gpu_0", "gpu_1", "gpu_2", "gpu_3"])}
