@@ -14,6 +14,7 @@
 
 import pytest
 
+from nvflare.lighter.cli_exception import CLIException
 from nvflare.lighter.poc_commands import client_gpu_assignments, get_gpu_ids, get_package_command
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 
@@ -53,7 +54,7 @@ class TestPOCCommands:
         assert gpu_ids == [0]
         gpu_ids = get_gpu_ids([0], host_gpu_ids)
         assert gpu_ids == [0]
-        with pytest.raises(ValueError) as e:
+        with pytest.raises(CLIException) as e:
             # gpu id =1 is not valid GPU ID as the host only has 1 gpu where id = 0
             gpu_ids = get_gpu_ids([0, 1], host_gpu_ids)
 

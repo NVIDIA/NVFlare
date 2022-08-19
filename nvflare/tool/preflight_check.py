@@ -15,7 +15,7 @@
 import argparse
 import os
 
-from .package_checker import (
+from nvflare.tool.package_checker import (
     ClientPackageChecker,
     NVFlareConsolePackageChecker,
     OverseerPackageChecker,
@@ -23,13 +23,13 @@ from .package_checker import (
 )
 
 
-def main():
-    parser = argparse.ArgumentParser("nvflare preflight check")
+def define_preflight_check_parser(parser):
     parser.add_argument("--package_root", required=True, type=str, help="root folder of all the packages")
     parser.add_argument("--packages", type=str, nargs="*")
-    args = parser.parse_args()
-    package_root = args.package_root
 
+
+def check_packages(args):
+    package_root = args.package_root
     if not os.path.isdir(package_root):
         print(f"package_root {package_root} is not a valid directory.")
         return
@@ -62,6 +62,13 @@ def main():
             if p.should_be_checked():
                 p.check()
         p.print_report()
+
+
+def main():
+    parser = argparse.ArgumentParser("nvflare preflight check")
+    define_preflight_check_parser(parser)
+    args = parser.parse_args()
+    check_packages(args)
 
 
 if __name__ == "__main__":
