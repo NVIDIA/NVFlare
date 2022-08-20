@@ -156,3 +156,33 @@ class AlgorithmConstants(object):
     SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
     SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
     SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"
+
+
+class StatisticsConstants(AppConstants):
+    STATS_COUNT = "count"
+    STATS_MEAN = "mean"
+    STATS_SUM = "sum"
+    STATS_VAR = "var"
+    STATS_STDDEV = "stddev"
+    STATS_HISTOGRAM = "histogram"
+    STATS_MAX = "max"
+    STATS_MIN = "min"
+    STATS_FEATURES = "stats_features"
+
+    STATS_GLOBAL_MEAN = "global_mean"
+    STATS_GLOBAL_COUNT = "global_count"
+    STATS_BINS = "bins"
+    STATS_BIN_RANGE = "range"
+    STATS_TARGET_METRICS = "metrics"
+
+    FED_STATS_TASK = "fed_stats"
+    METRIC_TASK_KEY = "fed_stats_metric"
+    STATS_1st_METRICS = "fed_stats_1st_metric"
+    STATS_2nd_METRICS = "fed_stats_2nd_metric"
+
+    GLOBAL = "Global"
+
+    ordered_metrics = {
+        STATS_1st_METRICS: [STATS_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
+        STATS_2nd_METRICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
+    }
