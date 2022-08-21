@@ -20,9 +20,11 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import make_session_token
 from nvflare.fuel.utils.time_utils import time_to_string
+from nvflare.fuel.hci.proto import InternalCommands
 
-LIST_SESSIONS_CMD_NAME = "list_sessions"
-CHECK_SESSION_CMD_NAME = "_check_session"
+
+LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
+CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
 class Session(object):
@@ -131,7 +133,7 @@ class SessionManager(CommandModule):
                 CommandSpec(
                     name=LIST_SESSIONS_CMD_NAME,
                     description="list user sessions",
-                    usage="list_sessions",
+                    usage=LIST_SESSIONS_CMD_NAME,
                     handler_func=self.handle_list_sessions,
                     visible=False,
                     enabled=False,
@@ -139,7 +141,7 @@ class SessionManager(CommandModule):
                 CommandSpec(
                     name=CHECK_SESSION_CMD_NAME,
                     description="check if session is active",
-                    usage="check_session",
+                    usage=CHECK_SESSION_CMD_NAME,
                     handler_func=self.handle_check_session,
                     visible=False,
                 ),

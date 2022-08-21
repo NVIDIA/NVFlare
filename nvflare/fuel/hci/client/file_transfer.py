@@ -234,13 +234,13 @@ class FileTransferModule(CommandModule):
         Returns:
 
         """
-        print('generating cmd module for {}'.format(server_cmd_spec.client_cmd))
+        #print('generating cmd module for {}'.format(server_cmd_spec.client_cmd))
         if not server_cmd_spec.client_cmd:
             return None
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            print('no cmd handler found for {}'.format(server_cmd_spec.client_cmd))
+            #print('no cmd handler found for {}'.format(server_cmd_spec.client_cmd))
             return None
 
         return CommandModuleSpec(

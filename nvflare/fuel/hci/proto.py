@@ -15,8 +15,25 @@
 import json
 from datetime import datetime
 from typing import List
+from enum import Enum
 
 from .table import Table
+
+
+class CredentialType(str, Enum):
+
+    PASSWORD = "password"
+    CERT = "cert"
+
+
+class InternalCommands(object):
+
+    PWD_LOGIN = "_login"
+    CERT_LOGIN = "_cert_login"
+    LOGOUT = "_logout"
+    GET_CMD_LIST = "_commands"
+    CHECK_SESSION = "_check_session"
+    LIST_SESSIONS = "list_sessions"
 
 
 class ConfirmMethod(object):

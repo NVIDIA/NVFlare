@@ -19,18 +19,17 @@ import os
 import signal
 import time
 import traceback
-import sys, select
 from datetime import datetime
-from enum import Enum
 from functools import partial
 from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
+from nvflare.fuel.hci.proto import CredentialType
 from nvflare.fuel.hci.table import Table
 
-from .api import AdminAPI, CommandInfo
+from .api import AdminAPI, CommandInfo, SessionEventType
 from .api_status import APIStatus
 from .api_spec import ServiceFinder
 
@@ -47,11 +46,6 @@ class _BuiltInCmdModule(CommandModule):
                 ),
             ],
         )
-
-
-class CredentialType(str, Enum):
-    PASSWORD = "password"
-    CERT = "cert"
 
 
 class AdminClient(cmd.Cmd):
@@ -94,7 +88,6 @@ class AdminClient(cmd.Cmd):
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
-        self.asked_to_stop = False
 
         if not isinstance(service_finder, ServiceFinder):
             raise TypeError("service_finder must be ServiceProvider but got {}.".format(
@@ -127,16 +120,24 @@ class AdminClient(cmd.Cmd):
             user_name=self.user_name,
             debug=self.debug,
             poc=poc,
+            session_event_cb=self.handle_session_event,
+            session_timeout_interval=900,   # close the client after 15 minutes of inactivity
+            session_status_check_interval=10   # check server for session status every 10 seconds
         )
-
         signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
 
-    def session_ended(self, message):
-        self.write_error(message)
-        os.kill(os.getpid(), signal.SIGUSR1)
+    def handle_session_event(self, event_type: str, message: str):
+        if self.debug:
+            print(f"DEBUG: received session event: {event_type}")
+
+        if message:
+            self.write_string(message)
+
+        if event_type == SessionEventType.SESSION_CLOSED:
+            os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
-        self.api.close_session_monitor()
+        self.api.close()
         raise ConnectionError
 
     def _set_output_file(self, file, no_stdout):
@@ -329,31 +330,6 @@ class AdminClient(cmd.Cmd):
             self.write_string(self.api.shutdown_msg)
             return True
 
-    def _get_input(self, timeout):
-        # signal.alarm(1)
-        # try:
-        #     #result = (True, self.stdin.readline())
-        #     result = (True, input())
-        # except:
-        #     result = (False, "")
-        # signal.alarm(0)
-        # return True, input(">")
-
-        i, o, e = select.select([sys.stdin], [], [], 1)
-        if i:
-            print('has data')
-            #return True, 'ok'
-            return True, input(">")
-        else:
-            return False, ""
-
-    def ask_to_stop(self):
-        self.asked_to_stop = True
-
-    def interrupted(signum, frame):
-        "called when read times out"
-        print('interrupted!')
-
     def cmdloop(self, intro=None):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
         off the received input, and dispatch to action methods, passing them
@@ -365,7 +341,6 @@ class AdminClient(cmd.Cmd):
         if self.use_rawinput and self.completekey:
             try:
                 import readline
-
                 self.old_completer = readline.get_completer()
                 readline.set_completer(self.complete)
                 readline.parse_and_bind(self.completekey + ": complete")
@@ -411,19 +386,17 @@ class AdminClient(cmd.Cmd):
                     pass
 
     def run(self):
-
         try:
-            self.stdout.write("Waiting for token from successful login...\n")
             while not self.api.is_ready():
                 time.sleep(1.0)
                 if self.api.shutdown_received:
                     return False
 
-            # self.api.start_session_monitor(self.session_ended)
-            # above line was commented out, but if we want to use it, need to be logged in to call server_execute("_check_session") and consider how SP changes impact this
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
+        except ConnectionError:
+            pass
         finally:
-            self.service_finder.stop()
+            self.api.close()
 
     def _get_login_creds(self):
         if self.credential_type == CredentialType.PASSWORD:

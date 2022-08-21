@@ -24,9 +24,10 @@ from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
-from nvflare.fuel.hci.proto import make_error, ConfirmMethod
+from nvflare.fuel.hci.proto import make_error, ConfirmMethod, InternalCommands
 from nvflare.fuel.hci.reg import CommandModule, CommandRegister, CommandEntry
 from nvflare.fuel.hci.table import Table
+from nvflare.fuel.utils.fsm import State, FSM
 
 from .api_spec import AdminAPISpec, ServiceFinder, ReplyProcessor, CommandContext, CommandCtxKey, CommandInfo
 from .api_status import APIStatus
@@ -34,6 +35,27 @@ from .api_status import APIStatus
 _CMD_TYPE_UNKNOWN = 0
 _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
+
+_KEY_STATUS = "status"
+_KEY_DETAILS = "details"
+
+
+def session_event_cb_signature(
+        event_type: str,
+        info: str):
+    """
+    This defines the signature of session_event callback.
+    When creating the AdminAPI object, you can provide a session event callback function.
+    This function is called when a session event happens.
+
+    Args:
+        event_type: the event type
+        info: information of the event
+
+    Returns:
+
+    """
+    pass
 
 
 class _ServerReplyJsonProcessor(object):
@@ -142,7 +164,6 @@ class _CmdListReplyProcessor(ReplyProcessor):
             # if confirm == 'auth' and not client.require_login:
             # the user is not authenticated - skip this command
             # continue
-            print("add command: {}.{}.{}".format(scope, cmd_name, client_cmd))
             api.server_cmd_reg.add_command(
                 scope_name=scope,
                 cmd_name=cmd_name,
@@ -159,6 +180,137 @@ class _CmdListReplyProcessor(ReplyProcessor):
         api.server_cmd_received = True
 
 
+class SessionEventType(object):
+
+    WAIT_FOR_SERVER_ADDR = "wait_for_server_addr"
+    SERVER_ADDR_OBTAINED = "server_addr_obtained"
+    SESSION_CLOSED = "session_closed"   # close the current session
+    LOGIN_FAILURE = "login_failure"     # cannot login to server
+    TRYING_LOGIN = "trying_login"       # still try to login
+    SP_ADDR_CHANGED = "sp_addr_changed" # service provider address changed
+    SESSION_TIMEOUT = "session_timeout" # server timed out current session
+
+
+_STATE_NAME_WAIT_FOR_SERVER_ADDR = "wait_for_server_addr"
+_STATE_NAME_LOGIN = "login"
+_STATE_NAME_OPERATE = "operate"
+
+_SESSION_LOGGING_OUT = "session is logging out"
+
+
+class _WaitForServerAddress(State):
+
+    def __init__(self, api):
+        State.__init__(self, _STATE_NAME_WAIT_FOR_SERVER_ADDR)
+        self.api = api
+
+    def execute(self, **kwargs):
+        api = self.api
+        api.fire_session_event(
+            SessionEventType.WAIT_FOR_SERVER_ADDR,
+            "Trying to obtain server address"
+        )
+        with api.new_addr_lock:
+            if api.new_host and api.new_port and api.new_ssid:
+                api.fire_session_event(
+                    SessionEventType.SERVER_ADDR_OBTAINED,
+                    f"Obtained server address: {api.new_host}:{api.new_port}"
+                )
+                return _STATE_NAME_LOGIN
+            else:
+                # stay here
+                return ""
+
+
+class _TryLogin(State):
+
+    def __init__(self, api):
+        State.__init__(self, _STATE_NAME_LOGIN)
+        self.api = api
+
+    def enter(self):
+        api = self.api
+        api.server_sess_active = False
+        with api.new_addr_lock:
+            new_host = api.new_host
+            new_port = api.new_port
+            new_ssid = api.new_ssid
+
+        with api.addr_lock:
+            api.host = new_host
+            api.port = new_port
+            api.ssid = new_ssid
+
+    def execute(self, **kwargs):
+        api = self.api
+        api.fire_session_event(
+            SessionEventType.TRYING_LOGIN,
+            "Trying to login, please wait ..."
+        )
+
+        result = api.auto_login()
+        if result[_KEY_STATUS] == APIStatus.SUCCESS:
+            api.server_sess_active = True
+            return _STATE_NAME_OPERATE
+
+        details = result.get(_KEY_DETAILS, "")
+        if details != _SESSION_LOGGING_OUT:
+            api.fire_session_event(SessionEventType.LOGIN_FAILURE, details)
+
+        return FSM.STATE_NAME_EXIT
+
+
+class _Operate(State):
+
+    def __init__(self, api, sess_check_interval):
+        State.__init__(self, _STATE_NAME_OPERATE)
+        self.api = api
+        self.last_sess_check_time = None
+        self.sess_check_interval = sess_check_interval
+
+    def enter(self):
+        self.api.server_sess_active = True
+
+    def execute(self, **kwargs):
+        # check whether server addr has changed
+        api = self.api
+        with api.new_addr_lock:
+            new_host = api.new_host
+            new_port = api.new_port
+            new_ssid = api.new_ssid
+
+        with api.addr_lock:
+            cur_host = api.host
+            cur_port = api.port
+            cur_ssid = api.ssid
+
+        if new_host != cur_host or new_port != cur_port or cur_ssid != new_ssid:
+            # need to relogin
+            api.fire_session_event(
+                SessionEventType.SP_ADDR_CHANGED,
+                f"Server address changed to {new_host}:{new_port}"
+            )
+            return _STATE_NAME_LOGIN
+
+        # check server session status
+        if not self.sess_check_interval:
+            return ""
+
+        if not self.last_sess_check_time or time.time() - self.last_sess_check_time >= self.sess_check_interval:
+            self.last_sess_check_time = time.time()
+            result = api.check_session_status_on_server()
+            details = result.get(_KEY_DETAILS, "")
+            status = result[_KEY_STATUS]
+            if status in APIStatus.ERROR_INACTIVE_SESSION:
+                if details != _SESSION_LOGGING_OUT:
+                    api.fire_session_event(SessionEventType.SESSION_TIMEOUT, details)
+
+                # end the session
+                return FSM.STATE_NAME_EXIT
+
+        return ""
+
+
 class AdminAPI(AdminAPISpec):
     def __init__(
         self,
@@ -172,12 +324,13 @@ class AdminAPI(AdminAPISpec):
         cmd_modules: Optional[List] = None,
         poc: bool = False,
         debug: bool = False,
+        session_event_cb=None,
+        session_timeout_interval=None,
+        session_status_check_interval=None
     ):
         """Underlying API to keep certs, keys and connection information and to execute admin commands through do_command.
 
         Args:
-            host: cn provisioned for the server, with this fully qualified domain name resolving to the IP of the FL server. This may be set by the OverseerAgent.
-            port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int if provided. This may be set by the OverseerAgent.
             ca_cert: path to CA Cert file, by default provisioned rootCA.pem
             client_cert: path to admin client Cert file, by default provisioned as client.crt
             client_key: path to admin client Key file, by default provisioned as client.key
@@ -185,10 +338,12 @@ class AdminAPI(AdminAPISpec):
             download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             service_finder: used to obtain the primary service provider to set the host and port of the active server
-            auto_login: Whether to use stored credentials to automatically log in (required to be True with OverseerAgent to provide high availability)
             user_name: Username to authenticate with FL server
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
+            session_event_cb: the session event callback
+            session_timeout_interval: if specified, automatically close the session after inactive for this long
+            session_status_check_interval: how often to check session status with server
         """
         super().__init__()
         if cmd_modules is None:
@@ -214,6 +369,11 @@ class AdminAPI(AdminAPISpec):
         self.port = None
         self.ssid = None
         self.addr_lock = threading.Lock()
+
+        self.new_host = None
+        self.new_port = None
+        self.new_ssid = None
+        self.new_addr_lock = threading.Lock()
 
         self.poc = poc
         if self.poc:
@@ -255,57 +415,64 @@ class AdminAPI(AdminAPISpec):
         self.shutdown_msg = None
 
         self.server_sess_active = False
+        self.shutdown_asked = False
 
         self.sess_monitor_thread = None
         self.sess_monitor_active = False
 
+        if session_event_cb is not None:
+            assert callable(session_event_cb), "session_event_cb must be callable"
+        self.session_event_cb = session_event_cb
+
+        # create the FSM for session monitoring
+        fsm = FSM("session monitor")
+        fsm.add_state(_WaitForServerAddress(self))
+        fsm.add_state(_TryLogin(self))
+        fsm.add_state(_Operate(self, session_status_check_interval))
+        self.fsm = fsm
+
+        self.session_timeout_interval = session_timeout_interval
+        self.last_sess_activity_time = None
+
+        self.closed = False
+        self.in_logout = False
         self.service_finder.start(self._handle_sp_address_change)
+        self._start_session_monitor()
+
+    def fire_session_event(self, event_type: str, msg: str):
+        if self.session_event_cb is not None:
+            self.session_event_cb(event_type, msg)
 
     def _handle_sp_address_change(self, host: str, port: int, ssid: str):
-        # if needing to log out of previous server, this may be where to issue server_execute("_logout")
         with self.addr_lock:
-            self.host = host
-            self.port = port
-            self.ssid = ssid
+            if host == self.host and port == self.port and ssid == self.ssid:
+                # no change
+                return
 
-        print(
-            f"Got service provider address: host={host} admin_port={port} SSID={ssid}"
-        )
+        with self.new_addr_lock:
+            self.new_host = host
+            self.new_port = port
+            self.new_ssid = ssid
 
-        thread = threading.Thread(target=self._login_sp)
-        thread.start()
+    def _try_auto_login(self):
+        err_msg = "Incorrect user name or certificate."
+        if self.poc:
+            err_msg = "Incorrect key for POC mode."
 
-    def _login_sp(self):
-        if not self._auto_login():
-            print("cannot log in, shutting down...")
-            self.shutdown_received = True
+        if self.poc:
+            return self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
+        else:
+            return self.login(username=self.user_name)
 
-    def _auto_login(self):
-        try_count = 0
-        while try_count < 5:
-            if self.poc:
-                self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
-                print(f"login_result: {self.login_result} token: {self.token}")
-                if self.login_result == "OK":
-                    return True
-                elif self.login_result == "REJECT":
-                    print("Incorrect key for POC mode.")
-                    return False
-                else:
-                    print("Communication Error - please try later")
-                    try_count += 1
-            else:
-                self.login(username=self.user_name)
-                if self.login_result == "OK":
-                    return True
-                elif self.login_result == "REJECT":
-                    print("Incorrect user name or certificate.")
-                    return False
-                else:
-                    print("Communication Error - please try later")
-                    try_count += 1
-            time.sleep(1.0)
-        return False
+    def auto_login(self):
+        try:
+            result = self._try_auto_login()
+            self.last_sess_activity_time = time.time()
+        except:
+            result = {
+                _KEY_STATUS: APIStatus.ERROR_RUNTIME,
+                _KEY_DETAILS: "Exception occurred when trying to login - please try later"}
+        return result
 
     def _load_client_cmds_from_modules(self, cmd_modules):
         if cmd_modules:
@@ -320,65 +487,87 @@ class AdminAPI(AdminAPISpec):
     def register_command(self, cmd_entry):
         self.all_cmds.append(cmd_entry.name)
 
-    def start_session_monitor(self, session_ended_callback, interval=5):
-        if self.sess_monitor_thread and self.sess_monitor_thread.is_alive():
-            self.close_session_monitor()
+    def _start_session_monitor(self, interval=0.2):
         self.sess_monitor_thread = threading.Thread(
-            target=self._check_session, args=(session_ended_callback, interval), daemon=True
+            target=self._monitor_session, args=(interval,), daemon=True
         )
         self.sess_monitor_active = True
         self.sess_monitor_thread.start()
 
-    def close_session_monitor(self):
+    def _close_session_monitor(self):
         self.sess_monitor_active = False
         if self.sess_monitor_thread and self.sess_monitor_thread.is_alive():
             self.sess_monitor_thread.join()
             self.sess_monitor_thread = None
+        if self.debug:
+            print("DEBUG: session monitor closed!")
 
-    def _check_session(self, session_ended_callback, interval):
-        error_msg = ""
-        connection_error_counter = 0
+    def check_session_status_on_server(self):
+        return self.server_execute("_check_session")
+
+    def _do_monitor_session(self, interval):
+        self.fsm.set_current_state(_STATE_NAME_WAIT_FOR_SERVER_ADDR)
         while True:
             time.sleep(interval)
 
             if not self.sess_monitor_active:
                 return
 
+            if self.shutdown_asked:
+                return
+
             if self.shutdown_received:
                 error_msg = self.shutdown_msg
                 break
 
-            resp = self.server_execute("_check_session")
-            status = resp["status"]
+            # see whether the session should be timed out for inactivity
+            if self.last_sess_activity_time and self.session_timeout_interval and \
+                    time.time() - self.last_sess_activity_time > self.session_timeout_interval:
+                error_msg = "Your session is ended due to inactivity"
+                break
 
-            connection_error_counter += 1
-            if status != APIStatus.ERROR_SERVER_CONNECTION:
-                connection_error_counter = 0
-
-            if status in APIStatus.ERROR_INACTIVE_SESSION or (
-                status in APIStatus.ERROR_SERVER_CONNECTION and connection_error_counter > 60 // interval
-            ):
-                for item in resp["data"]:
-                    if item["type"] == "error":
-                        error_msg = item["data"]
+            next_state = self.fsm.execute()
+            if not next_state:
+                # end the session!
+                error_msg = ""
                 break
 
         self.server_sess_active = False
-        session_ended_callback(error_msg)
+        self.fire_session_event(SessionEventType.SESSION_CLOSED, error_msg)
+
+    def _monitor_session(self, interval):
+        try:
+            self._do_monitor_session(interval)
+        except:
+            pass
+        self.close()
 
     def logout(self):
         """Send logout command to server."""
-        resp = self.server_execute("_logout")
-        self.server_sess_active = False
+        self.in_logout = True
+        resp = self.server_execute(InternalCommands.LOGOUT)
+        self.close()
         return resp
+
+    def close(self):
+        if self.closed:
+            return
+
+        self.closed = True
+        self.service_finder.stop()
+        self.server_sess_active = False
+        self.shutdown_asked = True
+        self._close_session_monitor()
 
     def get_command_list_from_server(self):
         # get command list from server
         self.server_cmd_received = False
-        self.server_execute("_commands", _CmdListReplyProcessor())
+        self.server_execute(InternalCommands.GET_CMD_LIST, _CmdListReplyProcessor())
         self.server_cmd_reg.finalize(self.register_command)
         if not self.server_cmd_received:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
+            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME,
+                    _KEY_DETAILS: "Communication Error - please try later"
+                    }
 
         # prepare client modules
         # we may have additional dynamically created cmd modules based on server commands
@@ -396,12 +585,13 @@ class AdminAPI(AdminAPISpec):
         self.client_cmd_reg.finalize(self.register_command)
 
         self.server_sess_active = True
-        return {"status": APIStatus.SUCCESS, "details": "Login success"}
+        return {_KEY_STATUS: APIStatus.SUCCESS,
+                _KEY_DETAILS: "Login success"}
 
     def is_ready(self) -> bool:
         """Whether the API is ready for executing commands.
         """
-        return self.token is not None
+        return self.server_sess_active
 
     def login(self, username: str):
         """Login using certification files and retrieve server side commands.
@@ -413,12 +603,13 @@ class AdminAPI(AdminAPISpec):
             A dict of status and details
         """
         self.login_result = None
-        print("trying to login with cert ...")
-        self.server_execute(f"_cert_login {username}", _LoginReplyProcessor())
+        self.server_execute(f"{InternalCommands.CERT_LOGIN} {username}", _LoginReplyProcessor())
         if self.login_result is None:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
+            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME,
+                    _KEY_DETAILS: "Communication Error - please try later"}
         elif self.login_result == "REJECT":
-            return {"status": APIStatus.ERROR_CERT, "details": "Incorrect user name or certificate"}
+            return {_KEY_STATUS: APIStatus.ERROR_CERT,
+                    _KEY_DETAILS: "Incorrect user name or certificate"}
 
         # get command list from server
         return self.get_command_list_from_server()
@@ -434,11 +625,13 @@ class AdminAPI(AdminAPISpec):
             A dict of login status and details
         """
         self.login_result = None
-        self.server_execute(f"_login {username} {poc_key}", _LoginReplyProcessor())
+        self.server_execute(f"{InternalCommands.PWD_LOGIN} {username} {poc_key}", _LoginReplyProcessor())
         if self.login_result is None:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "Communication Error - please try later"}
+            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME,
+                    _KEY_DETAILS: "Communication Error - please try later"}
         elif self.login_result == "REJECT":
-            return {"status": APIStatus.ERROR_CERT, "details": "Incorrect user name or certificate"}
+            return {_KEY_STATUS: APIStatus.ERROR_CERT,
+                    _KEY_DETAILS: "Incorrect user name or certificate"}
 
         # get command list from server
         return self.get_command_list_from_server()
@@ -572,7 +765,8 @@ class AdminAPI(AdminAPISpec):
         if return_result:
             return return_result
         if result is None:
-            return {"status": APIStatus.ERROR_RUNTIME, "details": "Client did not respond"}
+            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME,
+                    _KEY_DETAILS: "Client did not respond"}
         return result
 
     def do_command(self, command):
@@ -584,17 +778,19 @@ class AdminAPI(AdminAPISpec):
         Returns:
             Object containing status and details (or direct response from server, which originally was just time and data)
         """
+        self.last_sess_activity_time = time.time()
+
         cmd_type, cmd_name, args, entries = self._get_command_detail(command)
         if cmd_type == _CMD_TYPE_UNKNOWN:
             return {
-                "status": APIStatus.ERROR_SYNTAX,
-                "details": f"Command {cmd_name} not found",
+                _KEY_STATUS: APIStatus.ERROR_SYNTAX,
+                _KEY_DETAILS: f"Command {cmd_name} not found",
             }
 
         if len(entries) > 1:
             return {
-                "status": APIStatus.ERROR_SYNTAX,
-                "details": f"Ambiguous command {cmd_name} - qualify with scope",
+                _KEY_STATUS: APIStatus.ERROR_SYNTAX,
+                _KEY_DETAILS: f"Ambiguous command {cmd_name} - qualify with scope",
             }
 
         ent = entries[0]
@@ -607,12 +803,18 @@ class AdminAPI(AdminAPISpec):
 
         # server command
         if not self.server_sess_active:
-            return {"status": APIStatus.ERROR_INACTIVE_SESSION,
-                    "details": "Session is inactive"}
+            return {_KEY_STATUS: APIStatus.ERROR_INACTIVE_SESSION,
+                    _KEY_DETAILS: "Session is inactive"}
 
         return self.server_execute(command, cmd_entry=ent)
 
     def server_execute(self, command, reply_processor=None, cmd_entry=None):
+        if self.in_logout:
+            return {
+                _KEY_STATUS: APIStatus.ERROR_INACTIVE_SESSION,
+                _KEY_DETAILS: "session is logging out"
+            }
+
         args = split_to_args(command)
         ctx = self._new_command_context(command, args, cmd_entry)
         start = time.time()
@@ -626,16 +828,17 @@ class AdminAPI(AdminAPISpec):
 
         result = ctx.get_command_result()
         if result is None:
-            return {"status": APIStatus.ERROR_SERVER_CONNECTION, "details": "Server did not respond"}
+            return {_KEY_STATUS: APIStatus.ERROR_SERVER_CONNECTION,
+                    _KEY_DETAILS: "Server did not respond"}
         if "data" in result:
             for item in result["data"]:
                 if item["type"] == "error":
                     if "session_inactive" in item["data"]:
-                        result.update({"status": APIStatus.ERROR_INACTIVE_SESSION})
+                        result.update({_KEY_STATUS: APIStatus.ERROR_INACTIVE_SESSION})
                     elif any(
                         err in item["data"] for err in ("Failed to communicate with Admin Server", "wrong server")
                     ):
-                        result.update({"status": APIStatus.ERROR_SERVER_CONNECTION})
-        if "status" not in result:
-            result.update({"status": APIStatus.SUCCESS})
+                        result.update({_KEY_STATUS: APIStatus.ERROR_SERVER_CONNECTION})
+        if _KEY_STATUS not in result:
+            result.update({_KEY_STATUS: APIStatus.SUCCESS})
         return result

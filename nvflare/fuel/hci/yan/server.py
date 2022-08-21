@@ -17,6 +17,8 @@ from nvflare.fuel.hci.security import hash_password
 
 
 import os, shutil, traceback, time, json
+import argparse
+
 
 CMD_CATS = {
     'add': 'math',
@@ -150,6 +152,11 @@ class CmdModule(CommandModule):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", "-p", type=int, help="port number", required=True)
+
+    args = parser.parse_args()
+
     ctx = {'stop': False}
     cmd_reg = new_command_register_with_builtin_module(app_ctx=ctx)
     authenticator = SimpleAuthenticator(
@@ -172,18 +179,12 @@ def main():
             policy_file_path='/Users/yanc/flarehub/NVFlare/nvflare/fuel/hci/yan/authz_policy.json'
         ))
 
-    p = 55550
-    # server = AdminServer(cmd_reg, 'localhost', p,
-    #                      ca_cert="/Users/yanc/certs/rootCA.pem",
-    #                      server_cert="/Users/yanc/certs/server.crt",
-    #                      server_key="/Users/yanc/certs/server.key",
-    #                      accepted_client_cns=['admin'],
-    #                      extra_conn_props={
-    #                          'upload_dir': '/Users/yanc/dlmed/server_up',
-    #                          'download_dir': '/Users/yanc/dlmed/server_down'
-    #                      })
-
+    p = args.port
     server = AdminServer(cmd_reg, 'localhost', p,
+                         ca_cert="/Users/yanc/certs/rootCA.pem",
+                         server_cert="/Users/yanc/certs/server.crt",
+                         server_key="/Users/yanc/certs/server.key",
+                         accepted_client_cns=['admin'],
                          extra_conn_props={
                              'upload_dir': '/Users/yanc/dlmed/server_up',
                              'download_dir': '/Users/yanc/dlmed/server_down'
@@ -196,8 +197,8 @@ def main():
         time.sleep(0.5)
 
     server.stop()
-
     session_mgr.shutdown()
+    print("Server Stopped")
 
 
 if __name__ == '__main__':

@@ -219,7 +219,6 @@ class CommandRegister(object):
                     map_client_cmd=False):
 
         if client_cmd and map_client_cmd:
-            print("got client_cmd {}.{}".format(scope_name, cmd_name))
             self.mapped_cmds.append(
                 CommandSpec(
                     scope_name=scope_name,
