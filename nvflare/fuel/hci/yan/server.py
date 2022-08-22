@@ -98,7 +98,7 @@ class CmdModule(CommandModule):
     def handle_stop(self, conn: Connection, args: [str]):
         ctx = conn.app_ctx
         ctx['stop'] = True
-        conn.append_shutdown('System is stopped')
+        conn.append_shutdown('Have a nice day!')
 
     def handle_add(self, conn: Connection, args: [str]):
         if len(args) != 3:
@@ -154,6 +154,7 @@ class CmdModule(CommandModule):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", "-p", type=int, help="port number", required=True)
+    parser.add_argument("--ssl", "-s", action='store_true', help="ssl or not")
 
     args = parser.parse_args()
 
@@ -180,8 +181,12 @@ def main():
         ))
 
     p = args.port
+    ca_cert = "/Users/yanc/certs/rootCA.pem"
+    if not args.ssl:
+        ca_cert = None
+
     server = AdminServer(cmd_reg, 'localhost', p,
-                         ca_cert="/Users/yanc/certs/rootCA.pem",
+                         ca_cert=ca_cert,
                          server_cert="/Users/yanc/certs/server.crt",
                          server_key="/Users/yanc/certs/server.key",
                          accepted_client_cns=['admin'],
@@ -191,7 +196,10 @@ def main():
                          })
 
     server.start()
-    print("Started Admin Server on Port {}".format(p))
+    if args.ssl:
+        print(f"Started Admin Server on Port {p} with SSL")
+    else:
+        print(f"Started Admin Server on Port {p} without SSL")
 
     while not ctx['stop']:
         time.sleep(0.5)

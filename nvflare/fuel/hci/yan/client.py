@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--host', default='localhost', required=False)
     parser.add_argument('--port', type=int, default=55550, required=False)
     parser.add_argument('--port2', type=int, default=55551, required=False)
+    parser.add_argument('--ssl', action='store_true')
     args = parser.parse_args()
 
     ft_module = FileTransferModule(
@@ -39,10 +40,16 @@ def main():
         download_dir='/Users/yanc/dlmed/client_down',
     )
 
-    print('Admin Server: {} on port {}'.format(args.host, args.port))
+    if args.ssl:
+        cred_type = CredentialType.CERT
+        print("Start client with SSL: user cert to login")
+    else:
+        cred_type = CredentialType.PASSWORD
+        print("Start client without SSL: user pwd to login")
+
     client = AdminClient(
         prompt='FLARE > ',
-        credential_type=CredentialType.CERT,
+        credential_type=cred_type,
         cmd_modules=[ft_module, SessionModule()],
         service_finder=RRServiceFinder(
             change_interval=20,
@@ -53,7 +60,8 @@ def main():
         ca_cert="/Users/yanc/certs/rootCA.pem",
         client_cert="/Users/yanc/certs/client.crt",
         client_key="/Users/yanc/certs/client.key",
-        debug=True
+        debug=False,
+        session_timeout_interval=30
     )
 
     client.run()

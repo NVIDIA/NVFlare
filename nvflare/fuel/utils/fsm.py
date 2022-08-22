@@ -1,6 +1,3 @@
-import threading
-
-
 class State(object):
 
     def __init__(self, name: str):
@@ -26,9 +23,16 @@ class FSM(object):
 
     def __init__(self, name: str):
         self.name = name
+        self.props = {}
         self.states = {}   # state name => State
-        self.lock = threading.Lock()
         self.current_state = None
+        self.error = None
+
+    def set_prop(self, name, value):
+        self.props[name] = value
+
+    def get_prop(self, name, default=None):
+        return self.props.get(name, default=default)
 
     def add_state(self, state: State):
         assert isinstance(state, State), 'state must be State but got {}'.format(type(state))
@@ -38,38 +42,41 @@ class FSM(object):
         self.states[state.name] = state
 
     def set_current_state(self, name: str):
-        with self.lock:
-            s = self.states.get(name)
-            assert s, 'unknown state "{}"'.format(name)
-            self.current_state = s
+        s = self.states.get(name)
+        assert s, 'unknown state "{}"'.format(name)
+        self.current_state = s
 
     def get_current_state(self):
-        with self.lock:
-            return self.current_state
+        return self.current_state
 
     def execute(self, **kwargs) -> State:
-        with self.lock:
-            assert self.current_state, 'FSM has no current state'
-            next_state_name = self.current_state.execute(**kwargs)
-            if next_state_name:
-                if next_state_name == FSM.STATE_NAME_EXIT:
-                    # go to the end
-                    return None
+        try:
+            self.current_state = self._try_execute(**kwargs)
+        except BaseException as ex:
+            self.error = f'exception occurred in state execution: {ex}'
+            self.current_state = None
+        return self.current_state
 
-                # enter next state
-                next_state = self.states.get(next_state_name, None)
-                assert next_state, 'FSM has no such state "{}"'.format(next_state_name)
+    def _try_execute(self, **kwargs) -> State:
+        assert self.current_state, 'FSM has no current state'
+        next_state_name = self.current_state.execute(**kwargs)
+        if next_state_name:
+            if next_state_name == FSM.STATE_NAME_EXIT:
+                # go to the end
+                return None
 
-                # leave current state
-                self.current_state.leave()
+            # enter next state
+            next_state = self.states.get(next_state_name, None)
+            assert next_state, 'FSM has no such state "{}"'.format(next_state_name)
 
-                # enter the next state
-                next_state.enter()
+            # leave current state
+            self.current_state.leave()
 
-                # change to the new state
-                self.current_state = next_state
-            else:
-                # stay in current state!
-                pass
+            # enter the next state
+            next_state.enter()
 
+            # change to the new state
+            return next_state
+        else:
+            # stay in current state!
             return self.current_state

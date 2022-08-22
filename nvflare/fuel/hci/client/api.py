@@ -185,6 +185,7 @@ class SessionEventType(object):
     WAIT_FOR_SERVER_ADDR = "wait_for_server_addr"
     SERVER_ADDR_OBTAINED = "server_addr_obtained"
     SESSION_CLOSED = "session_closed"   # close the current session
+    LOGIN_SUCCESS = "login_success"     # logged in to server
     LOGIN_FAILURE = "login_failure"     # cannot login to server
     TRYING_LOGIN = "trying_login"       # still try to login
     SP_ADDR_CHANGED = "sp_addr_changed" # service provider address changed
@@ -231,11 +232,15 @@ class _TryLogin(State):
     def enter(self):
         api = self.api
         api.server_sess_active = False
+
+        # use lock here since the service finder (in another thread) could change the
+        # address at this moment
         with api.new_addr_lock:
             new_host = api.new_host
             new_port = api.new_port
             new_ssid = api.new_ssid
 
+        # set the address for login
         with api.addr_lock:
             api.host = new_host
             api.port = new_port
@@ -243,14 +248,13 @@ class _TryLogin(State):
 
     def execute(self, **kwargs):
         api = self.api
-        api.fire_session_event(
-            SessionEventType.TRYING_LOGIN,
-            "Trying to login, please wait ..."
-        )
-
         result = api.auto_login()
         if result[_KEY_STATUS] == APIStatus.SUCCESS:
             api.server_sess_active = True
+            api.fire_session_event(
+                SessionEventType.LOGIN_SUCCESS,
+                f"Logged into server at {api.host}:{api.port}"
+            )
             return _STATE_NAME_OPERATE
 
         details = result.get(_KEY_DETAILS, "")
@@ -432,7 +436,7 @@ class AdminAPI(AdminAPISpec):
         self.fsm = fsm
 
         self.session_timeout_interval = session_timeout_interval
-        self.last_sess_activity_time = None
+        self.last_sess_activity_time = time.time()
 
         self.closed = False
         self.in_logout = False
@@ -455,19 +459,28 @@ class AdminAPI(AdminAPISpec):
             self.new_ssid = ssid
 
     def _try_auto_login(self):
-        err_msg = "Incorrect user name or certificate."
-        if self.poc:
-            err_msg = "Incorrect key for POC mode."
+        for i in range(5):
+            self.fire_session_event(
+                SessionEventType.TRYING_LOGIN,
+                "Trying to login, please wait ..."
+            )
 
-        if self.poc:
-            return self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
-        else:
-            return self.login(username=self.user_name)
+            if self.poc:
+                resp = self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
+            else:
+                resp = self.login(username=self.user_name)
+            if resp[_KEY_STATUS] in [APIStatus.SUCCESS,
+                                     APIStatus.ERROR_AUTHENTICATION,
+                                     APIStatus.ERROR_CERT]:
+                return resp
+            time.sleep(1.0)
+        return resp
 
     def auto_login(self):
         try:
             result = self._try_auto_login()
-            self.last_sess_activity_time = time.time()
+            if self.debug:
+                print(f"DEBUG: login result is {result}")
         except:
             result = {
                 _KEY_STATUS: APIStatus.ERROR_RUNTIME,
@@ -511,36 +524,38 @@ class AdminAPI(AdminAPISpec):
             time.sleep(interval)
 
             if not self.sess_monitor_active:
-                return
+                return ""
 
             if self.shutdown_asked:
-                return
+                return ""
 
             if self.shutdown_received:
-                error_msg = self.shutdown_msg
-                break
+                return ""
 
             # see whether the session should be timed out for inactivity
             if self.last_sess_activity_time and self.session_timeout_interval and \
                     time.time() - self.last_sess_activity_time > self.session_timeout_interval:
-                error_msg = "Your session is ended due to inactivity"
-                break
+                return "Your session is ended due to inactivity"
 
             next_state = self.fsm.execute()
             if not next_state:
-                # end the session!
-                error_msg = ""
-                break
-
-        self.server_sess_active = False
-        self.fire_session_event(SessionEventType.SESSION_CLOSED, error_msg)
+                if self.fsm.error:
+                    return self.fsm.error
+                else:
+                    return ""
 
     def _monitor_session(self, interval):
         try:
-            self._do_monitor_session(interval)
+            msg = self._do_monitor_session(interval)
         except:
-            pass
-        self.close()
+            msg = "exception occurred"
+
+        self.server_sess_active = False
+        self.fire_session_event(SessionEventType.SESSION_CLOSED, msg)
+
+        # this is in the session_monitor thread - do not close the monitor or we'll run into
+        # "cannot join current thread" error!
+        self.close(close_session_monitor=False)
 
     def logout(self):
         """Send logout command to server."""
@@ -549,7 +564,8 @@ class AdminAPI(AdminAPISpec):
         self.close()
         return resp
 
-    def close(self):
+    def close(self, close_session_monitor: bool=True):
+        # this method can be called multiple times
         if self.closed:
             return
 
@@ -557,7 +573,8 @@ class AdminAPI(AdminAPISpec):
         self.service_finder.stop()
         self.server_sess_active = False
         self.shutdown_asked = True
-        self._close_session_monitor()
+        if close_session_monitor:
+            self._close_session_monitor()
 
     def get_command_list_from_server(self):
         # get command list from server
@@ -630,8 +647,8 @@ class AdminAPI(AdminAPISpec):
             return {_KEY_STATUS: APIStatus.ERROR_RUNTIME,
                     _KEY_DETAILS: "Communication Error - please try later"}
         elif self.login_result == "REJECT":
-            return {_KEY_STATUS: APIStatus.ERROR_CERT,
-                    _KEY_DETAILS: "Incorrect user name or certificate"}
+            return {_KEY_STATUS: APIStatus.ERROR_AUTHENTICATION,
+                    _KEY_DETAILS: "Incorrect user name or password"}
 
         # get command list from server
         return self.get_command_list_from_server()
@@ -660,6 +677,8 @@ class AdminAPI(AdminAPISpec):
             cmd_ctx: The command to execute.
         """
         # process_json_func can't return data because how "receive_and_process" is written.
+        if self.debug:
+            print(f"DEBUG: sending command '{cmd_ctx.get_command()}'")
 
         json_processor = _ServerReplyJsonProcessor(cmd_ctx)
         process_json_func = json_processor.process_server_reply
@@ -668,6 +687,9 @@ class AdminAPI(AdminAPISpec):
         with self.addr_lock:
             sp_host = self.host
             sp_port = self.port
+
+        if self.debug:
+            print(f"DEBUG: use server address {sp_host}:{sp_port}")
 
         try:
             if not self.poc:
@@ -804,7 +826,7 @@ class AdminAPI(AdminAPISpec):
         # server command
         if not self.server_sess_active:
             return {_KEY_STATUS: APIStatus.ERROR_INACTIVE_SESSION,
-                    _KEY_DETAILS: "Session is inactive"}
+                    _KEY_DETAILS: "Session is inactive, please try later"}
 
         return self.server_execute(command, cmd_entry=ent)
 

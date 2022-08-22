@@ -20,7 +20,6 @@ import signal
 import time
 import traceback
 from datetime import datetime
-from functools import partial
 from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
@@ -75,6 +74,7 @@ class AdminClient(cmd.Cmd):
         download_dir="",
         cmd_modules: Optional[List] = None,
         service_finder: ServiceFinder = None,
+        session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
     ):
         cmd.Cmd.__init__(self)
@@ -88,6 +88,7 @@ class AdminClient(cmd.Cmd):
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
+        self.stopped = False  # use this flag to prevent unnecessary signal exception
 
         if not isinstance(service_finder, ServiceFinder):
             raise TypeError("service_finder must be ServiceProvider but got {}.".format(
@@ -121,10 +122,11 @@ class AdminClient(cmd.Cmd):
             debug=self.debug,
             poc=poc,
             session_event_cb=self.handle_session_event,
-            session_timeout_interval=900,   # close the client after 15 minutes of inactivity
+            session_timeout_interval=session_timeout_interval,
             session_status_check_interval=10   # check server for session status every 10 seconds
         )
-        signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
+        #signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
+        signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
     def handle_session_event(self, event_type: str, message: str):
         if self.debug:
@@ -137,8 +139,18 @@ class AdminClient(cmd.Cmd):
             os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
+        if self.stopped:
+            return
+
+        # the signal is only for the main thread
+        # the session monitor thread signals the main thread to stop
+        if self.debug:
+            print("DEBUG: signal received to close session")
+
         self.api.close()
-        raise ConnectionError
+
+        # use exception to interrupt the main cmd loop
+        raise RuntimeError("Session Closed")
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -393,9 +405,11 @@ class AdminClient(cmd.Cmd):
                     return False
 
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
-        except ConnectionError:
-            pass
+        except RuntimeError as ex:
+            if self.debug:
+                print(f"DEBUG: Exception {ex}")
         finally:
+            self.stopped = True
             self.api.close()
 
     def _get_login_creds(self):
