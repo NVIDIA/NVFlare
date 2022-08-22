@@ -37,6 +37,7 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
 
@@ -135,11 +136,11 @@ class ClientTaskWorker(FLComponent):
         admin_agent = None
         try:
             data = conn.recv()
-            client = data["client"]
-            client_config = data["client_config"]
-            deploy_args = data["deploy_args"]
+            client = data[SimulatorConstants.CLIENT]
+            client_config = data[SimulatorConstants.CLIENT_CONFIG]
+            deploy_args = data[SimulatorConstants.DEPLOY_ARGS]
 
-            app_root = os.path.join(args.workspace, "simulate_job", "app_" + client.client_name)
+            app_root = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
 
@@ -181,10 +182,10 @@ def main():
     if not os.path.isfile(log_config_file_path):
         log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, "simulate_job", "log.txt")
+    log_file = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "log.txt")
     add_logfile_handler(log_file)
 
-    workspace = os.path.join(args.workspace, "simulate_job", "app_" + args.client)
+    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
     os.chdir(workspace)
     AuthorizationService.initialize(EmptyAuthorizer())
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)

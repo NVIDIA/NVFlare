@@ -19,6 +19,7 @@ from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, ServerCommandK
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.private.fed.server.server_state import HotState
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
@@ -66,11 +67,11 @@ class SimulatorServer(FederatedServer):
             overseer_agent,
         )
 
-        self.engine.run_processes["simulate_job"] = {
+        self.engine.run_processes[SimulatorConstants.JOB_NAME] = {
             RunProcessKey.LISTEN_PORT: None,
             RunProcessKey.CONNECTION: None,
             RunProcessKey.CHILD_PROCESS: None,
-            RunProcessKey.JOB_ID: "simulate_job",
+            RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
             # RunProcessKey.PARTICIPANTS: job_clients,
         }
 

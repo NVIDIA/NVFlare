@@ -27,6 +27,7 @@ from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
 
@@ -44,7 +45,7 @@ def main():
     args.threads = 1
     args.log_config = None
     args.config_folder = "config"
-    args.job_id = "simulate_job"
+    args.job_id = SimulatorConstants.JOB_NAME
     args.client_config = os.path.join(args.config_folder, "config_fed_client.json")
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
 
@@ -59,7 +60,7 @@ def main():
         if not os.path.isfile(log_config_file_path):
             log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-        log_file = os.path.join(args.workspace, "simulate_job", "client_run.log.txt")
+        log_file = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "client_run.log.txt")
         add_logfile_handler(log_file)
 
         os.chdir(args.workspace)

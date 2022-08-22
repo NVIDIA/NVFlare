@@ -37,6 +37,7 @@ from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploye
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
 
@@ -67,7 +68,7 @@ class SimulatorRunner(FLComponent):
         # self.logger = logging.getLogger()
         self.args.log_config = None
         self.args.config_folder = "config"
-        self.args.job_id = "simulate_job"
+        self.args.job_id = SimulatorConstants.JOB_NAME
         self.args.client_config = os.path.join(self.args.config_folder, "config_fed_client.json")
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
         cwd = os.getcwd()
@@ -79,7 +80,7 @@ class SimulatorRunner(FLComponent):
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 
-        self.simulator_root = os.path.join(self.args.workspace, "simulate_job")
+        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         if os.path.exists(self.simulator_root):
             shutil.rmtree(self.simulator_root)
 
@@ -121,7 +122,7 @@ class SimulatorRunner(FLComponent):
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
 
-            log_file = os.path.join(self.args.workspace, "simulate_job", "log.txt")
+            log_file = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "log.txt")
             add_logfile_handler(log_file)
             # self.create_clients(data_bytes, job_name, meta)
             return True
@@ -256,7 +257,7 @@ class SimulatorClientRunner(FLComponent):
         self.deployer = deployer
         self.run_client_index = -1
 
-        self.simulator_root = os.path.join(self.args.workspace, "simulate_job")
+        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         self.client_config = None
         self.deploy_args = None
 
@@ -337,7 +338,11 @@ class SimulatorClientRunner(FLComponent):
 
         conn = self._create_connection(open_port)
 
-        data = {"client": client, "client_config": self.client_config, "deploy_args": self.deploy_args}
+        data = {
+            SimulatorConstants.CLIENT: client,
+            SimulatorConstants.CLIENT_CONFIG: self.client_config,
+            SimulatorConstants.DEPLOY_ARGS: self.deploy_args,
+        }
         conn.send(data)
 
         while True:
