@@ -18,7 +18,7 @@ on:
   # quick tests for pull requests and the releasing branches
   push:
     branches:
-      - main
+      - dev
   pull_request:
   workflow_dispatch:
 

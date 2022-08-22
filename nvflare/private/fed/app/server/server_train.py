@@ -127,8 +127,7 @@ def main():
 
     except ConfigError as ex:
         print("ConfigError:", str(ex))
-    finally:
-        pass
+        raise ex
 
 
 def security_check(secure_train: bool, content_folder: str, fed_server_config: str):

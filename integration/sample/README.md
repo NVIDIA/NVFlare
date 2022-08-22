@@ -3,7 +3,7 @@
 ## Objective
 Describe the main objective intended with this design, to give an overview to the reader. This should be less than 3 sentences so that the reader can quickly grasp why this is important.
 
-**The sample research project is used illustrate the structure and requirements need for integration project**
+**The sample integration project is used illustrate the structure and requirements need for integration project**
 
 ### Goals:
 
@@ -29,4 +29,4 @@ Every project and implementation has some assumptions behind it, either about th
 
 
 ## Required NVFLARE version
-pip3 install nvflare==2.2.1 
+pip3 install nvflare>=2.2.0

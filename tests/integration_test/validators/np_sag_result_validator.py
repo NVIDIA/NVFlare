@@ -29,12 +29,12 @@ class NumpySAGResultValidator(FinishJobResultValidator):
 
         models_dir = os.path.join(server_run_dir, "models")
         if not os.path.exists(models_dir):
-            self.logger.info(f"models dir {models_dir} doesn't exist.")
+            self.logger.error(f"models dir {models_dir} doesn't exist.")
             return False
 
         model_path = os.path.join(models_dir, "server.npy")
         if not os.path.isfile(model_path):
-            self.logger.info(f"model_path {model_path} doesn't exist.")
+            self.logger.error(f"model_path {model_path} doesn't exist.")
             return False
 
         try:
@@ -42,7 +42,7 @@ class NumpySAGResultValidator(FinishJobResultValidator):
             self.logger.info(f"data loaded: {data}.")
             np.testing.assert_equal(data, self.expected_result)
         except Exception as e:
-            self.logger.info(f"exception happens: {e.__str__()}")
+            self.logger.error(f"exception happens: {e.__str__()}")
             return False
 
         return True

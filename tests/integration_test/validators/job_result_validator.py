@@ -39,13 +39,13 @@ class FinishJobResultValidator(JobResultValidator, ABC):
         server_run_dir = job_result["workspace_root"]
 
         if not os.path.exists(server_run_dir):
-            self.logger.info(f"server run dir {server_run_dir} doesn't exist.")
+            self.logger.error(f"server run dir {server_run_dir} doesn't exist.")
             return False
 
         for client_prop in client_props:
             client_run_dir = os.path.join(client_prop.root_dir, job_result["job_id"])
             if not os.path.exists(client_run_dir):
-                self.logger.info(f"client run dir {client_run_dir} doesn't exist.")
+                self.logger.error(f"client run dir {client_run_dir} doesn't exist.")
                 return False
 
         if not self.validate_finished_results(job_result, client_props):
