@@ -328,6 +328,8 @@ class SimulatorClientRunner(FLComponent):
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
             + self.args.workspace
+            + " --client "
+            + client.client_name
             + " --port "
             + str(open_port)
         )

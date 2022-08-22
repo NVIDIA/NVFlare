@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import logging
 import os
 import sys
 import threading
@@ -36,6 +37,7 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -145,13 +147,14 @@ class ClientTaskWorker(FLComponent):
             admin_agent = self.create_admin_agent(sorted(servers)[0], client, deploy_args)
             admin_agent.start()
             while True:
-                _, stop_run = self.do_one_task(client)
+                interval, stop_run = self.do_one_task(client)
                 conn.send(stop_run)
 
                 continue_run = conn.recv()
                 if not continue_run:
                     self.release_resources(client)
                     break
+                time.sleep(interval)
 
         except BaseException as error:
             self.logger.error(error)
@@ -170,10 +173,19 @@ def _create_connection(listen_port):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--client", type=str, help="Client name", required=True)
     parser.add_argument("--port", type=str, help="Listen port", required=True)
     args = parser.parse_args()
 
-    os.chdir(args.workspace)
+    log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
+    if not os.path.isfile(log_config_file_path):
+        log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+    log_file = os.path.join(args.workspace, "simulate_job", "log.txt")
+    add_logfile_handler(log_file)
+
+    workspace = os.path.join(args.workspace, "simulate_job", "app_" + args.client)
+    os.chdir(workspace)
     AuthorizationService.initialize(EmptyAuthorizer())
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 

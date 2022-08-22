@@ -109,7 +109,7 @@ class SimulatorDeployer(ServerDeployer):
 
     def _create_simulator_server_config(self, admin_storage):
         simulator_server = {
-            "name": "simulator",
+            "name": "simulator_server",
             "service": {
                 "target": "localhost:" + str(self.open_ports[0]),
                 "options": [
@@ -132,7 +132,7 @@ class SimulatorDeployer(ServerDeployer):
         client_config = {
             "servers": [
                 {
-                    "name": "simulator",
+                    "name": "simulator_server",
                     "service": {
                         "target": "localhost:" + str(self.open_ports[0]),
                         "options": [
