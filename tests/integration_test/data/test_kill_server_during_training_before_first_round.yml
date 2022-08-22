@@ -1,0 +1,50 @@
+n_servers: 1
+n_clients: 2
+ha: True
+jobs_root_dir: ./data/apps
+cleanup: True
+
+
+tests:
+  - test_name: "upload np_sag, kill the server after we start training but no round is completed in SAG,
+                restart it should pick up the work"
+
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data":
+            {
+              "workflows": {
+                "ScatterAndGather": {
+                  "phase": "train",
+                  "current_round": 0
+                }
+              }
+            }
+        "actions": [
+          "kill server",
+          "sleep 40",
+          "start server",
+        ]
+        "result":
+          "type": "run_state"
+          "data":
+            {
+              "workflows": {
+                "ScatterAndGather": {
+                  "phase": "train",
+                  "current_round": 0
+                }
+              }
+            }
+
+    validators:
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }

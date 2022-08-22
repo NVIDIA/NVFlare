@@ -69,4 +69,4 @@ class AuthPolicyBuilder(Builder):
             authz.update(ctx.get("authz_def"))
             dest_dir = self.get_kit_dir(server, ctx)
             with open(os.path.join(dest_dir, "authorization.json"), "wt") as f:
-                f.write(json.dumps(authz))
+                f.write(json.dumps(authz, indent=4))

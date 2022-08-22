@@ -30,12 +30,14 @@ import nvflare.private.fed.protos.admin_pb2 as admin_msg
 import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
+from nvflare.apis.collective_comm_constants import CollectiveCommandKey, CollectiveCommShareableHeader
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     FLContextKey,
     MachineStatus,
     ReservedKey,
+    RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
@@ -130,6 +132,8 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
+            if self.admin_server:
+                self.admin_server.stop()
             if self.grpc_server:
                 self.grpc_server.stop(0)
         finally:
@@ -177,7 +181,9 @@ class BaseServer(ABC):
                 root_certificates=root_ca,
                 require_client_auth=True,
             )
-            self.grpc_server.add_secure_port(target, server_credentials)
+            port = target.split(":")[1]
+            tmp_target = f"0.0.0.0:{port}"
+            self.grpc_server.add_secure_port(tmp_target, server_credentials)
             self.logger.info("starting secure server at %s", target)
         else:
             self.grpc_server.add_insecure_port(target)
@@ -228,7 +234,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         project_name=None,
         min_num_clients=2,
         max_num_clients=10,
-        wait_after_min_clients=10,
         cmd_modules=None,
         heart_beat_timeout=600,
         handlers: Optional[List[FLComponent]] = None,
@@ -237,6 +242,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         enable_byoc=False,
         snapshot_persistor=None,
         overseer_agent=None,
+        collective_command_timeout=600.0,
     ):
         """Federated server services.
 
@@ -244,13 +250,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             project_name: server project name.
             min_num_clients: minimum number of contributors at each round.
             max_num_clients: maximum number of contributors at each round.
-            wait_after_min_clients: wait time after minimum clients responded.
             cmd_modules: command modules.
             heart_beat_timeout: heartbeat timeout
             handlers: A list of handler
             args: arguments
             secure_train: whether to use secure communication
             enable_byoc: whether to enable custom components
+            collective_command_timeout: timeout for waiting all collective requests from clients
         """
         self.logger = logging.getLogger("FederatedServer")
 
@@ -270,8 +276,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         with self.lock:
             self.reset_tokens()
 
-        self.wait_after_min_clients = wait_after_min_clients
-
         self.cmd_modules = cmd_modules
 
         self.builder = None
@@ -279,9 +283,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # Additional fields for CurrentTask meta_data in GetModel API.
         self.current_model_meta_data = {}
 
-        self.engine = ServerEngine(
-            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
-        )
+        self.engine = self._create_server_engine(args, snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
 
@@ -298,6 +300,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         flare_decomposers.register()
         common_decomposers.register()
+        self._collective_comm_timeout = collective_command_timeout
+
+    def _create_server_engine(self, args, snapshot_persistor):
+        return ServerEngine(
+            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
+        )
 
     def get_current_model_meta_data(self):
         """Get the model metadata, which usually contains additional fields."""
@@ -562,6 +570,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self._handle_state_check(context, state_check)
             self._ssid_check(request.client, context)
 
+            self.logger.info("getting AuxCommunicate request")
+
             contribution = request
 
             client = self.client_manager.validate_client(contribution.client, context)
@@ -600,30 +610,62 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:
-            with self.engine.lock:
-                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
-                command_conn = self.engine.get_command_conn(str(job_id))
+            command_shareable = Shareable()
+            command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
+            command_shareable.set_header(ServerCommandKey.TOPIC, topic)
+            command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
+            data = {
+                ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
+                ServerCommandKey.DATA: command_shareable,
+            }
+            if shareable.get_header(CollectiveCommShareableHeader.IS_COLLECTIVE_AUX, False):
+                with self.engine.lock:
+                    job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
+                    command_conn = self.engine.get_collective_command_conn(job_id)
+                    participate_clients = len(self.engine.run_processes[job_id][RunProcessKey.PARTICIPANTS])
+                    command_waiter = self.engine.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION_WAITER]
+                    self.logger.info(f"Collective communication: participate client num is {participate_clients}")
                 if command_conn:
-                    command_shareable = Shareable()
-                    command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
-                    command_shareable.set_header(ServerCommandKey.TOPIC, topic)
-                    command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
-
-                    data = {
-                        ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
-                        ServerCommandKey.DATA: command_shareable,
-                    }
-                    command_conn.send(data)
-
-                    return_data = command_conn.recv()
-                    reply = return_data.get(ServerCommandKey.AUX_REPLY)
-                    child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
-
-                    fl_ctx.props.update(child_fl_ctx)
+                    shareable.set_header(CollectiveCommShareableHeader.WORLD_SIZE, participate_clients)
+                    with command_waiter.receive_all:
+                        command_waiter.received_requests += 1
+                        command_conn.send(data)
+                        while True:
+                            if command_waiter.received_requests == participate_clients:
+                                break
+                            if not command_waiter.receive_all.wait(self._collective_comm_timeout):
+                                # Known issue:: IF the number of threads is lower than number of clients (world_size)
+                                #       then this will be DEAD-LOCK
+                                # Assumption: all the client request need to be here to proceed
+                                data[CollectiveCommandKey.TIMEOUT] = f"Timeout for {self._collective_comm_timeout}"
+                                command_conn.send(data)
+                                break
+                        command_waiter.receive_all.notifyAll()
+                        return_data = command_conn.recv()
+                        command_waiter.sent_requests += 1
+                        if command_waiter.sent_requests == participate_clients:
+                            command_waiter.reset()
+                        reply = return_data.get(ServerCommandKey.AUX_REPLY)
+                        child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
+                        fl_ctx.props.update(child_fl_ctx)
                 else:
                     reply = make_reply(ReturnCode.ERROR)
-        except BaseException as e:
-            self.logger.error(f"Could not connect to server runner process: {str(e)} - asked client to end the run")
+            else:
+                with self.engine.lock:
+                    job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                    command_conn = self.engine.get_command_conn(str(job_id))
+                    if command_conn:
+                        command_conn.send(data)
+
+                        return_data = command_conn.recv()
+                        reply = return_data.get(ServerCommandKey.AUX_REPLY)
+                        child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
+
+                        fl_ctx.props.update(child_fl_ctx)
+                    else:
+                        reply = make_reply(ReturnCode.ERROR)
+        except BaseException:
+            self.logger.info("Could not connect to server runner process - asked client to end the run")
             reply = make_reply(ReturnCode.COMMUNICATION_ERROR)
 
         return reply
@@ -855,5 +897,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def close(self):
         """Shutdown the server."""
         self.logger.info("shutting down server")
-        self.overseer_agent.end()
+        self.shutdown = True
+        if self.engine:
+            self.engine.close()
+        if self.overseer_agent:
+            self.overseer_agent.end()
         return super().close()

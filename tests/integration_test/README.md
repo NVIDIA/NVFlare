@@ -1,6 +1,14 @@
 # NVIDIA FLARE Integration test
 
-The integration tests entry file is `test/integration_test/system_test.py`.
+The integration tests entry file is `tests/integration_test/system_test.py`.
+The overseer tests entry file is `tests/integration_test/overseer_test.py`
+
+## Setup
+
+Note that the HA test cases are using `./data/project.yml` to provision the whole system.
+That will require we have `localhost0` and `localhost1` map to `127.0.0.1`.
+You need to either modify `/etc/hosts` file before running the test.
+Or if you are running using docker container you should use `--add-host localhost0:127.0.0.1`.
 
 ## Run
 
@@ -17,77 +25,77 @@ The main test will read test configurations from `./test_cases.yml`.
 
 Each test configuration yaml should contain the following attributes:
 
-| Attributes          | Description                                                 |
-|---------------------|-------------------------------------------------------------|
-| `system_setup`      | How to set up the system. (num of servers, clients)         |
-| `single_app_as_job` | Whether the test cases are single app job or not.           |
-| `cleanup`           | Whether to clean up test folders or not. (Default to True.) |
-| `tests`             | The test cases to run                                       |
-
-If `single_app_as_job` is True, `apps_root_dir` is required.
-Otherwise, `jobs_root_dir` is required.
-
-### System setup config
-
-Each system setup configuration yaml should contain the following attribute:
-
-| Attributes     | Description                                                          |
-|----------------|----------------------------------------------------------------------|
-| poc            | Which poc folder to use (to get fed_server.json and fed_client.json) |
-| n_servers      | number of servers                                                    |
-| n_clients      | number of client sites                                               |
-| snapshot_path  | Where to store server snapshot. (needs to match what's inside poc)   |
-| job_store_path | Where to store job information. (needs to match what's inside poc)   | 
-
+| Attributes        | Description                                                 |
+|-------------------|-------------------------------------------------------------|
+| `n_servers`       | Number of servers                                           |
+| `n_clients`       | Number of clients                                           |
+| `cleanup`         | Whether to clean up test folders or not. (Default to True.) |
+| `ha`              | Whether to use provision mode or not. (Default to False.)   |
+| `tests`           | The test cases to run                                       |
+| `jobs_root_dir`   | The directory that contains the job folders to upload       |
 
 ### Test cases
 
 Each test case has the following attributes:
 
-| Attributes           | Description                                                                                  |
-|----------------------|----------------------------------------------------------------------------------------------|
-| app_name or job_name | testing app or job folder name. Note that these folders need to be inside the jobs_root_dir. |
-| validators           | Which validator to use to validate the running result once the job is finished.              |
-| event_sequence_yaml  | What event sequence to run during each jobs. (HA test cases)                                 |
+| Attributes            | Description                                                                                |
+|-----------------------|--------------------------------------------------------------------------------------------|
+| test_name             | Name of this test.                                                                         |
+| event_sequence        | What events to run for each test.                                                          |
+| validators (optional) | Which validator to use to validate the running result once the event sequence is finished. |
 
 ### Event sequence
 
-Each event sequence has the following attributes:
-
-| Attributes  | Description                                  |
-|-------------|----------------------------------------------|
-| description | Description of this specific event sequence. |
-| events      | A list of events                             |
+Event sequence is consist of a list of events. 
 
 Each event has the following attributes:
 
-| Attributes   | Description                                            |
-|--------------|--------------------------------------------------------|
-| trigger      | When to perform the specified action.                  |
-| action       | What actions to take if the trigger is triggered.      |
-| result_state | What state to expect after these actions are finished. |
+| Attributes | Description                                             |
+|------------|---------------------------------------------------------|
+| trigger    | When to perform the specified action.                   |
+| actions    | What actions to take if the trigger is triggered.       |
+| result     | What result to expect after these actions are finished. |
 
-Triggers can be triggered based on its type:
-  - str: match a string based on log output from server
-  - dict: state based on predefined tracked state variables
+Each trigger has the following attributes:
+
+| Attributes   | Description                       |
+|--------------|-----------------------------------|
+| type         | Specify the type of this trigger. |
+| data         | The data of this trigger.         |
+
+The following trigger type is supported:
+  - server_log: triggered if the data can be found in server's log
+  - client_log: triggered if the data can be found in client's log
+  - server_job_log: triggered if the data can be found in server's job's log
+  - client_job_log: triggered if the data can be found in client's job's log
+  - run_state: triggered if the run state matched the data
+
+Note that:
+
+   `run_state` is based on predefined tracked state variables
     (workflow, task, round_number, run_finished etc.)
+
+Each result has the following attributes:
+
+| Attributes   | Description                      |
+|--------------|----------------------------------|
+| type         | Specify the type of this result. |
+| data         | The data of this result.         |
+
+The following result type is supported:
+  - run_state: check if current `run_state` match data.
+  - admin_api_response: check if admin_api_response match data.
 
 ## Folder Structure
 
+- src: source codes for the integration test system
 - data:
   - apps: applications for testing
-  - ha: ha test event sequence yaml files
-  - single_app_as_job: test configuration for single app as job test cases
-  - system: system setup config yaml files
-- tf2: TensorFlow2 related codes for the applications used in
-  integration tests.
+  - test configurations
+- tf2: TensorFlow2 related codes for the applications used in integration tests
 - validators: Codes that implement the logic to validate the running result
-  once the job is finished.
+  once the job is finished
 
 ### apps
 
-Because the applications inside the `apps` folder is treated as single app job.
-
-Each application in apps folder should contain `config` folder.
-
-And should have `config_fed_server.json` and `config_fed_client.json` inside the config folder.
+Each application in apps folder should be a valid NVFlare application.

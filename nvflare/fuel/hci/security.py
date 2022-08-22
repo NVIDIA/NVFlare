@@ -80,3 +80,41 @@ def get_certificate_common_name(cert: dict):
         for key, value in sub:
             if key == "commonName":
                 return value
+
+
+def get_certificate_roles(cert: dict):
+    """Gets the roles from the unstructuredName field of the provided certificate.
+
+    Args:
+        cert: certificate
+
+    Returns: roles of provided cert
+
+    """
+    if cert is None:
+        return None
+
+    for sub in cert.get("subject", ()):
+        for key, value in sub:
+            if key == "unstructuredName":
+                return value.split("|")
+    return None
+
+
+def get_certificate_org(cert: dict):
+    """Gets the organization from the provided certificate.
+
+    Args:
+        cert: certificate
+
+    Returns: organization of provided cert
+
+    """
+    if cert is None:
+        return None
+
+    for sub in cert.get("subject", ()):
+        for key, value in sub:
+            if key == "organizationName":
+                return value
+    return None

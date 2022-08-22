@@ -36,7 +36,7 @@ done
 run_numpy()
 {
     echo "Running integration tests using numpy related jobs."
-    cmd="$prefix $cmd system_test.py"
+    cmd="$prefix $cmd system_test.py overseer_test.py"
     echo "$cmd"
     eval "$cmd"
 }

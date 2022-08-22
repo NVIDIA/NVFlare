@@ -73,8 +73,7 @@ class TF2ModelPersistor(ModelPersistor):
         fl_ctx.sync_sticky()
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
-        """
-            initialize and load the Model.
+        """Initializes and loads the Model.
 
         Args:
             fl_ctx: FLContext
@@ -102,8 +101,7 @@ class TF2ModelPersistor(ModelPersistor):
             self._initialize(fl_ctx)
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
-        """
-            persist the Model object
+        """Saves model.
 
         Args:
             model_learnable: ModelLearnable object

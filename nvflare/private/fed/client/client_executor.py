@@ -222,7 +222,7 @@ class ProcessExecutor(ClientExecutor):
         # use os.setsid to create new process group ID
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
-        print("training child process ID: {}".format(process.pid))
+        self.logger.info("training child process ID: {}".format(process.pid))
 
         client.multi_gpu = False
 

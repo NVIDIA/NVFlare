@@ -1,10 +1,10 @@
 {
   "name": "sag",
   "resource_spec": {
-    "site-a": {
+    "site-1": {
       "gpu": 1
     },
-    "site-b": {
+    "site-2": {
       "gpu": 1
     }
   },

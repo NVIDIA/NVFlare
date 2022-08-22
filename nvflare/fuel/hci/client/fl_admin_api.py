@@ -654,22 +654,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def env_target(self, target: str) -> FLAdminAPIResponse:
-        target = self._validate_required_target_string(target)
-        command = "env " + target
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
-        if reply_data_full_response:
-            details = {}
-            environment = reply_data_full_response.split("\n")
-            for e in environment:
-                # set key and value to contents of each line with first = as separator
-                details[e[0 : e.find("=")]] = e[e.find("=") + 1 :]
-            return FLAdminAPIResponse(APIStatus.SUCCESS, details)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
     def get_working_directory(self, target: str) -> FLAdminAPIResponse:
         target = self._validate_required_target_string(target)
         command = "pwd " + target

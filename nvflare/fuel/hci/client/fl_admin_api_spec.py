@@ -317,18 +317,6 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def env_target(self, target: str) -> FLAdminAPIResponse:
-        """Get the environment variables of the specified target.
-
-        Args:
-            target (str):  either server or single client's client name.
-
-        Returns: FLAdminAPIResponse
-
-        """
-        pass
-
-    @abstractmethod
     def get_working_directory(self, target: str) -> FLAdminAPIResponse:
         """Gets the workspace root directory of the specified target.
 

@@ -90,6 +90,9 @@ class Controller(Responder, ControllerSpec, ABC):
             fl_ctx (FLContext): FLContext information
         """
         self._engine = fl_ctx.get_engine()
+        if not self._engine:
+            self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
+            return
         self.start_controller(fl_ctx)
         self._task_monitor.start()
 

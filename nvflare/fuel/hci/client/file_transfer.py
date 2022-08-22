@@ -206,7 +206,7 @@ class FileTransferModule(CommandModule):
                 CommandSpec(
                     name="download_job",
                     description="download job contents from the server",
-                    usage="download_job job_id",
+                    usage="download_job job_id [file_path, optional to specify specific file]",
                     handler_func=self.download_job,
                 ),
                 CommandSpec(
@@ -309,13 +309,26 @@ class FileTransferModule(CommandModule):
         return api.server_execute(command)
 
     def download_job(self, args, api: AdminAPISpec):
-        if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_job job_id"}
-        job_id = args[1]
-        parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB), job_id]
-        command = join_args(parts)
-        reply_processor = _DownloadFolderProcessor(self.download_dir)
-        return api.server_execute(command, reply_processor)
+        if len(args) == 2:
+            job_id = args[1]
+            parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB), job_id]
+            command = join_args(parts)
+            reply_processor = _DownloadFolderProcessor(self.download_dir)
+            return api.server_execute(command, reply_processor)
+        elif len(args) == 3:
+            job_id = args[1]
+            file = args[2]
+            parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE), job_id, file]
+            command = join_args(parts)
+            reply_processor = _DownloadFolderProcessor(self.download_dir)
+            return api.server_execute(command, reply_processor)
+        else:
+            return {
+                "status": APIStatus.ERROR_SYNTAX,
+                "details": "usage: download_job job_id [file_path]\n"
+                "where file_path is optional for downloading a specific file, starting with job or "
+                "workspace as the top directory.",
+            }
 
     def info(self, args, api: AdminAPISpec):
         msg = f"Local Upload Source: {self.upload_dir}\n"
