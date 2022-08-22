@@ -22,7 +22,7 @@ import tensorflow as tf
 # poc workspace
 client_results_root = "../prostate_3D/workspace_prostate"
 
-# 4 (for 3D) or 6 (for 2D) sites 
+# 4 (for 3D) or 6 (for 2D) sites
 sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx"]
 # sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx", "Promise12", "PROSTATEx"]
 
@@ -103,7 +103,7 @@ def main():
         # clear data for each site
         data = {"Config": [], "Epoch": [], "Dice": []}
         for config, exp in experiments.items():
-            job_id = find_job_id(workdir=client_results_root+"/client_"+sites_fl[0], fl_app_name=config)
+            job_id = find_job_id(workdir=client_results_root + "/client_" + sites_fl[0], fl_app_name=config)
             print(f"Found run {job_id} for {config}")
             spec_site = exp.get("site", None)
             if spec_site is not None:
@@ -119,7 +119,7 @@ def main():
         ax = plt.subplot(2, int(num_site / 2), i)
         ax.set_title(site)
         sns.lineplot(x="Epoch", y="Dice", hue="Config", data=data)
-        #ax.set_xlim([0, 1000])
+        # ax.set_xlim([0, 1000])
         i = i + 1
     plt.subplots_adjust(hspace=0.3)
     plt.show()

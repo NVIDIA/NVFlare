@@ -37,13 +37,20 @@ def main():
     parser.add_argument("--admin_dir", type=str, default="./admin/", help="Path to admin directory.")
     parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Admin username.")
     parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job config.")
-    parser.add_argument("--poc", action='store_true', help="Whether admin uses POC mode.")
-    parser.add_argument("--central", action='store_true', help="Whether we assume all data is centralized.")
-    parser.add_argument("--train_split_root", type=str, default="/tmp/cifar10_splits", help="Location where to save data splits.")
-    parser.add_argument("--alpha", type=float, default=0., help="Value controls the degree of heterogeneity. "
-                                                                "Lower values of alpha means higher heterogeneity."
-                                                                "Values of <= 0. means no data sampling. "
-                                                                "Assumes central training.")
+    parser.add_argument("--poc", action="store_true", help="Whether admin uses POC mode.")
+    parser.add_argument("--central", action="store_true", help="Whether we assume all data is centralized.")
+    parser.add_argument(
+        "--train_split_root", type=str, default="/tmp/cifar10_splits", help="Location where to save data splits."
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.0,
+        help="Value controls the degree of heterogeneity. "
+        "Lower values of alpha means higher heterogeneity."
+        "Values of <= 0. means no data sampling. "
+        "Assumes central training.",
+    )
     args = parser.parse_args()
 
     assert os.path.isdir(args.admin_dir), f"admin directory does not exist at {args.admin_dir}"
@@ -62,7 +69,7 @@ def main():
     server_config_filename = os.path.join(args.job, job_name, "config", "config_fed_server.json")
     meta_config_filename = os.path.join(args.job, "meta.json")
 
-    if args.alpha > 0.:
+    if args.alpha > 0.0:
         client_config = read_json(client_config_filename)
         server_config = read_json(server_config_filename)
         meta_config = read_json(meta_config_filename)

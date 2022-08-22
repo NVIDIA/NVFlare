@@ -22,7 +22,7 @@ from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnab
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 
 
-class XGBoostModelPersistor(ModelPersistor):
+class JSONModelPersistor(ModelPersistor):
     def __init__(self, save_name="xgboost_model.json"):
         super().__init__()
         self.save_name = save_name
