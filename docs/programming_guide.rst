@@ -41,6 +41,7 @@ Please refer to :ref:`user_guide/application:NVIDIA FLARE Application` for more 
    programming_guide/data_exchange_object
    programming_guide/fl_context
    programming_guide/fl_component
+   programming_guide/serialization
    programming_guide/filters
    programming_guide/event_system
    programming_guide/provisioning_system
