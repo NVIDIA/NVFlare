@@ -42,7 +42,7 @@ Examples,
     new_shareable = fobs.loads(data)
 
 Decomposers
-~~~~~~~~~~~
+-----------
 
 Decomposers are classes that inherit abstract base class :code:`fobs.Decomposer`. FOBS
 uses decomposers to break an object into **serializable objects** before serializing it
@@ -152,3 +152,26 @@ by MessagePack, a decomposer is included in `fobs` module so no need to further 
 
 The same decomposer can be registered multiple times. Only first one takes effect, the others
 are ignored with a warning message.
+
+Custom Types
+------------
+
+To support custom types with FOBS, the decomposers for the types must be included
+with the custom code and registered.
+
+The decomposers must be registered in both server and client code before FOBS is used.
+A good place for registration is the constructors for controllers and executors. It
+can also be done in `START_RUN` event handler.
+
+Custom object cannot be put in `shareable` directly,
+it must be serialized using FOBS first. Assuming `custom_data` contains custom type,
+this is how data can be stored in shareable,
+::
+    shareable[CUSTOM_DATA] = fobs.dumps(custom_data)
+On the receiving end,
+::
+    custom_data = fobs.loads(shareable[CUSTOM_DATA])
+
+This doesn't work
+::
+    shareable[CUSTOM_DATA] = custom_data
