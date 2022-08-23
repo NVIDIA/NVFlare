@@ -353,13 +353,10 @@ class SimulatorClientRunner(FLComponent):
                     next_client = self.get_next_run_client()
                 else:
                     next_client = client
-            if next_client.client_name == client.client_name:
+            if not stop_run and next_client.client_name == client.client_name:
                 conn.send(True)
             else:
                 conn.send(False)
-                break
-
-            if stop_run:
                 break
 
         return stop_run, next_client
