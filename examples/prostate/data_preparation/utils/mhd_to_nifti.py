@@ -14,6 +14,7 @@
 
 import argparse
 
+import numpy as np
 import SimpleITK as sitk
 
 parser = argparse.ArgumentParser("Convert mhd file to nifti")

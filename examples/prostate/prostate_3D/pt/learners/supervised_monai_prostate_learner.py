@@ -25,6 +25,7 @@ from monai.networks.nets.unet import UNet
 from monai.transforms import (
     Activations,
     AsDiscrete,
+    AsDiscreted,
     Compose,
     DivisiblePadd,
     EnsureChannelFirstd,
