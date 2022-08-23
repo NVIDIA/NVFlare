@@ -91,13 +91,13 @@ class SimulatorRunner(FLComponent):
                 self.client_names = self._extract_client_names_from_meta(meta)
             if not self.client_names:
                 self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
-                sys.exit(1)
+                return False
             if self.args.threads and self.args.threads > len(self.client_names):
                 logging.error("The number of threads to run can not be larger then the number of clients.")
-                sys.exit(-1)
+                return False
             if not (self.args.gpu or self.args.threads):
                 logging.error("Please provide the number of threads or provide gpu options to run the simulator.")
-                sys.exit(-1)
+                return False
 
             self._validate_client_names(meta, self.client_names)
 
@@ -112,7 +112,7 @@ class SimulatorRunner(FLComponent):
                         f"The number of clients ({len(self.client_names)} must be larger than "
                         f"the number of GPUS: ({len(gpus)})"
                     )
-                    sys.exit(-1)
+                    return False
 
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
