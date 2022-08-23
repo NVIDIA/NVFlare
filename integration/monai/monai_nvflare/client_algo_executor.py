@@ -133,7 +133,7 @@ class ClientAlgoExecutor(Executor):
         ).to_shareable()
 
         self.client_algo.train(exchangeobj_from_shareable(shareable), extra={ExtraItems.ABORT: abort_signal})
-        local_weights_eo = weights_to_numpy(self.client_algo.get_weights())
+        local_weights_eo = self.client_algo.get_weights()
 
         # check returned weights dict
         if local_weights_eo.weights is None:
@@ -159,11 +159,10 @@ class ClientAlgoExecutor(Executor):
         else:
             meta = None
 
-        if local_weights_eo.weights is None:
-            return make_reply(ReturnCode.EMPTY_RESULT)
-        else:
-            # Optionally also support returned optimizer state
-            train_result = DXO(data_kind=data_kind, data=local_weights_eo.weights, meta=meta).to_shareable()
+        # Get returned weights
+        local_weights_eo = weights_to_numpy(local_weights_eo)
+        train_result = DXO(data_kind=data_kind, data=local_weights_eo.weights, meta=meta).to_shareable()
+        # Note, optionally could also support returned optimizer state
 
         # if the client_algo returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
         # the train result, which can be used for best model selection.
@@ -184,10 +183,10 @@ class ClientAlgoExecutor(Executor):
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
-        local_weights = weights_to_numpy(self.client_algo.get_weights(extra={ExtraItems.MODEL_NAME: model_name}))
-        submit_model_result = DXO(data_kind=DataKind.WEIGHTS, data=local_weights).to_shareable()
-        if submit_model_result and isinstance(submit_model_result, Shareable):
-            return submit_model_result
+        local_weights_eo = self.client_algo.get_weights(extra={ExtraItems.MODEL_NAME: model_name})
+        if local_weights_eo.weights is not None:
+            local_weights_eo = weights_to_numpy(local_weights_eo)
+            return DXO(data_kind=DataKind.WEIGHTS, data=local_weights_eo.weights).to_shareable()
         else:
             return make_reply(ReturnCode.EMPTY_RESULT)
 
@@ -196,10 +195,8 @@ class ClientAlgoExecutor(Executor):
 
         shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE)
         test_report = self.client_algo.evaluate(exchangeobj_from_shareable(shareable))
-        validate_result = DXO(data_kind=DataKind.METRICS, data=test_report).to_shareable()
-
-        if validate_result and isinstance(validate_result, Shareable):
-            return validate_result
+        if test_report.metrics is not None:
+            return DXO(data_kind=DataKind.METRICS, data=test_report.metrics).to_shareable()
         else:
             return make_reply(ReturnCode.EMPTY_RESULT)
 
