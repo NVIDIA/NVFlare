@@ -55,7 +55,7 @@ def main():
     )
     train_config_name = "config_train_" + str(args.site_num) + "_" + args.split_method + ".json"
     target_path = os.path.join(args.job_config_path_root, job_name)
-    target_config_path = os.path.join(target_path, job_name, "config")
+    target_config_path = os.path.join(target_path, job_name)
     base_path = os.path.join(args.job_config_path_root, args.base_job_name)
 
     # make target config folders
