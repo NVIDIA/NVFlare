@@ -21,6 +21,10 @@ Using the bundle configurations, we can use MONAI's `MonaiAlgo` class to execute
 ## Description
 NVFlare executes the `MonaiAlgo` class using the `ClientAlgoExecutor` class provided with this package.
 
+### Examples
+
+For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train a medical image analysis model using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [MONAI Bundle](https://docs.monai.io/en/latest/mb_specification.html), see the [examples/spleen_ct_segmentation](./examples/spleen_ct_segmentation).
+
 ## Requirements
 
 Install MONAI-NVFlare integration from [PyPI](https://pypi.org/):
