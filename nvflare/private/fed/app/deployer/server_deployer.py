@@ -83,7 +83,6 @@ class ServerDeployer:
             project_name=first_server.get("name", ""),
             min_num_clients=first_server.get("min_num_clients", 1),
             max_num_clients=first_server.get("max_num_clients", 100),
-            wait_after_min_clients=wait_after_min_clients,
             cmd_modules=self.cmd_modules,
             heart_beat_timeout=heart_beat_timeout,
             args=args,
