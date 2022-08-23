@@ -37,11 +37,7 @@ from nvflare.fuel.utils import fobs
 
 class StatisticsExecutor(Executor):
     def __init__(
-        self,
-        generator_id: str,
-        min_count: int,
-        min_random: float,
-        max_random: float,
+        self, generator_id: str, min_count: int, min_random: float, max_random: float, max_bins_percent: float
     ):
         """
 
@@ -49,7 +45,7 @@ class StatisticsExecutor(Executor):
             generator_id:  Id of the statistics component
             min_count:     minimum of data records (or tabular data rows) that required in order to perform statistics calculation
                            this is part the data privacy policy.
-                           todo: This configuration will be moved to site/data_privacy.json files
+                           todo: This configuration will be moved to local/privacy.json files
             min_random:    minimum random noise -- used to protect min/max values before sending to server
             max_random:    maximum random noise -- used to protect min/max values before sending to server
                            min/max random is used to generate random noise between (min_random and max_random).
@@ -64,9 +60,14 @@ class StatisticsExecutor(Executor):
                                                           client's max value <
                                                                   true global max <
                                                                            est. global max value
+                       todo: the min/max noise level range (min_random, max_random) will be moved to
+                       todo: local/privacy.json
+            max_bins_percent:   max number of bins allowed in terms of percent of local data size. Set this number to
+                                avoid number of bins equal or close equal to the data size, which can lead to data leak.
+                                number of bins < max_bins_percent * local count
+                                todo: this argument will be move to local/privacy.json
 
-                           todo: the min/max noise level range (min_random, max_random) will be moved to
-                           todo: site/data_privacy.json
+
         """
 
         super().__init__()
@@ -75,6 +76,7 @@ class StatisticsExecutor(Executor):
         self.stats_generator: Optional[Statistics] = None
         self.max_random = max_random
         self.min_random = min_random
+        self.max_bins_percent = max_bins_percent
         fobs_registration()
 
     def metric_functions(self) -> dict:
@@ -227,10 +229,10 @@ class StatisticsExecutor(Executor):
         num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
         bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
         item_count = self.stats_generator.count(dataset_name, feature_name)
-        if num_of_bins >= item_count:
+        if num_of_bins >= item_count * self.max_bins_percent:
             raise ValueError(
-                f"number of bins: {num_of_bins} needs to smaller than item count: {item_count} for feature "
-                f"'{feature_name}' in dataset '{dataset_name}'"
+                f"number of bins: {num_of_bins} needs to smaller than item count: {round(item_count* self.max_bins_percent)} "
+                f"for feature '{feature_name}' in dataset '{dataset_name}'"
             )
 
         result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])

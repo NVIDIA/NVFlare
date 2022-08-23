@@ -291,7 +291,7 @@ The output of the json is like the followings
 ```python
     jupyter notebook  visualization.ipynb
 ```
-   you can some snapshots of the visualizations in ![stats](demo/stats_df.png) and ![histogram plot](demo/hist_plot.png)
+   you can some snapshots of the visualizations in ![stats](demo/df_stats.png) and ![histogram plot](demo/hist_plot.png)
 
 
    
