@@ -50,8 +50,7 @@ roles:
 """
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def define_provision_parser(parser):
     parser.add_argument("-p", "--project_file", type=str, default="project.yml", help="file to describe FL project")
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
     parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
@@ -64,18 +63,23 @@ def main():
     parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
 
-    args = parser.parse_args()
 
+def has_no_arguments() -> bool:
+    return sys.argv[-1].endswith("provision")
+
+
+def handle_provision(args):
     file_path = pathlib.Path(__file__).parent.absolute()
     current_path = os.getcwd()
     custom_folder_path = os.path.join(current_path, args.custom_folder)
     sys.path.append(custom_folder_path)
-    print("Path list (sys.path) for python codes loading: {}".format(sys.path))
+    print("\nPath list (sys.path) for python codes loading: {} \n".format(sys.path))
 
     # main project file
     project_file = args.project_file
     current_project_yml = os.path.join(current_path, "project.yml")
-    if len(sys.argv) == 1 and not os.path.exists(current_project_yml):
+
+    if has_no_arguments() and not os.path.exists(current_project_yml):
         answer = input(
             f"No project.yml found in current folder.  Is it OK to generate one at {current_project_yml} for you? (y/N) "
         )
@@ -151,6 +155,17 @@ def main():
     provisioner = Provisioner(workspace_full_path, builders)
 
     provisioner.provision(project)
+
+
+def main():
+    print("*****************************************************************************")
+    print("** provision command is deprecated, please use 'nvflare provision' instead **")
+    print("*****************************************************************************")
+
+    parser = argparse.ArgumentParser()
+    define_provision_parser(parser)
+    args = parser.parse_args()
+    handle_provision(args)
 
 
 if __name__ == "__main__":

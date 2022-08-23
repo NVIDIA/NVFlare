@@ -14,7 +14,7 @@ usage()
     exit 1
 }
 
-cmd="pytest --junitxml=./integration_test.xml -v -s"
+cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
 [ $# -eq 0 ] && usage
 while getopts ":m:c" option; do
     case "${option}" in
