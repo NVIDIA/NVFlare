@@ -3,7 +3,7 @@
 ## Objective
 Integration with [MONAI](https://monai.io/)'s federated learning capabilities.
 
-Add `Executor` class to allow using [MONAI bundle](https://docs.monai.io/en/latest/bundle.html) configuration files with MONAI's `ClientAlgo` class.
+Add `ClientAlgoExecutor` class to allow using MONAI's `ClientAlgo` class in federated scenarios.
 
 ### Goals:
 
@@ -14,12 +14,12 @@ Allow the use of bundles from the MONAI [model zoo](https://github.com/Project-M
 n/a
 
 ## Background
-MONAI allows the definition of AI models using the "bundle" concept. 
+MONAI allows the definition of AI models using the "[bundle](https://docs.monai.io/en/latest/bundle.html)" concept. 
 It allows for easy experimentation and sharing of models that have been developed using MONAI.
-Using the bundle configurations, we can use MONAI's `MonaiAlgo` class to execute a bundle model in a federated scenario using NVFlare.
+Using the bundle configurations, we can use MONAI's `MonaiAlgo` (the implementation of `ClientAlgo`) to execute a bundle model in a federated scenario using NVFlare.
 
 ## Description
-NVFlare executes the `MonaiAlgo` class using the `ClientAlgoExecutor` class provided with this package.
+NVFlare executes the `ClientAlgo` class using the `ClientAlgoExecutor` class provided with this package.
 
 ### Examples
 
