@@ -48,11 +48,11 @@ class JSONModelPersistor(ModelPersistor):
         """
 
         if os.path.exists(self.save_path):
-            self.logger.info("Loading server model")
+            self.logger.info(f"Loading server model")
             with open(self.save_path, "rb") as json_file:
                 model_learnable = json.load(json_file)
         else:
-            self.logger.info("Initializing server model as None")
+            self.logger.info(f"Initializing server model as None")
             var_dict = None
             model_learnable = make_model_learnable(var_dict, dict())
         return model_learnable
@@ -69,7 +69,7 @@ class JSONModelPersistor(ModelPersistor):
             model: Model object
             fl_ctx: FLContext
         """
-        self.logger.info("Saving received model")
+        self.logger.info(f"Saving received model")
         if model_learnable:
             with open(self.save_path, "w") as f:
                 json.dump(model_learnable, f)
