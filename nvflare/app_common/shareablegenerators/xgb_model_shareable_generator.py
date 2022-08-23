@@ -67,7 +67,9 @@ class XGBModelShareableGenerator(ShareableGenerator):
             else:
                 base_model[ModelLearnableKey.WEIGHTS] = model
         else:
-            raise ValueError("data_kind should be either DataKind.XGB_MODEL, but got {}".format(dxo.data_kind))
+            raise ValueError(
+                "data_kind should be either DataKind.XGB_MODEL, but got {}".format(dxo.data_kind)
+            )
 
         base_model[ModelLearnableKey.META] = dxo.get_meta_props()
         return base_model
