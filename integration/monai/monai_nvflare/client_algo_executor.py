@@ -159,11 +159,11 @@ class ClientAlgoExecutor(Executor):
         else:
             meta = None
 
-        # Optionally also support returned optimizer state
-        train_result = DXO(data_kind=data_kind, data=local_weights_eo.weights, meta=meta).to_shareable()
-
-        if not (train_result and isinstance(train_result, Shareable)):
+        if local_weights_eo.weights is None:
             return make_reply(ReturnCode.EMPTY_RESULT)
+        else:
+            # Optionally also support returned optimizer state
+            train_result = DXO(data_kind=data_kind, data=local_weights_eo.weights, meta=meta).to_shareable()
 
         # if the client_algo returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
         # the train result, which can be used for best model selection.
