@@ -160,7 +160,7 @@ class JobRunner(FLComponent):
 
             err = engine.abort_app_on_server(job_id)
             if err:
-                self.log_error(fl_ctx, f"Failed to abort the server for run: {job_id}")
+                self.log_error(fl_ctx, f"Failed to abort the server for run: {job_id}: {err}")
 
     def abort_client_run(self, job_id, client_sites: List[str], fl_ctx):
         """Send the abort run command to the clients
