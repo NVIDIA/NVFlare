@@ -10,17 +10,17 @@ Apache v2 License or equivalent open source license
 ## Requirements
 Each research project should create a sub directory with following requirements
 
-* sub directory name must be in ASCII string and no longer than 35 characters long
+* sub directory name must be in ASCII string, all in lower, kebab-case and no longer than 35 characters long
 * Each project should include
   * README.md -- document must include
     * objective 
     * background
     * description
     * nvflare version used
-    * data download and preparation
+    * data download and preparation ( if applicable )
     * steps to run the code
     * expected results
-  * code needed to run nvflare job or Pull Request
+  * all code should be in runnable condition, i.e. no broken code
   * License file
 
 ## Example

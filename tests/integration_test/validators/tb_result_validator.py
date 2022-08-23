@@ -25,14 +25,14 @@ class TBResultValidator(FinishJobResultValidator):
         server_tb_root_dir = os.path.join(server_run_dir, TB_PATH)
 
         if not os.path.exists(server_tb_root_dir):
-            self.logger.info("server_tb_root_dir {server_tb_root_dir} doesn't exist.")
+            self.logger.error(f"server_tb_root_dir {server_tb_root_dir} doesn't exist.")
             return False
 
         for client_prop in client_props:
             client_run_dir = os.path.join(client_prop.root_dir, job_result["job_id"])
             client_side_client_tb_dir = os.path.join(client_run_dir, TB_PATH, client_prop.name)
             if not os.path.exists(client_side_client_tb_dir):
-                self.logger.info("client_side_client_tb_dir {client_side_client_tb_dir} doesn't exist.")
+                self.logger.error(f"client_side_client_tb_dir {client_side_client_tb_dir} doesn't exist.")
                 return False
 
         return True

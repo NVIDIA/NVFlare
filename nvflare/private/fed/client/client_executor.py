@@ -189,9 +189,6 @@ class ProcessExecutor(ClientExecutor):
         resource_manager: ResourceManagerSpec,
         target: str,
     ):
-        if allocated_resource:
-            resource_consumer.consume(allocated_resource)
-
         new_env = os.environ.copy()
         if app_custom_folder != "":
             new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
