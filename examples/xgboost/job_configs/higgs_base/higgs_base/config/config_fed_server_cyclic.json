@@ -11,7 +11,7 @@
   "components": [
     {
       "id": "persistor",
-      "name": "JSONModelPersistor",
+      "path": "custom.xgboost_model_persistor.XGBoostModelPersistor",
       "args": {
         "save_name": "xgboost_model.json"
       }

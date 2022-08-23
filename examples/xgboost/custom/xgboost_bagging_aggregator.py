@@ -27,6 +27,7 @@ from nvflare.app_common.app_constant import AppConstants
 class XGBoostBaggingAggregator(Aggregator):
     def __init__(
         self,
+        expected_data_kind: DataKind = DataKind.WEIGHTS,
     ):
         """Perform bagging aggregation for XGBoost trees.
 
@@ -34,14 +35,17 @@ class XGBoostBaggingAggregator(Aggregator):
         Bagging aggregation simply add the new trees to existing global model.
 
         Args:
-            expected_data_kind:
-                DataKind for DXO. Defaults to DataKind.XGB_MODEL
+            expected_data_kind (Union[DataKind, Dict[str, DataKind]]):
+                DataKind for DXO. Defaults to DataKind.WEIGHTS
                 Indicating the tree representation given by XGBoost
         """
         super().__init__()
         self.logger.debug(f"expected data kind: {expected_data_kind}")
         self.history = []
-        self.expected_data_kind = DataKind.XGB_MODEL
+        self.expected_data_kind = expected_data_kind
+        # Check expected data kind
+        if expected_data_kind != DataKind.WEIGHTS:
+            raise ValueError(f"expected_data_kind = {expected_data_kind} is not {DataKind.WEIGHTS}")
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """Store shareable and update aggregator's internal state
@@ -66,6 +70,11 @@ class XGBoostBaggingAggregator(Aggregator):
         rc = shareable.get_return_code()
         if rc and rc != ReturnCode.OK:
             self.log_warning(fl_ctx, f"Contributor {contributor_name} returned rc: {rc}. Disregarding contribution.")
+            return False
+
+        # Accept expected DXO in shareable
+        if not isinstance(dxo, DXO):
+            self.log_error(fl_ctx, f"Expected DXO but got {type(dxo)}")
             return False
 
         if dxo.data_kind != self.expected_data_kind:
@@ -134,7 +143,7 @@ class XGBoostBaggingAggregator(Aggregator):
             client_model_path.append(os.path.join(app_root, "temp_" + contributor_name + ".json"))
 
         if not os.path.exists(global_model_path):
-            # First round, copy from tree 1 to get all xgboost model items
+            # Initial, copy from tree 1
             shutil.copy(client_model_path[0], global_model_path)
             # Remove the first tree
             with open(global_model_path) as f:

@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import pickle
+import json
 
 import tensorflow as tf
-from tf2_net import Net
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
+from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from tf2_net import Net
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.abstract.model import make_model_learnable
 
 
 class TF2ModelPersistor(ModelPersistor):

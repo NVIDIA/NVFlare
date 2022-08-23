@@ -21,9 +21,7 @@ Since HIGGS dataset is already randomly recorded, data split will be specified b
 3. square: the amount of data is correlated with the client ID in a squared fashion (1^2 to M^2)
 4. exponential: the amount of data is correlated with the client ID in an exponential fashion (exp(1) to exp(M))
 
-The choice of data split depends on dataset and the number of participants. For a large dataset as HIGGS, if the number of clients is small (e.g. 5), each client will still have sufficient data to train on with uniform split, and hence exponential would be used to observe the performance drop caused by non-uniform data split. If the number of clients is large (e.g. 20), exponential split will be too aggressive, and linear/square should be used.
-
-Data splits used in the following experiment and other training configurations can be generated with
+All data splits and other training configurations can be generated with
 ```
 bash train_config_gen.sh
 ```
@@ -48,16 +46,6 @@ python3 -m pip install seaborn
 ### Set up FL workspace
 
 Follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to set up your POC ("proof of concept") workspace.
-
-Here, we run the following script
-```
-bash create_poc_workspace.sh 5
-```
-and 
-```
-bash create_poc_workspace.sh 20
-```
-for our two experimental settings: 5-client and 20-client.
 
 ## Federated Training of XGBoost under Cyclic and Bagging Training Schemes
 ### Cyclic Training 
