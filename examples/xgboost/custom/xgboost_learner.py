@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import json
-import os
 from abc import abstractmethod
 
-import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import roc_auc_score
 from torch.utils.tensorboard import SummaryWriter

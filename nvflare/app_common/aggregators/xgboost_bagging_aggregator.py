@@ -39,7 +39,7 @@ class XGBoostBaggingAggregator(Aggregator):
                 Indicating the tree representation given by XGBoost
         """
         super().__init__()
-        self.logger.debug(f"expected data kind: {DataKind.XGB_MODEL}")
+        self.logger.debug(f"expected data kind: {expected_data_kind}")
         self.history = []
         self.expected_data_kind = DataKind.XGB_MODEL
 
