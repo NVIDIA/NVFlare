@@ -29,12 +29,16 @@ class ClientAppRunner:
         self.command_agent = None
 
     def start_run(self, app_root, args, config_folder, federated_client, secure_train):
+        client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
+        federated_client.status = ClientStatus.STARTED
+        client_runner.run(app_root, args)
+
+    def create_client_runner(self, app_root, args, config_folder, federated_client, secure_train):
         client_config_file_name = os.path.join(app_root, args.client_config)
         conf = ClientJsonConfigurator(
             config_file_name=client_config_file_name,
         )
         conf.configure()
-
         workspace = Workspace(args.workspace, args.client_name, config_folder)
         run_manager = ClientRunManager(
             client_name=args.client_name,
@@ -60,8 +64,7 @@ class ClientAppRunner:
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 
             self.start_command_agent(args, client_runner, federated_client, fl_ctx)
-        federated_client.status = ClientStatus.STARTED
-        client_runner.run(app_root, args)
+        return client_runner
 
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
         # Start the command agent

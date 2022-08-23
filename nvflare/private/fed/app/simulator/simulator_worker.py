@@ -23,19 +23,15 @@ from multiprocessing.connection import Listener
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
-from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
-from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
-from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.fed_client import FederatedClient
+from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
@@ -73,37 +69,12 @@ class ClientTaskWorker(FLComponent):
         """
         app_client_root = client.app_client_root
         args = client.args
-        client_config_file_name = os.path.join(app_client_root, args.client_config)
-        conf = ClientJsonConfigurator(
-            config_file_name=client_config_file_name,
-        )
-        conf.configure()
-        workspace = Workspace(args.workspace, client.client_name, args.config_folder)
-        run_manager = ClientRunManager(
-            client_name=client.client_name,
-            job_id=args.job_id,
-            workspace=workspace,
-            client=client,
-            components=conf.runner_config.components,
-            handlers=conf.runner_config.handlers,
-            conf=conf,
-        )
-        client.run_manager = run_manager
-        with run_manager.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=False)
-            fl_ctx.set_prop(EngineConstant.FL_TOKEN, client.token, private=False)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
-            fl_ctx.set_prop(FLContextKey.APP_ROOT, app_client_root, private=True, sticky=True)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.SECURE_MODE, False, private=True, sticky=True)
+        args.client_name = client.client_name
+        args.token = client.token
 
-            client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
-            client_runner.init_run(app_client_root, args)
-            run_manager.add_handler(client_runner)
-            fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
-
-            # self.start_command_agent(args, client_runner, federated_client, fl_ctx)
+        client_app_runner = SimulatorClientAppRunner()
+        client_runner = client_app_runner.create_client_runner(app_client_root, args, args.config_folder, client, False)
+        client_runner.init_run(app_client_root, args)
 
     def do_one_task(self, client):
         stop_run = False
