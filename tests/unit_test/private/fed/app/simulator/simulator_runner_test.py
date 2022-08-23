@@ -55,7 +55,7 @@ class TestSimulatorRunner:
         runner = SimulatorRunner(args)
         assert runner.setup()
 
-        expected_clients = ["site-1", "site-2"]
+        expected_clients = ["site-a", "site-b"]
         client_names = []
         for client in runner.client_names:
             client_names.append(client)
@@ -70,11 +70,11 @@ class TestSimulatorRunner:
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-c site-1', '-t 1'])
+        args = parser.parse_args([job_folder, '-o' + workspace, '-c site-a', '-t 1'])
         runner = SimulatorRunner(args)
         assert runner.setup()
 
-        expected_clients = ["site-1"]
+        expected_clients = ["site-a"]
         client_names = []
         for client in runner.client_names:
             client_names.append(client)
