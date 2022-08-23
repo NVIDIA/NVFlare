@@ -11,14 +11,14 @@
   "components": [
     {
       "id": "persistor",
-      "path": "custom.xgboost_model_persistor.XGBoostModelPersistor",
+      "name": "JSONModelPersistor",
       "args": {
         "save_name": "xgboost_model.json"
       }
     },
     {
       "id": "shareable_generator",
-      "name": "FullModelShareableGenerator",
+      "name": "XGBModelShareableGenerator",
       "args": {}
     }
   ],
