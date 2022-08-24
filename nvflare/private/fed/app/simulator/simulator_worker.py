@@ -185,7 +185,7 @@ def main():
 
 if __name__ == "__main__":
     """
-    This is the main program of simulator worker process when running the NVFlare Simulator using multi-GPU.
+    This is the main program of simulator worker process when running the NVFlare Simulator..
     """
 
     main()
