@@ -71,5 +71,5 @@ def show_histograms(data, white_list_features=[]):
         hist_data = hists[feature]
         index = edges[feature]
         df = pd.DataFrame(hist_data, index=index)
-        axes = df.plot.bar(rot=30)
-        axes = df.plot.bar(rot=30, subplots=True)
+        axes = df.plot.line(rot=40, title=feature)
+        axes = df.plot.line(rot=40, subplots=True, title=feature)

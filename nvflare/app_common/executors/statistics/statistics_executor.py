@@ -79,6 +79,31 @@ class StatisticsExecutor(Executor):
         self.max_bins_percent = max_bins_percent
         fobs_registration()
 
+    def validate_inputs(self, fl_ctx: FLContext):
+        try:
+            if self.min_random < 0 or self.min_random > 1.0:
+                raise ValueError(
+                    f"minimum noise level provided by min_random {self.min_random} should be within (0, 1)"
+                )
+            if self.max_random < 0 or self.max_random > 1.0:
+                raise ValueError(
+                    f"maximum noise level provided by max_random {self.max_random} should be within (0, 1)"
+                )
+
+            if self.min_random > self.max_random:
+                raise ValueError(
+                    "minimum noise level {} should be less than maximum noise level {}".format(
+                        self.min_random, self.max_random
+                    )
+                )
+
+            if self.max_bins_percent < 0 or self.max_bins_percent > 1.0:
+                raise ValueError(f"max_bins_percent should be within (0, 1), but {self.max_bins_percent} is provided")
+
+        except ValueError as e:
+            self.system_panic(f"input error {e}", fl_ctx)
+            raise e
+
     def metric_functions(self) -> dict:
         return {
             StC.STATS_COUNT: self.get_count,
@@ -99,12 +124,15 @@ class StatisticsExecutor(Executor):
 
     def initialize(self, fl_ctx: FLContext):
         try:
+            self.validate_inputs(fl_ctx)
             engine = fl_ctx.get_engine()
             self.stats_generator = engine.get_component(self.generator_id)
             if not isinstance(self.stats_generator, Statistics):
                 raise TypeError(
-                    f"statistics generator must implement Statistics type. Got: {type(self.stats_generator)}"
+                    f"{type(self.stats_generator).__name} must implement `Statistics` type."
+                    f" Got: {type(self.stats_generator)}"
                 )
+
             self.stats_generator.initialize(engine.get_all_components(), fl_ctx)
         except Exception as e:
             self.log_exception(fl_ctx, f"statistics generator initialize exception: {e}")
@@ -136,8 +164,6 @@ class StatisticsExecutor(Executor):
             self.validate(client_name, ds_features, shareable, fl_ctx)
             metric_task = shareable.get(StC.METRIC_TASK_KEY)
             target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
-            print("target_metrics=", target_metrics)
-
             for tm in target_metrics:
                 fn = self.metric_functions()[tm.name]
                 metrics_result[tm.name] = {}
@@ -152,7 +178,6 @@ class StatisticsExecutor(Executor):
             result[StC.METRIC_TASK_KEY] = metric_task
             if metric_task == StC.STATS_1st_METRICS:
                 result[StC.STATS_FEATURES] = fobs.dumps(ds_features)
-
             result[metric_task] = fobs.dumps(metrics_result)
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)
@@ -231,7 +256,7 @@ class StatisticsExecutor(Executor):
         item_count = self.stats_generator.count(dataset_name, feature_name)
         if num_of_bins >= item_count * self.max_bins_percent:
             raise ValueError(
-                f"number of bins: {num_of_bins} needs to smaller than item count: {round(item_count* self.max_bins_percent)} "
+                f"number of bins: {num_of_bins} needs to smaller than item count: {round(item_count * self.max_bins_percent)} "
                 f"for feature '{feature_name}' in dataset '{dataset_name}'"
             )
 
@@ -282,11 +307,9 @@ class StatisticsExecutor(Executor):
             if num_of_bins:
                 return num_of_bins
             else:
-                print(err_msg)
-            raise Exception(err_msg)
+                raise Exception(err_msg)
 
         except KeyError as e:
-            print(err_msg)
             raise Exception(err_msg)
 
     def get_bin_range(

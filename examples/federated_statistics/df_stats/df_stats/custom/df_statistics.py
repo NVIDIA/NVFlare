@@ -18,10 +18,9 @@ import numpy as np
 import pandas as pd
 from pandas.core.series import Series
 
-from load_data_utils import get_app_paths, load_config
-from nvflare.apis.fl_constant import ReservedKey
+from nvflare.apis.fl_constant import ReservedKey, FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import Statistics,BinRange, Histogram, HistogramType, Feature
+from nvflare.app_common.abstract.statistics_spec import Statistics, BinRange, Histogram, HistogramType, Feature
 from nvflare.app_common.statistics.numpy_utils import get_std_histogram_buckets
 from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type
 
@@ -31,22 +30,26 @@ class DFStatistics(Statistics):
         super().__init__()
         self.data_path = data_path
         self.data: Optional[Dict[str, pd.DataFrame]] = None
+        self.data_features = ["Age", "Workclass", "fnlwgt", "Education", "Education-Num", "Marital Status",
+                              "Occupation", "Relationship", "Race", "Sex", "Capital Gain", "Capital Loss",
+                              "Hours per week", "Country", "Target"]
+        self.skip_rows = {
+            "site-1": [],
+            "site-2": [0],
+        }
 
     def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
         client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
         self.log_info(fl_ctx, f"load data for client {client_name}")
         try:
-            workspace_dir, job_dir, config_path = get_app_paths(fl_ctx)
-            config = load_config(config_path)
-
-            features = config["data_frame_stats.data.features"]
-            skip_rows = config[f"data_frame_stats.data.clients.{client_name}.skiprows"]
-            # data_path = self.data_path.replace("{workspace_dir}", workspace_dir).replace("{client_name}", client_name)
+            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+            workspace_dir = workspace.get_root_dir()
+            skip_rows = self.skip_rows[client_name]
             data_path = f"{workspace_dir}/{self.data_path}"
 
             # example of load data from CSV
             df: pd.DataFrame = pd.read_csv(
-                data_path, names=features, sep=r"\s*,\s*", skiprows=skip_rows, engine="python", na_values="?"
+                data_path, names=self.data_features, sep=r"\s*,\s*", skiprows=skip_rows, engine="python", na_values="?"
             )
             train = df.sample(frac=0.8, random_state=200)  # random state is a seed value
             test = df.drop(train.index).sample(frac=1.0)

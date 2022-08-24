@@ -29,7 +29,17 @@ from nvflare.fuel.utils import fobs
 
 
 class StatisticsController(Controller):
+<<<<<<< HEAD
     def __init__(self, metric_configs: Dict[str, dict], writer_id: str):
+=======
+    def __init__(
+        self,
+        metric_configs: Dict[str, dict],
+        writer_id: str,
+        result_wait_timeout: int = 60,
+        min_clients: Optional[int] = None,
+    ):
+>>>>>>> 7df1bfe (Add image example)
         """
         Args:
             metric_configs: defines the input statistic metrics to be computed and each metric's configuration.
@@ -109,9 +119,21 @@ class StatisticsController(Controller):
         if abort_signal.triggered:
             return False
 
+<<<<<<< HEAD
         clients = fl_ctx.get_engine().get_clients()
         self.metrics_task_flow(abort_signal, fl_ctx, clients, StC.STATS_1st_METRICS)
         self.metrics_task_flow(abort_signal, fl_ctx, clients, StC.STATS_2nd_METRICS)
+=======
+        self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_METRICS)
+        self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_METRICS)
+
+        if not self._wait_for_all_results(
+            self.result_wait_timeout, self.min_clients, self.client_metrics, abort_signal
+        ):
+            return False
+
+        print("start post processing")
+>>>>>>> 7df1bfe (Add image example)
         self.post_fn(self.task_name, fl_ctx)
 
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
@@ -295,3 +317,33 @@ class StatisticsController(Controller):
 
     def _get_result_cb(self, metric_task: str):
         return self.result_callback_fns[metric_task]
+
+    def _wait_for_all_results(
+        self, result_wait_timeout: int, request_client_size: int, client_metrics: dict, abort_signal=None
+    ) -> bool:
+
+        # record of each metric, number of clients processed so far
+        metric_client_sizes = {}
+
+        # current metrics obtained so far (across all clients)
+        metric_names = client_metrics.keys()
+        for m in metric_names:
+            metric_client_sizes[m] = len(client_metrics[m].keys())
+
+        timeout = result_wait_timeout
+        sleep_time = 5
+        for m in metric_client_sizes:
+            if request_client_size > metric_client_sizes[m]:
+                t = 0
+                while t < timeout and request_client_size > metric_client_sizes[m]:
+
+                    if abort_signal and abort_signal.triggered:
+                        return False
+
+                    self.log_info(f"not all client received the metric {m}, need to wait for {sleep_time} seconds.")
+                    time.sleep(sleep_time)
+                    t += sleep_time
+                    # check and update number of client processed for metric again
+                    metric_client_sizes[m] = len(client_metrics[m].keys())
+
+        return True
