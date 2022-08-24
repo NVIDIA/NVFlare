@@ -89,7 +89,7 @@ class TestSimulatorRunner:
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-n 2', '-t 1'])
+        args = parser.parse_args([job_folder, '-o' + workspace, '-n 3', '-t 1'])
         runner = SimulatorRunner(args)
         assert not runner.setup()
 
