@@ -19,6 +19,7 @@ import logging
 import os
 
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -58,14 +59,11 @@ def main():
     # TODO:: remove env and train config since they are not core
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.config_folder = config_folder
-    logger = logging.getLogger()
     args.log_config = None
     args.snapshot = kv_list.get("restore_snapshot")
 
-    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
-    logging_setup(startup)
-
-    log_file = os.path.join(args.workspace, args.job_id, WorkspaceConstants.LOG_FILE_NAME)
+    workspace = Workspace(root_dir=args.workspace, app_name='server')
+    log_file = workspace.get_app_log_file_path(args.job_id)
     add_logfile_handler(log_file)
     logger = logging.getLogger("runner_process")
     logger.info("Runner_process started.")
@@ -73,19 +71,15 @@ def main():
     command_agent = None
     try:
         os.chdir(args.workspace)
-
-        SecurityContentService.initialize(content_folder=startup)
+        SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
         # Initialize audit service since the job execution will need it!
-        audit_file_name = os.path.join(args.workspace, WorkspaceConstants.AUDIT_LOG)
+        audit_file_name = workspace.get_audit_file_path()
         AuditService.initialize(audit_file_name)
 
         conf = FLServerStarterConfiger(
-            app_root=startup,
-            server_config_file_name=args.fed_server,
-            log_config_file_name=WorkspaceConstants.LOGGING_CONFIG,
+            workspace=workspace,
             kv_list=args.set,
-            logging_config=False,
         )
         log_level = os.environ.get("FL_LOG_LEVEL", "")
         numeric_level = getattr(logging, log_level.upper(), None)
@@ -122,11 +116,6 @@ def main():
     except ConfigError as ex:
         logger.exception(f"ConfigError: {ex}", exc_info=True)
         raise ex
-
-
-def logging_setup(startup):
-    log_config_file_path = os.path.join(startup, WorkspaceConstants.LOGGING_CONFIG)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
 def start_server_app(server, args, app_root, job_id, snapshot, logger):

@@ -231,7 +231,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         handlers: Optional[List[FLComponent]] = None,
         args=None,
         secure_train=False,
-        enable_byoc=False,
         snapshot_persistor=None,
         overseer_agent=None,
     ):
@@ -247,7 +246,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             handlers: A list of handler
             args: arguments
             secure_train: whether to use secure communication
-            enable_byoc: whether to enable custom components
         """
         self.logger = logging.getLogger("FederatedServer")
 
@@ -285,7 +283,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.processors = {}
         self.runner_config = None
         self.secure_train = secure_train
-        self.enable_byoc = enable_byoc
 
         self.workspace = args.workspace
         self.snapshot_location = None

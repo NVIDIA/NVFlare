@@ -21,6 +21,7 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
@@ -58,9 +59,11 @@ def main():
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
     args.log_config = None
 
+    workspace = Workspace(root_dir=args.workspace)
+
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
-            f = os.path.join(args.workspace, name)
+            f = workspace.get_file_path_in_root(name)
             if os.path.exists(f):
                 os.remove(f)
         except BaseException:
@@ -71,23 +74,19 @@ def main():
 
     try:
         os.chdir(args.workspace)
-        startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         conf = FLClientStarterConfiger(
-            app_root=startup,
-            client_config_file_name=args.fed_client,
-            log_config_file_name=WorkspaceConstants.LOGGING_CONFIG,
+            workspace=workspace,
             kv_list=args.set,
         )
         conf.configure()
 
-        log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
+        log_file = workspace.get_log_file_path()
         add_logfile_handler(log_file)
 
         deployer = conf.base_deployer
-
         security_init(secure_train=deployer.secure_train,
                       site_org=conf.site_org,
-                      workspace_dir=args.workspace,
+                      workspace=workspace,
                       app_validator=conf.app_validator,
                       site_type=SiteType.CLIENT)
 

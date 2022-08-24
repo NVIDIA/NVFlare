@@ -20,6 +20,7 @@ import os
 import sys
 
 from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -58,23 +59,21 @@ def main():
     logger = logging.getLogger()
     args.log_config = None
 
+    workspace = Workspace(root_dir=args.workspace, app_name='server')
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
-            f = os.path.join(args.workspace, name)
+            f = workspace.get_file_path_in_root(name)
             if os.path.exists(f):
                 os.remove(f)
         except BaseException:
-            print("Could not remove the {} file.  Please check your system before starting FL.".format(name))
+            print(f"Could not remove file '{name}'.  Please check your system before starting FL.")
             sys.exit(-1)
 
     try:
         os.chdir(args.workspace)
 
-        startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         conf = FLServerStarterConfiger(
-            app_root=startup,
-            server_config_file_name=args.fed_server,
-            log_config_file_name=WorkspaceConstants.LOGGING_CONFIG,
+            workspace=workspace,
             kv_list=args.set,
         )
         log_level = os.environ.get("FL_LOG_LEVEL", "")
@@ -88,7 +87,7 @@ def main():
             logger.critical("loglevel critical enabled")
         conf.configure()
 
-        log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
+        log_file = workspace.get_log_file_path()
         add_logfile_handler(log_file)
 
         deployer = conf.deployer
@@ -96,7 +95,7 @@ def main():
 
         security_init(secure_train=secure_train,
                       site_org=conf.site_org,
-                      workspace_dir=args.workspace,
+                      workspace=workspace,
                       app_validator=conf.app_validator,
                       site_type=SiteType.SERVER)
 
@@ -115,8 +114,6 @@ def main():
                 secure_train=secure_train,
             )
             admin_server.start()
-
-            services.platform = "PT"
             services.set_admin_server(admin_server)
         finally:
             deployer.close()

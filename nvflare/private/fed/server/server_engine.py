@@ -200,10 +200,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-
-            app_custom_folder = ""
-            if self.server.enable_byoc:
-                app_custom_folder = os.path.join(app_root, "custom")
+            app_custom_folder = os.path.join(app_root, "custom")
 
             open_ports = get_open_ports(2)
             self._start_runner_process(

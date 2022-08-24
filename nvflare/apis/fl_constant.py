@@ -267,9 +267,11 @@ class SystemComponents(object):
 class WorkspaceConstants:
     """hard coded file names inside the workspace folder."""
     STARTUP_FOLDER_NAME = "startup"
-    SITE_FOLDER_NAME = "site"
+    SITE_FOLDER_NAME = "local"
+    CUSTOM_FOLDER_NAME = "custom"
 
     LOGGING_CONFIG = "log.config"
+    DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + '.default'
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = 'log.txt'
 
@@ -284,8 +286,15 @@ class WorkspaceConstants:
     CLIENT_STARTUP_CONFIG = 'fed_client.json'
     SERVER_JOB_CONFIG = 'config_fed_server.json'
     CLIENT_JOB_CONFIG = 'config_fed_client.json'
+
     AUTHORIZATION_CONFIG = 'authorization.json'
+    DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + '.default'
+    RESOURCES_CONFIG = 'resources.json'
+    DEFAULT_RESOURCES_CONFIG = RESOURCES_CONFIG + '.default'
     PRIVACY_CONFIG = 'privacy.json'
+    SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + '.sample'
+
+    ADMIN_STARTUP_CONFIG = 'fed_admin.json'
 
 
 class SiteType:

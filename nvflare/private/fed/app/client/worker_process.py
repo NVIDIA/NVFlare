@@ -84,25 +84,25 @@ def main():
         args.client_config = os.path.join(config_folder, WorkspaceConstants.CLIENT_JOB_CONFIG)
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
+    workspace = Workspace(args.workspace, args.client_name, config_folder)
 
     try:
-        remove_restart_file(args)
+        remove_restart_file(workspace)
     except BaseException:
         print("Could not remove the restart.fl / shutdown.fl file.  Please check your system before starting FL.")
         sys.exit(-1)
 
-    restart_file = os.path.join(args.workspace, "restart.fl")
+    restart_file = workspace.get_file_path_in_root("restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
     # Initialize audit service since the job execution will need it!
-    audit_file_name = os.path.join(args.workspace, WorkspaceConstants.AUDIT_LOG)
+    audit_file_name = workspace.get_audit_file_path()
     AuditService.initialize(audit_file_name)
 
-    print("starting the client .....")
+    # print("starting the client .....")
 
-    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
-    SecurityContentService.initialize(content_folder=startup)
+    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
     thread = None
     stop_event = threading.Event()
@@ -110,16 +110,9 @@ def main():
     command_agent = None
     federated_client = None
 
-    startup = args.startup
-    app_root = os.path.join(
-        args.workspace,
-        WorkspaceConstants.WORKSPACE_PREFIX + str(args.job_id),
-        WorkspaceConstants.APP_PREFIX + args.client_name,
-    )
+    app_root = workspace.get_app_dir(str(args.job_id))
 
-    logging_setup(app_root, args, config_folder, startup)
-
-    log_file = os.path.join(args.workspace, args.job_id, WorkspaceConstants.LOG_FILE_NAME)
+    log_file = workspace.get_app_log_file_path(args.job_id)
     add_logfile_handler(log_file)
     logger = logging.getLogger("worker_process")
     logger.info("Worker_process started.")
@@ -130,11 +123,8 @@ def main():
         thread.start()
 
         conf = FLClientStarterConfiger(
-            app_root=startup,
-            client_config_file_name=args.fed_client,
-            log_config_file_name=args.log_config,
+            workspace=workspace,
             kv_list=args.set,
-            logging_config=False,
         )
         conf.configure()
 
@@ -155,7 +145,6 @@ def main():
         )
         conf.configure()
 
-        workspace = Workspace(args.workspace, args.client_name, config_folder)
         run_manager = ClientRunManager(
             client_name=args.client_name,
             job_id=args.job_id,
@@ -202,27 +191,17 @@ def main():
             thread.join()
 
 
-def logging_setup(app_root, args, config_folder, startup):
-    app_log_config = os.path.join(app_root, config_folder, "log.config")
-    if os.path.exists(app_log_config):
-        args.log_config = app_log_config
-    else:
-        args.log_config = os.path.join(startup, "log.config")
-    log_config_file_path = os.path.join(app_root, args.log_config)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-
-
-def remove_restart_file(args):
+def remove_restart_file(workspace: Workspace):
     """To remove the restart.fl file.
 
     Args:
-        args: command args
+        workspace: workspace object
 
     """
-    restart_file = os.path.join(args.workspace, "restart.fl")
+    restart_file = workspace.get_file_path_in_root("restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
-    restart_file = os.path.join(args.workspace, "shutdown.fl")
+    restart_file = workspace.get_file_path_in_root("shutdown.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
 

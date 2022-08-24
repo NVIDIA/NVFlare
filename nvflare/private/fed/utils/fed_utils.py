@@ -21,6 +21,7 @@ from logging.handlers import RotatingFileHandler
 from multiprocessing.connection import Listener
 from typing import List
 
+from nvflare.apis.workspace import Workspace
 from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.app_validation import AppValidator
@@ -123,7 +124,7 @@ def _check_secure_content(site_type: str) -> List[str]:
 
 def security_init(secure_train: bool,
                   site_org: str,
-                  workspace_dir: str,
+                  workspace: Workspace,
                   app_validator: AppValidator,
                   site_type: str):
     """To check the security content if running in security mode.
@@ -131,13 +132,13 @@ def security_init(secure_train: bool,
     Args:
        secure_train (bool): if run in secure mode or not.
        site_org: organization of the site
-       workspace_dir (str): the workspace to check.
+       workspace: the workspace object.
        app_validator: app validator for application validation
        site_type (str): server or client. fed_client.json or fed_server.json
     """
     # initialize the SecurityContentService.
     # must do this before initializing other services since it may be needed by them!
-    startup_dir = os.path.join(workspace_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
+    startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
     if secure_train:
@@ -150,7 +151,7 @@ def security_init(secure_train: bool,
 
     # initialize the AuditService, which is used by command processing.
     # The Audit Service can be used in other places as well.
-    audit_file_name = os.path.join(workspace_dir, WorkspaceConstants.AUDIT_LOG)
+    audit_file_name = workspace.get_audit_file_path()
     AuditService.initialize(audit_file_name)
 
     if app_validator:
@@ -161,12 +162,11 @@ def security_init(secure_train: bool,
     # AuthorizationService depends on SecurityContentService to read authorization policy file.
     authorizer = None
     if secure_train:
-        site_dir = os.path.join(workspace_dir, WorkspaceConstants.SITE_FOLDER_NAME)
-        if os.path.exists(site_dir):
-            policy_config = os.path.join(site_dir, WorkspaceConstants.AUTHORIZATION_CONFIG)
-            if os.path.exists(policy_config):
-                policy_config = json.load(open(policy_config, "rt"))
-                authorizer = FLAuthorizer(site_org, policy_config)
+        policy_file_path = workspace.get_authorization_file_path()
+
+        if policy_file_path and os.path.exists(policy_file_path):
+            policy_config = json.load(open(policy_file_path, "rt"))
+            authorizer = FLAuthorizer(site_org, policy_config)
 
     if not authorizer:
         authorizer = EmptyAuthorizer()
