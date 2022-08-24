@@ -22,6 +22,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.workspace import Workspace
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -244,12 +245,11 @@ class ClientEngine(ClientEngineInternalSpec):
             client_name: str,
             app_data) -> str:
 
-        workspace = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
-
+        workspace = Workspace(root_dir=self.args.workspace, site_name=client_name)
         app_deployer = AppDeployer(
-            site_name=client_name,
+            workspace=workspace,
+            job_id=job_id,
             app_name=app_name,
-            workspace_path=workspace,
             app_data=app_data,
             submitter_name=submitter_name,
             submitter_org=submitter_org,

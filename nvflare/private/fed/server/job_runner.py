@@ -20,6 +20,7 @@ from typing import List
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.workspace import Workspace
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
@@ -91,13 +92,8 @@ class JobRunner(FLComponent):
         fl_ctx.remove_prop(FLContextKey.JOB_DEPLOY_DETAIL)
         engine = fl_ctx.get_engine()
         run_number = job.job_id
-        workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
-        count = 1
-        while os.path.exists(workspace):
-            run_number = job.job_id + ":" + str(count)
-            workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
-            count += 1
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
+        workspace = Workspace(root_dir=self.workspace_root, site_name="server")
 
         client_deploy_requests = {}
         client_token_to_name = {}
@@ -117,9 +113,9 @@ class JobRunner(FLComponent):
                 if p == "server":
                     app_deployer = AppDeployer(
                         app_name=app_name,
-                        site_name="server",
+                        workspace=workspace,
+                        job_id=job.job_id,
                         app_data=app_data,
-                        workspace_path=workspace,
                         submitter_name=job.meta.get(JobMetaKey.SUBMITTER_NAME, ""),
                         submitter_org=job.meta.get(JobMetaKey.SUBMITTER_ORG, ""),
                         submitter_role=job.meta.get(JobMetaKey.SUBMITTER_ROLE, "")

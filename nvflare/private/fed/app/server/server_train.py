@@ -59,7 +59,7 @@ def main():
     logger = logging.getLogger()
     args.log_config = None
 
-    workspace = Workspace(root_dir=args.workspace, app_name='server')
+    workspace = Workspace(root_dir=args.workspace, site_name='server')
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
             f = workspace.get_file_path_in_root(name)

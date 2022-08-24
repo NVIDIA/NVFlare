@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 class Workspace:
     def __init__(self,
                  root_dir: str,
-                 app_name: str="",
+                 site_name: str= "",
                  config_folder: str="config"):
         """Define a workspace.
 
@@ -45,11 +45,11 @@ class Workspace:
 
         Args:
             root_dir: root directory of the workspace
-            app_name: app_name of the workspace
+            site_name: site name of the workspace
             config_folder: where to find required config inside an app
         """
         self.root_dir = root_dir
-        self.app_name = app_name
+        self.site_name = site_name
         self.config_folder = config_folder
 
         # check to make sure the workspace is valid
@@ -128,7 +128,7 @@ class Workspace:
         return os.path.join(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
 
     def get_app_dir(self, job_id: str) -> str:
-        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.app_name)
+        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.site_name)
 
     def get_app_log_file_path(self, job_id: str) -> str:
         return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.LOG_FILE_NAME)

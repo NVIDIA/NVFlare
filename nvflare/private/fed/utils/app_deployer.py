@@ -15,7 +15,7 @@
 import os
 import shutil
 
-from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from .app_authz import AppAuthzService
 
@@ -27,8 +27,8 @@ class AppDeployer(object):
             submitter_name: str,
             submitter_org: str,
             submitter_role: str,
-            site_name: str,
-            workspace_path: str,
+            workspace: Workspace,
+            job_id: str,
             app_name: str,
             app_data
     ):
@@ -36,16 +36,9 @@ class AppDeployer(object):
         self.submitter_org = submitter_org
         self.submitter_role = submitter_role
         self.app_name = app_name
-        self.site_name = site_name
-        self.workspace_path = workspace_path
+        self.workspace = workspace
+        self.job_id = job_id
         self.app_data = app_data
-
-    def _remove_app(self, app_path: str, app_file: str):
-        if os.path.exists(app_path):
-            shutil.rmtree(app_path)
-
-        if os.path.exists(app_file):
-            os.remove(app_file)
 
     def deploy(self) -> str:
         """
@@ -55,11 +48,12 @@ class AppDeployer(object):
 
         """
         try:
-            app_path = os.path.join(self.workspace_path, WorkspaceConstants.APP_PREFIX + self.site_name)
-            app_file = os.path.join(self.workspace_path, "fl_app.txt")
+            run_dir = self.workspace.get_run_dir(self.job_id)
+            app_path = self.workspace.get_app_dir(self.job_id)
+            app_file = os.path.join(run_dir, "fl_app.txt")
 
-            # Remove the previous deployed app, if any.
-            self._remove_app(app_path, app_file)
+            if os.path.exists(run_dir):
+                shutil.rmtree(run_dir)
 
             if not os.path.exists(app_path):
                 os.makedirs(app_path)

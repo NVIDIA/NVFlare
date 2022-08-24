@@ -62,7 +62,7 @@ def main():
     args.log_config = None
     args.snapshot = kv_list.get("restore_snapshot")
 
-    workspace = Workspace(root_dir=args.workspace, app_name='server')
+    workspace = Workspace(root_dir=args.workspace, site_name='server')
     log_file = workspace.get_app_log_file_path(args.job_id)
     add_logfile_handler(log_file)
     logger = logging.getLogger("runner_process")
