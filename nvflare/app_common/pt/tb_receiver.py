@@ -60,7 +60,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
 
     def initialize(self, fl_ctx: FLContext):
         workspace = fl_ctx.get_engine().get_workspace()
-        run_dir = workspace.get_run_dir(fl_ctx.get_run_number())
+        run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
         root_log_dir = os.path.join(run_dir, self.tb_folder)
         os.makedirs(root_log_dir, exist_ok=True)
         self.root_log_dir = root_log_dir

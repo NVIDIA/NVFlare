@@ -67,7 +67,7 @@ class SupervisedLearner(Learner):
         # set the paths according to fl_ctx
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
-        app_dir = ws.get_app_dir(fl_ctx.get_run_number())
+        app_dir = ws.get_app_dir(fl_ctx.get_job_id())
 
         # get and print the args
         fl_args = fl_ctx.get_prop(FLContextKey.ARGS)
@@ -188,7 +188,7 @@ class SupervisedLearner(Learner):
             metric /= len(valid_loader)
             # tensorboard record id, add to record if provided
             if tb_id:
-                self.writer.add_scalar(tb_id, metric_score, record_epoch)
+                self.writer.add_scalar(tb_id, metric, record_epoch)
         return metric
 
     def train(

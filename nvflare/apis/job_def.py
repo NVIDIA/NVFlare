@@ -18,6 +18,9 @@ from typing import Dict, List, Optional
 from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 
+# this is treated as all online sites in job deploy_map
+ALL_SITES = "@ALL"
+
 
 class RunStatus(str, Enum):
 
@@ -27,11 +30,20 @@ class RunStatus(str, Enum):
     RUNNING = "RUNNING"
     FINISHED_COMPLETED = "FINISHED:COMPLETED"
     FINISHED_ABORTED = "FINISHED:ABORTED"
+    FINISHED_EXECUTION_EXCEPTION = "FINISHED:EXECUTION_EXCEPTION"
     FAILED_TO_RUN = "FAILED_TO_RUN"
+
+
+class JobDataKey(str, Enum):
+    DATA = "data"
+    META = "meta"
+    JOB_DATA = "job_data_"
+    WORKSPACE_DATA = "workspace_data_"
 
 
 class JobMetaKey(str, Enum):
     JOB_ID = "job_id"
+    JOB_NAME = "name"
     JOB_FOLDER_NAME = "job_folder_name"
     STATUS = "status"
     DEPLOY_MAP = "deploy_map"
@@ -43,9 +55,16 @@ class JobMetaKey(str, Enum):
     MANDATORY_CLIENTS = "mandatory_clients"
     SUBMIT_TIME = "submit_time"
     SUBMIT_TIME_ISO = "submit_time_iso"
+    START_TIME = "start_time"
+    DURATION = "duration"
 
     def __repr__(self):
         return self.value
+
+
+class TopDir(object):
+    JOB = "job"
+    WORKSPACE = "workspace"
 
 
 class Job:
@@ -83,7 +102,7 @@ class Job:
 
         self.submit_time = None
 
-        self.run_record = None  # run number, dispatched time/UUID, finished time, completion code (normal, aborted)
+        self.run_record = None  # job id, dispatched time/UUID, finished time, completion code (normal, aborted)
 
     def get_deployment(self) -> Dict[str, List[str]]:
         """Returns the deployment configuration.

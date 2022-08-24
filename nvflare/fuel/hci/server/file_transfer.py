@@ -11,15 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
 import shutil
 import tempfile
 import traceback
+from io import BytesIO
 from typing import List
+from zipfile import ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+from nvflare.apis.utils.common_utils import get_size
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -30,12 +34,23 @@ from nvflare.fuel.hci.base64_utils import (
 )
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.private.fed.server.job_validator import JobValidator
+from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.hci.zip_utils import (
+    convert_legacy_zip,
+    unzip_all_from_bytes,
+    unzip_single_file_from_bytes,
+    zip_directory_to_bytes,
+)
+from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.security.security import Action
+
+META_FILE = "meta.json"
+MAX_DOWNLOAD_JOB__SIZE = 50 * 1024 * 1024 * 1204
 
 
-class FileTransferModule(CommandModule):
-    def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None):
+class FileTransferModule(CommandModule, CommandUtil):
+    def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None, download_job_url=None):
         """Command module for file transfers.
 
         Args:
@@ -52,6 +67,7 @@ class FileTransferModule(CommandModule):
         self.upload_dir = upload_dir
         self.download_dir = download_dir
         self.upload_folder_authz_func = upload_folder_authz_func
+        self.download_url = download_job_url
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -94,17 +110,11 @@ class FileTransferModule(CommandModule):
                     visible=False,
                 ),
                 CommandSpec(
-                    name=ftd.SERVER_CMD_DOWNLOAD_FOLDER,
-                    description="download a folder to client",
-                    usage="download folder_name",
-                    handler_func=self.download_folder,
-                    visible=False,
-                ),
-                CommandSpec(
                     name=ftd.SERVER_CMD_SUBMIT_JOB,
                     description="Submit a job",
                     usage="submit_job job_folder",
                     handler_func=self.submit_job,
+                    authz_func=self._authorize_submission,
                     visible=False,
                 ),
                 CommandSpec(
@@ -112,6 +122,13 @@ class FileTransferModule(CommandModule):
                     description="download a job",
                     usage="download_job job_id",
                     handler_func=self.download_job,
+                    visible=False,
+                ),
+                CommandSpec(
+                    name=ftd.SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE,
+                    description="download a single file from a completed job in the job store",
+                    usage="download_job_single_file job_id file_path",
+                    handler_func=self.download_job_single_file,
                     visible=False,
                 ),
                 CommandSpec(
@@ -228,39 +245,15 @@ class FileTransferModule(CommandModule):
         conn.set_prop("upload_folder_path", folder_path)
         conn.append_string("Created folder {}".format(folder_path))
 
-    def download_folder(self, conn: Connection, args: List[str]):
-        if len(args) != 2:
-            conn.append_error("syntax error: require folder name")
-            return
-
-        folder_name = args[1]
-        full_path = os.path.join(self.download_dir, folder_name)
-        if not os.path.exists(full_path):
-            conn.append_error("no such folder: {}".format(full_path))
-            return
-
-        if not os.path.isdir(full_path):
-            conn.append_error("'{}' is not a valid folder".format(full_path))
-            return
-
-        try:
-            data = zip_directory_to_bytes(self.download_dir, folder_name)
-            b64str = bytes_to_b64str(data)
-            conn.append_string(b64str)
-        except BaseException:
-            traceback.print_exc()
-            conn.append_error("exception occurred")
-
     def submit_job(self, conn: Connection, args: List[str]):
 
         folder_name = args[1]
-        zip_b64str = args[2]
-        data_bytes = convert_legacy_zip(b64str_to_bytes(zip_b64str))
+        data_bytes = conn.get_prop(ConnProps.JOB_DATA)
         engine = conn.app_ctx
 
         try:
             with engine.new_context() as fl_ctx:
-                job_validator = JobValidator(fl_ctx)
+                job_validator = JobMetaValidator()
                 valid, error, meta = job_validator.validate(folder_name, data_bytes)
                 if not valid:
                     conn.append_error(error)
@@ -295,12 +288,13 @@ class FileTransferModule(CommandModule):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
-                data_bytes = job_def_manager.get_content(job_id, fl_ctx)
-                job_id_dir = os.path.join(self.download_dir, job_id)
-                if os.path.exists(job_id_dir):
-                    shutil.rmtree(job_id_dir)
-                os.mkdir(job_id_dir)
-                unzip_all_from_bytes(data_bytes, job_id_dir)
+                job_data = job_def_manager.get_job_data(job_id, fl_ctx)
+                size = get_size(job_data, seen=None)
+                if size > MAX_DOWNLOAD_JOB__SIZE:
+                    conn.append_string(ConnProps.DOWNLOAD_JOB_URL + self.download_url + job_id)
+                    return
+
+                self._unzip_data(job_data, job_id)
         except Exception as e:
             conn.append_error("Exception occurred trying to get job from store: " + str(e))
             return
@@ -312,6 +306,90 @@ class FileTransferModule(CommandModule):
             traceback.print_exc()
             conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))
 
+    def _unzip_data(self, job_data, job_id):
+        job_id_dir = os.path.join(self.download_dir, job_id)
+        if os.path.exists(job_id_dir):
+            shutil.rmtree(job_id_dir)
+        os.mkdir(job_id_dir)
+
+        data_bytes = job_data[JobDataKey.JOB_DATA.value]
+        job_dir = os.path.join(job_id_dir, TopDir.JOB)
+        os.mkdir(job_dir)
+        unzip_all_from_bytes(data_bytes, job_dir)
+
+        workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
+        workspace_dir = os.path.join(job_id_dir, TopDir.WORKSPACE)
+        os.mkdir(workspace_dir)
+        if workspace_bytes is not None:
+            unzip_all_from_bytes(workspace_bytes, workspace_dir)
+
+    def download_job_single_file(self, conn: Connection, args: List[str]):
+        if len(args) != 3:
+            conn.append_error("syntax error: job ID and the path to the file to download are required")
+            return
+
+        job_id = args[1]
+        file = args[2]
+
+        engine = conn.app_ctx
+        try:
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                job_data = job_def_manager.get_job_data(job_id, fl_ctx)
+                self._unzip_single_file_from_data(job_data, job_id, file)
+        except Exception as e:
+            traceback.print_exc()
+            conn.append_error("Exception occurred trying to get job from store: " + str(e))
+            return
+        try:
+            data = zip_directory_to_bytes(self.download_dir, job_id)
+            b64str = bytes_to_b64str(data)
+            conn.append_string(b64str)
+        except BaseException:
+            traceback.print_exc()
+            conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))
+
+    def _unzip_single_file_from_data(self, job_data, job_id, file):
+        job_id_dir = os.path.join(self.download_dir, job_id)
+        if os.path.exists(job_id_dir):
+            shutil.rmtree(job_id_dir)
+        os.mkdir(job_id_dir)
+        if file.startswith(TopDir.JOB):
+            file = file[len(TopDir.JOB) :]
+            file = file.lstrip("/")
+            data_bytes = job_data[JobDataKey.JOB_DATA.value]
+            dl_to_dir = os.path.join(job_id_dir, TopDir.JOB)
+            unzip_single_file_from_bytes(data_bytes, dl_to_dir, file)
+            return os.path.relpath(dl_to_dir, self.download_dir)
+        elif file.startswith(TopDir.WORKSPACE):
+            file = file[len(TopDir.WORKSPACE) :]
+            file = file.lstrip("/")
+            workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
+            dl_to_dir = os.path.join(job_id_dir, TopDir.WORKSPACE)
+            unzip_single_file_from_bytes(workspace_bytes, dl_to_dir, file)
+            return os.path.relpath(dl_to_dir, self.download_dir)
+        else:
+            raise SyntaxError("file_path should start with job or workspace.")
+
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))
         conn.append_string("Server Download Source: {}".format(self.download_dir))
+
+    def _authorize_submission(self, conn: Connection, args: List[str]):
+
+        folder_name = args[1]
+        zip_b64str = args[2]
+        data_bytes = convert_legacy_zip(b64str_to_bytes(zip_b64str))
+        conn.set_prop(ConnProps.JOB_DATA, data_bytes)
+
+        meta_file = f"{folder_name}/{META_FILE}"
+        with ZipFile(BytesIO(data_bytes), "r") as zf:
+            meta_data = zf.read(meta_file)
+            meta = json.loads(meta_data)
+        conn.set_prop(ConnProps.JOB_META, meta)
+
+        return self.authorize_job_meta(conn, meta, [Action.TRAIN])

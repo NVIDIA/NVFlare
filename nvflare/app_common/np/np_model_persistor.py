@@ -28,10 +28,10 @@ def _get_run_dir(fl_ctx: FLContext):
     engine = fl_ctx.get_engine()
     if engine is None:
         raise RuntimeError("engine is missing in fl_ctx.")
-    run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-    if run_number is None:
-        raise RuntimeError("run_number is missing in fl_ctx.")
-    run_dir = engine.get_workspace().get_run_dir(run_number)
+    job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+    if job_id is None:
+        raise RuntimeError("job_id is missing in fl_ctx.")
+    run_dir = engine.get_workspace().get_run_dir(job_id)
     return run_dir
 
 
@@ -52,7 +52,7 @@ class NPModelPersistor(ModelPersistor):
             # try loading previous model
             data = np.load(model_path)
         except Exception as e:
-            self.log_exception(
+            self.log_info(
                 fl_ctx,
                 f"Unable to load model from {model_path}: {e}. Using default data instead.",
                 fire_event=False,

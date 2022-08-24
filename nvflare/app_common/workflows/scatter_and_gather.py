@@ -123,12 +123,8 @@ class ScatterAndGather(Controller):
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.log_info(fl_ctx, "Initializing ScatterAndGather workflow.")
         self._phase = AppConstants.PHASE_INIT
-        engine = fl_ctx.get_engine()
-        if not engine:
-            self.system_panic("Engine not found. ScatterAndGather exiting.", fl_ctx)
-            return
 
-        self.aggregator = engine.get_component(self.aggregator_id)
+        self.aggregator = self._engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(
                 f"aggregator {self.aggregator_id} must be an Aggregator type object but got {type(self.aggregator)}",
@@ -136,7 +132,7 @@ class ScatterAndGather(Controller):
             )
             return
 
-        self.shareable_gen = engine.get_component(self.shareable_generator_id)
+        self.shareable_gen = self._engine.get_component(self.shareable_generator_id)
         if not isinstance(self.shareable_gen, ShareableGenerator):
             self.system_panic(
                 f"Shareable generator {self.shareable_generator_id} must be a ShareableGenerator type object, "
@@ -145,7 +141,7 @@ class ScatterAndGather(Controller):
             )
             return
 
-        self.persistor = engine.get_component(self.persistor_id)
+        self.persistor = self._engine.get_component(self.persistor_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.system_panic(
                 f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object, "
@@ -236,9 +232,8 @@ class ScatterAndGather(Controller):
 
                 self._current_round += 1
 
-                # Call the engine to persist the snapshot of all the FLComponents
-                engine = fl_ctx.get_engine()
-                engine.persist_components(fl_ctx, completed=False)
+                # Call the self._engine to persist the snapshot of all the FLComponents
+                self._engine.persist_components(fl_ctx, completed=False)
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")

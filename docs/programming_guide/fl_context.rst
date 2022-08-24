@@ -78,9 +78,10 @@ Engine (fl_ctx.get_engine())
 The engine represents the underlying services that can be used by the application. See ServerEngineSpec and/or
 ClientEngineSpec for services they provide.
 
-Run Number (fl_ctx.get_run_number())
+Job ID (fl_ctx.get_job_id())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-FL application is always running within a RUN, which has a unique ID number.
+FL application is always running within a RUN, which has a unique ID number. From NVIDIA FLARE version 2.1.0, job ID is
+used as the run number, and it no longer has to be an integer.
 
 Identity Name (fl_ctx.get_identity_name())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -202,9 +203,8 @@ The following diagram shows the lifecycle of the FL context for each iteration.
 .. image:: ../resources/FL_Context.png
     :height: 600px
 
-In the Peer Context, following props from the Server are available:
-
-    - Run Number: peer_ctx.get_run_number())
+In the Peer Context, following props from the Server are available (job ID is used as the run number in version 2.1.0+):
+    - Run Number: peer_ctx.get_job_id())
 
 Server Side FL Context
 ----------------------
@@ -218,7 +218,7 @@ fired during the task request processing.
 Note that this context contains the "peer context" of the client.
 
 In the Peer Context, following props from the Client are available:
-    - Run Number: peer_ctx.get_run_number()
+    - Job ID: peer_ctx.get_job_id()
     - Client Name: peer_ctx.get_identity_name()
     - May have additional public props
 
@@ -231,7 +231,7 @@ task result processing.
 Note that this context contains the "peer context" of the client.
 
 In the Peer Context, following props from the Client are available:
-    - Run Number: peer_ctx.get_run_number()
+    - Job ID: peer_ctx.get_job_id()
     - Client Name: peer_ctx.get_identity_name()
     - Task ID: peer_ctx.get_prop(FLContextKey.TASK_ID)
     - Task Name: peer_ctx.get_prop(FLContextKey.TASK_NAME)
@@ -274,8 +274,7 @@ between communicating peers! This is done through what is called "peer context":
 What is in the peer context? It depends on what public props are in the FLContext before being sent to the peer. But in
 general, the following props are always available:
 
-    - Run Number (fl_ctx.get_run_number()). This is the ID number of the RUN on the peer site. Note that the peer's RUN
-      number may be different from the host site's RUN number in case the two sites get out of sync.
+    - Job ID (fl_ctx.get_job_id()). This is the ID number of the RUN on the peer site.
     - Identity Name (fl_ctx.get_identity_name()). This is the unique name of the peer site (client name or server name).
 
 Additional props are available from the peer context, depending on the communication scenarios.

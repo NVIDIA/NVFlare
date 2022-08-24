@@ -12,38 +12,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .fl_snapshot import FLSnapshot
+from abc import ABC, abstractmethod
+
+from .fl_snapshot import FLSnapshot, RunSnapshot
 
 
-class StatePersistor:
-    def save(self, snapshot: FLSnapshot) -> str:
-        """Call to save the snapshot of the FL state to storage.
+class StatePersistor(ABC):
+    @abstractmethod
+    def save(self, snapshot: RunSnapshot) -> str:
+        """Saves the snapshot of the FL state to storage.
 
         Args:
-            snapshot: FLSnapshot object
+            snapshot: RunSnapshot object
 
         Returns:
             Storage location.
         """
         pass
 
+    @abstractmethod
     def retrieve(self) -> FLSnapshot:
-        """Call to load the persisted FL components snapshot from the persisted location.
-
-        Args:
+        """Loads the persisted FL components snapshot from the persisted location.
 
         Returns:
-
+            An FLSnapshot
         """
         pass
 
-    def delete(self, location: str):
-        """Delete the FL component snapshot.
+    @abstractmethod
+    def retrieve_run(self, job_id: str) -> RunSnapshot:
+        """Loads the persisted RunSnapshot of a job_id from the persisted location.
 
         Args:
-            location: persist location
+            job_id: job_id
 
         Returns:
-
+            A RunSnapshot of the job_id
         """
+        pass
+
+    @abstractmethod
+    def delete(self):
+        """Deletes the FL component snapshot."""
+        pass
+
+    @abstractmethod
+    def delete_run(self, job_id: str):
+        """Deletes the RunSnapshot of a job_id"""
         pass

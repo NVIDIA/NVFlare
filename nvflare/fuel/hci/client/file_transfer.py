@@ -26,6 +26,7 @@ from nvflare.fuel.hci.base64_utils import (
 )
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import remove_leading_dotdot, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 
@@ -118,17 +119,29 @@ class _DownloadFolderProcessor(ReplyProcessor):
         if not self.data_received:
             api.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": "protocol error - no data received"})
 
+    def process_error(self, api: AdminAPISpec, err: str):
+        self.data_received = True
+        api.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": err})
+
     def process_string(self, api, item: str):
         try:
             self.data_received = True
-            data_bytes = b64str_to_bytes(item)
-            unzip_all_from_bytes(data_bytes, self.download_dir)
-            api.set_command_result(
-                {
-                    "status": APIStatus.SUCCESS,
-                    "details": "Download to dir {}".format(self.download_dir),
-                }
-            )
+            if item.startswith(ConnProps.DOWNLOAD_JOB_URL):
+                api.set_command_result(
+                    {
+                        "status": APIStatus.SUCCESS,
+                        "details": item,
+                    }
+                )
+            else:
+                data_bytes = b64str_to_bytes(item)
+                unzip_all_from_bytes(data_bytes, self.download_dir)
+                api.set_command_result(
+                    {
+                        "status": APIStatus.SUCCESS,
+                        "details": "Download to dir {}".format(self.download_dir),
+                    }
+                )
         except Exception as ex:
             traceback.print_exc()
             api.set_command_result(
@@ -168,6 +181,7 @@ class FileTransferModule(CommandModule):
                     description="download one or more text files in the download_dir",
                     usage="download_text file_name ...",
                     handler_func=self.download_text_file,
+                    visible=False,
                 ),
                 CommandSpec(
                     name="upload_binary",
@@ -181,12 +195,7 @@ class FileTransferModule(CommandModule):
                     description="download one or more binary files in the download_dir",
                     usage="download_binary file_name ...",
                     handler_func=self.download_binary_file,
-                ),
-                CommandSpec(
-                    name="download_folder",
-                    description="download a folder from the server",
-                    usage="download_folder folder_name",
-                    handler_func=self.download_folder,
+                    visible=False,
                 ),
                 CommandSpec(
                     name="submit_job",
@@ -197,7 +206,7 @@ class FileTransferModule(CommandModule):
                 CommandSpec(
                     name="download_job",
                     description="download job contents from the server",
-                    usage="download_job job_id",
+                    usage="download_job job_id [file_path, optional to specify specific file]",
                     handler_func=self.download_job,
                 ),
                 CommandSpec(
@@ -278,15 +287,6 @@ class FileTransferModule(CommandModule):
         command = join_args(parts)
         return api.server_execute(command)
 
-    def download_folder(self, args, api: AdminAPISpec):
-        if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_folder folder_name"}
-
-        parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_FOLDER), args[1]]
-        command = join_args(parts)
-        reply_processor = _DownloadFolderProcessor(self.download_dir)
-        return api.server_execute(command, reply_processor)
-
     def submit_job(self, args, api: AdminAPISpec):
         if len(args) != 2:
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: submit_job job_folder"}
@@ -309,13 +309,26 @@ class FileTransferModule(CommandModule):
         return api.server_execute(command)
 
     def download_job(self, args, api: AdminAPISpec):
-        if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: download_job job_id"}
-        job_id = args[1]
-        parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB), job_id]
-        command = join_args(parts)
-        reply_processor = _DownloadFolderProcessor(self.download_dir)
-        return api.server_execute(command, reply_processor)
+        if len(args) == 2:
+            job_id = args[1]
+            parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB), job_id]
+            command = join_args(parts)
+            reply_processor = _DownloadFolderProcessor(self.download_dir)
+            return api.server_execute(command, reply_processor)
+        elif len(args) == 3:
+            job_id = args[1]
+            file = args[2]
+            parts = [_server_cmd_name(ftd.SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE), job_id, file]
+            command = join_args(parts)
+            reply_processor = _DownloadFolderProcessor(self.download_dir)
+            return api.server_execute(command, reply_processor)
+        else:
+            return {
+                "status": APIStatus.ERROR_SYNTAX,
+                "details": "usage: download_job job_id [file_path]\n"
+                "where file_path is optional for downloading a specific file, starting with job or "
+                "workspace as the top directory.",
+            }
 
     def info(self, args, api: AdminAPISpec):
         msg = f"Local Upload Source: {self.upload_dir}\n"

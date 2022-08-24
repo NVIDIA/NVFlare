@@ -36,11 +36,11 @@ stop_fl() {
   sleep 10
   kill -0 ${pid} 2> /dev/null 1>&2
   if [[ $? -ne 0 ]]; then
-    echo "Process alreday terminated"
+    echo "Process already terminated"
     return
   fi
   kill -9 $pid
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
 }
   
 if [[ -f "$DIR/../daemon_pid.fl" ]]; then

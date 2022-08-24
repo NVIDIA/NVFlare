@@ -15,14 +15,13 @@
 import ast
 import io
 import os
-from pathlib import Path
 from typing import List, Tuple
 
 from minio import Minio
 from minio.commonconfig import REPLACE, CopySource
 from minio.error import MinioException
 
-from nvflare.apis.storage import StorageSpec
+from nvflare.apis.storage import StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 
 URI_ROOT = os.path.abspath(os.sep)
@@ -53,7 +52,7 @@ class S3Storage(StorageSpec):
             if not self.s3_client.bucket_exists(bucket_name):
                 self.s3_client.make_bucket(bucket_name)
         except MinioException as e:
-            raise RuntimeError("Error creating minio s3 client: {}".format(str(e)))
+            raise StorageException("Error creating minio s3 client: {}".format(str(e)))
         self.bucket_name = bucket_name
 
     def _object_exists(self, uri: str):
@@ -88,13 +87,7 @@ class S3Storage(StorageSpec):
 
         """
         if self._object_exists(uri) and not overwrite_existing:
-            raise RuntimeError("object {} already exists and overwrite_existing is False".format(uri))
-
-        path_parts = Path(uri).parts
-        for i in range(2, len(path_parts)):
-            parent_path = str(Path(*path_parts[0:i]))
-            if self._object_exists(parent_path):
-                raise RuntimeError("cannot create object {} inside preexisting object {}".format(uri, parent_path))
+            raise StorageException("object {} already exists and overwrite_existing is False".format(uri))
 
         if not self._object_exists(uri):
             try:
@@ -102,9 +95,11 @@ class S3Storage(StorageSpec):
                     self.s3_client.list_objects(self.bucket_name, prefix=uri, include_user_meta=True)
                 )
             except MinioException as e:
-                raise RuntimeError("cannot create object: checking if uri has any objects failed: {}".format(str(e)))
+                raise StorageException(
+                    "cannot create object: checking if uri has any objects failed: {}".format(str(e))
+                )
             if dir_is_nonempty:
-                raise RuntimeError("cannot create object {} at nonempty directory".format(uri))
+                raise StorageException("cannot create object {} at nonempty directory".format(uri))
 
         try:
             self.s3_client.put_object(
@@ -116,7 +111,7 @@ class S3Storage(StorageSpec):
                 part_size=_AWS_PART_SIZE,
             )
         except MinioException as e:
-            raise RuntimeError("error putting object into bucket: {}".format(str(e)))
+            raise StorageException("error putting object into bucket: {}".format(str(e)))
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta info of the specified object.
@@ -134,7 +129,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         if not replace:
             prev_meta = self.get_meta(uri)
@@ -150,7 +145,7 @@ class S3Storage(StorageSpec):
                 metadata_directive=REPLACE,
             )
         except MinioException as e:
-            raise RuntimeError("error copying object: {}".format(str(e)))
+            raise StorageException("error copying object: {}".format(str(e)))
 
     def update_data(self, uri: str, data: bytes):
         """Updates the data info of the specified object.
@@ -167,7 +162,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         try:
             self.s3_client.put_object(
@@ -179,7 +174,7 @@ class S3Storage(StorageSpec):
                 part_size=_AWS_PART_SIZE,
             )
         except MinioException as e:
-            raise RuntimeError("error putting object into bucket: {}".format(str(e)))
+            raise StorageException("error putting object into bucket: {}".format(str(e)))
 
     def list_objects(self, path: str) -> List[str]:
         """List all objects in the specified path.
@@ -203,7 +198,7 @@ class S3Storage(StorageSpec):
                 if obj._metadata
             ]
         except MinioException as e:
-            raise RuntimeError(f"error listing objects at {path}: {str(e)}.")
+            raise StorageException(f"error listing objects at {path}: {str(e)}.")
 
     def get_meta(self, uri: str) -> dict:
         """Gets user defined meta info of the specified object.
@@ -213,23 +208,23 @@ class S3Storage(StorageSpec):
 
         Returns:
             meta info of the object.
+            if object does not exist, return empty dict {}
 
         Raises:
             TypeError: if invalid argument types
             RuntimeError:
-                - if object does not exist
                 - if error accessing object
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         try:
             return ast.literal_eval(
                 self.s3_client.stat_object(self.bucket_name, uri)._metadata["x-amz-meta-{}".format(_USER_META_KEY)]
             )
         except MinioException as e:
-            raise RuntimeError(f"error accessing object ({uri}): {str(e)}.")
+            raise StorageException(f"error accessing object ({uri}): {str(e)}.")
 
     def get_data(self, uri: str) -> bytes:
         """Gets data of the specified object.
@@ -239,21 +234,21 @@ class S3Storage(StorageSpec):
 
         Returns:
             data of the object.
+            if object does not exist, return None
 
         Raises:
             TypeError: if invalid argument types
             RuntimeError:
-                - if object does not exist
                 - if error accessing object
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         try:
             return self.s3_client.get_object(self.bucket_name, uri).data
         except MinioException as e:
-            raise RuntimeError(f"error accessing object ({uri}): {str(e)}.")
+            raise StorageException(f"error accessing object ({uri}): {str(e)}.")
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.
@@ -270,7 +265,7 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         return self.get_meta(uri), self.get_data(uri)
 
@@ -288,9 +283,9 @@ class S3Storage(StorageSpec):
 
         """
         if not self._object_exists(uri):
-            raise RuntimeError("object {} does not exist".format(uri))
+            raise StorageException("object {} does not exist".format(uri))
 
         try:
             self.s3_client.remove_object(self.bucket_name, uri)
         except MinioException as e:
-            raise RuntimeError(f"error removing object ({uri}): {str(e)}.")
+            raise StorageException(f"error removing object ({uri}): {str(e)}.")

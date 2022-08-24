@@ -30,8 +30,8 @@ class AuxRequestProcessor(RequestProcessor):
 
         shareable = pickle.loads(req.body)
 
-        run_number = req.get_header(RequestHeader.RUN_NUM)
-        result = engine.send_aux_command(shareable, run_number)
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        result = engine.send_aux_command(shareable, job_id)
         if not result:
             result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 

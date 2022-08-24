@@ -44,7 +44,7 @@ To enable multi-tasking, here we adjust the default value in `workspace_server/s
 
 (Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
 
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/job.html).
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
 
 ## 2. Run automated experiments
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
@@ -107,8 +107,14 @@ To run FL with [Ditto](https://arxiv.org/abs/2012.04221)(official [implementatio
 ```
 bash submit_job.sh prostate_ditto
 ```
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
-## 5. Results on 4 clients for Central vs. FedAvg vs. FedProx vs. Ditto
+> To log into the POC workspace admin console no username is required 
+> (use "admin" for commands requiring conformation with username). 
+
+## 3. Results on 4 clients for Central vs. FedAvg vs. FedProx vs. Ditto
 In this example, for Central/FedAvg/FedProx, only the global model gets evaluated at each round, and saved as the final model. For Ditto, each client will have its own personalized model, which is validated and saved locally.
 ### Validation curve on each site
 
@@ -125,7 +131,21 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 20
 
 ### Testing score
 The testing score is computed based on the best global model for Central/FedAvg/FedProx, and the six best personalized models for Ditto.
-We provide a script for performing validation on testing data split, please add the correct paths and job_ids, and run
+We provide a script for performing validation on testing data split.
+
+To get the model after training, the results can be downloaded and shown with the admin console using
+```
+  download_job [JOB_ID]
+```
+where `[JOB_ID]` is the ID assigned by the system when submitting the job.
+
+The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+You should see the best global model at
+```
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths and job_ids to the testing script, and run
 
 ```
 bash ./result_stat/testing_models_3d.sh

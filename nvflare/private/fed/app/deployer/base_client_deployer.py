@@ -50,11 +50,6 @@ class BaseClientDeployer:
         self.model_manager = model_manager
 
     def create_fed_client(self, args, sp_target=None):
-        # if self.host:
-        #     for item in self.server_config:
-        #         target = item["service"].get("target", None)
-        #         item["service"]["target"] = self.host + ":" + target.split(":")[1]
-
         if sp_target:
             for item in self.server_config:
                 service = item["service"]

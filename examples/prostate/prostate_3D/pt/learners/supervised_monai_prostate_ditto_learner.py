@@ -64,7 +64,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
-        app_dir = ws.get_app_dir(fl_ctx.get_run_number())
+        app_dir = ws.get_app_dir(fl_ctx.get_job_id())
 
         # Initialize PTDittoHelper
         ditto_model = UNet(

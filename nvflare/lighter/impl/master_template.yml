@@ -64,7 +64,7 @@ readme_fs: |
   Please always safeguard the server.key.
 
 gunicorn_conf_py: |
-  bind="{~~hostname~~}:{~~port~~}"
+  bind="0.0.0.0:{~~port~~}"
   cert_reqs=2
   do_handshake_on_connect=True
   timeout=30
@@ -119,6 +119,7 @@ fed_server: |
             "max_num_clients": 100,
             "heart_beat_timeout": 600,
             "num_server_workers": 4,
+            "download_job_url": "http://download.server.com/",
             "compression": "Gzip"
         }
     ] 
@@ -155,19 +156,6 @@ authz_def: |
       }
     },
     "rights": {
-      "upload_app": {
-        "desc": "upload app",
-        "default": true
-      },
-      "deploy_self": {
-        "desc": "deploy app to own site",
-        "default": false,
-        "precond": "selfOrg"
-      },
-      "deploy_all": {
-        "desc": "deploy app to all sites",
-        "default": false
-      },
       "train_self": {
         "desc": "do training operations on own site",
         "default": false,
@@ -236,7 +224,7 @@ log_config: |
 start_ovsr_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  AUTHZ_FILE=$DIR/privilege.yml gunicorn -c $DIR/gunicorn.conf.py --keyfile $DIR/overseer.key --certfile $DIR/overseer.crt --ca-certs $DIR/rootCA.pem
+  NVFL_OVERSEER_HEARTBEAT_TIMEOUT=10 AUTHZ_FILE=$DIR/privilege.yml gunicorn -c $DIR/gunicorn.conf.py --keyfile $DIR/overseer.key --certfile $DIR/overseer.crt --ca-certs $DIR/rootCA.pem
 
 start_cln_sh: |
   #!/usr/bin/env bash
@@ -251,22 +239,22 @@ start_svr_sh: |
 stop_fl_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  echo "Shutdown request created.  Wait for local FL process to shutdown."
-  touch $DIR/../shutdown.fl
-  sleep 5
-  if [[ ! -f "$DIR/../pid.fl" ]]; then
-    echo "No pid.fl.  No need to kill process."
-    exit
-  fi
-  pid=`cat $DIR/../pid.fl`
-  kill -0 ${pid} 2> /dev/null 1>&2
-  if [[ $? -ne 0 ]]; then
-    echo "Process already terminated"
-    exit
-  fi
-  kill -9 $pid
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
-  echo "Shutdown process finished."
+  echo "Please use FL admin console to issue shutdown client command to properly stop this client."
+  echo "This stop_fl.sh script can only be used as the last resort to stop this client."
+  echo "It will not properly deregister the client to the server."
+  echo "The client status on the server after this shell script will be incorrect."
+  read -n1 -p "Would you like to continue (y/N)? " answer
+  case $answer in
+    y|Y)
+      echo
+      echo "Shutdown request created.  Wait for local FL process to shutdown."
+      touch $DIR/../shutdown.fl
+      ;;
+    n|N|*)
+      echo
+      echo "Not continue"
+      ;;
+  esac
 
 sub_start_cln_sh: |
   #!/usr/bin/env bash
@@ -309,7 +297,7 @@ sub_start_cln_sh: |
       return
     fi
     kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
   }
     
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
@@ -487,3 +475,197 @@ docker_adm_sh: |
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
   docker run --rm -it --name=fladmin -v $DIR/..:/workspace/ -w /workspace/ $DOCKER_IMAGE /bin/bash
+
+compose_yaml: |
+  services:
+    __overseer__:
+      build: ./nvflare
+      image: nvflare-service
+      volumes:
+        - .:/workspace
+      command: ["/workspace/startup/start.sh"]
+      ports:
+        - "8443:8443"
+
+    __flserver__:
+      image: nvflare-service
+      ports:
+        - "8002:8002"
+        - "8003:8003"
+      volumes:
+        - .:/workspace
+        - nvflare_svc_persist:/tmp/nvflare/
+      command: ["/usr/local/bin/python3",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.server.server_train",
+            "-m",
+            "/workspace",
+            "-s",
+            "fed_server.json",
+            "--set",
+            "secure_train=true",
+            "config_folder=config",
+          ]
+
+    __flclient__:
+      image: nvflare-service
+      volumes:
+        - .:/workspace
+      command: ["/usr/local/bin/python3",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.client.client_train",
+            "-m",
+            "/workspace",
+            "-s",
+            "fed_client.json",
+            "--set",
+            "secure_train=true",
+            "uid=__flclient__",
+            "config_folder=config",
+          ]
+
+  volumes:
+    nvflare_svc_persist:
+
+dockerfile: |
+  RUN pip install -U pip
+  RUN pip install nvflare
+  COPY requirements.txt requirements.txt
+  RUN pip install -r requirements.txt
+
+helm_chart_chart: |
+  apiVersion: v2
+  name: nvflare
+  description: A Helm chart for NVFlare overseer and servers
+  type: application
+  version: 0.1.0
+  appVersion: "2.2.0"
+
+helm_chart_service_overseer: |
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: overseer
+  spec:
+    selector:
+      system: overseer
+    ports:
+      - protocol: TCP
+        port: 8443
+        targetPort: overseer-port
+
+helm_chart_service_server: |
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: server
+    labels:
+      system: server
+  spec:
+    selector:
+      system: server
+    ports:
+      - name: fl-port
+        protocol: TCP
+        port: 8002
+        targetPort: fl-port
+      - name: admin-port
+        protocol: TCP
+        port: 8003
+        targetPort: admin-port
+
+helm_chart_deployment_overseer: |
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: overseer
+    labels:
+      system: overseer
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        system: overseer
+    template:
+      metadata:
+        labels:
+          system: overseer
+      spec:
+        volumes:
+          - name: workspace
+            hostPath:
+              path:
+              type: Directory
+        containers:
+          - name: overseer
+            image: nvflare-min:2.2.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+            command: ["/workspace/overseer/startup/start.sh"]
+            ports:
+              - name: overseer-port
+                containerPort: 8443
+                protocol: TCP
+helm_chart_deployment_server: |
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: server
+    labels:
+      system: server
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        system: server
+    template:
+      metadata:
+        labels:
+          system: server
+      spec:
+        volumes:
+          - name: workspace
+            hostPath:
+              path:
+              type: Directory
+          - name: persist
+            hostPath:
+              path: /tmp/nvflare
+              type: Directory
+        containers:
+          - name: server1
+            image: nvflare-min:2.2.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+              - name: persist
+                mountPath: /tmp/nvflare
+            command: ["/usr/local/bin/python3"]
+            args:
+              [
+                "-u",
+                "-m",
+                "nvflare.private.fed.app.server.server_train",
+                "-m",
+                "/workspace/server",
+                "-s",
+                "fed_server.json",
+                "--set",
+                "secure_train=true",
+                "config_folder=config",
+              ]
+            ports:
+              - containerPort: 8002
+                protocol: TCP
+              - containerPort: 8003
+                protocol: TCP
+helm_chart_values: |
+  workspace: /home/nvflare
+  persist: /home/nvflare
+
+

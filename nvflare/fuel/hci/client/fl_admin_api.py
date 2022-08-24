@@ -292,7 +292,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         on the clients but returns the last information the server had at the time this call is made.
 
         """
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("check_status server")
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.CHECK_STATUS + " server"
+        )
         details = {}
         if reply.get("data"):
             for data in reply["data"]:
@@ -315,9 +317,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def _check_status_client(self, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
         if targets:
             processed_targets_str = self._process_targets_into_str(targets)
-            command = "check_status client " + processed_targets_str
+            command = AdminCommandNames.CHECK_STATUS + " client " + processed_targets_str
         else:
-            command = "check_status client"
+            command = AdminCommandNames.CHECK_STATUS + " client"
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
         details = {}
         if reply.get("data"):
@@ -330,28 +332,14 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def delete_run(self, run_number: str) -> FLAdminAPIResponse:
-        if not isinstance(run_number, str):
-            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.DELETE_RUN + str(run_number)
-        )
-        if reply_data_full_response:
-            if "can not be deleted" in reply_data_full_response:
-                return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
-        if success:
-            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
     def submit_job(self, job_folder: str) -> FLAdminAPIResponse:
         if not job_folder:
             raise APISyntaxError("job_folder is required but not specified.")
         if not isinstance(job_folder, str):
             raise APISyntaxError("job_folder must be str but got {}.".format(type(job_folder)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("submit_job " + job_folder)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.SUBMIT_JOB + " " + job_folder
+        )
         if reply_data_full_response:
             if "Submitted job" in reply_data_full_response:
                 # TODO:: this is a hack to get job id
@@ -365,12 +353,14 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def clone_job(self, job_folder: str) -> FLAdminAPIResponse:
-        if not job_folder:
+    def clone_job(self, job_id: str) -> FLAdminAPIResponse:
+        if not job_id:
             raise APISyntaxError("job_folder is required but not specified.")
-        if not isinstance(job_folder, str):
-            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_folder)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("clone_job " + job_folder)
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_id)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.CLONE_JOB + " " + job_id
+        )
         if reply_data_full_response:
             if "Cloned job" in reply_data_full_response:
                 return FLAdminAPIResponse(
@@ -384,7 +374,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def list_jobs(self, options: str = None) -> FLAdminAPIResponse:
-        command = "list_jobs"
+        command = AdminCommandNames.LIST_JOBS
         if options:
             options = self._validate_options_string(options)
             command = command + " " + options
@@ -396,12 +386,33 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
+    def download_job(self, job_id: str) -> FLAdminAPIResponse:
+        if not job_id:
+            raise APISyntaxError("job_id is required but not specified.")
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.DOWNLOAD_JOB + " " + job_id
+        )
+        if success:
+            return FLAdminAPIResponse(
+                APIStatus.SUCCESS,
+                {"message": reply.get("details")},
+                reply,
+            )
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
     def abort_job(self, job_id: str) -> FLAdminAPIResponse:
         if not job_id:
             raise APISyntaxError("job_id is required but not specified.")
         if not isinstance(job_id, str):
             raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("abort_job " + job_id)
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.ABORT_JOB + " " + job_id
+        )
         if reply_data_full_response:
             if "Abort signal has been sent" in reply_data_full_response:
                 return FLAdminAPIResponse(
@@ -414,23 +425,37 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def abort(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
-    ) -> FLAdminAPIResponse:
-        if not run_number:
-            raise APISyntaxError("run_number is required but not specified.")
-        if not isinstance(run_number, str):
-            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
+    def delete_job(self, job_id: str) -> FLAdminAPIResponse:
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
+        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
+            AdminCommandNames.DELETE_JOB + " " + str(job_id)
+        )
+        if reply_data_full_response:
+            if "can not be deleted" in reply_data_full_response:
+                return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
+        if success:
+            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
+        return FLAdminAPIResponse(
+            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
+        )
+
+    @wrap_with_return_exception_responses
+    def abort(self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
+        if not job_id:
+            raise APISyntaxError("job_id is required but not specified.")
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         if target_type == TargetType.ALL:
-            command = AdminCommandNames.ABORT + " " + run_number + " all"
+            command = AdminCommandNames.ABORT + " " + job_id + " all"
         elif target_type == TargetType.SERVER:
-            command = AdminCommandNames.ABORT + " " + run_number + " server"
+            command = AdminCommandNames.ABORT + " " + job_id + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.ABORT + " " + run_number + " client " + processed_targets_str
+                command = AdminCommandNames.ABORT + " " + job_id + " client " + processed_targets_str
             else:
-                command = AdminCommandNames.ABORT + " " + run_number + " client"
+                command = AdminCommandNames.ABORT + " " + job_id + " client"
         else:
             raise APISyntaxError("target_type must be server, client, or all.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -457,15 +482,15 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     @wrap_with_return_exception_responses
     def restart(self, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
         if target_type == TargetType.ALL:
-            command = "restart all"
+            command = AdminCommandNames.RESTART + " " + "all"
         elif target_type == TargetType.SERVER:
-            command = "restart server"
+            command = AdminCommandNames.RESTART + " " + "server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = "restart client " + processed_targets_str
+                command = AdminCommandNames.RESTART + " client " + processed_targets_str
             else:
-                command = "restart client"
+                command = AdminCommandNames.RESTART + " " + "client"
         else:
             raise APISyntaxError("target_type must be server, client, or all.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -483,15 +508,15 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     @wrap_with_return_exception_responses
     def shutdown(self, target_type: TargetType, targets: Optional[List[str]] = None) -> FLAdminAPIResponse:
         if target_type == TargetType.ALL:
-            command = "shutdown all"
+            command = AdminCommandNames.SHUTDOWN + " " + "all"
         elif target_type == TargetType.SERVER:
-            command = "shutdown server"
+            command = AdminCommandNames.SHUTDOWN + " " + "server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = "shutdown client " + processed_targets_str
+                command = AdminCommandNames.SHUTDOWN + " client " + processed_targets_str
             else:
-                command = "shutdown client"
+                command = AdminCommandNames.SHUTDOWN + " " + "client"
         else:
             raise APISyntaxError("target_type must be server, client, or all.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -513,7 +538,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if not targets:
             raise APISyntaxError("targets needs to be provided as a list of client names.")
         processed_targets_str = self._process_targets_into_str(targets)
-        command = "remove_client " + processed_targets_str
+        command = AdminCommandNames.REMOVE_CLIENT + " " + processed_targets_str
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
         if success:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
@@ -629,22 +654,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def env_target(self, target: str) -> FLAdminAPIResponse:
-        target = self._validate_required_target_string(target)
-        command = "env " + target
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
-        if reply_data_full_response:
-            details = {}
-            environment = reply_data_full_response.split("\n")
-            for e in environment:
-                # set key and value to contents of each line with first = as separator
-                details[e[0 : e.find("=")]] = e[e.find("=") + 1 :]
-            return FLAdminAPIResponse(APIStatus.SUCCESS, details)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
     def get_working_directory(self, target: str) -> FLAdminAPIResponse:
         target = self._validate_required_target_string(target)
         command = "pwd " + target
@@ -671,7 +680,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if options:
             options = self._validate_options_string(options)
             command = command + " " + options
-        command = command + " " + pattern + " " + file
+        command = command + ' "' + pattern + '" ' + file
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
         if reply_data_full_response:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response})
@@ -681,20 +690,20 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def show_stats(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
-        if not run_number:
-            raise APISyntaxError("run_number is required but not specified.")
-        if not isinstance(run_number, str):
-            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
+        if not job_id:
+            raise APISyntaxError("job_id is required but not specified.")
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         if target_type == TargetType.SERVER:
-            command = AdminCommandNames.SHOW_STATS + " " + run_number + " server"
+            command = AdminCommandNames.SHOW_STATS + " " + job_id + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.SHOW_STATS + " " + run_number + " client " + processed_targets_str
+                command = AdminCommandNames.SHOW_STATS + " " + job_id + " client " + processed_targets_str
             else:
-                command = AdminCommandNames.SHOW_STATS + " " + run_number + " client"
+                command = AdminCommandNames.SHOW_STATS + " " + job_id + " client"
         else:
             raise APISyntaxError("target_type must be server or client.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -712,20 +721,20 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def show_errors(
-        self, run_number: str, target_type: TargetType, targets: Optional[List[str]] = None
+        self, job_id: str, target_type: TargetType, targets: Optional[List[str]] = None
     ) -> FLAdminAPIResponse:
-        if not run_number:
-            raise APISyntaxError("run_number is required but not specified.")
-        if not isinstance(run_number, str):
-            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
+        if not job_id:
+            raise APISyntaxError("job_id is required but not specified.")
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         if target_type == TargetType.SERVER:
-            command = AdminCommandNames.SHOW_ERRORS + " " + run_number + " server"
+            command = AdminCommandNames.SHOW_ERRORS + " " + job_id + " server"
         elif target_type == TargetType.CLIENT:
             if targets:
                 processed_targets_str = self._process_targets_into_str(targets)
-                command = AdminCommandNames.SHOW_ERRORS + " " + run_number + " client " + processed_targets_str
+                command = AdminCommandNames.SHOW_ERRORS + " " + job_id + " client " + processed_targets_str
             else:
-                command = AdminCommandNames.SHOW_ERRORS + " " + run_number + " client"
+                command = AdminCommandNames.SHOW_ERRORS + " " + job_id + " client"
         else:
             raise APISyntaxError("target_type must be server or client.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
@@ -740,13 +749,13 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": "No errors."}, reply)
 
     @wrap_with_return_exception_responses
-    def reset_errors(self, run_number: str) -> FLAdminAPIResponse:
-        if not run_number:
-            raise APISyntaxError("run_number is required but not specified.")
-        if not isinstance(run_number, str):
-            raise APISyntaxError("run_number must be str but got {}.".format(type(run_number)))
+    def reset_errors(self, job_id: str) -> FLAdminAPIResponse:
+        if not job_id:
+            raise APISyntaxError("job_id is required but not specified.")
+        if not isinstance(job_id, str):
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
-            AdminCommandNames.RESET_ERRORS + " " + run_number
+            AdminCommandNames.RESET_ERRORS + " " + job_id
         )
         if reply_data_full_response:
             if "App is not running" in reply_data_full_response:

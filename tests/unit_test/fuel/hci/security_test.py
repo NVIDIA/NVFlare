@@ -16,7 +16,7 @@ import uuid
 
 import pytest
 
-from nvflare.fuel.hci.security import hash_password, make_session_token, verify_password
+from nvflare.fuel.hci.security import get_certificate_common_name, hash_password, make_session_token, verify_password
 
 
 class TestSecurityUtils:
@@ -47,3 +47,29 @@ class TestSecurityUtils:
     def test_make_session_token(self):
         uuid.UUID(make_session_token())
         assert True
+
+    @pytest.mark.parametrize(
+        "cert, expected",
+        [
+            (None, None),
+            ({}, None),
+            ({"subject": {}}, None),
+            (
+                {
+                    "subject": (
+                        (("description", "571208-SLe257oHY9fVQ07Z"),),
+                        (("countryName", "US"),),
+                        (("stateOrProvinceName", "California"),),
+                        (("localityName", "San Francisco"),),
+                        (("organizationName", "Electronic Frontier Foundation, Inc."),),
+                        (("commonName", "*.eff.org"),),
+                        (("emailAddress", "hostmaster@eff.org"),),
+                    )
+                },
+                "*.eff.org",
+            ),
+        ],
+    )
+    def test_get_certificate_common_name(self, cert, expected):
+        result = get_certificate_common_name(cert)
+        assert result == expected

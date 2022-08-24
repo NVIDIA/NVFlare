@@ -19,10 +19,11 @@ import os
 import sys
 import time
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
@@ -30,10 +31,14 @@ from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, secure_content_check
 
 
 def main():
+    if sys.version_info >= (3, 9):
+        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
+    if sys.version_info < (3, 7):
+        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument(
@@ -82,11 +87,11 @@ def main():
         log_file = os.path.join(args.workspace, "log.txt")
         add_logfile_handler(log_file)
 
-        trainer = conf.base_deployer
+        deployer = conf.base_deployer
 
-        security_check(secure_train=trainer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
+        security_check(secure_train=deployer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
 
-        federated_client = trainer.create_fed_client(args)
+        federated_client = deployer.create_fed_client(args)
 
         while not federated_client.sp_established:
             print("Waiting for SP....")
@@ -104,22 +109,21 @@ def main():
 
         federated_client.start_heartbeat()
 
-        servers = [{t["name"]: t["service"]} for t in trainer.server_config]
-
+        servers = [{t["name"]: t["service"]} for t in deployer.server_config]
         admin_agent = create_admin_agent(
-            trainer.client_config,
-            trainer.client_name,
-            trainer.req_processors,
-            trainer.secure_train,
+            deployer.client_config,
+            deployer.client_name,
+            deployer.req_processors,
+            deployer.secure_train,
             sorted(servers)[0],
             federated_client,
             args,
-            trainer.multi_gpu,
+            deployer.multi_gpu,
             rank,
         )
         admin_agent.start()
 
-        trainer.close()
+        deployer.close()
 
     except ConfigError as ex:
         print("ConfigError:", str(ex))
@@ -142,7 +146,7 @@ def security_check(secure_train: bool, content_folder: str, fed_client_config: s
     SecurityContentService.initialize(content_folder=content_folder)
 
     if secure_train:
-        insecure_list = secure_content_check(fed_client_config)
+        insecure_list = secure_content_check(fed_client_config, site_type="client")
         if len(insecure_list):
             print("The following files are not secure content.")
             for item in insecure_list:
@@ -151,34 +155,6 @@ def security_check(secure_train: bool, content_folder: str, fed_client_config: s
     # initialize the AuditService, which is used by command processing.
     # The Audit Service can be used in other places as well.
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
-
-
-def secure_content_check(config: str):
-    """To check the security contents.
-
-    Args:
-        config (str): fed_client.json
-
-    Returns:
-        A list of insecure content.
-    """
-    insecure_list = []
-    data, sig = SecurityContentService.load_json(config)
-    if sig != LoadResult.OK:
-        insecure_list.append(config)
-
-    client = data["client"]
-    content, sig = SecurityContentService.load_content(client.get(SSLConstants.CERT))
-    if sig != LoadResult.OK:
-        insecure_list.append(client.get(SSLConstants.CERT))
-    content, sig = SecurityContentService.load_content(client.get(SSLConstants.PRIVATE_KEY))
-    if sig != LoadResult.OK:
-        insecure_list.append(client.get(SSLConstants.PRIVATE_KEY))
-    content, sig = SecurityContentService.load_content(client.get(SSLConstants.ROOT_CERT))
-    if sig != LoadResult.OK:
-        insecure_list.append(client.get(SSLConstants.ROOT_CERT))
-
-    return insecure_list
 
 
 def create_admin_agent(
@@ -228,6 +204,8 @@ def create_admin_agent(
     federated_client.set_client_engine(client_engine)
     for processor in req_processors:
         admin_agent.register_processor(processor)
+
+    client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
     return admin_agent
 

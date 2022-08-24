@@ -138,7 +138,13 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
-    DELETE_RUN = "delete_run"
+    SUBMIT_JOB = "submit_job"
+    LIST_JOBS = "list_jobs"
+    DOWNLOAD_JOB = "download_job"
+    ABORT_JOB = "abort_job"
+    DELETE_JOB = "delete_job"
+    CLONE_JOB = "clone_job"
+    DELETE_WORKSPACE = "delete_workspace"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
@@ -226,9 +232,11 @@ class SnapshotKey(object):
 
 
 class RunProcessKey(object):
-
+    COLLECTIVE_LISTEN_PORT = "_collective_listen_port"
+    COLLECTIVE_CONNECTION = "_collective_conn"
+    COLLECTIVE_CONNECTION_WAITER = "_collective_conn_waiter"
     LISTEN_PORT = "_listen_port"
-    CONNECTION = "_comm_conn"
+    CONNECTION = "_conn"
     CHILD_PROCESS = "_child_process"
     STATUS = "_status"
     JOB_ID = "_job_id"

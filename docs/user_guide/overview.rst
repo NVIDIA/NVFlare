@@ -43,15 +43,27 @@ Provisioning a federated learning project
 The :ref:`provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open
 Provision API, which you can use to customize configurations to fit your own requirements.
 
-Edit the :ref:`user_guide/provisioning_tool:Project yaml file` in the directory with the provisioning tool to meet your
+Edit the :ref:`programming_guide/provisioning_system:Project yaml file` in the directory with the provisioning tool to meet your
 project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
 for your project).
 
-Then run the startup kit with (here we assume your project.yml is in current working directory)::
+Then run the provision command with (here we assume your project.yml is in current working directory)::
 
     provision -p project.yml
 
-A directory named "packages" containing each of the generated zip files is created where provision.py is run.
+The generated startup kits are created by default in a directory prefixed with "prod\_" within a folder of the project
+name in the workspace folder created where provision.py is run.
+
+.. attention::
+
+   In order to change configurations, it may be necessary to alter nvflare/lighter/impl/master_template.yml before
+   running provision with your checked out version of the code (make sure PYTHONPATH points to the location of where you
+   checked out the NVFlare repository).
+
+   You cannot directly edit the contents of the startup kits because the contents of the generated startup kits are
+   signed by :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>` so the system will detect if any
+   of the files have been altered and may not run.
+
 The console displays a list of zip files and their passwords. We suggest you copy the console output
 and "packages" folder to a safe location. The passwords shown below are for demonstration purposes only::
 
@@ -215,7 +227,7 @@ started successfully as described in the preceding section, `Federated learning 
 admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
 issue commands to operate the system so it can be run with a script.
 
-For a complete list of admin commands, see :ref:`admin_commands`.
+For a complete list of admin commands, see :ref:`operating_nvflare`.
 
 For examples of using the commands to operate a FL system, see the examples in the :ref:`quickstart` section.
 
@@ -223,78 +235,8 @@ For examples of using the commands to operate a FL system, see the examples in t
 Internal folder and file structures for NVIDIA FLARE
 ****************************************************
 
-Server side folder and file structure
-=====================================
-::
-
-    /some_path_on_fl_server/fl_server_workspace_root/
-        admin_audit.log
-        log.txt
-        startup/
-            authorization.json
-            fed_server.json
-            log.config
-            readme.txt
-            rootCA.pem
-            server_context.tenseal
-            server.crt
-            server.key
-            signature.pkl
-            start.sh
-            stop_fl.sh
-            sub_start.sh
-        transfer/
-        run_1/
-            mmar_server/
-                config/
-                models/
-                resources/
-            mmar_client1/
-                config/
-                models/
-                resources/
-            mmar_client2/
-                config/
-                models/
-                resources/
-            ...
-            cross_validation/
-        run_2/
-            ......
-
-Client side folder and file structure
-=====================================
-::
-
-    /some_path_on_fl_client/fl_client_workspace_root/
-        log.txt
-        startup/
-            client_context.tenseal
-            client.crt
-            client.key
-            fed_client.json
-            log.config
-            readme.txt
-            rootCA.pem
-            signature.pkl
-            start.sh
-            stop_fl.sh
-            sub_start.sh
-        transfer/
-        run_1/
-            mmar_client1/
-                config/
-                cross_validation/
-                models/
-                resources/
-        run_2/
-            mmar_client1/
-                config/
-                cross_validation/
-                models/
-                resources/
-        run_3/
-            ......
+Please refer to :ref:`server workspace <server_workspace>` and :ref:`client workspace <client_workspace>`
+for the folder and file structures on the server/client side.
 
 Administrator side folder and file structure
 ============================================

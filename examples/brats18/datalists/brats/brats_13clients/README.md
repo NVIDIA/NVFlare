@@ -1,1 +1,0 @@
-This folder contains the 13 datasets files, which were split from BraTS18 dataset by [Li et al. 2019](https://arxiv.org/pdf/1910.00962.pdf).

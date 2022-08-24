@@ -16,7 +16,7 @@ import json
 import threading
 import time
 
-from requests.models import Response
+from requests import Response
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -27,6 +27,7 @@ class DummyOverseerAgent(OverseerAgent):
     SSID = "ebc6125d-0a56-4688-9b08-355fe9e4d61a"
 
     def __init__(self, sp_end_point, heartbeat_interval=5):
+        super().__init__()
         self._base_init(sp_end_point)
 
         self._report_and_query = threading.Thread(target=self._rnq_worker, args=())
@@ -42,11 +43,11 @@ class DummyOverseerAgent(OverseerAgent):
         self._psp = SP(name, fl_port, admin_port, DummyOverseerAgent.SSID, True)
         psp_dict = {
             "sp_end_point": sp_end_point,
-            "service_seesion_id": DummyOverseerAgent.SSID,
+            "service_session_id": DummyOverseerAgent.SSID,
             "primary": True,
             "state": "online",
         }
-        self._overseer_info = {
+        self.overseer_info = {
             "primary_sp": psp_dict,
             "sp_list": [psp_dict],
             "system": "ready",
@@ -65,14 +66,15 @@ class DummyOverseerAgent(OverseerAgent):
         """Return current primary service provider. The PSP is static in the dummy agent."""
         return self._psp
 
-    def promote_sp(self, sp_end_point, headers=None):
+    def promote_sp(self, sp_end_point, headers=None) -> Response:
+        # a hack to create dummy response
         resp = Response()
         resp.status_code = 200
-        resp.content = json.dumps({"Error": "this functionality is not supported by the dummy agent"})
+        resp._content = json.dumps({"Error": "this functionality is not supported by the dummy agent"}).encode("utf-8")
         return resp
 
     def start(self, update_callback=None, conditional_cb=False):
-        self.conditional_cb = conditional_cb
+        self._conditional_cb = conditional_cb
         self._update_callback = update_callback
         self._report_and_query.start()
         self._flag.set()
@@ -83,16 +85,20 @@ class DummyOverseerAgent(OverseerAgent):
     def resume(self):
         self._flag.set()
 
-    def set_state(self, state):
+    def set_state(self, state) -> Response:
+        # a hack to create dummy response
         resp = Response()
         resp.status_code = 200
-        resp.content = json.dumps({"Error": "this functionality is not supported by the dummy agent"})
+        resp._content = json.dumps({"Error": "this functionality is not supported by the dummy agent"}).encode("utf-8")
         return resp
 
     def end(self):
         self._flag.set()
         self._asked_to_exit = True
         self._report_and_query.join()
+
+    def set_secure_context(self, ca_path: str, cert_path: str = "", prv_key_path: str = ""):
+        pass
 
     def _do_callback(self):
         if self._update_callback:
@@ -101,6 +107,6 @@ class DummyOverseerAgent(OverseerAgent):
     def _rnq_worker(self):
         while not self._asked_to_exit:
             self._flag.wait()
-            if not self.conditional_cb:
+            if not self._conditional_cb:
                 self._do_callback()
             time.sleep(self._heartbeat_interval)

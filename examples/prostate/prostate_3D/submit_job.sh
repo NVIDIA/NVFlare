@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
+export PYTHONPATH="${PYTHONPATH}:${PWD}"
 echo "PYTHONPATH is ${PYTHONPATH}"
 
 algorithms_dir="${PWD}/configs"
 workspace="${PWD}/workspace_prostate"
-site_pre="client_"
 
 # default server and admin
 servername="server"

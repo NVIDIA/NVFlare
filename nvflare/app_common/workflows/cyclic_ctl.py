@@ -38,8 +38,10 @@ class CyclicController(Controller):
 
         Args:
             num_rounds (int, optional): number of rounds this controller should perform. Defaults to 5.
-            task_assignment_timeout (int, optional): timeout (in sec) to determine if one client fails to request the task which it is assigned to . Defaults to 10.
-            persistor_id (str, optional): id of the persistor so this controller can save a global model. Defaults to "persistor".
+            task_assignment_timeout (int, optional): timeout (in sec) to determine if one client fails to
+                request the task which it is assigned to . Defaults to 10.
+            persistor_id (str, optional): id of the persistor so this controller can save a global model.
+                Defaults to "persistor".
             shareable_generator_id (str, optional): id of shareable generator. Defaults to "shareable_generator".
             task_name (str, optional): the task name that clients know how to handle. Defaults to "train".
 
@@ -66,18 +68,21 @@ class CyclicController(Controller):
         self.shareable_generator_id = shareable_generator_id
         self.task_assignment_timeout = task_assignment_timeout
         self.task_name = task_name
+        self.persistor = None
+        self.shareable_generator = None
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_debug(fl_ctx, "starting controller")
-        self.persistor = fl_ctx.get_engine().get_component(self.persistor_id)
-        self.shareable_generator = fl_ctx.get_engine().get_component(self.shareable_generator_id)
+        self.persistor = self._engine.get_component(self.persistor_id)
+        self.shareable_generator = self._engine.get_component(self.shareable_generator_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.system_panic(
                 f"Persistor {self.persistor_id} must be a Persistor instance, but got {type(self.persistor)}", fl_ctx
             )
         if not isinstance(self.shareable_generator, ShareableGenerator):
             self.system_panic(
-                f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance, but got {type(self.shareable_generator)}",
+                f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance,"
+                f"but got {type(self.shareable_generator)}",
                 fl_ctx,
             )
         self._last_learnable = self.persistor.load(fl_ctx)
@@ -99,7 +104,6 @@ class CyclicController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
-            engine = fl_ctx.get_engine()
             self.log_debug(fl_ctx, "Cyclic starting.")
 
             for self._current_round in range(self._start_round, self._end_round):
@@ -110,7 +114,7 @@ class CyclicController(Controller):
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
 
                 # Task for one cyclic
-                targets = engine.get_clients()
+                targets = self._engine.get_clients()
                 random.shuffle(targets)
                 targets_names = [t.name for t in targets]
                 self.log_debug(fl_ctx, f"Relay on {targets_names}")
@@ -134,7 +138,7 @@ class CyclicController(Controller):
                 )
                 self.persistor.save(self._last_learnable, fl_ctx)
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
-                engine.persist_components(fl_ctx, completed=False)
+                self._engine.persist_components(fl_ctx, completed=False)
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:

@@ -15,18 +15,19 @@
 import datetime
 import os
 import pathlib
+import pickle
 import shutil
 import tempfile
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job, JobMetaKey, job_from_meta
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.storage import StorageSpec
+from nvflare.apis.storage import StorageException, StorageSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
 
@@ -100,11 +101,14 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
             datetime.datetime.fromtimestamp(meta[JobMetaKey.SUBMIT_TIME]).astimezone().isoformat()
         )
+        meta[JobMetaKey.START_TIME.value] = ""
+        meta[JobMetaKey.DURATION.value] = "N/A"
         meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
 
         # write it to the store
+        stored_data = {JobDataKey.JOB_DATA.value: uploaded_content, JobDataKey.WORKSPACE_DATA.value: None}
         store = self._get_job_store(fl_ctx)
-        store.create_object(self.job_uri(jid), uploaded_content, meta, overwrite_existing=True)
+        store.create_object(self.job_uri(jid), pickle.dumps(stored_data), meta, overwrite_existing=True)
         return meta
 
     def delete(self, jid: str, fl_ctx: FLContext):
@@ -132,10 +136,13 @@ class SimpleJobDefManager(JobDefManagerSpec):
         """
         pass
 
-    def get_job(self, jid: str, fl_ctx: FLContext) -> Job:
+    def get_job(self, jid: str, fl_ctx: FLContext) -> Optional[Job]:
         store = self._get_job_store(fl_ctx)
-        job_meta = store.get_meta(self.job_uri(jid))
-        return job_from_meta(job_meta)
+        try:
+            job_meta = store.get_meta(self.job_uri(jid))
+            return job_from_meta(job_meta)
+        except StorageException:
+            return None
 
     def set_results_uri(self, jid: str, result_uri: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
@@ -164,8 +171,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return result_dict
 
     def _load_job_data_from_store(self, jid: str, temp_dir: str, fl_ctx: FLContext):
-        store = self._get_job_store(fl_ctx)
-        data_bytes = store.get_data(self.job_uri(jid))
+        data_bytes = self.get_content(jid, fl_ctx)
         job_id_dir = os.path.join(temp_dir, jid)
         if os.path.exists(job_id_dir):
             shutil.rmtree(job_id_dir)
@@ -173,13 +179,33 @@ class SimpleJobDefManager(JobDefManagerSpec):
         unzip_all_from_bytes(data_bytes, job_id_dir)
         return job_id_dir
 
-    def get_content(self, jid: str, fl_ctx: FLContext) -> bytes:
+    def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
         store = self._get_job_store(fl_ctx)
-        return store.get_data(self.job_uri(jid))
+        try:
+            stored_data = store.get_data(self.job_uri(jid))
+        except StorageException:
+            return None
+        return pickle.loads(stored_data).get(JobDataKey.JOB_DATA.value)
+
+    def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
+        store = self._get_job_store(fl_ctx)
+        stored_data = store.get_data(self.job_uri(jid))
+        return pickle.loads(stored_data)
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}
         store = self._get_job_store(fl_ctx)
+        if status == RunStatus.RUNNING.value:
+            meta[JobMetaKey.START_TIME.value] = str(datetime.datetime.now())
+        elif status in [
+            RunStatus.FINISHED_ABORTED.value,
+            RunStatus.FINISHED_COMPLETED.value,
+            RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
+        ]:
+            job_meta = store.get_meta(self.job_uri(jid))
+            if job_meta[JobMetaKey.START_TIME.value]:
+                start_time = datetime.datetime.strptime(job_meta.get(JobMetaKey.START_TIME), "%Y-%m-%d %H:%M:%S.%f")
+                meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):
@@ -229,3 +255,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
             store = self._get_job_store(fl_ctx)
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
+
+    def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
+        store = self._get_job_store(fl_ctx)
+        stored_data = store.get_data(self.job_uri(jid))
+        job_data = pickle.loads(stored_data)
+        job_data[JobDataKey.WORKSPACE_DATA.value] = data
+        store.update_data(self.job_uri(jid), pickle.dumps(job_data))

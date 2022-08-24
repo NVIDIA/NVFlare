@@ -58,8 +58,8 @@ class NPModelLocator(ModelLocator):
 
         if model_name == NPModelLocator.SERVER_MODEL_NAME:
             try:
-                run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-                run_dir = engine.get_workspace().get_run_dir(run_number)
+                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+                run_dir = engine.get_workspace().get_run_dir(job_id)
                 model_path = os.path.join(run_dir, self.model_dir)
 
                 model_load_path = os.path.join(model_path, self.model_file_name)

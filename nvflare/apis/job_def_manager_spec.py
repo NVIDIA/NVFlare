@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -82,7 +82,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_content(self, jid: str, fl_ctx: FLContext) -> bytes:
+    def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
         """Gets the entire uploaded content for a Job.
 
         Args:
@@ -91,6 +91,23 @@ class JobDefManagerSpec(FLComponent, ABC):
 
         Returns:
             Uploaded content of the job in bytes
+        """
+        pass
+
+    @abstractmethod
+    def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
+        """Gets the entire uploaded content and workspace for a job.
+
+        Args:
+            jid (str): Job ID
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            a dict to hold the job data and workspace.
+            Format: {
+                        JobDataKey.JOB_DATA.value: stored_data,
+                        JobDataKey.WORKSPACE_DATA: workspace_data
+                    }
         """
         pass
 
@@ -180,6 +197,18 @@ class JobDefManagerSpec(FLComponent, ABC):
 
         Args:
             jid (str): Job ID
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
+        """Save the job workspace to the job storage.
+
+        Args:
+            jid (str): Job ID
+            data: Job workspace data
             fl_ctx (FLContext): FLContext information
 
         """

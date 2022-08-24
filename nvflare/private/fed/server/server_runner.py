@@ -59,16 +59,16 @@ class ServerRunnerConfig(object):
 
 
 class ServerRunner(FLComponent):
-    def __init__(self, config: ServerRunnerConfig, run_num: str, engine: ServerEngineSpec):
+    def __init__(self, config: ServerRunnerConfig, job_id: str, engine: ServerEngineSpec):
         """Server runner class.
 
         Args:
             config (ServerRunnerConfig): configuration of server runner
-            run_num (int): The number to distinguish each experiment
+            job_id (str): The number to distinguish each experiment
             engine (ServerEngineSpec): server engine
         """
         FLComponent.__init__(self)
-        self.run_num = run_num
+        self.job_id = job_id
         self.config = config
         self.engine = engine
         self.abort_signal = Signal()
@@ -174,7 +174,7 @@ class ServerRunner(FLComponent):
                     if self.current_wf:
                         collector.set_info(
                             group_name="ServerRunner",
-                            info={"run_number": self.run_num, "status": self.status, "workflow": self.current_wf.id},
+                            info={"job_id": self.job_id, "status": self.status, "workflow": self.current_wf.id},
                         )
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
@@ -221,10 +221,10 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "invalid task request: no peer context - asked client to try again later")
             return self._task_try_again()
 
-        peer_run_num = peer_ctx.get_run_number()
-        if not peer_run_num or peer_run_num != self.run_num:
+        peer_job_id = peer_ctx.get_job_id()
+        if not peer_job_id or peer_job_id != self.job_id:
             # the client is in a different RUN
-            self.log_info(fl_ctx, "invalid task request: not the same run_number - asked client to end the run")
+            self.log_info(fl_ctx, "invalid task request: not the same job_id - asked client to end the run")
             return SpecialTaskName.END_RUN, "", None
 
         try:
@@ -326,10 +326,10 @@ class ServerRunner(FLComponent):
             self.log_info(fl_ctx, "invalid result submission: no peer context - dropped")
             return
 
-        peer_run_num = peer_ctx.get_run_number()
-        if not peer_run_num or peer_run_num != self.run_num:
+        peer_job_id = peer_ctx.get_job_id()
+        if not peer_job_id or peer_job_id != self.job_id:
             # the client is on a different RUN
-            self.log_info(fl_ctx, "invalid result submission: not the same run number - dropped")
+            self.log_info(fl_ctx, "invalid result submission: not the same job id - dropped")
             return
 
         result.set_header(ReservedHeaderKey.TASK_NAME, task_name)
@@ -386,8 +386,8 @@ class ServerRunner(FLComponent):
         self.log_info(fl_ctx, "asked to abort - triggered abort_signal to stop the RUN")
 
     def get_persist_state(self, fl_ctx: FLContext) -> dict:
-        return {"run_number": str(self.run_num), "current_wf_index": self.current_wf_index}
+        return {"job_id": str(self.job_id), "current_wf_index": self.current_wf_index}
 
     def restore(self, state_data: dict, fl_ctx: FLContext):
-        self.run_num = state_data.get("run_number")
+        self.job_id = state_data.get("job_id")
         self.current_wf_index = int(state_data.get("current_wf_index", 0))

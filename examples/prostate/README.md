@@ -3,7 +3,7 @@
 ## Introduction to MONAI, Prostate and Multi-source Data
 
 ### MONAI
-This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) on medical image applications.
+This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on medical image applications.
 It uses [MONAI](https://github.com/Project-MONAI/MONAI),
 which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 

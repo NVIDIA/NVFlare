@@ -154,13 +154,18 @@ class _FileCmdExecutor(_CommandExecutor):
         self.file_required = file_required
 
     def validate_shell_command(self, args: List[str], parse_result):
-        if self.file_required:
+        if self.file_required or parse_result.files:
             if not hasattr(parse_result, "files"):
                 return "a file is required as an argument"
             if self.single_file_only and len(parse_result.files) != 1:
                 return "only one file is allowed"
 
-            for f in parse_result.files:
+            if isinstance(parse_result.files, list):
+                file_list = parse_result.files
+            else:
+                file_list = [parse_result.files]
+
+            for f in file_list:
                 if not isinstance(f, str):
                     raise TypeError("file must be str but got {}".format(type(f)))
 
@@ -196,7 +201,6 @@ class ShellCommandModule(CommandModule):
         head_exe = _FileCmdExecutor("head", HeadValidator())
         tail_exe = _FileCmdExecutor("tail", TailValidator())
         grep_exe = _FileCmdExecutor("grep", GrepValidator())
-        env_exe = _NoArgCmdExecutor("env")
 
         return CommandModuleSpec(
             name="sys",
@@ -257,14 +261,6 @@ class ShellCommandModule(CommandModule):
                     + grep_exe.get_usage(),
                     handler_func=grep_exe.execute_command,
                     authz_func=grep_exe.authorize_command,
-                    visible=True,
-                ),
-                CommandSpec(
-                    name="env",
-                    description="show system environment vars",
-                    usage="env target\n " + 'where target is "server" or client name\n' + env_exe.get_usage(),
-                    handler_func=env_exe.execute_command,
-                    authz_func=env_exe.authorize_command,
                     visible=True,
                 ),
             ],

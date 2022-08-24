@@ -15,7 +15,7 @@
 import threading
 import time
 
-from nvflare.apis.client_engine_spec import ClientEngineSpec, TaskAssignment
+from nvflare.apis.client_engine_spec import TaskAssignment
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -55,15 +56,15 @@ class ClientRunner(FLComponent):
     def __init__(
         self,
         config: ClientRunnerConfig,
-        run_num: int,
-        engine: ClientEngineSpec,
+        job_id,
+        engine: ClientEngineExecutorSpec,
         task_fetch_interval: int = 5,  # fetch task every 5 secs
     ):
         """To init the ClientRunner.
 
         Args:
             config: ClientRunnerConfig
-            run_num: run number
+            job_id: job id
             engine: ClientEngine object
             task_fetch_interval:  fetch task interval
         """
@@ -72,7 +73,7 @@ class ClientRunner(FLComponent):
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
 
-        self.run_num = run_num
+        self.job_id = job_id
         self.engine = engine
         self.task_fetch_interval = task_fetch_interval
         self.run_abort_signal = Signal()
@@ -88,10 +89,6 @@ class ClientRunner(FLComponent):
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
-        engine = fl_ctx.get_engine()
-        if not isinstance(engine, ClientEngineSpec):
-            raise TypeError("engine must be ClientEngineSpec, but got {}".format(type(engine)))
-
         if not isinstance(task.data, Shareable):
             self.log_error(
                 fl_ctx, "got invalid task data in assignment: expect Shareable, but got {}".format(type(task.data))
@@ -115,9 +112,9 @@ class ClientRunner(FLComponent):
             return make_reply(ReturnCode.BAD_PEER_CONTEXT)
 
         task.data.set_peer_props(peer_ctx.get_all_public_props())
-        peer_run_num = peer_ctx.get_run_number()
-        if peer_run_num != self.run_num:
-            self.log_error(fl_ctx, "bad task assignment: not for the same run_number")
+        peer_job_id = peer_ctx.get_job_id()
+        if peer_job_id != self.job_id:
+            self.log_error(fl_ctx, "bad task assignment: not for the same job_id")
             return make_reply(ReturnCode.RUN_MISMATCH)
 
         executor = self.task_table.get(task.name)
@@ -395,7 +392,7 @@ class ClientRunner(FLComponent):
                     current_task_name = "None"
                 collector.set_info(
                     group_name="ClientRunner",
-                    info={"run_number": self.run_num, "current_task_name": current_task_name, "status": "started"},
+                    info={"job_id": self.job_id, "current_task_name": current_task_name, "status": "started"},
                 )
         elif event_type == EventType.FATAL_TASK_ERROR:
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")

@@ -11,24 +11,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
 import io
 import json
 import logging
+import traceback
 from typing import Dict, List
 
-from nvflare.apis.job_def import Job, JobMetaKey
-from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.authz import AuthorizationService
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
+from nvflare.fuel.hci.zip_utils import ls_zip_from_bytes
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.security.security import Action
 
+from .cmd_utils import CommandUtil
 from .training_cmds import TrainingCommandModule
 
 
-class JobCommandModule(TrainingCommandModule):
+class JobCommandModule(TrainingCommandModule, CommandUtil):
     """Command module with commands for job management."""
 
     def __init__(self):
@@ -45,13 +51,13 @@ class JobCommandModule(TrainingCommandModule):
                     usage="list_jobs [-n name_prefix] [-d] [job_id_prefix]",
                     handler_func=self.list_jobs,
                 ),
-                # CommandSpec(
-                #     name="delete_job",
-                #     description="delete a job",
-                #     usage="delete_job job_id",
-                #     handler_func=self.delete_job,
-                #     authz_func=self.authorize_job,
-                # ),
+                CommandSpec(
+                    name="delete_job",
+                    description="delete a job and persisted workspace",
+                    usage="delete_job job_id",
+                    handler_func=self.delete_job,
+                    authz_func=self.authorize_job,
+                ),
                 CommandSpec(
                     name="abort_job",
                     description="abort a job if it is running or dispatched",
@@ -66,6 +72,13 @@ class JobCommandModule(TrainingCommandModule):
                     handler_func=self.clone_job,
                     authz_func=self.authorize_job,
                 ),
+                CommandSpec(
+                    name="list_files",
+                    description="list contents of a finished job in the job store",
+                    usage="list_files job_id [file/folder path, starting with job or workspace as top dir]",
+                    handler_func=self.list_files,
+                    authz_func=self.authorize_list_files,
+                ),
             ],
         )
 
@@ -75,10 +88,18 @@ class JobCommandModule(TrainingCommandModule):
             return False, None
 
         job_id = args[1].lower()
-        conn.set_prop(self.RUN_NUMBER, job_id)
-        args.append("server")  # for now, checking permissions against server
+        conn.set_prop(self.JOB_ID, job_id)
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
 
-        return self._authorize_actions(conn, args[2:], [Action.TRAIN])
+        with engine.new_context() as fl_ctx:
+            job = job_def_manager.get_job(job_id, fl_ctx)
+
+        if not job:
+            conn.append_error(f"Job with ID {job_id} doesn't exist")
+            return False, None
+
+        return self.authorize_job_meta(conn, job.meta, [Action.TRAIN])
 
     def list_jobs(self, conn: Connection, args: List[str]):
 
@@ -90,8 +111,6 @@ class JobCommandModule(TrainingCommandModule):
             parsed_args = parser.parse_args(args[1:])
 
             engine = conn.app_ctx
-            if not isinstance(engine, ServerEngine):
-                raise TypeError(f"engine is not of type ServerEngine, but got {type(engine)}")
             job_def_manager = engine.job_def_manager
             if not isinstance(job_def_manager, JobDefManagerSpec):
                 raise TypeError(
@@ -109,12 +128,20 @@ class JobCommandModule(TrainingCommandModule):
                     conn.append_error("No jobs matching the searching criteria")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
+                # Can't use authz_func so do authorization one by one
+                authorized_jobs = [job for job in filtered_jobs if self._job_authorized(conn, job)]
+
+                authorized_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
 
                 if parsed_args.d:
-                    self._send_detail_list(conn, filtered_jobs)
+                    self._send_detail_list(conn, authorized_jobs)
                 else:
-                    self._send_summary_list(conn, filtered_jobs)
+                    self._send_summary_list(conn, authorized_jobs)
+
+                diff = set([job.job_id for job in filtered_jobs]) - set([job.job_id for job in authorized_jobs])
+                if diff:
+                    self.logger.debug(f"Following jobs are not authorized for listing: {diff}")
+                    conn.append_string("Some jobs are not listed due to permission restrictions")
             else:
                 conn.append_string("No jobs.")
         except Exception as e:
@@ -124,7 +151,7 @@ class JobCommandModule(TrainingCommandModule):
         conn.append_success("")
 
     def delete_job(self, conn: Connection, args: List[str]):
-        job_id = conn.get_prop(self.RUN_NUMBER)
+        job_id = conn.get_prop(self.JOB_ID)
         engine = conn.app_ctx
         try:
             if not isinstance(engine, ServerEngine):
@@ -135,6 +162,14 @@ class JobCommandModule(TrainingCommandModule):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
+                job = job_def_manager.get_job(job_id, fl_ctx)
+                if not job:
+                    conn.append_error(f"job: {job_id} does not exist")
+                    return
+                if job.meta.get(JobMetaKey.STATUS, "") in [RunStatus.DISPATCHED.value, RunStatus.RUNNING.value]:
+                    conn.append_error(f"job: {job_id} is running, could not be deleted at this time.")
+                    return
+
                 job_def_manager.delete(job_id, fl_ctx)
             conn.append_string("Job {} deleted.".format(job_id))
         except Exception as e:
@@ -144,12 +179,11 @@ class JobCommandModule(TrainingCommandModule):
 
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngine):
-            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+        job_runner = engine.job_runner
 
         try:
-            run_number = conn.get_prop(self.RUN_NUMBER)
-            engine.job_runner.stop_run(run_number, engine.new_context())
+            job_id = conn.get_prop(self.JOB_ID)
+            job_runner.stop_run(job_id, engine.new_context())
             conn.append_string("Abort signal has been sent to the server app.")
             conn.append_success("")
         except Exception as e:
@@ -157,7 +191,7 @@ class JobCommandModule(TrainingCommandModule):
             return
 
     def clone_job(self, conn: Connection, args: List[str]):
-        job_id = conn.get_prop(self.RUN_NUMBER)
+        job_id = conn.get_prop(self.JOB_ID)
         engine = conn.app_ctx
         try:
             if not isinstance(engine, ServerEngine):
@@ -177,28 +211,115 @@ class JobCommandModule(TrainingCommandModule):
             return
         conn.append_success("")
 
-    def _job_match(self, job_meta: Dict, id_prefix: str, name_prefix: str) -> bool:
+    def authorize_list_files(self, conn: Connection, args: List[str]):
+        if len(args) < 2:
+            conn.append_error("syntax error: missing job_id")
+            return False, None
+
+        if len(args) > 3:
+            conn.append_error("syntax error: too many arguments")
+            return False, None
+
+        return self.authorize_job(conn=conn, args=args[:2])
+
+    def list_files(self, conn: Connection, args: List[str]):
+        job_id = conn.get_prop(self.JOB_ID)
+
+        if len(args) == 2:
+            conn.append_string("job\nworkspace\n\nSpecify the job or workspace dir to see detailed contents.")
+            return
+        else:
+            file = args[2]
+
+        engine = conn.app_ctx
+        try:
+            job_def_manager = engine.job_def_manager
+            if not isinstance(job_def_manager, JobDefManagerSpec):
+                raise TypeError(
+                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+                )
+            with engine.new_context() as fl_ctx:
+                job_data = job_def_manager.get_job_data(job_id, fl_ctx)
+                if file.startswith(TopDir.JOB):
+                    file = file[len(TopDir.JOB) :]
+                    file = file.lstrip("/")
+                    data_bytes = job_data[JobDataKey.JOB_DATA.value]
+                    ls_info = ls_zip_from_bytes(data_bytes)
+                elif file.startswith(TopDir.WORKSPACE):
+                    file = file[len(TopDir.WORKSPACE) :]
+                    file = file.lstrip("/")
+                    workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
+                    ls_info = ls_zip_from_bytes(workspace_bytes)
+                else:
+                    conn.append_error("syntax error: top level directory must be job or workspace")
+                    return
+                return_string = "%-46s %19s %12s\n" % ("File Name", "Modified    ", "Size")
+                for zinfo in ls_info:
+                    date = "%d-%02d-%02d %02d:%02d:%02d" % zinfo.date_time[:6]
+                    if zinfo.filename.startswith(file):
+                        return_string += "%-46s %s %12d\n" % (zinfo.filename, date, zinfo.file_size)
+                conn.append_string(return_string)
+        except Exception as e:
+            traceback.print_exc()
+            conn.append_error("Exception occurred trying to get job from store: " + str(e))
+            return
+        conn.append_success("")
+
+    @staticmethod
+    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str) -> bool:
         return ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower())) and (
             (not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower())
         )
 
-    def _send_detail_list(self, conn: Connection, jobs: List[Job]):
+    @staticmethod
+    def _send_detail_list(conn: Connection, jobs: List[Job]):
         for job in jobs:
+            JobCommandModule._set_duration(job)
             conn.append_string(json.dumps(job.meta, indent=4))
 
-    def _send_summary_list(self, conn: Connection, jobs: List[Job]):
+    @staticmethod
+    def _send_summary_list(conn: Connection, jobs: List[Job]):
 
-        table = Table(["Job ID", "Name", "Status", "Submit Time"])
+        table = Table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"])
         for job in jobs:
+            JobCommandModule._set_duration(job)
             table.add_row(
                 [
-                    job.meta.get("job_id", ""),
-                    job.meta.get("name", ""),
-                    job.meta.get("status", ""),
-                    job.meta.get("submit_time_iso", ""),
+                    job.meta.get(JobMetaKey.JOB_ID, ""),
+                    CommandUtil.get_job_name(job.meta),
+                    job.meta.get(JobMetaKey.STATUS, ""),
+                    job.meta.get(JobMetaKey.SUBMIT_TIME_ISO, ""),
+                    str(job.meta.get(JobMetaKey.DURATION, "N/A")),
                 ]
             )
 
         writer = io.StringIO()
         table.write(writer)
         conn.append_string(writer.getvalue())
+
+    @staticmethod
+    def _set_duration(job):
+        if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING.value:
+            start_time = datetime.datetime.strptime(job.meta.get(JobMetaKey.START_TIME), "%Y-%m-%d %H:%M:%S.%f")
+            duration = datetime.datetime.now() - start_time
+            job.meta[JobMetaKey.DURATION] = str(duration)
+
+    def _job_authorized(self, conn: Connection, job: Job) -> bool:
+
+        valid, authz_ctx = self.authorize_job_meta(conn, job.meta, [Action.VIEW])
+        if not valid:
+            return False
+
+        authz_ctx.user_name = conn.get_prop(ConnProps.USER_NAME, "")
+        conn.set_prop(ConnProps.AUTHZ_CTX, authz_ctx)
+        authorizer = AuthorizationService.get_authorizer()
+        authorized, err = authorizer.authorize(ctx=authz_ctx)
+        if err:
+            self.logger.debug("Authorization Error to view job {}: {}".format(job.job_id, err))
+            return False
+
+        if not authorized:
+            self.logger.debug(f"View action for job {job.job_id} is not authorized")
+            return False
+
+        return True

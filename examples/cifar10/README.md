@@ -41,7 +41,7 @@ python3 -m nvflare.lighter.provision -p ./secure_project.yml
 cp -r ./workspace/secure_project/prod_00 ./secure_workspace
 cd ..
 ```
-For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/provisioning_tool.html).
+For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/provisioning_tool.html).
 
 For starting the FL system with 8 clients in the secure workspace, run
 ```
@@ -75,7 +75,7 @@ we set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager
 For the POC workspace, adjust the default values in `./workspaces/poc_workspace/site-*/startup/fed_client.json` 
 and `./workspaces/poc_workspace/server/startup/fed_server.json`. 
 
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/job.html).
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
 
 ### 2.3 Download the CIFAR-10 dataset 
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
@@ -128,7 +128,7 @@ You can visualize the training progress by running `tensorboard --logdir=[worksp
 
 FedAvg (8 clients). Here we run for 50 rounds, with 4 local epochs. Corresponding roughly 
 to the same number of iterations across clients as in the central baseline above (50*4 divided by 8 clients is 25):
-Each run will take about 35 minutes, depending on your system. 
+Each job will take about 35 minutes, depending on your system. 
 
 You can copy the whole block into the terminal, and it will execute each experiment one after the other.
 ```
@@ -138,21 +138,27 @@ You can copy the whole block into the terminal, and it will execute each experim
 ./submit_job.sh cifar10_fedavg 0.1
 ```
 
-> **_NOTE:_** You can always use the admin console to manually abort the automatically started runs 
-  using `abort_job [RUN_ID]`. 
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/admin_commands.html).
+> **_NOTE:_** You can always use the admin console to manually abort a running job. 
+  using `abort_job [JOB_ID]`. 
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
 > To log into the POC workspace admin console no username is required 
 > (use "admin" for commands requiring conformation with username). 
 
 > For the secure workspace admin console, use username "admin@nvidia.com"
 
-After training, each client's best model will be used for cross-site validation. The results can be shown with
-for example
+After training, each client's best model will be used for cross-site validation. 
+The results can be downloaded and shown with the admin console using
 ```
-  cat ./workspaces/poc_workspace/server/[RUN_ID]/cross_site_val/cross_site_val.json
+  download_job [JOB_ID]
 ```
-where [RUN_ID] is the ID assigned by the system when submitting the job.
+where `[JOB_ID]` is the ID assigned by the system when submitting the job.
+
+The result will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+You should see the cross-site validation results at
+```
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
+```
 
 ### 3.4: Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
 
@@ -199,6 +205,8 @@ the global models for different settings. In this example, all clients compute t
 same CIFAR-10 test set. The plotting script used for the below graphs is in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py) 
 (please install [./virtualenv/plot-requirements.txt](./virtualenv/plot-requirements.txt)).
+
+To use it, download all job results using the `download_job` admin command and specify the `download_dir` in [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py). 
 
 ### 4.1 Central vs. FedAvg
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
@@ -249,4 +257,4 @@ In a real-world scenario, the researcher won't have access to the TensorBoard ev
 ```
 ./submit_job.sh cifar10_fedavg_stream_tb 1.0
 ```
-Using this configuration, a `tb_events` folder will be created under the `[RUN_ID]` folder of the server that includes all the TensorBoard event values of the different clients.
+Using this configuration, a `tb_events` folder will be created under the `[JOB_ID]` folder of the server that includes all the TensorBoard event values of the different clients.

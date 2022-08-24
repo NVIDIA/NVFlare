@@ -179,8 +179,8 @@ class NPTrainer(Executor):
 
     def _load_local_model(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-        run_dir = engine.get_workspace().get_run_dir(run_number)
+        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+        run_dir = engine.get_workspace().get_run_dir(job_id)
         model_path = os.path.join(run_dir, self._model_dir)
 
         model_load_path = os.path.join(model_path, self._model_name)
@@ -198,8 +198,8 @@ class NPTrainer(Executor):
     def _save_local_model(self, fl_ctx: FLContext, model: dict):
         # Save local model
         engine = fl_ctx.get_engine()
-        run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-        run_dir = engine.get_workspace().get_run_dir(run_number)
+        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+        run_dir = engine.get_workspace().get_run_dir(job_id)
         model_path = os.path.join(run_dir, self._model_dir)
         if not os.path.exists(model_path):
             os.makedirs(model_path)

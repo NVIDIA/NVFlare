@@ -46,6 +46,8 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+cov.xml
+unit_test.xml
 
 # Translations
 *.mo
@@ -142,5 +144,8 @@ variables.*
 
 wrksp/*
 
-# poc run data
-*run_*
+# IDE
+*.iml
+
+# Jupyter Notebook
+.ipynb_checkpoints

@@ -16,8 +16,8 @@ In NVIDIA FLARE 2.1.0, to be able to run multiple experiments in parallel, the s
 as to when to run which experiments.
 
 To be able to do this, the system now has to know everything about the experiment: which app(s)
-go to which clients or server, what are the resource requirements for this experiment, etc. The total definition of such
-needed information is called a Job.
+go to which clients or server, what are the resource requirements for this experiment, etc.
+The total definition of such needed information is called a Job.
 
 Many underlying assumptions about the operation of the system changed, with the admin now submitting a job and letting the
 system manage the rest, instead of before when the admin uploaded apps, set the run number, deployed, then started the app
@@ -110,6 +110,25 @@ folder with meta.json.
 There is only one server, and only one app can be deployed to it for the Job, so "server" can appear only once in
 the ``deploy_map``.
 
+The ``deploy_map`` cannot be empty, so the following is not allowed::
+
+    "deploy_map": {}
+
+When specified as a site name, "@ALL" carries a special meaning of all sites to deploy to. If "@ALL" is used, there
+should be no other apps being deployed to the sites. This means the following example of ``deploy_map`` is not allowed::
+
+    "deploy_map": {
+        "app1": ["@ALL"], "app2": ["site-1"]
+    }
+
+If an empty list of sites is specified for an app in the ``deploy_map``, then that app is to be deployed to no sites,
+and no validation is done other than checking that the folder exists. This is the case for "app2" in the following valid
+example of ``deploy_map`` for a job containing app1 and app2::
+
+    "deploy_map": {
+        "app1": ["@ALL"], "app2": []
+    }
+
 Resource-less Jobs
 ==================
 Similarly, for simple FL jobs or in POC mode, resources are not a concern. In this case, the resource spec can be
@@ -185,8 +204,8 @@ requirements for the clients, the job runner will dispatch the FL application fo
 corresponding destination. Then the job runner will start the FL server application and client applications to run
 the job.
 
-The job runner keeps track of the running jobs and the corresponding run numbers. Once a job finishes running, or the
-job execution got aborted, the job runner will remove the run number from the running_jobs table.
+The job runner keeps track of the running jobs and the corresponding job ids. Once a job finishes running, or the
+job execution got aborted, the job runner will remove the job id from the running_jobs table.
 
 One-Shot Execution
 ------------------

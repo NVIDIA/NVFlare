@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from datetime import datetime
 
 from flask import jsonify, request
@@ -29,6 +30,14 @@ from nvflare.ha.overseer.utils import (
 )
 
 privilege_dict = load_privilege()
+if not privilege_dict:
+    print("Privilege file is tampered.  Privileged API disabled.")
+
+heartbeat_timeout = os.environ.get("NVFL_OVERSEER_HEARTBEAT_TIMEOUT", "10")
+try:
+    heartbeat_timeout = int(heartbeat_timeout)
+except BaseException:
+    heartbeat_timeout = 10
 
 
 @app.route("/api/v1/heartbeat", methods=["GET", "POST"])
@@ -40,7 +49,7 @@ def heartbeat():
         if project is None or role is None:
             return jsonify({"Error": "project and role must be provided"})
         now = datetime.utcnow()
-        update_sp_state(project, now)
+        update_sp_state(project, now, heartbeat_timeout=heartbeat_timeout)
         if role == "server":
             sp_end_point = req.get("sp_end_point")
             if sp_end_point is None:
@@ -56,7 +65,7 @@ def heartbeat():
 
 @app.route("/api/v1/promote", methods=["GET", "POST"])
 def promote():
-    if request.headers.get("X-USER") not in privilege_dict.get("super", {}):
+    if app.config.get("DEBUG") is not True and request.headers.get("X-USER") not in privilege_dict.get("super", {}):
         return jsonify({"Error": "No rights"})
     if request.method == "POST":
         req = request.json
@@ -75,7 +84,7 @@ def promote():
 
 @app.route("/api/v1/state", methods=["POST"])
 def state():
-    if request.headers.get("X-USER") not in privilege_dict.get("super", {}):
+    if app.config.get("DEBUG") is not True and request.headers.get("X-USER") not in privilege_dict.get("super", {}):
         return jsonify({"Error": "No rights"})
     req = request.json
     state = req.get("state")

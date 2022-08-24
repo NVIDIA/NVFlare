@@ -26,6 +26,7 @@
       "num_server_workers": 4,
       "compression": "Gzip",
       "admin_storage": "transfer",
+      "download_job_url": "http://download.server.com/",
       "min_num_clients": 1
     }
   ],
@@ -34,9 +35,12 @@
     "args": {
       "storage": {
         "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
-        "args": {}
+        "args": {
+          "root_dir": "/tmp/nvflare/snapshot-storage",
+          "uri_root": "/"
+        }
       },
-      "location": "/tmp/nvflare/snapshot-storage"
+      "uri_root": "/"
     }
   },
   "overseer_agent": {
