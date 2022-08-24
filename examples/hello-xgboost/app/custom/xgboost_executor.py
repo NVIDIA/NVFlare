@@ -32,10 +32,6 @@ XGBOOST_TASK_NAME = "xgboost_train"
 class XGBoostExecutor(Executor):
     def __init__(
         self,
-        server_key_path,
-        server_cert_path,
-        client_cert_path,
-        client_key_path,
         num_rounds: int,
         train_data_str,
         test_data_str,
@@ -43,10 +39,6 @@ class XGBoostExecutor(Executor):
     ):
         super().__init__()
         self._mpi_local_proxy = None
-        self._server_key_path = server_key_path
-        self._server_cert_path = server_cert_path
-        self._client_cert_path = client_cert_path
-        self._client_key_path = client_key_path
 
         self._num_rounds = num_rounds
         self._train_data_str = train_data_str
@@ -58,9 +50,6 @@ class XGBoostExecutor(Executor):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._mpi_local_proxy = MpiLocalProxy(
-                server_key_path=self._server_key_path,
-                server_cert_path=self._server_cert_path,
-                client_cert_path=self._client_cert_path,
                 fl_context=fl_ctx,
             )
             self._mpi_local_proxy.start()
@@ -89,9 +78,6 @@ class XGBoostExecutor(Executor):
             f"federated_server_address=localhost:{self._mpi_local_proxy.port}",
             f"federated_world_size={world_size}",
             f"federated_rank={rank}",
-            f"federated_server_cert={self._server_cert_path}",
-            f"federated_client_key={self._client_key_path}",
-            f"federated_client_cert={self._client_cert_path}",
         ]
         with xgb.rabit.RabitContext([e.encode() for e in rabit_env]):
             # Load file, file will not be sharded in federated mode.

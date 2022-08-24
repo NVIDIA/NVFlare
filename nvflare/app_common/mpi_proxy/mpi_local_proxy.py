@@ -47,11 +47,8 @@ class MpiLocalProxy(mpi_pb2_grpc.FederatedServicer):
     # ULONGLONG = 9
     TYPE_CODE_MAP = ["b", "B", "i", "I", "l", "L", "f", "d", "q", "Q"]
 
-    def __init__(self, server_key_path, server_cert_path, client_cert_path, fl_context: FLContext):
+    def __init__(self, fl_context: FLContext):
         self._logger = logging.getLogger(__name__)
-        self._server_key_path = server_key_path
-        self._server_cert_path = server_cert_path
-        self._client_cert_path = client_cert_path
         self.fl_context = fl_context
         self.port = get_open_ports(1)[0]
         self.grpc_server = None
@@ -64,25 +61,7 @@ class MpiLocalProxy(mpi_pb2_grpc.FederatedServicer):
         self.grpc_server = grpc.server(executor, options=MpiLocalProxy.GRPC_OPTIONS, compression=grpc.Compression.Gzip)
         mpi_pb2_grpc.add_FederatedServicer_to_server(self, self.grpc_server)
         local_address = "0.0.0.0:" + str(self.port)
-
-        with open(self._server_key_path, "rb") as f:
-            private_key = f.read()
-        with open(self._server_cert_path, "rb") as f:
-            certificate_chain = f.read()
-        with open(self._client_cert_path, "rb") as f:
-            root_ca = f.read()
-
-        server_credentials = grpc.ssl_server_credentials(
-            (
-                (
-                    private_key,
-                    certificate_chain,
-                ),
-            ),
-            root_certificates=root_ca,
-            require_client_auth=True,
-        )
-        self.grpc_server.add_secure_port(local_address, server_credentials)
+        self.grpc_server.add_insecure_port(local_address)
         self.grpc_server.start()
 
         self._logger.info(f"MPI Proxy on port {self.port} has started")
