@@ -72,10 +72,41 @@ gunicorn_conf_py: |
   workers=1
   wsgi_app="nvflare.ha.overseer.overseer:app"
 
+local_client_resources: |
+  {
+      "format_version": 2,
+      "client": {
+          "retry_timeout": 30,
+          "compression": "Gzip"
+      },
+      "components": [
+          {
+              "id": "resource_manager",
+              "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+              "args": {
+                  "resources": {
+                      "gpu": [
+                          0,
+                          1,
+                          2,
+                          3
+                      ]
+                  }
+              }
+          },
+          {
+              "id": "resource_consumer",
+              "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+              "args": {
+                  "gpu_resource_key": "gpu"
+              }
+          }
+      ]
+  }
+
 fed_client: |
   {
     "format_version": 2,
-    "enable_byoc": false,
     "servers": [
         {
             "name": "spleen_segmentation",
@@ -88,18 +119,64 @@ fed_client: |
         }
     ],
     "client": {
-        "retry_timeout": 30,
         "ssl_private_key": "client.key",
         "ssl_cert": "client.crt",
-        "ssl_root_cert": "rootCA.pem",
-        "compression": "Gzip"
+        "ssl_root_cert": "rootCA.pem"
     }
+  }
+
+local_server_resources: |
+  {
+      "format_version": 2,
+      "servers": [
+          {
+              "admin_storage": "transfer",
+              "max_num_clients": 100,
+              "heart_beat_timeout": 600,
+              "num_server_workers": 4,
+              "download_job_url": "http://download.server.com/",
+              "compression": "Gzip"
+          }
+      ],
+      "snapshot_persistor": {
+          "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
+          "args": {
+              "uri_root": "/",
+              "storage": {
+                  "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+                  "args": {
+                      "root_dir": "/tmp/nvflare/snapshot-storage",
+                      "uri_root": "/"
+                  }
+              }
+          }
+      },
+      "components": [
+          {
+              "id": "job_scheduler",
+              "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
+              "args": {
+                  "max_jobs": 1
+              }
+          },
+          {
+              "id": "job_manager",
+              "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+              "args": {
+                  "uri_root": "/tmp/nvflare/jobs-storage",
+                  "job_store_id": "job_store"
+              }
+          },
+          {
+              "id": "job_store",
+              "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
+          }
+      ]
   }
 
 fed_server: |
   {
     "format_version": 2,
-    "enable_byoc": false,
     "servers": [
         {
             "name": "spleen_segmentation",
@@ -112,15 +189,9 @@ fed_server: |
             },
             "admin_host": "localhost",
             "admin_port": 5005,
-            "admin_storage": "transfer",
             "ssl_private_key": "server.key",
             "ssl_cert": "server.crt",
-            "ssl_root_cert": "rootCA.pem",
-            "max_num_clients": 100,
-            "heart_beat_timeout": 600,
-            "num_server_workers": 4,
-            "download_job_url": "http://download.server.com/",
-            "compression": "Gzip"
+            "ssl_root_cert": "rootCA.pem"
         }
     ] 
   }
