@@ -180,6 +180,7 @@ def main():
     parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--client", type=str, help="Client name", required=True)
     parser.add_argument("--port", type=str, help="Listen port", required=True)
+    parser.add_argument("--gpu", "-g", type=str, help="gpu index number")
     args = parser.parse_args()
 
     log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
@@ -193,6 +194,10 @@ def main():
     os.chdir(workspace)
     AuthorizationService.initialize(EmptyAuthorizer())
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+
+    if args.gpu:
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
     conn = _create_connection(args.port)
 

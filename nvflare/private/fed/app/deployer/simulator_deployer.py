@@ -32,6 +32,8 @@ class SimulatorDeployer(ServerDeployer):
     def __init__(self, ports=None):
         super().__init__()
         if ports:
+            if len(ports) != 2:
+                raise ValueError("The ports must have length of 2.")
             self.open_ports = ports
         else:
             self.open_ports = get_open_ports(2)
@@ -39,10 +41,6 @@ class SimulatorDeployer(ServerDeployer):
 
     def create_fl_server(self, args, secure_train=False):
         simulator_server = self._create_simulator_server_config(self.admin_storage)
-
-        wait_after_min_clients = simulator_server.get("wait_after_min_clients", 10)
-        if simulator_server["heart_beat_timeout"]:
-            heart_beat_timeout = simulator_server["heart_beat_timeout"]
 
         self.services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
@@ -76,13 +74,6 @@ class SimulatorDeployer(ServerDeployer):
         federated_client.register()
         federated_client.start_heartbeat()
         federated_client.run_manager = None
-        # servers = [{t["name"]: t["service"]} for t in client_config.get("servers")]
-        # admin_agent = self.create_admin_agent(
-        #     sorted(servers)[0],
-        #     federated_client,
-        #     args,
-        # )
-        # admin_agent.start()
 
         return federated_client, client_config, args
 

@@ -212,28 +212,25 @@ class SimulatorRunner(FLComponent):
             if self.args.gpu:
                 gpus = self.args.gpu.split(",")
                 split_client_names = self.split_names(self.client_names, gpus)
-                for index in range(len(gpus)):
-                    command = (
-                        sys.executable
-                        + " -m nvflare.private.fed.app.simulator.client_run_process -o "
-                        + self.args.workspace
-                        + " -c "
-                        + ",".join([name for name in split_client_names[index]])
-                        + " -g "
-                        + gpus[index]
-                        + " -p "
-                        + ",".join([str(i) for i in self.deployer.open_ports])
-                    )
-                    _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
             else:
-                client_runner = SimulatorClientRunner(self.args, self.client_names, self.deployer)
-                client_runner.run()
+                gpus = [None]
+                split_client_names = [self.client_names]
 
+            executor = ThreadPoolExecutor(max_workers=len(gpus))
+            for index in range(len(gpus)):
+                client_names = split_client_names[index]
+                executor.submit(lambda p: self.client_run(*p), [client_names, gpus[index]])
+
+            executor.shutdown()
             server_thread.join()
         except BaseException as error:
             self.logger.error(error)
         finally:
             self.deployer.close()
+
+    def client_run(self, client_names, gpu):
+        client_runner = SimulatorClientRunner(self.args, client_names, self.deployer)
+        client_runner.run(gpu)
 
     def start_server_app(self):
         app_server_root = os.path.join(self.simulator_root, "app_server")
@@ -283,14 +280,14 @@ class SimulatorClientRunner(FLComponent):
             client.simulate_running = False
             client.status = ClientStatus.STARTED
 
-    def run(self):
+    def run(self, gpu):
         try:
             self.create_clients()
             self.logger.info("Start the clients run simulation.")
             executor = ThreadPoolExecutor(max_workers=self.args.threads)
             lock = threading.Lock()
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, lock])
+                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
@@ -302,7 +299,7 @@ class SimulatorClientRunner(FLComponent):
                 client.close()
             # self.deployer.close()
 
-    def run_client_thread(self, num_of_threads, lock):
+    def run_client_thread(self, num_of_threads, gpu, lock):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -317,13 +314,13 @@ class SimulatorClientRunner(FLComponent):
                         client = client_to_run
 
                 client.simulate_running = True
-                stop_run, client_to_run = self.do_one_task(client, num_of_threads, lock)
+                stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock)
 
                 client.simulate_running = False
         except BaseException as error:
             self.logger.error(error)
 
-    def do_one_task(self, client, num_of_threads, lock):
+    def do_one_task(self, client, num_of_threads, gpu, lock):
         open_port = get_open_ports(1)[0]
         command = (
             sys.executable
@@ -334,6 +331,8 @@ class SimulatorClientRunner(FLComponent):
             + " --port "
             + str(open_port)
         )
+        if gpu:
+            command += " --gpu " + str(gpu)
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
 
         conn = self._create_connection(open_port)
