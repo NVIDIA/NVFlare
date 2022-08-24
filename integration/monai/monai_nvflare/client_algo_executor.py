@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from monai.fl.client.client_algo import ClientAlgo
-from monai.fl.utils.constants import ExtraItems, FlStatistics, WeightType
+from monai.fl.utils.constants import ExtraItems, FlStatistics, ModelType, WeightType
 from monai.fl.utils.exchange_object import ExchangeObject
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
 
 
 def exchangeobj_from_shareable(shareable: Shareable):
@@ -140,6 +140,7 @@ class ClientAlgoExecutor(Executor):
             self.log_error(fl_ctx, "Returned exchange object doesn't contain weights.")
             return make_reply(ReturnCode.ERROR)
 
+        # convert MONAI's WeightType to NVFlare's DataKind
         if local_weights_eo.weight_type == WeightType.WEIGHTS:
             data_kind = DataKind.WEIGHTS
         elif local_weights_eo.weight_type == WeightType.WEIGHT_DIFF:
@@ -147,7 +148,8 @@ class ClientAlgoExecutor(Executor):
         else:
             self.log_error(
                 fl_ctx,
-                f"Returned `WeightType` not supported. Expected {WeightType.WEIGHTS} or {WeightType.WEIGHT_DIFF} but got {local_weights_eo.get_weight_type()}",
+                f"Returned `WeightType` not supported. Expected {WeightType.WEIGHTS} or {WeightType.WEIGHT_DIFF},"
+                f" but got {local_weights_eo.get_weight_type()}",
             )
             return make_reply(ReturnCode.ERROR)
 
@@ -183,7 +185,19 @@ class ClientAlgoExecutor(Executor):
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
-        local_weights_eo = self.client_algo.get_weights(extra={ExtraItems.MODEL_NAME: model_name})
+        # select MONAI's ModelType based on NVFlare's model_name
+        if model_name == ModelName.BEST_MODEL:
+            model_type = ModelType.BEST_MODEL
+        elif model_name == ModelName.FINAL_MODEL:
+            model_type = ModelType.FINAL_MODEL
+        else:
+            self.log_error(
+                fl_ctx,
+                f"Requested `ModelName` not supported. Expected {ModelName.BEST_MODEL} or {ModelName.FINAL_MODEL},"
+                f" but got {model_name}",
+            )
+            return make_reply(ReturnCode.ERROR)
+        local_weights_eo = self.client_algo.get_weights(extra={ExtraItems.MODEL_TYPE: model_type})
         if local_weights_eo.weights is not None:
             local_weights_eo = weights_to_numpy(local_weights_eo)
             return DXO(data_kind=DataKind.WEIGHTS, data=local_weights_eo.weights).to_shareable()
