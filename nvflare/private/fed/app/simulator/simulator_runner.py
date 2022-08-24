@@ -210,6 +210,7 @@ class SimulatorRunner(FLComponent):
                 time.sleep(1.0)
 
             if self.args.gpu:
+                self.args.threads = 1
                 gpus = self.args.gpu.split(",")
                 split_client_names = self.split_names(self.client_names, gpus)
             else:
