@@ -29,14 +29,9 @@ from .server_deployer import ServerDeployer
 
 
 class SimulatorDeployer(ServerDeployer):
-    def __init__(self, ports=None):
+    def __init__(self):
         super().__init__()
-        if ports:
-            if len(ports) != 2:
-                raise ValueError("The ports must have length of 2.")
-            self.open_ports = ports
-        else:
-            self.open_ports = get_open_ports(2)
+        self.open_ports = get_open_ports(2)
         self.admin_storage = tempfile.mkdtemp()
 
     def create_fl_server(self, args, secure_train=False):
