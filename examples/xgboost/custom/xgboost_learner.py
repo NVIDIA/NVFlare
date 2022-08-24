@@ -171,10 +171,6 @@ class XGBoostLearner(Learner):
         self.dmat_valid = xgb.DMatrix(X_higgs_valid, label=y_higgs_valid)
         self.valid_y = y_higgs_valid
 
-    @abstractmethod
-    def finalize(self, fl_ctx: FLContext):
-        # collect threads, close files here
-        pass
 
     def train(
         self,
