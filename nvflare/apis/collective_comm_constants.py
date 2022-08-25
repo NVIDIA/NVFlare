@@ -32,6 +32,7 @@ class CollectiveCommShareableHeader:
     RANK = "_rank"
     REDUCE_FUNCTION = "_reduce_function"
     ROOT = "_root"
+    RANK_MAP = "_rank_map"
 
 
 class CollectiveCommRequestTopic:

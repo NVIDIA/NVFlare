@@ -11,28 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import traceback
 
 from nvflare.apis.client import Client
 from nvflare.apis.collective_comm_constants import CollectiveCommEvent, CollectiveCommShareableHeader
+from nvflare.apis.controller_spec import Task
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import Controller, Task
+from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.app_constant import AppConstants
 
-XGBOOST_TASK_NAME = "xgboost_train"
 
-
-class XGBoostController(Controller):
+class XGBoostFedController(Controller):
     def __init__(
         self,
         train_timeout: int = 300,
     ):
-        """XGBoostController.
+        """XGBoost federated training controller
 
         Args:
-            train_timeout (int, optional): Time to wait for clients to do local training.
+            train_timeout (int, optional): Time to wait for clients to do local training in seconds.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -54,15 +53,20 @@ class XGBoostController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
-            self.log_info(fl_ctx, "Begin training phase.")
+            self.log_info(fl_ctx, "Begin XGBoost training phase.")
 
             # Assumption: all clients are used
             clients = self._engine.get_clients()
+            # Sort by client name so rank is consistent
+            clients.sort(key=lambda client: client.name)
+            rank_map = {clients[i].name: i for i in range(0, len(clients))}
+
             data = Shareable()
             data.set_header(CollectiveCommShareableHeader.WORLD_SIZE, len(clients))
+            data.set_header(CollectiveCommShareableHeader.RANK_MAP, rank_map)
 
             train_task = Task(
-                name=XGBOOST_TASK_NAME,
+                name=AppConstants.TASK_TRAIN,
                 data=data,
                 timeout=self._train_timeout,
             )

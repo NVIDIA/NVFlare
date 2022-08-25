@@ -1,28 +1,33 @@
 {
   "format_version": 2,
+  
+  "components": [
+    {
+      "id": "xgb-learner",
+      "path": "nvflare.app_common.fed_xgboost.xgboost_fed_learner.XGBoostFedLearner",
+      "args": {
+        "train_data": "agaricus.txt.train",
+        "test_data": "agaricus.txt.test",
+        "num_rounds": 20
+      }
+    }
+  ],
+
   "executors": [
     {
       "tasks": [
-        "xgboost_train"
+        "train"
       ],
       "executor": {
-        "path": "xgboost_executor.XGBoostExecutor",
+        "id": "Executor",
+        "name": "LearnerExecutor",
         "args": {
-          "num_rounds": 20,
-          "train_data_str": "agaricus.txt.train",
-          "test_data_str": "agaricus.txt.test",
-          "xgboost_params": {
-            "max_depth": 8,
-            "eta": 0.1,
-            "objective": "binary:logistic",
-            "eval_metric": "auc",
-            "gpu_id": 0,
-            "tree_method": "gpu_hist"
-          }
+          "learner_id": "xgb-learner"
         }
       }
     }
   ],
+
   "task_result_filters": [],
   "task_data_filters": []
 }
