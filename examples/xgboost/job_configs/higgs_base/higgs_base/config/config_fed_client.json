@@ -1,0 +1,33 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "Executor",
+        "name": "LearnerExecutor",
+        "args": {
+          "learner_id": "xgboost-learner"
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [],
+  "task_data_filters": [],
+
+  "components": [
+    {
+      "id": "xgboost-learner",
+      "path": "custom.xgboost_learner.XGBoostLearner",
+      "args": {
+        "train_config_filename": "config_train.json",
+        "num_parallel_tree": 5,
+        "lr_mode": "scaled"
+      }
+    }
+  ]
+}
