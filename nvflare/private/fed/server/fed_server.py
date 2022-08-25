@@ -130,6 +130,8 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
+            if self.admin_server:
+                self.admin_server.stop()
             if self.grpc_server:
                 self.grpc_server.stop(0)
         finally:
@@ -177,7 +179,9 @@ class BaseServer(ABC):
                 root_certificates=root_ca,
                 require_client_auth=True,
             )
-            self.grpc_server.add_secure_port(target, server_credentials)
+            port = target.split(":")[1]
+            tmp_target = f"0.0.0.0:{port}"
+            self.grpc_server.add_secure_port(tmp_target, server_credentials)
             self.logger.info("starting secure server at %s", target)
         else:
             self.grpc_server.add_insecure_port(target)
@@ -228,7 +232,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         project_name=None,
         min_num_clients=2,
         max_num_clients=10,
-        wait_after_min_clients=10,
         cmd_modules=None,
         heart_beat_timeout=600,
         handlers: Optional[List[FLComponent]] = None,
@@ -237,6 +240,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         enable_byoc=False,
         snapshot_persistor=None,
         overseer_agent=None,
+        collective_command_timeout=600.0,
     ):
         """Federated server services.
 
@@ -244,13 +248,13 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             project_name: server project name.
             min_num_clients: minimum number of contributors at each round.
             max_num_clients: maximum number of contributors at each round.
-            wait_after_min_clients: wait time after minimum clients responded.
             cmd_modules: command modules.
             heart_beat_timeout: heartbeat timeout
             handlers: A list of handler
             args: arguments
             secure_train: whether to use secure communication
             enable_byoc: whether to enable custom components
+            collective_command_timeout: timeout for waiting all collective requests from clients
         """
         self.logger = logging.getLogger("FederatedServer")
 
@@ -270,8 +274,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         with self.lock:
             self.reset_tokens()
 
-        self.wait_after_min_clients = wait_after_min_clients
-
         self.cmd_modules = cmd_modules
 
         self.builder = None
@@ -279,9 +281,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # Additional fields for CurrentTask meta_data in GetModel API.
         self.current_model_meta_data = {}
 
-        self.engine = ServerEngine(
-            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
-        )
+        self.engine = self._create_server_engine(args, snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
 
@@ -298,6 +298,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         flare_decomposers.register()
         common_decomposers.register()
+        self._collective_comm_timeout = collective_command_timeout
+
+    def _create_server_engine(self, args, snapshot_persistor):
+        return ServerEngine(
+            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
+        )
 
     def get_current_model_meta_data(self):
         """Get the model metadata, which usually contains additional fields."""
@@ -561,6 +567,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             state_check = self.server_state.aux_communicate(fl_ctx)
             self._handle_state_check(context, state_check)
             self._ssid_check(request.client, context)
+
+            self.logger.info("getting AuxCommunicate request")
 
             contribution = request
 
@@ -855,5 +863,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def close(self):
         """Shutdown the server."""
         self.logger.info("shutting down server")
-        self.overseer_agent.end()
+        self.shutdown = True
+        if self.engine:
+            self.engine.close()
+        if self.overseer_agent:
+            self.overseer_agent.end()
         return super().close()
