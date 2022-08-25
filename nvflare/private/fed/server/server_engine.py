@@ -694,7 +694,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
-            component.restore(snapshot.get_component_snapshot(component_id=component_id), fl_ctx)
+            if isinstance(component, FLComponent):
+                component.restore(snapshot.get_component_snapshot(component_id=component_id), fl_ctx)
 
         fl_ctx.props.update(snapshot.get_component_snapshot(component_id=SnapshotKey.FL_CONTEXT))
 
