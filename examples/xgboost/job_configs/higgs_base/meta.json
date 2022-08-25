@@ -1,0 +1,9 @@
+{
+  "name": "higgs_base",
+  "resource_spec": {},
+  "deploy_map": {
+    "higgs_base": [
+      "@ALL"
+    ]
+  }
+}
