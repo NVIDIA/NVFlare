@@ -112,7 +112,6 @@ class ServerRunner(FLComponent):
                         # unset current_wf to prevent message processing
                         # then we can release the lock - no need to delay message processing
                         # during finalization!
-                        #
                         # Note: WF finalization may take time since it needs to wait for
                         # the job monitor to join.
                         self.current_wf = None
