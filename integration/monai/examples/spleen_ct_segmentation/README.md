@@ -39,9 +39,9 @@ To run FL experiments in POC mode, create your local FL workspace the below comm
 ```
 nvflare poc -n 2 --prepare
 ```
-Then, start the FL system using
+Then, start the FL system using without admin console
 ```
-nvflare poc --start
+nvflare poc --start -ex admin
 ```
 
 ### 5. Run the experiment
@@ -51,7 +51,7 @@ Submit the job by running:
 ```
 To monitor the training job, you can start tensorboard:
 ```
-tensorboard --logdir /tmp/nvflare/poc/
+tensorboard --logdir /tmp/nvflare/poc
 ```
 With the default setting, the expected TensorBoard training curves look like this:
 
