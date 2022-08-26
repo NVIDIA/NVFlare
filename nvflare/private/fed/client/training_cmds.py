@@ -15,12 +15,10 @@
 import json
 from typing import List
 
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.privacy_manager import PrivacyService
 
 
 class StartAppProcessor(RequestProcessor):
@@ -113,12 +111,6 @@ class DeployProcessor(RequestProcessor):
 
         if not job_meta:
             return error_reply('missing job meta')
-
-        job_scope = job_meta.get(JobMetaKey.SCOPE, "")
-
-        # check whether this scope is allowed
-        if not PrivacyService.is_scope_allowed(job_scope):
-            return error_reply(f"job scope '{job_scope}' is not allowed")
 
         err = engine.deploy_app(
             app_name=app_name,

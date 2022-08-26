@@ -14,7 +14,6 @@
 
 from typing import Dict, List, Optional
 
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.client_engine_spec import TaskAssignment
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -22,8 +21,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.private.event import fire_event
-from nvflare.private.fed.utils.fed_utils import get_job_meta_from_workspace
-from nvflare.private.privacy_manager import PrivacyService
+from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -89,34 +87,19 @@ class ClientRunManager(ClientEngineExecutorSpec):
             self.handlers = []
 
         # get job meta!
-        job_meta = get_job_meta_from_workspace(workspace, job_id)
-        assert isinstance(job_meta, dict), f"job_meta must be dict but got {type(job_meta)}"
-        scope_name = job_meta.get(JobMetaKey.SCOPE, "")
-        scope_object = PrivacyService.get_scope(scope_name)
-        scope_props = None
-        if scope_object:
-            scope_props = scope_object.props
-            effective_scope_name = scope_object.name
-        else:
-            effective_scope_name = ""
-
+        job_ctx_props = create_job_processing_context_properties(workspace, job_id)
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
             identity_name=client_name,
             job_id=job_id,
             public_stickers={},
-            private_stickers={
-                FLContextKey.JOB_META: job_meta,
-                FLContextKey.JOB_SCOPE_NAME: scope_name,
-                FLContextKey.EFFECTIVE_JOB_SCOPE_NAME: effective_scope_name,
-                FLContextKey.SCOPE_PROPERTIES: scope_props,
-                FLContextKey.SCOPE_OBJECT: scope_object
-            }
+            private_stickers=job_ctx_props
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)
 
-        self.widgets = {WidgetID.INFO_COLLECTOR: InfoCollector(), WidgetID.FED_EVENT_RUNNER: ClientFedEventRunner()}
+        self.widgets = {WidgetID.INFO_COLLECTOR: InfoCollector(),
+                        WidgetID.FED_EVENT_RUNNER: ClientFedEventRunner()}
         for _, widget in self.widgets.items():
             self.handlers.append(widget)
 

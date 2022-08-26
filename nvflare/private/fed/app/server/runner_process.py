@@ -18,17 +18,20 @@ import argparse
 import logging
 import os
 
-from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
-from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
+from nvflare.private.fed.server.server_runner import ServerRunnerConfig
+from nvflare.private.privacy_manager import PrivacyService
+
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 from nvflare.fuel.sec.audit import AuditService
 
@@ -106,7 +109,7 @@ def main():
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
 
-            start_server_app(server, args, args.app_root, args.job_id, snapshot, logger)
+            start_server_app(workspace, server, args, args.app_root, args.job_id, snapshot, logger)
         finally:
             if command_agent:
                 command_agent.shutdown()
@@ -118,7 +121,7 @@ def main():
         raise ex
 
 
-def start_server_app(server, args, app_root, job_id, snapshot, logger):
+def start_server_app(workspace: Workspace, server, args, app_root, job_id, snapshot, logger):
 
     try:
         server_config_file_name = os.path.join(app_root, args.server_config)
@@ -128,7 +131,7 @@ def start_server_app(server, args, app_root, job_id, snapshot, logger):
         )
         conf.configure()
 
-        set_up_run_config(server, conf)
+        set_up_run_config(workspace, server, conf)
 
         if not isinstance(server.engine, ServerEngine):
             raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
@@ -145,10 +148,22 @@ def start_server_app(server, args, app_root, job_id, snapshot, logger):
         server.stop_training()
 
 
-def set_up_run_config(server, conf):
+def set_up_run_config(workspace: Workspace, server, conf):
+    runner_config = conf.runner_config
+    assert isinstance(runner_config, ServerRunnerConfig)
+
+    # configure privacy control!
+    privacy_manager = create_privacy_manager(workspace, names_only=False)
+    if privacy_manager.is_policy_defined():
+        if privacy_manager.components:
+            for cid, comp in privacy_manager.components.items():
+                runner_config.add_component(cid, comp)
+
+    # initialize Privacy Service
+    PrivacyService.initialize(privacy_manager)
     server.heart_beat_timeout = conf.heartbeat_timeout
-    server.runner_config = conf.runner_config
-    server.handlers = conf.handlers
+    server.runner_config = runner_config
+    server.handlers = runner_config.handlers
 
 
 if __name__ == "__main__":

@@ -25,10 +25,11 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
-from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init
+from nvflare.private.privacy_manager import PrivacyService
 
 
 def main():
@@ -98,6 +99,10 @@ def main():
                       workspace=workspace,
                       app_validator=conf.app_validator,
                       site_type=SiteType.SERVER)
+
+        # initialize Privacy Service
+        privacy_manager = create_privacy_manager(workspace, names_only=True)
+        PrivacyService.initialize(privacy_manager)
 
         try:
             # Deploy the FL server

@@ -26,13 +26,16 @@ from multiprocessing.connection import Client, Listener
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging
+from nvflare.private.privacy_manager import PrivacyService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.private.fed.app.fl_conf import create_privacy_manager
 
 
 class EventRelayer(FLComponent):
@@ -106,16 +109,26 @@ def main():
     # parser.add_argument("--parent_port", type=str, help="Parent listen port", required=True)
     parser.add_argument("--ports", type=str, help="Listen ports", required=True)
     # parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+
     args = parser.parse_args()
     listen_ports = list(map(int, args.ports.split("-")))
     # parent_port = args.parent_port
 
-    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
-    SecurityContentService.initialize(content_folder=startup)
+    workspace = Workspace(args.workspace, args.client_name)
+    configure_logging(workspace)
+
+    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
     # Initialize audit service since the job execution will need it!
-    audit_file_name = os.path.join(args.workspace, WorkspaceConstants.AUDIT_LOG)
-    AuditService.initialize(audit_file_name)
+    AuditService.initialize(workspace.get_audit_file_path())
+
+    # configure privacy control!
+    privacy_manager = create_privacy_manager(workspace, names_only=True)
+
+    # initialize Privacy Service
+    PrivacyService.initialize(privacy_manager)
 
     # local_rank = args.local_rank
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -138,11 +151,13 @@ def main():
 
     data = exe_conn.recv()
 
-    client_name = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CLIENT_NAME)
-    job_id = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CURRENT_RUN)
-    workspace = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.WORKSPACE_OBJECT)
+    # client_name = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CLIENT_NAME)
+    # job_id = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CURRENT_RUN)
+    # workspace = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.WORKSPACE_OBJECT)
+    job_id = args.job_id
+
     run_manager = ClientRunManager(
-        client_name=client_name,
+        client_name=args.client_name,
         job_id=job_id,
         workspace=workspace,
         client=None,
@@ -151,10 +166,7 @@ def main():
         conf=None,
     )
 
-    log_config_file_path = os.path.join(startup, "log.config")
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-
-    log_file = os.path.join(args.workspace, job_id, "log.txt")
+    log_file = workspace.get_app_log_file_path(job_id)
     add_logfile_handler(log_file)
 
     relayer = EventRelayer(event_conn, local_rank)

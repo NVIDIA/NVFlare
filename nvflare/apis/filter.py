@@ -19,6 +19,13 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
+class ContentBlockedException(BaseException):
+    """
+    A filter should raise this exception when the content is to be blocked
+    """
+    pass
+
+
 class Filter(FLComponent, ABC):
     @abstractmethod
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:

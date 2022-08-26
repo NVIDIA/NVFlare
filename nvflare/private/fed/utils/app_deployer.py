@@ -19,6 +19,8 @@ import json
 from nvflare.apis.workspace import Workspace
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.private.privacy_manager import PrivacyService
+
 from .app_authz import AppAuthzService
 
 
@@ -44,6 +46,12 @@ class AppDeployer(object):
         Returns: error message if any
 
         """
+        job_scope = self.job_meta.get(JobMetaKey.SCOPE, "")
+
+        # check whether this scope is allowed
+        if not PrivacyService.is_scope_allowed(job_scope):
+            return f"job scope '{job_scope}' is not allowed"
+
         try:
             run_dir = self.workspace.get_run_dir(self.job_id)
             app_path = self.workspace.get_app_dir(self.job_id)
@@ -82,4 +90,4 @@ class AppDeployer(object):
                 return "not authorized"
 
         except BaseException as ex:
-            return "exception {} when deploying app {}".format(ex, self.app_name)
+            return f"exception {ex} when deploying app {self.app_name}"

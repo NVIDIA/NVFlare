@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import logging.config
 import pickle
 import json
 import os
@@ -22,7 +23,8 @@ from multiprocessing.connection import Listener
 from typing import List
 
 from nvflare.apis.workspace import Workspace
-from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.fl_constant import WorkspaceConstants, SiteType, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.app_validation import AppValidator
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
@@ -32,6 +34,8 @@ from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
+from nvflare.private.privacy_manager import PrivacyService
+
 
 from .app_authz import AppAuthzService
 
@@ -182,3 +186,33 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
     job_meta_file_path = workspace.get_job_meta_path(job_id)
     with open(job_meta_file_path) as file:
         return json.load(file)
+
+
+def create_job_processing_context_properties(
+        workspace: Workspace,
+        job_id: str) -> dict:
+    job_meta = get_job_meta_from_workspace(workspace, job_id)
+    assert isinstance(job_meta, dict), f"job_meta must be dict but got {type(job_meta)}"
+    scope_name = job_meta.get(JobMetaKey.SCOPE, "")
+    scope_object = PrivacyService.get_scope(scope_name)
+    scope_props = None
+    if scope_object:
+        scope_props = scope_object.props
+        effective_scope_name = scope_object.name
+    else:
+        effective_scope_name = ""
+
+    return {
+            FLContextKey.JOB_META: job_meta,
+            FLContextKey.JOB_SCOPE_NAME: scope_name,
+            FLContextKey.EFFECTIVE_JOB_SCOPE_NAME: effective_scope_name,
+            FLContextKey.SCOPE_PROPERTIES: scope_props,
+            FLContextKey.SCOPE_OBJECT: scope_object
+        }
+
+
+def configure_logging(workspace: Workspace):
+    log_config_file_path = workspace.get_log_config_file_path()
+    assert os.path.isfile(log_config_file_path), \
+        f"missing log config file {log_config_file_path}"
+    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)

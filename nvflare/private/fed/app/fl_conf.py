@@ -27,6 +27,7 @@ from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
+from nvflare.private.fed.utils.fed_utils import configure_logging
 
 from .deployer.base_client_deployer import BaseClientDeployer
 from .deployer.server_deployer import ServerDeployer
@@ -59,10 +60,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        log_config_file_path = workspace.get_log_config_file_path()
-        assert os.path.isfile(log_config_file_path), \
-            f"missing log config file {log_config_file_path}"
-        logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+        configure_logging(workspace)
 
         server_startup_file_path = workspace.get_server_startup_file_path()
         resource_config_path = workspace.get_resources_file_path()
@@ -213,10 +211,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        log_config_file_path = workspace.get_log_config_file_path()
-        assert os.path.isfile(log_config_file_path), \
-            f"missing log config file {log_config_file_path}"
-        logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+        configure_logging(workspace)
 
         client_startup_file_path = workspace.get_client_startup_file_path()
         resources_file_path = workspace.get_resources_file_path()
