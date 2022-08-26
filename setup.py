@@ -84,6 +84,7 @@ setup(
         "PyYAML==6.0",
         "six>=1.15.0",
         "tenseal==0.3.0",
+        "docker>=6.0",
     ],
     entry_points={
         "console_scripts": [
