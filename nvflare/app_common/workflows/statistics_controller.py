@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.dxo import from_shareable
@@ -29,17 +29,11 @@ from nvflare.fuel.utils import fobs
 
 
 class StatisticsController(Controller):
-<<<<<<< HEAD
-    def __init__(self, metric_configs: Dict[str, dict], writer_id: str):
-=======
-    def __init__(
-        self,
-        metric_configs: Dict[str, dict],
-        writer_id: str,
-        result_wait_timeout: int = 60,
-        min_clients: Optional[int] = None,
-    ):
->>>>>>> 7df1bfe (Add image example)
+    def __init__(self,
+                 metric_configs: Dict[str, dict],
+                 writer_id: str,
+                 result_wait_timeout: int = 60,
+                 min_clients: Optional[int] = None):
         """
         Args:
             metric_configs: defines the input statistic metrics to be computed and each metric's configuration.
@@ -107,11 +101,24 @@ class StatisticsController(Controller):
         self.client_metrics = {}
         self.global_metrics = {}
         self.client_features = {}
+        self.result_wait_timeout = result_wait_timeout
+        self.min_clients = min_clients
         self.result_callback_fns: Dict[str, Callable] = {
             StC.STATS_1st_METRICS: self.results_cb,
             StC.STATS_2nd_METRICS: self.results_cb,
         }
         fobs_registration()
+        self.fl_ctx = None
+
+    def start_controller(self, fl_ctx: FLContext):
+        if self.metric_configs is None or len(self.metric_configs) == 0:
+            self.system_panic(
+                "At least one metric_config must be configured for task StatisticsController", fl_ctx=fl_ctx
+            )
+        self.fl_ctx = fl_ctx
+        clients = fl_ctx.get_engine().get_clients()
+        if not self.min_clients:
+            self.min_clients = len(clients)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
 
@@ -119,40 +126,26 @@ class StatisticsController(Controller):
         if abort_signal.triggered:
             return False
 
-<<<<<<< HEAD
-        clients = fl_ctx.get_engine().get_clients()
-        self.metrics_task_flow(abort_signal, fl_ctx, clients, StC.STATS_1st_METRICS)
-        self.metrics_task_flow(abort_signal, fl_ctx, clients, StC.STATS_2nd_METRICS)
-=======
         self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_METRICS)
         self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_METRICS)
 
-        if not self._wait_for_all_results(
-            self.result_wait_timeout, self.min_clients, self.client_metrics, abort_signal
-        ):
+        if not self._wait_for_all_results(self.result_wait_timeout, self.min_clients, self.client_metrics, abort_signal):
             return False
 
-        print("start post processing")
->>>>>>> 7df1bfe (Add image example)
+        self.log_info("start post processing")
         self.post_fn(self.task_name, fl_ctx)
 
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
-
-    def start_controller(self, fl_ctx: FLContext):
-        if self.metric_configs is None or len(self.metric_configs) == 0:
-            self.system_panic(
-                "At least one metric_config must be configured for task StatisticsController", fl_ctx=fl_ctx
-            )
 
     def stop_controller(self, fl_ctx: FLContext):
         pass
 
     def process_result_of_unknown_task(
-        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 
-    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, clients: List[Client], metric_task: str):
+    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, metric_task: str):
 
         self.log_info(fl_ctx, f"start prepare inputs for task {metric_task}")
         inputs = self._prepare_inputs(metric_task, fl_ctx)
@@ -168,7 +161,7 @@ class StatisticsController(Controller):
         self.broadcast_and_wait(
             task=task,
             targets=None,
-            min_responses=len(clients),
+            min_responses=self.min_clients,
             fl_ctx=fl_ctx,
             wait_time_after_min_received=1,
             abort_signal=abort_signal,
@@ -193,6 +186,7 @@ class StatisticsController(Controller):
             metric_task = client_result[StC.METRIC_TASK_KEY]
             self.log_info(fl_ctx, f"handle client {client_name} results for metrics task: {metric_task}")
             metrics = fobs.loads(client_result[metric_task])
+
             for metric in metrics:
                 if metric not in self.client_metrics:
                     self.client_metrics[metric] = {client_name: metrics[metric]}
@@ -318,11 +312,13 @@ class StatisticsController(Controller):
     def _get_result_cb(self, metric_task: str):
         return self.result_callback_fns[metric_task]
 
-    def _wait_for_all_results(
-        self, result_wait_timeout: int, request_client_size: int, client_metrics: dict, abort_signal=None
-    ) -> bool:
+    def _wait_for_all_results(self,
+                              result_wait_timeout: int,
+                              request_client_size: int,
+                              client_metrics: dict,
+                              abort_signal=None) -> bool:
 
-        # record of each metric, number of clients processed so far
+        # record of each metric, number of clients processed
         metric_client_sizes = {}
 
         # current metrics obtained so far (across all clients)
