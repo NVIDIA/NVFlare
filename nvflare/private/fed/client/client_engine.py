@@ -153,7 +153,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         open_port = get_open_ports(1)[0]
 
-        self.client_executor.start_worker_process(
+        self.client_executor.start_app(
             self.client,
             job_id,
             self.args,
@@ -198,7 +198,7 @@ class ClientEngine(ClientEngineInternalSpec):
         if status == ClientStatus.STARTING:
             return "Client app is starting, please wait for client to have started before abort."
 
-        self.client_executor.abort_worker_process(job_id)
+        self.client_executor.abort_app(job_id)
 
         return "Abort signal has been sent to the client App."
 
@@ -257,7 +257,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_executor.reset_errors(job_id)
 
     def send_aux_command(self, shareable: Shareable, job_id):
-        return self.client_executor.send_aux_command(shareable, job_id)
+        return self.client_executor.process_aux_command(shareable, job_id)
 
     def get_all_job_ids(self):
         return self.client_executor.get_run_processes_keys()

@@ -19,16 +19,115 @@ import subprocess
 import sys
 import threading
 import time
+from abc import ABC, abstractmethod
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
-from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
+from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
 
 from .client_status import ClientStatus, get_status_message
 
 
-class ProcessExecutor:
+class ClientExecutor(ABC):
+    @abstractmethod
+    def start_app(
+        self,
+        client,
+        job_id,
+        args,
+        app_custom_folder,
+        listen_port,
+        allocated_resource,
+        token,
+        resource_manager,
+        target: str,
+    ):
+        """Starts the client app.
+
+        Args:
+            client: the FL client object
+            job_id: the job_id
+            args: admin command arguments for starting the FL client training
+            app_custom_folder: FL application custom folder
+            listen_port: port to listen the command.
+            allocated_resource: allocated resources
+            token: token from resource manager
+            resource_manager: resource manager
+            target: SP target location
+        """
+        pass
+
+    @abstractmethod
+    def check_status(self, job_id) -> str:
+        """Checks the status of the running client.
+
+        Args:
+            job_id: the job_id
+
+        Returns:
+            A client status message
+        """
+        pass
+
+    @abstractmethod
+    def abort_app(self, job_id):
+        """Aborts the running app.
+
+        Args:
+            job_id: the job_id
+        """
+        pass
+
+    @abstractmethod
+    def abort_task(self, job_id):
+        """Aborts the client executing task.
+
+        Args:
+            job_id: the job_id
+        """
+        pass
+
+    @abstractmethod
+    def get_run_info(self, job_id):
+        """Gets the run information.
+
+        Args:
+            job_id: the job_id
+
+        Returns:
+            A dict of run information.
+        """
+
+    @abstractmethod
+    def get_errors(self, job_id):
+        """Get the error information.
+
+        Returns:
+            A dict of error information.
+
+        """
+
+    @abstractmethod
+    def reset_errors(self, job_id):
+        """Resets the error information.
+
+        Args:
+            job_id: the job_id
+        """
+
+    @abstractmethod
+    def process_aux_command(self, shareable: Shareable, job_id):
+        """Processes the aux command.
+
+        Args:
+            shareable: aux message Shareable
+            job_id: the job_id
+        """
+        pass
+
+
+class ProcessExecutor(ClientExecutor):
     """Run the Client executor in a child process."""
 
     def __init__(self, startup):
@@ -57,7 +156,7 @@ class ProcessExecutor:
 
         return conn_client
 
-    def start_worker_process(
+    def start_app(
         self,
         client,
         job_id,
@@ -69,7 +168,7 @@ class ProcessExecutor:
         resource_manager: ResourceManagerSpec,
         target: str,
     ):
-        """Starts the worker process.
+        """Starts the app.
 
         Args:
             client: the FL client object
@@ -183,9 +282,11 @@ class ProcessExecutor:
     def get_errors(self, job_id):
         """Get the error information.
 
+        Args:
+            job_id: the job_id
+
         Returns:
             A dict of error information.
-
         """
         try:
             with self.lock:
@@ -203,7 +304,11 @@ class ProcessExecutor:
             return None
 
     def reset_errors(self, job_id):
-        """Resets the error information."""
+        """Resets the error information.
+
+        Args:
+            job_id: the job_id
+        """
         try:
             with self.lock:
                 conn_client = self.get_conn_client(job_id)
@@ -214,8 +319,8 @@ class ProcessExecutor:
         except Exception as e:
             self.logger.error(f"reset_errors execution exception: {e}.", exc_info=True)
 
-    def send_aux_command(self, shareable: Shareable, job_id):
-        """Sends the aux command to child process.
+    def process_aux_command(self, shareable: Shareable, job_id):
+        """Processes the aux command.
 
         Args:
             shareable: aux message Shareable
@@ -234,8 +339,8 @@ class ProcessExecutor:
         except Exception:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def abort_worker_process(self, job_id):
-        """Aborts the worker process.
+    def abort_app(self, job_id):
+        """Aborts the running app.
 
         Args:
             job_id: the job_id
