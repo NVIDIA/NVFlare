@@ -29,7 +29,6 @@ def parse_args():
     parser.add_argument("--client_list", "-c", type=str, help="client names list")
     parser.add_argument("--threads", "-p", type=int, help="number of parallel running clients")
     parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
-    # parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     args = parser.parse_args()
     return args
 
