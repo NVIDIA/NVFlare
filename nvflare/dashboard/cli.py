@@ -28,7 +28,7 @@ def start(port, folder, app_url, app_dest_filename, dashboard_image):
     environment = dict()
     if not os.path.exists(os.path.join(folder, "db.sqlite")):
         answer = input(
-            f"Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
+            "Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
         )
         print("generating random password")
         pwd = generate_password(8)
@@ -61,7 +61,7 @@ def start(port, folder, app_url, app_dest_filename, dashboard_image):
         print(e)
         exit(1)
     if container_obj:
-        print(f"Dashboard container started")
+        print("Dashboard container started")
         print("Container name nvflare-dashboard")
         print(f"id is {container_obj.id}")
     else:
