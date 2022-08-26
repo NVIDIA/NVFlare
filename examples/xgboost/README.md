@@ -27,7 +27,7 @@ There are multiple ways to perform federated collaboration for XGBoost training,
 
 This scheme bears certain similarity to the [Random Forest mode](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) of XGBoost, where a `num_parallel_tree` is boosted based on random row/col splits, rather than a single tree. Under federated learning setting, such split is fixed to clients rather than random and without column subsampling. 
 
-In addition to basic uniform shrinkage setting where all clients have the same learning rate, based on our research, we enabled scaled shrinkage across clients for weighted aggregation according to each client's data size, which are shown to significantly improve the model's performance on non-uniform quantity splits over HIGGS data.
+In addition to basic uniform shrinkage setting where all clients have the same learning rate, based on our research, we enabled scaled shrinkage across clients for weighted aggregation according to each client's data size, which is shown to significantly improve the model's performance on non-uniform quantity splits over HIGGS data.
 
 ## Data Preparation
 ### Download and Store Data
@@ -55,7 +55,7 @@ To be specific, this script calls the python script `./utils/prepare_data_split.
 - split_method: how to split the dataset, can be uniform, linear, square, and exponential
 - out_path: output path for the data split json file 
 This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential. Users can further customize it for more experiments.
-> **_NOTE:_** The generated train config files will be stored in the folder `./train_configs`, and will be used by job_configs by specifying it with `config_fed_client.json` 
+> **_NOTE:_** The generated train config files will be stored in the folder `./data_splits`, and will be used by job_configs by specifying the path within `config_fed_client.json` 
 
 ## Run automated experiments
 To run this example with NVFlare, follow the below steps.
