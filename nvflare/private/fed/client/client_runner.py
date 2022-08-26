@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.privacy_manager import Scope
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -49,6 +50,23 @@ class ClientRunnerConfig(object):
         self.task_result_filters = task_result_filters
         self.handlers = handlers
         self.components = components
+
+        if not components:
+            self.components = {}
+
+        if not handlers:
+            self.handlers = []
+
+    def add_component(self, comp_id: str, component: object):
+        if not isinstance(comp_id, str):
+            raise TypeError(f"component id must be str but got {type(comp_id)}")
+
+        if comp_id in self.components:
+            raise ValueError(f"duplicate component id {comp_id}")
+
+        self.components[comp_id] = component
+        if isinstance(component, FLComponent):
+            self.handlers.append(component)
 
 
 class ClientRunner(FLComponent):
@@ -127,7 +145,19 @@ class ClientRunner(FLComponent):
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
-        filter_list = self.task_data_filters.get(task.name)
+
+        # first apply privacy-defined filters
+        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
+        filter_list = []
+        if scope_object:
+            assert isinstance(scope_object, Scope)
+            if scope_object.task_data_filters:
+                filter_list.extend(scope_object.task_data_filters)
+
+        task_filter_list = self.task_data_filters.get(task.name)
+        if task_filter_list:
+            filter_list.extend(task_filter_list)
+
         if filter_list:
             task_data = task.data
             for f in filter_list:
@@ -198,7 +228,15 @@ class ClientRunner(FLComponent):
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
-        filter_list = self.task_result_filters.get(task.name)
+
+        filter_list = []
+        if scope_object and scope_object.task_result_filters:
+            filter_list.extend(scope_object.task_result_filters)
+
+        task_filter_list = self.task_result_filters.get(task.name)
+        if task_filter_list:
+            filter_list.extend(task_filter_list)
+
         if filter_list:
             for f in filter_list:
                 try:

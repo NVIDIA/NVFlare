@@ -91,6 +91,7 @@ class ReservedKey(object):
     SECURE_MODE = "__secure_mode__"
     SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
+    JOB_META = "__job_meta__"
     CURRENT_JOB_ID = "__current_job_id__"
     JOB_RUN_NUMBER = "__job_run_number__"
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
@@ -126,9 +127,14 @@ class FLContextKey(object):
     SECURE_MODE = ReservedKey.SECURE_MODE
     SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
+    JOB_META = ReservedKey.JOB_META
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
     JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
     JOB_DEPLOY_DETAIL = ReservedKey.JOB_DEPLOY_DETAIL
+    JOB_SCOPE_NAME = "__job_scope_name__"
+    EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
+    SCOPE_PROPERTIES = "__scope_props__"
+    SCOPE_OBJECT = "__scope_object__"
 
 
 class ReservedTopic(object):
@@ -286,6 +292,7 @@ class WorkspaceConstants:
     CLIENT_STARTUP_CONFIG = 'fed_client.json'
     SERVER_JOB_CONFIG = 'config_fed_server.json'
     CLIENT_JOB_CONFIG = 'config_fed_client.json'
+    JOB_META_FILE = "job_meta.json"
 
     AUTHORIZATION_CONFIG = 'authorization.json'
     DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + '.default'

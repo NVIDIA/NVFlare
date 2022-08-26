@@ -22,13 +22,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.workspace import Workspace
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, RunStatus
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, ReturnCode, MsgHeader
 from nvflare.private.defs import RequestHeader, TrainingTopic
-from nvflare.private.fed.server.admin import check_client_replies, ClientReply
+from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.apis.client import Client
 
@@ -75,6 +75,8 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.USER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
         message.set_header(RequestHeader.USER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
         message.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
+
+        message.set_header(RequestHeader.JOB_META, job.meta)
         return message
 
     def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> str:
@@ -115,10 +117,8 @@ class JobRunner(FLComponent):
                         app_name=app_name,
                         workspace=workspace,
                         job_id=job.job_id,
-                        app_data=app_data,
-                        submitter_name=job.meta.get(JobMetaKey.SUBMITTER_NAME, ""),
-                        submitter_org=job.meta.get(JobMetaKey.SUBMITTER_ORG, ""),
-                        submitter_role=job.meta.get(JobMetaKey.SUBMITTER_ROLE, "")
+                        job_meta=job.meta,
+                        app_data=app_data
                     )
 
                     err = app_deployer.deploy()
@@ -308,8 +308,9 @@ class JobRunner(FLComponent):
 
     def _save_workspace(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-        workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
-        workspace_data = zip_directory_to_bytes(workspace, "")
+        workspace = Workspace(root_dir=self.workspace_root)
+        run_dir = workspace.get_run_dir(job_id)
+        workspace_data = zip_directory_to_bytes(run_dir, "")
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
 

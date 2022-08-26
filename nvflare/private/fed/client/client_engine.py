@@ -237,11 +237,9 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def deploy_app(
             self,
-            submitter_name: str,
-            submitter_org: str,
-            submitter_role: str,
             app_name: str,
             job_id: str,
+            job_meta: dict,
             client_name: str,
             app_data) -> str:
 
@@ -249,11 +247,9 @@ class ClientEngine(ClientEngineInternalSpec):
         app_deployer = AppDeployer(
             workspace=workspace,
             job_id=job_id,
+            job_meta=job_meta,
             app_name=app_name,
-            app_data=app_data,
-            submitter_name=submitter_name,
-            submitter_org=submitter_org,
-            submitter_role=submitter_role
+            app_data=app_data
         )
         err = app_deployer.deploy()
         if err:

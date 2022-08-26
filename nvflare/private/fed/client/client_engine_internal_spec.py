@@ -50,11 +50,9 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
 
     @abstractmethod
     def deploy_app(self,
-                   submitter_name: str,
-                   submitter_org: str,
-                   submitter_role: str,
                    app_name: str,
                    job_id: str,
+                   job_meta: dict,
                    client_name: str,
                    app_data) -> str:
         """Deploy the app to specified run.
@@ -65,6 +63,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
             submitter_role: role of the job submitter
             app_name: FL_app name
             job_id: job that the app is to be deployed to
+            job_meta: meta data of the job that the app belongs to
             client_name: name of the client
             app_data: zip data of the app
 

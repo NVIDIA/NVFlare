@@ -66,6 +66,7 @@ class TrainingTopic(object):
 class RequestHeader(object):
 
     JOB_ID = "job_id"
+    JOB_META = "job_meta"
     APP_NAME = "app_name"
     CONTROL_COMMAND = "control_command"
     CALL_NAME = "call_name"

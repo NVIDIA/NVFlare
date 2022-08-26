@@ -268,9 +268,7 @@ class JobCommandModule(CommandUtil):
 
         conn.append_success("")
 
-
     def list_jobs(self, conn: Connection, args: List[str]):
-
         try:
             parser = SafeArgumentParser(prog="list_jobs")
             parser.add_argument("job_id", nargs="?", help="Job ID prefix")

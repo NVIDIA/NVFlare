@@ -25,7 +25,8 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
-from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
+from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
+from nvflare.private.privacy_manager import PrivacyService
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
@@ -89,6 +90,10 @@ def main():
                       workspace=workspace,
                       app_validator=conf.app_validator,
                       site_type=SiteType.CLIENT)
+
+        # initialize Privacy Service
+        privacy_manager = create_privacy_manager(workspace, names_only=True)
+        PrivacyService.initialize(privacy_manager)
 
         federated_client = deployer.create_fed_client(args)
 

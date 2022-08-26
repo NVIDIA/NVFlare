@@ -14,8 +14,10 @@
 
 import os
 import shutil
+import json
 
 from nvflare.apis.workspace import Workspace
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from .app_authz import AppAuthzService
 
@@ -24,21 +26,16 @@ class AppDeployer(object):
 
     def __init__(
             self,
-            submitter_name: str,
-            submitter_org: str,
-            submitter_role: str,
             workspace: Workspace,
             job_id: str,
+            job_meta: dict,
             app_name: str,
-            app_data
-    ):
-        self.submitter_name = submitter_name
-        self.submitter_org = submitter_org
-        self.submitter_role = submitter_role
+            app_data):
         self.app_name = app_name
         self.workspace = workspace
-        self.job_id = job_id
         self.app_data = app_data
+        self.job_id = job_id
+        self.job_meta = job_meta
 
     def deploy(self) -> str:
         """
@@ -51,6 +48,7 @@ class AppDeployer(object):
             run_dir = self.workspace.get_run_dir(self.job_id)
             app_path = self.workspace.get_app_dir(self.job_id)
             app_file = os.path.join(run_dir, "fl_app.txt")
+            job_meta_file = self.workspace.get_job_meta_path(self.job_id)
 
             if os.path.exists(run_dir):
                 shutil.rmtree(run_dir)
@@ -63,11 +61,19 @@ class AppDeployer(object):
             with open(app_file, "wt") as f:
                 f.write(f"{self.app_name}")
 
+            with open(job_meta_file, "w") as f:
+                json.dump(self.job_meta, f, indent=4)
+
+            assert isinstance(self.job_meta, dict)
+            submitter_name = self.job_meta.get(JobMetaKey.SUBMITTER_NAME, "")
+            submitter_org = self.job_meta.get(JobMetaKey.SUBMITTER_ORG, "")
+            submitter_role = self.job_meta.get(JobMetaKey.SUBMITTER_ROLE, "")
+
             authorized, err = AppAuthzService.authorize(
                 app_path=app_path,
-                submitter_name=self.submitter_name,
-                submitter_org=self.submitter_org,
-                submitter_role=self.submitter_role
+                submitter_name=submitter_name,
+                submitter_org=submitter_org,
+                submitter_role=submitter_role
             )
             if err:
                 return err

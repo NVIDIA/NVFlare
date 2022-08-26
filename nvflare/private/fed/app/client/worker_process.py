@@ -28,10 +28,11 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
-from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
+from nvflare.private.privacy_manager import PrivacyService
+from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.client.client_runner import ClientRunner
+from nvflare.private.fed.client.client_runner import ClientRunner, ClientRunnerConfig
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
@@ -145,13 +146,26 @@ def main():
         )
         conf.configure()
 
+        runner_config = conf.runner_config
+        assert isinstance(runner_config, ClientRunnerConfig)
+
+        # configure privacy control!
+        privacy_manager = create_privacy_manager(workspace, names_only=False)
+        if privacy_manager.is_policy_defined():
+            if privacy_manager.components:
+                for cid, comp in privacy_manager.components.items():
+                    runner_config.add_component(cid, comp)
+
+        # initialize Privacy Service
+        PrivacyService.initialize(privacy_manager)
+
         run_manager = ClientRunManager(
             client_name=args.client_name,
             job_id=args.job_id,
             workspace=workspace,
             client=federated_client,
-            components=conf.runner_config.components,
-            handlers=conf.runner_config.handlers,
+            components=runner_config.components,
+            handlers=runner_config.handlers,
             conf=conf,
         )
         federated_client.run_manager = run_manager

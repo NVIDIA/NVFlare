@@ -15,10 +15,12 @@
 import json
 from typing import List
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.privacy_manager import PrivacyService
 
 
 class StartAppProcessor(RequestProcessor):
@@ -100,18 +102,28 @@ class DeployProcessor(RequestProcessor):
         return [TrainingTopic.DEPLOY]
 
     def process(self, req: Message, app_ctx) -> Message:
+        # Note: this method executes in the Main process of the client
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         job_id = req.get_header(RequestHeader.JOB_ID)
+        job_meta = req.get_header(RequestHeader.JOB_META)
         app_name = req.get_header(RequestHeader.APP_NAME)
         client_name = engine.get_client_name()
+
+        if not job_meta:
+            return error_reply('missing job meta')
+
+        job_scope = job_meta.get(JobMetaKey.SCOPE, "")
+
+        # check whether this scope is allowed
+        if not PrivacyService.is_scope_allowed(job_scope):
+            return error_reply(f"job scope '{job_scope}' is not allowed")
+
         err = engine.deploy_app(
-            submitter_name=req.get_header(RequestHeader.SUBMITTER_NAME, ''),
-            submitter_org=req.get_header(RequestHeader.SUBMITTER_ORG, ''),
-            submitter_role=req.get_header(RequestHeader.SUBMITTER_ROLE, ''),
             app_name=app_name,
             job_id=job_id,
+            job_meta=job_meta,
             client_name=client_name,
             app_data=req.body)
         if err:

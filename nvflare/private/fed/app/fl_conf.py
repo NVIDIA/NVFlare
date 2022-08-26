@@ -26,6 +26,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
 from nvflare.private.json_configer import JsonConfigurator
+from nvflare.private.privacy_manager import PrivacyManager, Scope
 
 from .deployer.base_client_deployer import BaseClientDeployer
 from .deployer.server_deployer import ServerDeployer
@@ -393,3 +394,101 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
                 admin["download_dir"] = self.workspace.get_file_path_in_root(admin["download_dir"])
         except Exception:
             raise ValueError(f"Client config error: '{self.admin_config_file_path}'")
+
+
+class PrivacyConfiger(JsonConfigurator):
+
+    def __init__(self, workspace: Workspace, names_only: bool):
+        """Uses the json configuration to start the FL admin client.
+
+        Args:
+            workspace: the workspace object
+        """
+        self.privacy_manager = None
+        self.scopes = []
+        self.default_scope_name = None
+        self.components = {}
+        self.current_scope = None
+        self.names_only = names_only
+
+        privacy_file_path = workspace.get_site_privacy_file_path()
+        JsonConfigurator.__init__(
+            self,
+            config_file_name=privacy_file_path,
+            base_pkgs=FL_PACKAGES,
+            module_names=FL_MODULES,
+            exclude_libs=True,
+        )
+
+    def process_config_element(self, config_ctx: ConfigContext, node: Node):
+        """Process config element.
+
+        Args:
+            config_ctx: config context
+            node: element node
+        """
+        element = node.element
+        path = node.path()
+
+        if re.search(r"^scopes\.#[0-9]+$", path):
+            scope = Scope()
+            self.current_scope = scope
+            self.scopes.append(scope)
+            return
+
+        if re.search(r"^scopes\.#[0-9]+\.name$", path):
+            self.current_scope.set_name(element)
+            return
+
+        if path == "default_scope":
+            self.default_scope_name = element
+            return
+
+        if not self.names_only:
+            if re.search(r"^scopes\.#[0-9]+\.properties$", path):
+                self.current_scope.set_props(element)
+                return
+
+            if re.search(r"^scopes.#[0-9]+\.task_data_filters\.#[0-9]+$", path):
+                f = self.build_component(element)
+                self.current_scope.add_task_data_filter(f)
+                return
+
+            if re.search(r"^scopes.#[0-9]+\.task_result_filters\.#[0-9]+$", path):
+                f = self.build_component(element)
+                self.current_scope.add_task_result_filter(f)
+                return
+
+            if re.search(r"^components\.#[0-9]+$", path):
+                c = self.build_component(element)
+                cid = element.get("id", None)
+                if not cid:
+                    raise ConfigError("missing component id")
+
+                if not isinstance(cid, str):
+                    raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+
+                if cid in self.components:
+                    raise ConfigError('duplicate component id "{}"'.format(cid))
+
+                self.components[cid] = c
+                return
+
+    def finalize_config(self, config_ctx: ConfigContext):
+        self.privacy_manager = PrivacyManager(
+            scopes=self.scopes,
+            default_scope_name=self.default_scope_name,
+            components=self.components
+        )
+
+
+def create_privacy_manager(workspace: Workspace, names_only: bool):
+    privacy_file_path = workspace.get_site_privacy_file_path()
+    if not os.path.isfile(privacy_file_path):
+        # privacy policy not defined
+        mgr = PrivacyManager(scopes=None, default_scope_name=None, components=None)
+    else:
+        configer = PrivacyConfiger(workspace, names_only)
+        configer.configure()
+        mgr = configer.privacy_manager
+    return mgr
