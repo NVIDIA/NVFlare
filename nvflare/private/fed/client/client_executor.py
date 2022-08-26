@@ -37,11 +37,6 @@ class ClientExecutor(object):
             uid: client name
             startup: startup folder
         """
-        pipe_path = startup + "/comm"
-        if not os.path.exists(pipe_path):
-            os.makedirs(pipe_path)
-
-        self.pipe = FilePipe(root_path=pipe_path, name="training")
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start_train(
@@ -141,7 +136,7 @@ class ClientExecutor(object):
 
     def cleanup(self):
         """Cleanup."""
-        self.pipe.clear()
+        pass
 
 
 class ProcessExecutor(ClientExecutor):

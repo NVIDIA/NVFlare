@@ -53,6 +53,8 @@ class SimulatorRunner(FLComponent):
         self.deployer = SimulatorDeployer()
         self.client_names = []
 
+        self.args.set = []
+
     def setup(self):
         if self.args.client_list:
             self.client_names = self.args.client_list.strip().split(",")
@@ -93,7 +95,7 @@ class SimulatorRunner(FLComponent):
                 self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
                 sys.exit(1)
             if self.args.threads and self.args.threads > len(self.client_names):
-                logging.error("The number of threads to run can not be larger then the number of clients.")
+                logging.error("The number of threads to run can not be larger than the number of clients.")
                 sys.exit(-1)
             if not (self.args.gpu or self.args.threads):
                 logging.error("Please provide the number of threads or provide gpu options to run the simulator.")
@@ -104,12 +106,12 @@ class SimulatorRunner(FLComponent):
             if self.args.gpu:
                 gpus = self.args.gpu.split(",")
                 if len(gpus) <= 1:
-                    logging.error("Pleasse provide more than 1 GPU to run the Simulator with multi-GPUs.")
+                    logging.error("Please provide more than 1 GPU to run the Simulator with multi-GPUs.")
                     sys.exit(-1)
 
                 if len(gpus) > len(self.client_names):
                     logging.error(
-                        f"The number of clients ({len(self.client_names)} must be larger than "
+                        f"The number of clients ({len(self.client_names)}) must be larger than "
                         f"the number of GPUS: ({len(gpus)})"
                     )
                     sys.exit(-1)
@@ -224,10 +226,13 @@ class SimulatorRunner(FLComponent):
 
             executor.shutdown()
             server_thread.join()
+            run_status = 0
         except BaseException as error:
             self.logger.error(error)
+            run_status = 2
         finally:
             self.deployer.close()
+        return run_status
 
     def client_run(self, client_names, gpu):
         client_runner = SimulatorClientRunner(self.args, client_names, self.deployer)
