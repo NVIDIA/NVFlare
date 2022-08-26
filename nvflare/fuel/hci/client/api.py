@@ -429,6 +429,7 @@ class AdminAPI(AdminAPISpec):
             if not self.poc:
                 # SSL communication
                 ctx = ssl.create_default_context()
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                 ctx.verify_mode = ssl.CERT_REQUIRED
                 ctx.check_hostname = False
 

@@ -1,0 +1,38 @@
+{
+  "format_version": 2,
+
+  "server": {
+    "heart_beat_timeout": 600
+  },
+
+  "task_data_filters": [],
+  "task_result_filters": [],
+
+  "components": [
+    {
+      "id": "persistor",
+      "name": "JSONModelPersistor",
+      "args": {
+        "save_name": "xgboost_model.json"
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "name": "XGBModelShareableGenerator",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "cyclic_ctl",
+      "name": "CyclicController",
+      "args": {
+        "num_rounds": 20,
+        "task_assignment_timeout": 60,
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator",
+        "task_name": "train"
+      }
+    }
+  ]
+}

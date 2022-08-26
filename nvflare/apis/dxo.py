@@ -22,6 +22,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 class DataKind(object):
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
+    XGB_MODEL = "XGB_MODEL"
     METRICS = "METRICS"
     MODEL = "MODEL"
     ANALYTIC = "ANALYTIC"
