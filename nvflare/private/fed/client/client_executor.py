@@ -24,7 +24,6 @@ from multiprocessing.connection import Client
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
 from .client_status import ClientStatus, get_status_message
 
