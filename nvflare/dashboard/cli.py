@@ -56,7 +56,7 @@ def start(port, folder, app_url, app_dest_filename, dashboard_image):
             environment=environment,
         )
     except docker.errors.APIError as e:
-        print(f"Either {dashboard_image} image does not exit or another nvflare-dashboard instance is still running.")
+        print(f"Either {dashboard_image} image does not exist or another nvflare-dashboard instance is still running.")
         print("Please either provide an existing container image or stop the running container instance.")
         print(e)
         exit(1)
