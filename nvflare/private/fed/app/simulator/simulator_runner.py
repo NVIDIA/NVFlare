@@ -53,6 +53,8 @@ class SimulatorRunner(FLComponent):
         self.deployer = SimulatorDeployer()
         self.client_names = []
 
+        self.args.set = []
+
     def setup(self):
         if self.args.client_list:
             self.client_names = self.args.client_list.strip().split(",")
@@ -224,10 +226,13 @@ class SimulatorRunner(FLComponent):
 
             executor.shutdown()
             server_thread.join()
+            run_status = 0
         except BaseException as error:
             self.logger.error(error)
+            run_status = 2
         finally:
             self.deployer.close()
+        return run_status
 
     def client_run(self, client_names, gpu):
         client_runner = SimulatorClientRunner(self.args, client_names, self.deployer)
