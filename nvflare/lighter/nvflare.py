@@ -18,10 +18,19 @@ import sys
 
 from nvflare.lighter.cli_exception import CLIException
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd, is_poc
+from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 
 CMD_POC = "poc"
 CMD_PROVISION = "provision"
 CMD_PREFLIGHT_CHECK = "preflight_check"
+CMD_SIMULATOR = "simulator"
+
+
+def check_python_version():
+    if sys.version_info >= (3, 9):
+        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
+    if sys.version_info < (3, 7):
+        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
 
 
 def is_provision(cmd_args) -> bool:
@@ -33,23 +42,39 @@ def is_provision(cmd_args) -> bool:
     )
 
 
-def is_preflight_checker(cmd_args) -> bool:
-    print(cmd_args)
-    return hasattr(cmd_args, "package_root") or hasattr(cmd_args, "packages]")
+def is_simulator(cmd_args) -> bool:
+    return (
+        hasattr(cmd_args, "job_folder")
+        or hasattr(cmd_args, "clients")
+        or hasattr(cmd_args, "threads")
+    )
 
 
-def def_provision_parser(sub_cmd):
-    cmd = CMD_PROVISION
-    provision_parser = sub_cmd.add_parser(cmd)
-    define_provision_parser(provision_parser)
-    return {cmd: [provision_parser]}
+#
+# def is_preflight_checker(cmd_args) -> bool:
+#     print(cmd_args)
+#     return hasattr(cmd_args, "package_root") or hasattr(cmd_args, "packages]")
+#
+#
+# def def_provision_parser(sub_cmd):
+#     cmd = CMD_PROVISION
+#     provision_parser = sub_cmd.add_parser(cmd)
+#     define_provision_parser(provision_parser)
+#     return {cmd: [provision_parser]}
+#
+#
+# def def_preflight_check_parser(sub_cmd):
+#     cmd = CMD_PREFLIGHT_CHECK
+#     checker_parser = sub_cmd.add_parser(cmd)
+#     define_preflight_check_parser(checker_parser)
+#     return {cmd: checker_parser}
 
 
-def def_preflight_check_parser(sub_cmd):
-    cmd = CMD_PREFLIGHT_CHECK
-    checker_parser = sub_cmd.add_parser(cmd)
-    define_preflight_check_parser(checker_parser)
-    return {cmd: checker_parser}
+def def_simulator_parser(sub_cmd):
+    cmd = CMD_SIMULATOR
+    simulator_parser = sub_cmd.add_parser(cmd)
+    define_simulator_parser(simulator_parser)
+    return {cmd: simulator_parser}
 
 
 def parse_args(prog_name: str):
@@ -59,6 +84,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
     # sub_cmd_parsers.update(def_preflight_check_parser(sub_cmd))
     # sub_cmd_parsers.update(def_provision_parser(sub_cmd))
+    sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -70,6 +96,8 @@ def get_sub_cmd(prog_args):
     #     return CMD_PROVISION
     # elif is_preflight_checker(prog_args):
     #     return CMD_PREFLIGHT_CHECK
+    elif is_simulator(prog_args):
+        return CMD_SIMULATOR
     else:
         return None
 
@@ -78,6 +106,7 @@ handlers = {
     CMD_POC: handle_poc_cmd,
     # CMD_PROVISION: handle_provision,
     # CMD_PREFLIGHT_CHECK: check_packages,
+    CMD_SIMULATOR: run_simulator,
 }
 
 
@@ -113,6 +142,7 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
 
 
 def main():
+    check_python_version()
     run("nvflare")
 
 
