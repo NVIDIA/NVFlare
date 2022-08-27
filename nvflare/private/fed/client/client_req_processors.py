@@ -21,6 +21,7 @@ from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor
     AbortAppProcessor,
     AbortTaskProcessor,
     ClientStatusProcessor,
+    ScopeInfoProcessor,
     DeleteRunNumberProcessor,
     DeployProcessor,
     RestartClientProcessor,
@@ -34,6 +35,7 @@ class ClientRequestProcessors:
     request_processors = [
         StartAppProcessor(),
         ClientStatusProcessor(),
+        ScopeInfoProcessor(),
         AbortAppProcessor(),
         ShutdownClientProcessor(),
         DeployProcessor(),

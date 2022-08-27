@@ -33,6 +33,7 @@ COMMAND_CATEGORIES = {
     AC.DELETE_WORKSPACE: CommandCategory.MANAGE_JOB,
 
     AC.CHECK_STATUS: CommandCategory.VIEW,
+    AC.SHOW_SCOPES: CommandCategory.VIEW,
     AC.SHOW_STATS: CommandCategory.VIEW,
     AC.RESET_ERRORS: CommandCategory.VIEW,
     AC.SHOW_ERRORS: CommandCategory.VIEW,

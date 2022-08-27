@@ -61,6 +61,7 @@ class TrainingTopic(object):
     ALLOCATE_RESOURCE = "scheduler.allocate_resource"
     CANCEL_RESOURCE = "scheduler.cancel_resource"
     START_JOB = "train.start_job"
+    GET_SCOPES = "train.get_scopes"
 
 
 class RequestHeader(object):
@@ -106,6 +107,12 @@ class ClientStatusKey(object):
     APP_NAME = "app_name"
     CLIENT_NAME = "client_name"
     RUNNING_JOBS = "running_jobs"
+
+
+class ScopeInfoKey(object):
+
+    SCOPE_NAMES = "scope_names"
+    DEFAULT_SCOPE = "default_scope"
 
 
 # TODO:: Remove some of these constants

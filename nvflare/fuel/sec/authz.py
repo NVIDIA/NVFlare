@@ -423,6 +423,9 @@ class Authorizer(object):
             "ctx must be AuthzContext but got {}".format(type(ctx))
 
         assert isinstance(ctx.user, Person), "program error: no user in ctx!"
+        if 'super' in ctx.user.roles:
+            # use this for testing purpose
+            return True, ""
 
         authorized, err = self.evaluate(ctx)
         if not authorized:

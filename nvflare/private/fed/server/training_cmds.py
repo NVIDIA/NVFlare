@@ -22,17 +22,16 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import ClientStatusKey, TrainingTopic
+from nvflare.private.defs import ClientStatusKey, TrainingTopic, ScopeInfoKey
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import get_scope_info
 
 from .cmd_utils import CommandUtil
 from .server_engine import ServerEngine
 
 
 class TrainingCommandModule(CommandModule, CommandUtil):
-
-    APP_STAGING_PATH = "app_staging_path"
 
     def __init__(self):
         """A class for training commands."""
@@ -85,6 +84,14 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     usage="set_timeout seconds ",
                     handler_func=self.set_timeout,
                     authz_func=self.command_authz_required,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.SHOW_SCOPES,
+                    description="show configured scope names on server/client",
+                    usage="show_scopes server|client|all ...",
+                    handler_func=self.show_scopes,
+                    authz_func=self.authorize_server_operation,
                     visible=True,
                 ),
             ],
@@ -268,7 +275,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if r.reply:
                 try:
                     body = json.loads(r.reply.body)
-                    if r.reply and isinstance(body, dict):
+                    if isinstance(body, dict):
                         running_jobs = body.get(ClientStatusKey.RUNNING_JOBS)
                         if running_jobs:
                             for job in running_jobs:
@@ -282,3 +289,52 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     self.logger.error(f"Bad reply from client: {ex}")
             else:
                 table.add_row([client_name, app_name, job_id, "No Reply"])
+
+    def _add_scope_info(self, table, site_name, scope_names: [str], default_scope: str):
+        if not scope_names:
+            names = ""
+        else:
+            names = ", ".join(scope_names)
+        table.add_row([site_name, names, default_scope])
+
+    def _process_scope_replies(self, table, conn, replies):
+        if not replies:
+            conn.append_error("no responses from clients")
+            return
+
+        engine = conn.app_ctx
+        for r in replies:
+            client_name = engine.get_client_name_from_token(r.client_token)
+
+            if r.reply:
+                try:
+                    body = json.loads(r.reply.body)
+                    if isinstance(body, dict):
+                        scope_names = body.get(ScopeInfoKey.SCOPE_NAMES)
+                        default_scope = body.get(ScopeInfoKey.DEFAULT_SCOPE)
+                        self._add_scope_info(table, client_name, scope_names, default_scope)
+                    else:
+                        conn.append_error(f"bad response from client {client_name}: expect dict but got {type(body)}")
+                except BaseException as ex:
+                    self.logger.error(f"Bad reply from client: {ex}")
+                    conn.append_error(f"bad response from client {client_name}: {ex}")
+            else:
+                self._add_scope_info(table, client_name, [], "no reply")
+
+    def show_scopes(self, conn: Connection, args: List[str]):
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+
+        dst = args[1]
+        table = conn.append_table(["site", "scopes", "default"])
+
+        if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            # get the server's scope info
+            scope_names, default_scope_name = get_scope_info()
+            self._add_scope_info(table, "server", scope_names, default_scope_name)
+
+        if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            message = new_message(conn, topic=TrainingTopic.GET_SCOPES, body="", require_authz=True)
+            replies = self.send_request_to_clients(conn, message)
+            self._process_scope_replies(table, conn, replies)

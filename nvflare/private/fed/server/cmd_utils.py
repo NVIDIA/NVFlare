@@ -103,18 +103,13 @@ class CommandUtil(object):
         return ""
 
     def authorize_server_operation(self, conn: Connection, args: List[str]):
-        err = self.validate_command_targets(conn, args)
+        err = self.validate_command_targets(conn, args[1:])
         if err:
             conn.append_error(err)
-            return False, None
+            return PreAuthzReturnCode.ERROR
 
         target_type = conn.get_prop(self.TARGET_TYPE)
-        authorize_server = False
-
         if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
-            authorize_server = True
-
-        if authorize_server:
             return PreAuthzReturnCode.REQUIRE_AUTHZ
         else:
             return PreAuthzReturnCode.OK

@@ -94,7 +94,6 @@ class DXO(object):
 
     def update_shareable(self, s: Shareable) -> Shareable:
         s.set_header(key=ReservedHeaderKey.CONTENT_TYPE, value="DXO")
-
         s[_KEY_DXO] = self._encode()
         return s
 

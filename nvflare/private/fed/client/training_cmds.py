@@ -16,9 +16,10 @@ import json
 from typing import List
 
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
-from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.defs import RequestHeader, TrainingTopic, ScopeInfoKey
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import get_scope_info
 
 
 class StartAppProcessor(RequestProcessor):
@@ -159,6 +160,21 @@ class ClientStatusProcessor(RequestProcessor):
         #         ClientStatusKey.RUN_NUM: str(run_info.job_id),
         #         ClientStatusKey.CURRENT_TASK: run_info.current_task_name
         #     }
+        result = json.dumps(result)
+        message = Message(topic="reply_" + req.topic, body=result)
+        return message
+
+
+class ScopeInfoProcessor(RequestProcessor):
+    def get_topics(self) -> List[str]:
+        return [TrainingTopic.GET_SCOPES]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        scope_names, default_scope_name = get_scope_info()
+        result = {
+            ScopeInfoKey.SCOPE_NAMES: scope_names,
+            ScopeInfoKey.DEFAULT_SCOPE: default_scope_name
+        }
         result = json.dumps(result)
         message = Message(topic="reply_" + req.topic, body=result)
         return message

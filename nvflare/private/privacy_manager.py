@@ -119,3 +119,7 @@ class PrivacyService(object):
 
         scope = PrivacyService.get_scope(scope_name)
         return scope is not None
+
+    @staticmethod
+    def get_manager():
+        return PrivacyService.manager

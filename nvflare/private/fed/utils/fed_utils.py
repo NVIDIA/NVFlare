@@ -34,7 +34,7 @@ from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
-from nvflare.private.privacy_manager import PrivacyService
+from nvflare.private.privacy_manager import PrivacyService, PrivacyManager
 
 
 from .app_authz import AppAuthzService
@@ -216,3 +216,19 @@ def configure_logging(workspace: Workspace):
     assert os.path.isfile(log_config_file_path), \
         f"missing log config file {log_config_file_path}"
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+
+
+def get_scope_info():
+    try:
+        privacy_manager = PrivacyService.get_manager()
+        scope_names = []
+        default_scope_name = ""
+        if privacy_manager:
+            assert isinstance(privacy_manager, PrivacyManager)
+            if privacy_manager.name_to_scopes:
+                scope_names = sorted(privacy_manager.name_to_scopes.keys(), reverse=False)
+            if privacy_manager.default_scope:
+                default_scope_name = privacy_manager.default_scope.name
+        return scope_names, default_scope_name
+    except:
+        return [], "processing_error"

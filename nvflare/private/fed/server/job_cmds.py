@@ -72,7 +72,6 @@ class JobCommandModule(CommandUtil):
                     usage="delete_workspace job_id",
                     handler_func=self.delete_job_id,
                     authz_func=self.authorize_job,
-                    visible=False,
                     enabled=False,
                     confirm=ConfirmMethod.AUTH,
                 ),
@@ -82,7 +81,6 @@ class JobCommandModule(CommandUtil):
                     usage="start_app job_id server|client|all",
                     handler_func=self.start_app,
                     authz_func=self.authorize_job,
-                    visible=True,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
@@ -113,7 +111,6 @@ class JobCommandModule(CommandUtil):
                     usage="abort_task job_id <client-name>",
                     handler_func=self.abort_task,
                     authz_func=self.authorize_job,
-                    visible=True,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CLONE_JOB,
@@ -128,7 +125,6 @@ class JobCommandModule(CommandUtil):
                     usage="submit_job job_folder",
                     handler_func=self.submit_job,
                     authz_func=self.command_authz_required,
-                    visible=True,
                     client_cmd=ftd.UPLOAD_FOLDER_FQN
                 ),
                 CommandSpec(
@@ -137,7 +133,6 @@ class JobCommandModule(CommandUtil):
                     usage="download_job job_id",
                     handler_func=self.download_job,
                     authz_func=self.authorize_job,
-                    visible=True,
                     client_cmd=ftd.DOWNLOAD_FOLDER_FQN
                 ),
             ]

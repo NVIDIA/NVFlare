@@ -167,6 +167,7 @@ class AdminCommandNames(object):
     RESET_ERRORS = "reset_errors"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
+    SHOW_SCOPES = "show_scopes"
     CALL = "call"
     SHELL_PWD = "pwd"
     SHELL_LS = "ls"

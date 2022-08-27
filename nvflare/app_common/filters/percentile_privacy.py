@@ -13,16 +13,19 @@
 # limitations under the License.
 
 import numpy as np
+from typing import List
 
-from nvflare.apis.dxo import MetaKey, from_shareable
-from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.dxo import DXO, MetaKey, DataKind
+from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
-class PercentilePrivacy(Filter):
-    def __init__(self, percentile=10, gamma=0.01):
+class PercentilePrivacy(DXOFilter):
+    def __init__(self,
+                 percentile=10,
+                 gamma=0.01,
+                 data_kinds: List[str]=None):
         """Implementation of "largest percentile to share" privacy preserving policy.
 
         Shokri and Shmatikov, Privacy-preserving deep learning, CCS '15
@@ -31,51 +34,44 @@ class PercentilePrivacy(Filter):
             percentile (int, optional): Only abs diff greater than this percentile is updated.
               Allowed range 0..100.  Defaults to 10.
             gamma (float, optional): The upper limit to truncate abs values of weight diff. Defaults to 0.01.  Any weight diff with abs<gamma will become 0.
+            data_kinds: kinds of DXO to filter
         """
-        super().__init__()
+        if not data_kinds:
+            data_kinds = [DataKind.WEIGHT_DIFF]
+
+        super().__init__(
+            supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF],
+            data_kinds_to_filter=data_kinds)
 
         # must be in 0..100, only update abs diff greater than percentile
         self.percentile = percentile
         # must be positive
         self.gamma = gamma  # truncate absolute value of delta W
 
-    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> (bool, DXO):
         """Compute the percentile on the abs delta_W.
 
         Only share the params where absolute delta_W greater than
         the percentile value
 
         Args:
-            shareable: information from client
+            dxo: information from client
+            shareable: that the dxo belongs to
             fl_ctx: context provided by workflow
 
-        Returns:
-            Shareable: a shareable containing the truncated weight diff
+        Returns: a tuple of:
+            whether the DXO is filtered;
+            a DXO object that is the result of the filtering. It can be either the input DXO
+        object or a new DXO object.
         """
         self.log_debug(fl_ctx, "inside filter")
-
-        rc = shareable.get_return_code()
-        if rc != ReturnCode.OK:
-            # don't process if RC not OK
-            return shareable
-
-        try:
-            dxo = from_shareable(shareable)
-        except:
-            self.log_exception(fl_ctx, "shareable data is not a valid DXO")
-            return shareable
-
-        if dxo.data is None:
-            self.log_debug(fl_ctx, "no data to filter")
-            return shareable
-
         self.logger.debug("check gamma")
         if self.gamma <= 0:
             self.log_debug(fl_ctx, "no partial model: gamma: {}".format(self.gamma))
-            return shareable  # do nothing
+            return False, dxo
         if self.percentile < 0 or self.percentile > 100:
             self.log_debug(fl_ctx, "no partial model: percentile: {}".format(self.percentile))
-            return shareable  # do nothing
+            return False, dxo  # do nothing
 
         # invariant to local steps
         model_diff = dxo.data
@@ -102,4 +98,4 @@ class PercentilePrivacy(Filter):
             delta_w[name] = diff_w * total_steps
 
         dxo.data = delta_w
-        return dxo.update_shareable(shareable)
+        return True, dxo
