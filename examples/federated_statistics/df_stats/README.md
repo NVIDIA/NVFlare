@@ -8,88 +8,9 @@ install required packages.
 pip install --upgrade pip
 pip install -r ./requirements.txt
 
-## 1. prepare POC workspace
+## 1. Compute the local and global statistics for each numerical feature
 
-```
-   nvflare poc --prepare
-```
-This will create a poc at /tmp/nvflare/poc with n = 2 clients.
-
-
-## 2. Download the example data
-In this example, we are using UCI (University of California, Irwin) [adult dataset](https://archive.ics.uci.edu/ml/datasets/adult)
-The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
-so we assigned the training data and test data into two clients.
-
-
-```applicaiton.conf
-
-fed_stats {
-data {
-features = ["Age", "Workclass", "fnlwgt", "Education", "Education-Num", "Marital Status",
-             "Occupation", "Relationship", "Race", "Sex", "Capital Gain", "Capital Loss",
-            "Hours per week", "Country", "Target"]
-
-        clients { # inherit common properties
-            site-1 {
-                url = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
-                filename = "data.csv"
-                skiprows = [] # Line numbers to skip (0-indexed) or number of lines to skip (int) at the start of the file.
-            }
-            site-2 {
-                url = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test"
-                filename = "data.csv"
-                skiprows = [0] # Line numbers to skip (0-indexed) or number of lines to skip (int) at the start of the file.
-            }
-        }
-    }
-
-}
-
-```
-The application.conf format is [pyhocon](https://github.com/chimpler/pyhocon) format.
-
-Now we use data utility to download UCI datasets to separate client package directory in POC workspace
-
-<poc workspace>/site-1/data.csv
-<poc workspace>/site-2/data.csv
-
-
-```
-python3 data_utils.py  -h
-
-usage: data_utils.py [-h] [--prepare-data]
-
-fed_stats parser
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --prepare-data        prepare data based on configuration
-
-```
-
-```
-python3 data_utils.py  --prepare-data
-
-prepare data for poc workspace:/tmp/nvflare/poc
-remove existing data at /tmp/nvflare/poc/site-1/data.csv
-wget download to /tmp/nvflare/poc/site-1/data.csv
-100% [..........................................................................] 3974305 / 3974305remove existing data at /tmp/nvflare/poc/site-2/data.csv
-wget download to /tmp/nvflare/poc/site-2/data.csv
-100% [..........................................................................] 2003153 / 2003153done with prepare data
-
-```
-If your poc_workspace is in a different location, use the following command
-
-```
-export NVFLARE_POC_WORKSPACE=<new poc workspace location>
-```
-then repeat above
-
-
-## 3. Compute the local and global statistics for each numerical feature
-
-### 3.1 Specify client side configuration
+### 1.1 Specify client side configuration
 
 We are using a built-in NVFLARE executor,  
 
@@ -117,7 +38,7 @@ to add some noise to min and max values before they are returned to FL Server
 
 In current example, we calculate tabular dataset statistics via Pandas DataFrame with DFStatistics
 
-### 3.2 Specify Server side configuration
+### 1.2 Specify Server side configuration
  
 Here we use the built-in Controller, called GlobalStatistics. Here we selected all the available metrics.  
 
@@ -159,7 +80,7 @@ the writer_id identify the output writer component, defined as
 ```
 This configuration shows a JSON file output writer, output path indicates the file path in the job result store. 
  
-### 3.3 write a local statistics generator 
+### 1.3 write a local statistics generator 
 
    The statistics generator implements `Statistics` spec. 
 
@@ -169,13 +90,65 @@ class DFStatistics(Statistics):
     # rest of code 
 
 ```
-### 3.4 prepare poc workspace
+
+## 2. prepare POC workspace
+
+```
+   nvflare poc --prepare 
+```
+This will create a poc at /tmp/nvflare/poc with n = 2 clients.
+
+
+## 3. Download the example data
+In this example, we are using UCI (University of California, Irwin) [adult dataset](https://archive.ics.uci.edu/ml/datasets/adult)
+The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
+so we assigned the training data and test data into two clients.
+
+Now we use data utility to download UCI datasets to separate client package directory in POC workspace
+
+<poc workspace>/site-1/data.csv
+<poc workspace>/site-2/data.csv
+
+
+```
+python3 data_utils.py  -h
+
+usage: data_utils.py [-h] [--prepare-data]
+
+fed_stats parser
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --prepare-data        prepare data based on configuration
+
+```
+
+```
+python3 data_utils.py  --prepare-data
+
+prepare data for poc workspace:/tmp/nvflare/poc
+remove existing data at /tmp/nvflare/poc/site-1/data.csv
+wget download to /tmp/nvflare/poc/site-1/data.csv
+100% [..........................................................................] 3974305 / 3974305remove existing data at /tmp/nvflare/poc/site-2/data.csv
+wget download to /tmp/nvflare/poc/site-2/data.csv
+100% [..........................................................................] 2003153 / 2003153done with prepare data
+
+```
+If your poc_workspace is in a different location, use the following command
+
+```
+export NVFLARE_POC_WORKSPACE=<new poc workspace location>
+```
+then repeat above
+
+
+## 4 prepare poc workspace
 
 Follow the quick start instructions to prepare POC workspace.
 ``
     nvflare poc --prepare
 ``
-### 3.5 prepare data
+## 5 prepare data
 
 ```
 cd $NVFLARE_HOME/examples/federated_statistics/df_stats
@@ -187,7 +160,7 @@ it should show the help commands, to prepare the data, you can use
 python data_utils.py -prepare-data 
 ```
 
-### 3.5 start nvflare in poc mode
+## 6 start nvflare in poc mode
 
 ```
 nvflare poc --start
@@ -196,7 +169,9 @@ nvflare poc --start
 once you have done with above command, you are already login to the NVFLARE console (aka Admin Console) 
 
 
-### 3.5 Submit job using flare console
+## 7 Submit job
+
+### 7.1 Submit job using flare console
 
 Inside the console, submit the job:
 ```
@@ -205,7 +180,7 @@ submit_job federated_statistics/df_stats
 
 For a complete list of available flare console commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
-### 3.2 List the submitted job
+### 7.2 List the submitted job
 
 You should see the server and clients in your first terminal executing the job now.
 You can list the running job by using `list_jobs` in the admin console.
@@ -220,7 +195,7 @@ Your output should be similar to the following.
 -----------------------------------------------------------------------------------------------------------------------------------
 ```
  
-## 4. get the result
+## 8. get the result
 
 If successful, the computed statis can be downloaded using this admin command:
 ```
@@ -228,7 +203,7 @@ download_job [JOB_ID]
 ```
 After download, it will be available in the stated download directory under `[JOB_ID]/workspace/statistics` as  `adult_stats.json`
 
-## 5. Output Format
+## 9. Output Format
 By default, save the result in JSON format. You are free to write another StatsWriter to output in other format.
 
 ### JSON FORMAT
@@ -283,7 +258,7 @@ The output of the json is like the followings
      },
 ```
 
-## 6. Visualization
+## 10. Visualization
    with json format, the data can be easily visualized via pandas dataframe and plots. 
    A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb
@@ -291,7 +266,7 @@ The output of the json is like the followings
 ```python
     jupyter notebook  visualization.ipynb
 ```
-   you can some snapshots of the visualizations in ![stats](demo/stats_df.png) and ![histogram plot](demo/hist_plot.png)
+   you can some snapshots of the visualizations in ![stats](demo/df_stats.png) and ![histogram plot](demo/hist_plot.png)
 
 
    
