@@ -14,7 +14,7 @@
 
 import copy
 import pickle
-from typing import List
+from typing import List, Union
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 
@@ -128,12 +128,20 @@ class DXO(object):
 
         return ""
 
-    def add_filter_history(self, filter_name: str):
+    def add_filter_history(self, filter_name: Union[str, List[str]]):
+        if not filter_name:
+            return
         hist = self.get_meta_prop(MetaKey.FILTER_HISTORY)
         if not hist:
             hist = []
             self.set_meta_prop(MetaKey.FILTER_HISTORY, hist)
-        hist.append(filter_name)
+        if isinstance(filter_name, str):
+            hist.append(filter_name)
+        elif isinstance(filter_name, list):
+            hist.extend(filter_name)
+
+    def get_filter_history(self):
+        return self.get_meta_prop(MetaKey.FILTER_HISTORY)
 
 
 def from_shareable(s: Shareable) -> DXO:

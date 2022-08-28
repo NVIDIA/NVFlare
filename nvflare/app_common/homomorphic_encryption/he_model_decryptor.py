@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
 import time
 
 import numpy as np
@@ -19,10 +20,9 @@ import tenseal as ts
 from tenseal.tensors.ckksvector import CKKSVector
 
 import nvflare.app_common.homomorphic_encryption.he_constant as he
-from nvflare.apis.dxo import DXO, MetaKey, from_shareable, DataKind
+from nvflare.apis.dxo import DXO, MetaKey, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.dxo_filter import DXOFilter
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
@@ -113,27 +113,25 @@ class HEModelDecryptor(DXOFilter):
         self.log_info(fl_ctx, f"to_ckks_vector time for {n_total} values: {end_time - start_time} seconds.")
         return result
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> (bool, DXO):
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
 
         Args:
             shareable: shareable
             fl_ctx: FLContext
 
-        Returns:a tuple of:
-            whether filtering is applied;
-            DXO object with decrypted weights
+        Returns: DXO object with decrypted weights
         """
         self.log_info(fl_ctx, "Running decryption...")
         encrypted_layers = dxo.get_meta_prop(key=MetaKey.PROCESSED_KEYS, default=None)
         if not encrypted_layers:
             self.log_warning(fl_ctx, "dxo does not contain PROCESSED_KEYS (do nothing)")
-            return False, dxo
+            return None
 
         encrypted_algo = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
         if encrypted_algo != he.HE_ALGORITHM_CKKS:
             self.log_error(fl_ctx, "shareable is not HE CKKS encrypted")
-            return False, dxo
+            return None
 
         n_encrypted, n_total = count_encrypted_layers(encrypted_layers)
         self.log_info(fl_ctx, f"{n_encrypted} of {n_total} layers encrypted")
@@ -147,4 +145,4 @@ class HEModelDecryptor(DXOFilter):
         dxo.remove_meta_props([MetaKey.PROCESSED_ALGORITHM, MetaKey.PROCESSED_KEYS])
         dxo.update_shareable(shareable)
 
-        return True, dxo
+        return dxo

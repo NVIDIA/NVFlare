@@ -26,7 +26,26 @@ class ContentBlockedException(BaseException):
     pass
 
 
+class FilterChainType(object):
+
+    TASK_DATA_CHAIN = 'task_data'
+    TASK_RESULT_CHAIN = 'task_data'
+
+
+class FilterSource(object):
+
+    JOB = "job"
+    SITE = "site"
+
+
+class FilterContextKey(object):
+
+    SOURCE = "__source"
+    CHAIN_TYPE = "__chain_type"
+
+
 class Filter(FLComponent, ABC):
+
     @abstractmethod
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         """Filter process applied to the Shareable object.
@@ -40,3 +59,12 @@ class Filter(FLComponent, ABC):
 
         """
         pass
+
+    def set_prop(self, key: str, value):
+        setattr(self, key, value)
+
+    def get_prop(self, key: str, default=None):
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            return default

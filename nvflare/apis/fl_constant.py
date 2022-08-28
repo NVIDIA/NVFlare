@@ -73,6 +73,7 @@ class ReservedKey(object):
     TASK_RESULT = "__task_result__"
     TASK_ID = "__task_id__"
     EVENT_ID = "__event_id__"
+    AUDIT_EVENT_ID = "__audit_event_id__"
     IS_RESEND = "__is_resend__"
     RUNNER = "__runner__"
     WORKFLOW = "__workflow__"

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import numpy as np
-from typing import List
+from typing import List, Union
 
 from nvflare.apis.dxo import DXO, MetaKey, DataKind
 from nvflare.apis.dxo_filter import DXOFilter
@@ -48,7 +48,7 @@ class PercentilePrivacy(DXOFilter):
         # must be positive
         self.gamma = gamma  # truncate absolute value of delta W
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> (bool, DXO):
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Compute the percentile on the abs delta_W.
 
         Only share the params where absolute delta_W greater than
@@ -59,19 +59,16 @@ class PercentilePrivacy(DXOFilter):
             shareable: that the dxo belongs to
             fl_ctx: context provided by workflow
 
-        Returns: a tuple of:
-            whether the DXO is filtered;
-            a DXO object that is the result of the filtering. It can be either the input DXO
-        object or a new DXO object.
+        Returns: filtered dxo
         """
         self.log_debug(fl_ctx, "inside filter")
         self.logger.debug("check gamma")
         if self.gamma <= 0:
             self.log_debug(fl_ctx, "no partial model: gamma: {}".format(self.gamma))
-            return False, dxo
+            return None
         if self.percentile < 0 or self.percentile > 100:
             self.log_debug(fl_ctx, "no partial model: percentile: {}".format(self.percentile))
-            return False, dxo  # do nothing
+            return None  # do nothing
 
         # invariant to local steps
         model_diff = dxo.data
@@ -98,4 +95,4 @@ class PercentilePrivacy(DXOFilter):
             delta_w[name] = diff_w * total_steps
 
         dxo.data = delta_w
-        return True, dxo
+        return dxo

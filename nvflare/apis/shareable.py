@@ -28,6 +28,7 @@ class ReservedHeaderKey(object):
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_ID = ReservedKey.TASK_ID
     WORKFLOW = ReservedKey.WORKFLOW
+    AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"
 
 
@@ -130,7 +131,10 @@ class Shareable(dict):
 
 
 # some convenience functions
-def make_reply(rc) -> Shareable:
+def make_reply(rc, headers=None) -> Shareable:
     reply = Shareable()
     reply.set_return_code(rc)
+    if headers and isinstance(headers, dict):
+        for k, v in headers.items():
+            reply.set_header(k, v)
     return reply

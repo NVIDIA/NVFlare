@@ -15,11 +15,12 @@
 from abc import ABC, abstractmethod
 from typing import Union, List, Dict
 
-from .filter import Filter
+from .filter import Filter, FilterContextKey
 from .shareable import Shareable
 from .fl_context import FLContext
-from .fl_constant import ReturnCode
+from .fl_constant import ReturnCode, ReservedKey
 from .dxo import DXO, DataKind, from_shareable
+from nvflare.fuel.sec.audit import AuditService
 
 
 class DXOFilter(Filter, ABC):
@@ -75,7 +76,7 @@ class DXOFilter(Filter, ABC):
         return result_dxo.update_shareable(shareable)
 
     @abstractmethod
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> (bool, DXO):
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Subclass must implement this method to filter the provided DXO
 
         Args:
@@ -83,29 +84,42 @@ class DXOFilter(Filter, ABC):
             shareable: the shareable that the dxo belongs to
             fl_ctx: the FL context
 
-        Returns: a tuple of:
-            whether the DXO is filtered;
-            a DXO object that is the result of the filtering. It can be either the input DXO
-        object or a new DXO object.
+        Returns:
+            A DXO object that is the result of the filtering, if filtered;
+            None if not filtered.
 
         """
         pass
 
-    def _apply_filter(self, dxo: DXO, shareable, fl_ctx) -> DXO:
+    def _apply_filter(self, dxo: DXO, shareable, fl_ctx: FLContext) -> DXO:
         if not dxo.data:
             self.log_debug(fl_ctx, "DXO has no data to filter")
             return dxo
 
-        filtered, result = self.process_dxo(dxo, shareable, fl_ctx)
-        if not filtered and not result:
-            # in case the programmer forgot to return a result
+        filter_name = self.__class__.__name__
+        result = self.process_dxo(dxo, shareable, fl_ctx)
+        if not result:
+            # not filtered
             result = dxo
-
-        if not isinstance(result, DXO):
+        elif not isinstance(result, DXO):
             raise RuntimeError(
-                f"Result from {self.__class__.__name__} is {type(result)} - should be DXO")
-        if filtered:
-            result.add_filter_history(self.__class__.__name__)
+                f"Result from {filter_name} is {type(result)} - must be DXO")
+        else:
+            if result != dxo:
+                # result is a new DXO - copy filter history from original dxo
+                result.add_filter_history(dxo.get_filter_history())
+            result.add_filter_history(filter_name)
+
+            chain_type = self.get_prop(FilterContextKey.CHAIN_TYPE, "")
+            source = self.get_prop(FilterContextKey.SOURCE)
+
+            AuditService.add_job_event(
+                job_id=fl_ctx.get_job_id(),
+                task_name=fl_ctx.get_prop(ReservedKey.TASK_NAME, ""),
+                task_id=fl_ctx.get_prop(ReservedKey.TASK_ID, ""),
+                msg=f"applied filter: {filter_name}@{source} on {chain_type}"
+            )
+
         return result
 
     def _filter_dxos(self, dxo_collection: Union[List[DXO], Dict[str, DXO]], shareable, fl_ctx):

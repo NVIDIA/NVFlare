@@ -76,7 +76,7 @@ class ExcludeVars(DXOFilter):
             self.logger.debug("Not excluding anything")
             self.skip = True
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> (bool, DXO):
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Called by upper layer to remove variables in weights/weight_diff dictionary.
 
         When the return code of shareable is not ReturnCode.OK, this
@@ -87,12 +87,10 @@ class ExcludeVars(DXOFilter):
             shareable: that the dxo belongs to
             fl_ctx (FLContext): only used for logging.
 
-        Returns: a tuple of:
-            whether filtering is applied;
-            DXO object with excluded weights
+        Returns: filtered dxo
         """
         if self.skip:
-            return False, dxo
+            return None
 
         weights = dxo.data
         # remove variables
@@ -114,4 +112,4 @@ class ExcludeVars(DXOFilter):
         self.log_debug(fl_ctx, f"Excluded {n_excluded} of {n_vars} variables. {len(weights.keys())} remaining.")
 
         dxo.data = weights
-        return True, dxo
+        return dxo

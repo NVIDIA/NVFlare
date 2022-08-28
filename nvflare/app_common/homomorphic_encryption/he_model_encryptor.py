@@ -14,6 +14,7 @@
 
 import re
 import time
+from typing import Union
 
 import numpy as np
 import tenseal as ts
@@ -161,7 +162,7 @@ class HEModelEncryptor(DXOFilter):
         # encryption_dict: keys are layer names.  values are True for serialized ckks_vectors, False elsewhere.
         return params, encryption_dict
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> (bool, DXO):
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
 
         Args:
@@ -169,9 +170,7 @@ class HEModelEncryptor(DXOFilter):
             shareable: that the dxo belongs to
             fl_ctx: FLContext
 
-        Returns: a tuple of:
-            whether filtering is applied;
-            DXO object with encrypted weights
+        Returns: DXO object with encrypted weights
 
         """
         peer_ctx = fl_ctx.get_peer_context()
@@ -188,8 +187,7 @@ class HEModelEncryptor(DXOFilter):
                 raise ValueError("DXO data does not have local iterations for weighting!")
             self.log_info(fl_ctx, f"weighting by local iter before encryption with {self.n_iter}")
 
-        new_dxo = self._process(dxo, fl_ctx)
-        return True, new_dxo
+        return self._process(dxo, fl_ctx)
 
     def _process(self, dxo: DXO, fl_ctx: FLContext) -> DXO:
         self.log_info(fl_ctx, "Running HE encryption...")

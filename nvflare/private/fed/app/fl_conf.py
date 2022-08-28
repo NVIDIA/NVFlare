@@ -14,8 +14,6 @@
 
 """FL Server / Client startup configer."""
 
-import logging
-import logging.config
 import os
 import re
 

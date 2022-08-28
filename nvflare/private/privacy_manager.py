@@ -14,7 +14,7 @@
 
 from typing import Union, List
 
-from nvflare.apis.filter import Filter
+from nvflare.apis.filter import Filter, FilterContextKey, FilterSource, FilterChainType
 
 
 class Scope(object):
@@ -38,11 +38,15 @@ class Scope(object):
     def add_task_data_filter(self, f: Filter):
         if not isinstance(f, Filter):
             raise TypeError(f"task data filter must be Filter but got {type(f)}")
+        f.set_prop(FilterContextKey.CHAIN_TYPE, FilterChainType.TASK_DATA_CHAIN)
+        f.set_prop(FilterContextKey.SOURCE, FilterSource.SITE)
         self.task_data_filters.append(f)
 
     def add_task_result_filter(self, f: Filter):
         if not isinstance(f, Filter):
             raise TypeError(f"task result filter must be Filter but got {type(f)}")
+        f.set_prop(FilterContextKey.CHAIN_TYPE, FilterChainType.TASK_RESULT_CHAIN)
+        f.set_prop(FilterContextKey.SOURCE, FilterSource.SITE)
         self.task_result_filters.append(f)
 
 

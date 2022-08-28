@@ -26,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 from nvflare.private.privacy_manager import Scope
+from nvflare.fuel.sec.audit import AuditService
 
 
 class ServerRunnerConfig(object):
@@ -267,7 +268,14 @@ class ServerRunner(FLComponent):
                 task_data.set_header(ReservedHeaderKey.TASK_NAME, task_name)
                 task_data.add_cookie(ReservedHeaderKey.WORKFLOW, self.current_wf.id)
 
-            self.log_info(fl_ctx, "assigned task to client: name={}, id={}".format(task_name, task_id))
+            self.log_info(fl_ctx, f"assigned task to client {client.name}: name={task_name}, id={task_id}")
+            audit_event_id = AuditService.add_job_event(
+                job_id=fl_ctx.get_job_id(),
+                task_name=task_name,
+                task_id = task_id,
+                msg=f'assigned task to client "{client.name}"'
+            )
+            task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
 
             # filter task data
             fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
@@ -328,11 +336,21 @@ class ServerRunner(FLComponent):
             result: task result
             fl_ctx: FLContext
         """
-        self.log_info(fl_ctx, "got result from client for task: name={}, id={}".format(task_name, task_id))
+        self.log_info(fl_ctx,
+                      f"got result from client {client.name} for task: name={task_name}, id={task_id}")
 
         if not isinstance(result, Shareable):
             self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
             return
+
+        client_audit_event_id = result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "")
+        AuditService.add_job_event(
+            job_id=fl_ctx.get_job_id(),
+            task_name=task_name,
+            task_id=task_id,
+            ref=client_audit_event_id,
+            msg=f"received result from client '{client.name}'"
+        )
 
         # set the reply prop so log msg context could include RC from it
         fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=False)

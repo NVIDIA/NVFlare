@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
 import numpy as np
 
 from nvflare.apis.dxo import DXO, MetaKey, DataKind
@@ -54,7 +56,7 @@ class SVTPrivacy(DXOFilter):
         self.gamma = gamma
         self.tau = tau
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> (bool, DXO):
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Compute the differentially private SVT.
 
         Args:
@@ -62,9 +64,7 @@ class SVTPrivacy(DXOFilter):
             shareable: that the dxo belongs to
             fl_ctx: context provided by workflow
 
-        Returns:
-            whether filtering is applied;
-            filtered result.
+        Returns: filtered result.
         """
         self.log_debug(fl_ctx, "inside filter")
         model_diff = dxo.data
@@ -129,4 +129,4 @@ class SVTPrivacy(DXOFilter):
 
         # We update the shareable weights only.  Headers are unchanged.
         dxo.data = dp_w
-        return True, dxo
+        return dxo
