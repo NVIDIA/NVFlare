@@ -167,6 +167,7 @@ class StaticFileBuilder(Builder):
             "fed_learn_port": fed_learn_port,
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
+            "org_name": server.org,
         }
         if self.docker_image:
             self._write(
@@ -216,6 +217,7 @@ class StaticFileBuilder(Builder):
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
+            "org_name": client.org,
         }
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
