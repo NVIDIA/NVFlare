@@ -27,26 +27,22 @@ from nvflare.lighter.utils import load_yaml
 
 adding_client_error_msg = """
 name: $SITE-NAME
-type: client
 org: $ORGANIZATION_NAME
-enable_byoc: $BOOLEAN
 components:
     resource_manager:    # This id is reserved by system.  Do not change it.
-        path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
+        path: nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager
         args:
-        resources:
-            gpu: [0, 1, 2, 3]
+            num_of_gpus: 4,
+            mem_per_gpu_in_GiB: 16
     resource_consumer:    # This id is reserved by system.  Do not change it.
         path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
         args:
-        gpu_resource_key: gpu
 """
 
 adding_user_error_msg = """
 name: $USER_EMAIL_ADDRESS
 org: $ORGANIZATION_NAME
-roles:
-    - $ROLE
+role: $ROLE
 """
 
 
