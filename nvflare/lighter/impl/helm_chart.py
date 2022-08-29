@@ -71,6 +71,8 @@ class HelmChartBuilder(Builder):
         for i, item in enumerate(cmd_args):
             if "/workspace/server" in item:
                 cmd_args[i] = f"/workspace/{server.name}"
+            if "__org_name__" in item:
+                cmd_args[i] = f"org={server.org}"
         self.deployment_server["spec"]["template"]["spec"]["containers"][0]["args"] = cmd_args
         with open(os.path.join(self.helm_chart_templates_directory, f"deployment_server{idx}.yaml"), "wt") as f:
             yaml.dump(self.deployment_server, f)

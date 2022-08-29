@@ -279,7 +279,7 @@ sub_start_cln_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
+  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -366,7 +366,7 @@ sub_start_svr_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
+  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -506,6 +506,7 @@ compose_yaml: |
             "--set",
             "secure_train=true",
             "config_folder=config",
+            "org=__org_name__",
           ]
 
     __flclient__:
@@ -523,6 +524,7 @@ compose_yaml: |
             "--set",
             "secure_train=true",
             "uid=__flclient__",
+            "org=__org_name__",
             "config_folder=config",
           ]
 
@@ -658,6 +660,8 @@ helm_chart_deployment_server: |
                 "--set",
                 "secure_train=true",
                 "config_folder=config",
+                "org=__org_name__",
+
               ]
             ports:
               - containerPort: 8002
