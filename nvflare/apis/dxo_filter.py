@@ -18,9 +18,9 @@ from typing import Union, List, Dict
 from .filter import Filter, FilterContextKey
 from .shareable import Shareable
 from .fl_context import FLContext
-from .fl_constant import ReturnCode, ReservedKey
+from .fl_constant import ReturnCode
 from .dxo import DXO, DataKind, from_shareable
-from nvflare.fuel.sec.audit import AuditService
+from .utils.fl_context_utils import add_job_audit_event
 
 
 class DXOFilter(Filter, ABC):
@@ -110,13 +110,11 @@ class DXOFilter(Filter, ABC):
                 result.add_filter_history(dxo.get_filter_history())
             result.add_filter_history(filter_name)
 
-            chain_type = self.get_prop(FilterContextKey.CHAIN_TYPE, "")
-            source = self.get_prop(FilterContextKey.SOURCE)
+            chain_type = self.get_prop(FilterContextKey.CHAIN_TYPE, "?")
+            source = self.get_prop(FilterContextKey.SOURCE, "?")
 
-            AuditService.add_job_event(
-                job_id=fl_ctx.get_job_id(),
-                task_name=fl_ctx.get_prop(ReservedKey.TASK_NAME, ""),
-                task_id=fl_ctx.get_prop(ReservedKey.TASK_ID, ""),
+            add_job_audit_event(
+                fl_ctx=fl_ctx,
                 msg=f"applied filter: {filter_name}@{source} on {chain_type}"
             )
 

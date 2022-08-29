@@ -29,7 +29,7 @@ class ContentBlockedException(BaseException):
 class FilterChainType(object):
 
     TASK_DATA_CHAIN = 'task_data'
-    TASK_RESULT_CHAIN = 'task_data'
+    TASK_RESULT_CHAIN = 'task_result'
 
 
 class FilterSource(object):

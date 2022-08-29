@@ -28,7 +28,7 @@ from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init, security_close
 from nvflare.private.privacy_manager import PrivacyService
 
 
@@ -128,7 +128,7 @@ def main():
     except ConfigError as ex:
         print("ConfigError:", str(ex))
     finally:
-        pass
+        security_close()
 
 
 def create_admin_server(

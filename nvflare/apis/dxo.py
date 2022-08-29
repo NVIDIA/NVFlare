@@ -25,7 +25,7 @@ class DataKind(object):
     METRICS = "METRICS"
     MODEL = "MODEL"
     ANALYTIC = "ANALYTIC"
-    COLLECTION = "COLLECTION"  # Dict of DXO objects
+    COLLECTION = "COLLECTION"  # Dict or List of DXO objects
 
 
 class MetaKey(object):

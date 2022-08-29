@@ -22,10 +22,10 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, R
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.privacy_manager import Scope
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
-from nvflare.fuel.sec.audit import AuditService
 
 
 class ClientRunnerConfig(object):
@@ -106,11 +106,9 @@ class ClientRunner(FLComponent):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
-    def _reply_and_audit(self, task: TaskAssignment, reply: Shareable, ref, msg, fl_ctx: FLContext) -> Shareable:
-        audit_event_id = AuditService.add_job_event(
-            job_id=fl_ctx.get_job_id(),
-            task_name=task.name,
-            task_id=task.task_id,
+    def _reply_and_audit(self, reply: Shareable, ref, msg, fl_ctx: FLContext) -> Shareable:
+        audit_event_id = add_job_audit_event(
+            fl_ctx=fl_ctx,
             ref=ref,
             msg=msg
         )
@@ -132,11 +130,9 @@ class ClientRunner(FLComponent):
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
 
-        server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID)
-        AuditService.add_job_event(
-            job_id=fl_ctx.get_job_id(),
-            task_name=task.name,
-            task_id=task.task_id,
+        server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
+        add_job_audit_event(
+            fl_ctx=fl_ctx,
             ref=server_audit_event_id,
             msg="received task from server"
         )
@@ -146,7 +142,6 @@ class ClientRunner(FLComponent):
             self.log_error(fl_ctx, "missing peer context in Server task assignment")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.MISSING_PEER_CONTEXT),
-                task=task,
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
                 msg=f'submit result: {ReturnCode.MISSING_PEER_CONTEXT}')
@@ -158,7 +153,6 @@ class ClientRunner(FLComponent):
             )
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.BAD_PEER_CONTEXT),
-                task=task,
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
                 msg=f'submit result: {ReturnCode.BAD_PEER_CONTEXT}')
@@ -169,7 +163,6 @@ class ClientRunner(FLComponent):
             self.log_error(fl_ctx, "bad task assignment: not for the same job_id")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.RUN_MISMATCH),
-                task=task,
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
                 msg=f'submit result: {ReturnCode.RUN_MISMATCH}')
@@ -179,7 +172,6 @@ class ClientRunner(FLComponent):
             self.log_error(fl_ctx, "bad task assignment: no executor available for task {}".format(task.name))
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_UNKNOWN),
-                task=task,
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
                 msg=f'submit result: {ReturnCode.TASK_UNKNOWN}')
@@ -208,7 +200,6 @@ class ClientRunner(FLComponent):
                     self.log_exception(fl_ctx, "processing error in Task Data Filter {}".format(type(f)))
                     return self._reply_and_audit(
                         reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
-                        task=task,
                         ref=server_audit_event_id,
                         fl_ctx=fl_ctx,
                         msg=f'submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}')
@@ -219,7 +210,6 @@ class ClientRunner(FLComponent):
                 )
                 return self._reply_and_audit(
                     reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
-                    task=task,
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
                     msg=f'submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}')
@@ -235,6 +225,10 @@ class ClientRunner(FLComponent):
         self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
         try:
             self.log_info(fl_ctx, "invoking task executor {}".format(type(executor)))
+            add_job_audit_event(
+                fl_ctx=fl_ctx,
+                msg=f"invoked executor {type(executor)}"
+            )
 
             with self.task_lock:
                 self.task_abort_signal = Signal()
@@ -256,7 +250,6 @@ class ClientRunner(FLComponent):
                     if task_aborted:
                         return self._reply_and_audit(
                             reply=make_reply(ReturnCode.TASK_ABORTED),
-                            task=task,
                             ref=server_audit_event_id,
                             fl_ctx=fl_ctx,
                             msg=f'submit result: {ReturnCode.TASK_ABORTED}')
@@ -270,7 +263,6 @@ class ClientRunner(FLComponent):
                 )
                 return self._reply_and_audit(
                     reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
-                    task=task,
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
                     msg=f'submit result: {ReturnCode.EXECUTION_RESULT_ERROR}')
@@ -280,7 +272,6 @@ class ClientRunner(FLComponent):
             self.asked_to_stop = True
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
-                task=task,
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
                 msg=f'submit result: {ReturnCode.EXECUTION_RESULT_ERROR}')
@@ -288,7 +279,6 @@ class ClientRunner(FLComponent):
             self.log_exception(fl_ctx, "processing error in task executor {}".format(type(executor)))
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_EXCEPTION),
-                task=task,
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
                 msg=f'submit result: {ReturnCode.EXECUTION_EXCEPTION}')
@@ -317,7 +307,6 @@ class ClientRunner(FLComponent):
                     self.log_exception(fl_ctx, "processing error in Task Result Filter {}".format(type(f)))
                     return self._reply_and_audit(
                         reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
-                        task=task,
                         ref=server_audit_event_id,
                         fl_ctx=fl_ctx,
                         msg=f'submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}')
@@ -328,7 +317,6 @@ class ClientRunner(FLComponent):
                 )
                 return self._reply_and_audit(
                     reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
-                    task=task,
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
                     msg=f'submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}')
@@ -345,14 +333,12 @@ class ClientRunner(FLComponent):
             )
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
-                task=task,
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
                 msg=f'submit result: {ReturnCode.EXECUTION_RESULT_ERROR}')
 
         return self._reply_and_audit(
             reply=reply,
-            task=task,
             ref=server_audit_event_id,
             fl_ctx=fl_ctx,
             msg=f'submit result OK')
