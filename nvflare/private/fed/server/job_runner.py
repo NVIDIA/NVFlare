@@ -15,6 +15,7 @@
 import shutil
 import threading
 import time
+import json
 from typing import List
 
 from nvflare.apis.event_type import EventType
@@ -61,7 +62,7 @@ class JobRunner(FLComponent):
 
     def _make_deploy_message(self, job: Job, app_data, app_name):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
-        message.set_header(RequestHeader.REQUIRE_AUTHZ, True)
+        message.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
 
         message.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.SUBMIT_JOB)
         message.set_header(RequestHeader.JOB_ID, job.job_id)
@@ -75,7 +76,7 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.USER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
         message.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
 
-        message.set_header(RequestHeader.JOB_META, job.meta)
+        message.set_header(RequestHeader.JOB_META, json.dumps(job.meta))
         return message
 
     def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> str:

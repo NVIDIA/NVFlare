@@ -199,7 +199,9 @@ class FedAdminAgent(object):
                         reply = None
 
                         # see whether pre-authorization is needed
-                        if req.get_header(RequestHeader.REQUIRE_AUTHZ, False):
+                        authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
+                        require_authz = authz_flag =="true"
+                        if require_authz:
                             # authorize this command!
                             cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
                             if cmd:

@@ -34,7 +34,7 @@ from nvflare.apis.utils.common_utils import get_size
 from nvflare.apis.job_def import Job, JobMetaKey, JobDataKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
@@ -55,7 +55,7 @@ META_FILE = "meta.json"
 MAX_DOWNLOAD_JOB_SIZE = 50 * 1024 * 1024 * 1204
 
 
-class JobCommandModule(CommandUtil):
+class JobCommandModule(CommandModule, CommandUtil):
     """Command module with commands for job management."""
 
     def __init__(self):

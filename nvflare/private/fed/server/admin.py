@@ -35,8 +35,7 @@ def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
     cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
     if cmd_entry:
         msg.set_header(RequestHeader.ADMIN_COMMAND, cmd_entry.name)
-        if require_authz:
-            msg.set_header(RequestHeader.REQUIRE_AUTHZ, require_authz)
+        msg.set_header(RequestHeader.REQUIRE_AUTHZ, str(require_authz).lower())
 
     props_to_copy = [
         ConnProps.EVENT_ID, ConnProps.USER_NAME, ConnProps.USER_ROLE, ConnProps.USER_ORG,

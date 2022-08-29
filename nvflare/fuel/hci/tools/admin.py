@@ -16,6 +16,7 @@ import argparse
 import os
 
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
@@ -39,8 +40,9 @@ def main():
 
     try:
         os.chdir(args.workspace)
-        workspace = os.path.join(args.workspace, "startup")
-        conf = FLAdminClientStarterConfigurator(app_root=workspace, admin_config_file_name=args.fed_admin)
+        workspace_dir = os.path.join(args.workspace, "startup")
+        workspace = Workspace(root_dir=args.workspace)
+        conf = FLAdminClientStarterConfigurator(workspace=workspace)
         conf.configure()
     except ConfigError as ex:
         print("ConfigError:", str(ex))
