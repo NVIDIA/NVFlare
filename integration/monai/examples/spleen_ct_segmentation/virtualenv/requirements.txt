@@ -1,6 +1,3 @@
-matplotlib
-sklearn
-Pillow
 tensorboard
 tqdm
 monai[ignite,nibabel,fire]>=1.0
