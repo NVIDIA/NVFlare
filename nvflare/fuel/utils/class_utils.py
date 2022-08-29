@@ -66,13 +66,6 @@ def get_instance_method(instance, method_name):
     return get_object_method(instance, method_name)
 
 
-def get_config_classname(config_dict: dict):
-    class_name = config_dict.get("name", None)
-    if not class_name:
-        class_name = config_dict.get("path", "")
-    return class_name
-
-
 class ModuleScanner:
     def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
         """Scanner to look for and load specified module names.

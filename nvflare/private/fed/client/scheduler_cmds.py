@@ -92,7 +92,6 @@ class StartJobProcessor(RequestProcessor):
                 job_id,
                 allocated_resource=allocated_resources,
                 token=token,
-                resource_consumer=resource_consumer,
                 resource_manager=resource_manager,
             )
         except Exception as e:
