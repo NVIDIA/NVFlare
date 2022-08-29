@@ -38,7 +38,7 @@ to add some noise to min and max values before they are returned to FL Server
 
 In current example, we calculate tabular dataset statistics via Pandas DataFrame with DFStatistics
 
-### 1.2 Specify Server side configuration
+### 1.2 Specify server side configuration
  
 Here we use the built-in Controller, called GlobalStatistics. Here we selected all the available metrics.  
 
@@ -80,7 +80,7 @@ the writer_id identify the output writer component, defined as
 ```
 This configuration shows a JSON file output writer, output path indicates the file path in the job result store. 
  
-### 1.3 write a local statistics generator 
+### 1.3 Write a local statistics generator 
 
    The statistics generator implements `Statistics` spec. 
 
@@ -91,7 +91,7 @@ class DFStatistics(Statistics):
 
 ```
 
-## 2. prepare POC workspace
+## 2. Prepare POC workspace
 
 ```
    nvflare poc --prepare 
@@ -99,11 +99,12 @@ class DFStatistics(Statistics):
 This will create a poc at /tmp/nvflare/poc with n = 2 clients.
 
 
-## 3. Download the example data
+## 3. Prepare data
+
 In this example, we are using UCI (University of California, Irwin) [adult dataset](https://archive.ics.uci.edu/ml/datasets/adult)
 The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
 so we assigned the training data and test data into two clients.
-
+ 
 Now we use data utility to download UCI datasets to separate client package directory in POC workspace
 
 <poc workspace>/site-1/data.csv
@@ -141,37 +142,25 @@ export NVFLARE_POC_WORKSPACE=<new poc workspace location>
 ```
 then repeat above
 
-
-## 4 prepare poc workspace
-
-Follow the quick start instructions to prepare POC workspace.
-``
-    nvflare poc --prepare
-``
-## 5 prepare data
-
-```
-cd $NVFLARE_HOME/examples/federated_statistics/df_stats
-python data_utils.py -h 
-```
-it should show the help commands, to prepare the data, you can use
-
-```
-python data_utils.py -prepare-data 
-```
-
-## 6 start nvflare in poc mode
+## 4 Start nvflare in POC mode
 
 ```
 nvflare poc --start
 ```
- 
-once you have done with above command, you are already login to the NVFLARE console (aka Admin Console) 
+once you have done with above command, you are already login to the NVFLARE console (aka Admin Console)
+if you prefer to have NVFLARE Console in separate terminal, you can do 
 
+```
+nvflare poc --start ex admin
+```
+Then open a separate terminal to start the NVFLARE console 
+```
+nvflare poc --start -p admin
+```
 
-## 7 Submit job
+## 5 Submit job and download result
 
-### 7.1 Submit job using flare console
+### 5.1 Submit job
 
 Inside the console, submit the job:
 ```
@@ -180,7 +169,7 @@ submit_job federated_statistics/df_stats
 
 For a complete list of available flare console commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
-### 7.2 List the submitted job
+### 5.2 List the submitted job
 
 You should see the server and clients in your first terminal executing the job now.
 You can list the running job by using `list_jobs` in the admin console.
@@ -195,18 +184,16 @@ Your output should be similar to the following.
 -----------------------------------------------------------------------------------------------------------------------------------
 ```
  
-## 8. get the result
+### 5.3 get the result
 
 If successful, the computed statis can be downloaded using this admin command:
 ```
 download_job [JOB_ID]
 ```
 After download, it will be available in the stated download directory under `[JOB_ID]/workspace/statistics` as  `adult_stats.json`
-
-## 9. Output Format
+ 
 By default, save the result in JSON format. You are free to write another StatsWriter to output in other format.
-
-### JSON FORMAT
+ 
 The output of the json is like the followings
 ``` 
 { 
@@ -258,7 +245,7 @@ The output of the json is like the followings
      },
 ```
 
-## 10. Visualization
+## 6. Visualization
    with json format, the data can be easily visualized via pandas dataframe and plots. 
    A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb

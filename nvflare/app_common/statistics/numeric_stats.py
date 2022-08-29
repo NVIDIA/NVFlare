@@ -37,7 +37,7 @@ def get_global_feature_data_types(
     return global_feature_data_types
 
 
-def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: str, precision: int) -> dict:
+def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: str) -> dict:
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_metrics[metric_task]
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
@@ -49,11 +49,9 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
 
         if metric == StC.STATS_COUNT or metric == StC.STATS_SUM:
             for client_name in stats:
-                global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric], precision)
+                global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric])
         elif metric == StC.STATS_MEAN:
-            global_metrics[metric] = get_means(
-                global_metrics[StC.STATS_SUM], global_metrics[StC.STATS_COUNT], precision
-            )
+            global_metrics[metric] = get_means(global_metrics[StC.STATS_SUM], global_metrics[StC.STATS_COUNT])
         elif metric == StC.STATS_MAX:
             for client_name in stats:
                 global_metrics[metric] = get_min_or_max_values(stats[client_name], global_metrics[metric], max)
@@ -62,10 +60,10 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
                 global_metrics[metric] = get_min_or_max_values(stats[client_name], global_metrics[metric], min)
         elif metric == StC.STATS_HISTOGRAM:
             for client_name in stats:
-                global_metrics[metric] = accumulate_hists(stats[client_name], global_metrics[metric], precision)
+                global_metrics[metric] = accumulate_hists(stats[client_name], global_metrics[metric])
         elif metric == StC.STATS_VAR:
             for client_name in stats:
-                global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric], precision)
+                global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric])
         elif metric == StC.STATS_STDDEV:
             ds_vars = global_metrics[StC.STATS_VAR]
             ds_stddev = {}
@@ -73,14 +71,14 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
                 ds_stddev[ds_name] = {}
                 feature_vars = ds_vars[ds_name]
                 for feature in feature_vars:
-                    ds_stddev[ds_name][feature] = round(sqrt(feature_vars[feature]), precision)
+                    ds_stddev[ds_name][feature] = sqrt(feature_vars[feature])
 
                 global_metrics[StC.STATS_STDDEV] = ds_stddev
 
     return global_metrics
 
 
-def accumulate_metrics(metrics: dict, global_metrics: dict, precision) -> dict:
+def accumulate_metrics(metrics: dict, global_metrics: dict) -> dict:
     for ds_name in metrics:
         if ds_name not in global_metrics:
             global_metrics[ds_name] = {}
@@ -88,9 +86,9 @@ def accumulate_metrics(metrics: dict, global_metrics: dict, precision) -> dict:
         feature_metrics = metrics[ds_name]
         for feature_name in feature_metrics:
             if feature_name not in global_metrics[ds_name]:
-                global_metrics[ds_name][feature_name] = round(feature_metrics[feature_name], precision)
+                global_metrics[ds_name][feature_name] = feature_metrics[feature_name]
             else:
-                global_metrics[ds_name][feature_name] += round(feature_metrics[feature_name], precision)
+                global_metrics[ds_name][feature_name] += feature_metrics[feature_name]
 
     return global_metrics
 
@@ -135,16 +133,16 @@ def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2) -> dict:
     return global_metrics
 
 
-def bins_to_dict(bins: List[Bin], precision: int) -> Dict[BinRange, float]:
+def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
     buckets = {}
     for bucket in bins:
-        bucket_range = BinRange(round(bucket.low_value, precision), round(bucket.high_value, precision))
+        bucket_range = BinRange(bucket.low_value, bucket.high_value)
         buckets[bucket_range] = bucket.sample_count
     return buckets
 
 
 def accumulate_hists(
-    metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]], precision: int
+    metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]]
 ) -> Dict[str, Dict[str, Histogram]]:
     for ds_name in metrics:
         feature_hists = metrics[ds_name]
@@ -153,21 +151,17 @@ def accumulate_hists(
 
         for feature in feature_hists:
             hist: Histogram = feature_hists[feature]
-            if feature not in global_hists:
+            if feature not in global_hists[ds_name]:
                 g_bins = []
                 for bucket in hist.bins:
-                    g_bins.append(
-                        Bin(
-                            round(bucket.low_value, precision), round(bucket.high_value, precision), bucket.sample_count
-                        )
-                    )
+                    g_bins.append(Bin(bucket.low_value, bucket.high_value, bucket.sample_count))
                 g_hist = Histogram(HistogramType.STANDARD, g_bins)
                 global_hists[ds_name][feature] = g_hist
             else:
                 g_hist = global_hists[ds_name][feature]
-                g_buckets = bins_to_dict(g_hist.bins, precision)
+                g_buckets = bins_to_dict(g_hist.bins)
                 for bucket in hist.bins:
-                    bin_range = BinRange(round(bucket.low_value, precision), round(bucket.high_value, precision))
+                    bin_range = BinRange(bucket.low_value, bucket.high_value)
                     if bin_range in g_buckets:
                         g_buckets[bin_range] += bucket.sample_count
                     else:
@@ -177,23 +171,21 @@ def accumulate_hists(
                 updated_bins = []
                 for gb in g_hist.bins:
                     bin_range = BinRange(gb.low_value, gb.high_value)
-                    updated_bins.append(
-                        Bin(round(gb.low_value, precision), round(gb.high_value, precision), g_buckets[bin_range])
-                    )
+                    updated_bins.append(Bin(gb.low_value, gb.high_value, g_buckets[bin_range]))
 
                 global_hists[ds_name][feature] = Histogram(g_hist.hist_type, updated_bins)
 
     return global_hists
 
 
-def get_means(sums: dict, counts: dict, precision: int) -> dict:
+def get_means(sums: dict, counts: dict) -> dict:
     means = {}
     for ds_name in sums:
         means[ds_name] = {}
         feature_sums = sums[ds_name]
         feature_counts = counts[ds_name]
         for feature in feature_sums:
-            means[ds_name][feature] = round(feature_sums[feature] / feature_counts[feature], precision)
+            means[ds_name][feature] = feature_sums[feature] / feature_counts[feature]
     return means
 
 

@@ -20,7 +20,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Histogram, MetricConfig
+from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, MetricConfig
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
@@ -182,7 +182,7 @@ class StatisticsController(Controller):
             abort_signal=abort_signal,
         )
 
-        self.global_metrics = get_global_stats(self.global_metrics, self.client_metrics, metric_task, self.precision)
+        self.global_metrics = get_global_stats(self.global_metrics, self.client_metrics, metric_task)
 
         self.log_info(fl_ctx, f"task {self.task_name} metrics_flow for {metric_task} flow end.")
 
@@ -260,16 +260,26 @@ class StatisticsController(Controller):
                                 feature_name
                             ]
 
+        precision = self.precision
         for metric in filtered_global_metrics:
             for ds in self.global_metrics[metric]:
                 global_dataset = f"{StC.GLOBAL}-{ds}"
                 for feature_name in self.global_metrics[metric][ds]:
                     if metric == StC.STATS_HISTOGRAM:
                         hist: Histogram = self.global_metrics[metric][ds][feature_name]
+                        buckets = []
+                        for bucket in hist.bins:
+                            buckets.append(
+                                Bin(
+                                    round(bucket.low_value, precision),
+                                    round(bucket.high_value, precision),
+                                    bucket.sample_count,
+                                )
+                            )
                         result[feature_name][metric][global_dataset] = hist.bins
                     else:
                         result[feature_name][metric].update(
-                            {global_dataset: self.global_metrics[metric][ds][feature_name]}
+                            {global_dataset: round(self.global_metrics[metric][ds][feature_name], precision)}
                         )
 
         return result
@@ -328,23 +338,37 @@ class StatisticsController(Controller):
         return self.result_callback_fns[metric_task]
 
     def _wait_for_all_results(
-        self, result_wait_timeout: int, request_client_size: int, client_metrics: dict, abort_signal=None
+        self, result_wait_timeout: int, requested_client_size: int, client_metrics: dict, abort_signal=None
     ) -> bool:
+        """
+            for each metric, we check if the number of requested clients (min_clients or all clients)
+            is available, if not, we wait until result_wait_timeout.
+            result_wait_timeout is reset for next metric. result_wait_timeout is per metrics, not overall
+            timeout for all results.
+        Args:
+            result_wait_timeout: timeout we have to wait for each metric. reset for each metric
+            requested_client_size: requested client size, usually min_clients or all clients
+            client_metrics: client specific metrics received so far
+            abort_signal:  abort signal
+
+        Returns:
+
+        """
 
         # record of each metric, number of clients processed
-        metric_client_sizes = {}
+        metric_client_received = {}
 
         # current metrics obtained so far (across all clients)
         metric_names = client_metrics.keys()
         for m in metric_names:
-            metric_client_sizes[m] = len(client_metrics[m].keys())
+            metric_client_received[m] = len(client_metrics[m].keys())
 
         timeout = result_wait_timeout
         sleep_time = 5
-        for m in metric_client_sizes:
-            if request_client_size > metric_client_sizes[m]:
+        for m in metric_client_received:
+            if requested_client_size > metric_client_received[m]:
                 t = 0
-                while t < timeout and request_client_size > metric_client_sizes[m]:
+                while t < timeout and requested_client_size > metric_client_received[m]:
 
                     if abort_signal and abort_signal.triggered:
                         return False
@@ -353,6 +377,6 @@ class StatisticsController(Controller):
                     time.sleep(sleep_time)
                     t += sleep_time
                     # check and update number of client processed for metric again
-                    metric_client_sizes[m] = len(client_metrics[m].keys())
+                    metric_client_received[m] = len(client_metrics[m].keys())
 
         return True

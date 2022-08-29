@@ -48,17 +48,6 @@ class StatisticsExecutor(Executor):
         """
 
         Args:
-            generator_id:
-            min_count:
-            min_random:
-            max_random:
-            max_bins_percent:
-            precision:
-        """
-
-        """
-
-        Args:
             generator_id:  Id of the statistics component
             min_count:     minimum of data records (or tabular data rows) that required in order to perform statistics calculation
                            this is part the data privacy policy.
@@ -84,7 +73,7 @@ class StatisticsExecutor(Executor):
                                 number of bins < max_bins_percent * local count
                                 todo: this argument will be move to local/privacy.json
 
-            precision: number of percision digts  
+            precision: number of percision digts
 
         """
 
