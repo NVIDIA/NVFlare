@@ -61,10 +61,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         if target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn,
-                                  topic=SysCommandTopic.SYS_INFO,
-                                  body="",
-                                  require_authz=True)
+            message = new_message(conn, topic=SysCommandTopic.SYS_INFO, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_replies(conn, replies)
             return

@@ -14,7 +14,7 @@
 
 from typing import Union
 
-from nvflare.apis.dxo import DataKind, MetaKey, DXO, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -35,9 +35,9 @@ class ConvertWeights(DXOFilter):
         Raises:
             ValueError: when the direction string is neither weights_to_diff nor diff_to_weights
         """
-        DXOFilter.__init__(self,
-                           supported_data_kinds=[DataKind.WEIGHT_DIFF, DataKind.WEIGHTS],
-                           data_kinds_to_filter=None)
+        DXOFilter.__init__(
+            self, supported_data_kinds=[DataKind.WEIGHT_DIFF, DataKind.WEIGHTS], data_kinds_to_filter=None
+        )
         if direction not in (self.WEIGHTS_TO_DIFF, self.DIFF_TO_WEIGHTS):
             raise ValueError(
                 f"invalid convert direction {direction}: must be in {(self.WEIGHTS_TO_DIFF, self.DIFF_TO_WEIGHTS)}"
@@ -48,8 +48,7 @@ class ConvertWeights(DXOFilter):
     def _get_base_weights(self, fl_ctx: FLContext):
         task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA, None)
         if not isinstance(task_data, Shareable):
-            self.log_error(fl_ctx,
-                           f"invalid task data: expect Shareable but got {type(task_data)}")
+            self.log_error(fl_ctx, f"invalid task data: expect Shareable but got {type(task_data)}")
             return None
 
         try:
@@ -59,14 +58,12 @@ class ConvertWeights(DXOFilter):
             return None
 
         if dxo.data_kind != DataKind.WEIGHTS:
-            self.log_info(fl_ctx,
-                          f"ignored task: expect data to be WEIGHTS but got {dxo.data_kind}")
+            self.log_info(fl_ctx, f"ignored task: expect data to be WEIGHTS but got {dxo.data_kind}")
             return None
 
         processed_algo = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM, None)
         if processed_algo:
-            self.log_info(fl_ctx,
-                          f"ignored task since its processed by {processed_algo}")
+            self.log_info(fl_ctx, f"ignored task since its processed by {processed_algo}")
             return None
 
         return dxo.data
@@ -88,14 +85,12 @@ class ConvertWeights(DXOFilter):
 
         processed_algo = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM, None)
         if processed_algo:
-            self.log_info(fl_ctx,
-                          f"cannot process task result since its processed by {processed_algo}")
+            self.log_info(fl_ctx, f"cannot process task result since its processed by {processed_algo}")
             return None
 
         if self.direction == self.WEIGHTS_TO_DIFF:
             if dxo.data_kind != DataKind.WEIGHTS:
-                self.log_warning(fl_ctx,
-                                 f"cannot process task result: expect WEIGHTS but got {dxo.data_kind}")
+                self.log_warning(fl_ctx, f"cannot process task result: expect WEIGHTS but got {dxo.data_kind}")
                 return None
 
             new_weights = dxo.data
@@ -106,10 +101,7 @@ class ConvertWeights(DXOFilter):
         else:
             # diff to weights
             if dxo.data_kind != DataKind.WEIGHT_DIFF:
-                self.log_warning(
-                    fl_ctx,
-                    f"cannot process task result: expect WEIGHT_DIFF but got {dxo.data_kind}"
-                )
+                self.log_warning(fl_ctx, f"cannot process task result: expect WEIGHT_DIFF but got {dxo.data_kind}")
                 return None
 
             new_weights = dxo.data

@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
 import time
+from typing import Union
 
 import numpy as np
 import tenseal as ts
 from tenseal.tensors.ckksvector import CKKSVector
 
 import nvflare.app_common.homomorphic_encryption.he_constant as he
-from nvflare.apis.dxo import DXO, MetaKey, DataKind
-from nvflare.apis.event_type import EventType
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
@@ -32,9 +32,7 @@ from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
 
 
 class HEModelDecryptor(DXOFilter):
-    def __init__(self,
-                 tenseal_context_file="client_context.tenseal",
-                 data_kinds: [str]=None):
+    def __init__(self, tenseal_context_file="client_context.tenseal", data_kinds: [str] = None):
         """Filter to decrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
@@ -45,9 +43,7 @@ class HEModelDecryptor(DXOFilter):
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF]
 
-        super().__init__(
-            supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF],
-            data_kinds_to_filter=data_kinds)
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
 
         self.logger.info("Using HE model decryptor.")
         self.tenseal_context = None

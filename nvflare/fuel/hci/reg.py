@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from typing import List
+
 from nvflare.fuel.hci.proto import ConfirmMethod
 
 
@@ -21,17 +22,17 @@ class CommandSpec(object):
     valid_confirms = ["none", ConfirmMethod.YESNO, ConfirmMethod.AUTH]
 
     def __init__(
-            self,
-            name: str,
-            description: str,
-            usage: str,
-            handler_func,
-            authz_func=None,
-            visible=True,
-            confirm=None,
-            client_cmd=None,
-            enabled=True,
-            scope_name=''
+        self,
+        name: str,
+        description: str,
+        usage: str,
+        handler_func,
+        authz_func=None,
+        visible=True,
+        confirm=None,
+        client_cmd=None,
+        enabled=True,
+        scope_name="",
     ):
         """Specification of a command within a CommandModuleSpec to register into CommandRegister as a CommandEntry.
 
@@ -62,7 +63,7 @@ class CommandSpec(object):
 
 
 class CommandModuleSpec(object):
-    def __init__(self, name: str, cmd_specs: List[CommandSpec], conn_props: dict=None):
+    def __init__(self, name: str, cmd_specs: List[CommandSpec], conn_props: dict = None):
         """Specification for a command module containing a list of commands in the form of CommandSpec.
 
         Args:
@@ -89,16 +90,7 @@ class CommandModule(object):
 
 
 class CommandEntry(object):
-    def __init__(self,
-                 scope,
-                 name,
-                 desc,
-                 usage,
-                 handler,
-                 authz_func,
-                 visible,
-                 confirm,
-                 client_cmd):
+    def __init__(self, scope, name, desc, usage, handler, authz_func, visible, confirm, client_cmd):
         """Contains information about a command. This is registered in Scope within CommandRegister.
 
         Args:
@@ -136,19 +128,10 @@ class _Scope(object):
         self.entries = {}
 
     def register_command(
-            self,
-            cmd_name: str,
-            cmd_desc: str,
-            cmd_usage: str,
-            handler_func,
-            authz_func,
-            visible,
-            confirm,
-            client_cmd
+        self, cmd_name: str, cmd_desc: str, cmd_usage: str, handler_func, authz_func, visible, confirm, client_cmd
     ):
         self.entries[cmd_name] = CommandEntry(
-            self, cmd_name, cmd_desc, cmd_usage, handler_func, authz_func,
-            visible, confirm, client_cmd
+            self, cmd_name, cmd_desc, cmd_usage, handler_func, authz_func, visible, confirm, client_cmd
         )
 
 
@@ -194,7 +177,7 @@ class CommandRegister(object):
                     authz_func=cmd_spec.authz_func,
                     visible=cmd_spec.visible,
                     confirm=cmd_spec.confirm,
-                    client_cmd=cmd_spec.client_cmd
+                    client_cmd=cmd_spec.client_cmd,
                 )
 
         conn_props = module_spec.conn_props
@@ -206,17 +189,19 @@ class CommandRegister(object):
         module_spec = module.get_spec()
         self.register_module_spec(module_spec, include_invisible)
 
-    def add_command(self,
-                    scope_name,
-                    cmd_name,
-                    desc,
-                    usage,
-                    handler,
-                    authz_func,
-                    visible,
-                    confirm,
-                    client_cmd=None,
-                    map_client_cmd=False):
+    def add_command(
+        self,
+        scope_name,
+        cmd_name,
+        desc,
+        usage,
+        handler,
+        authz_func,
+        visible,
+        confirm,
+        client_cmd=None,
+        map_client_cmd=False,
+    ):
 
         if client_cmd and map_client_cmd:
             self.mapped_cmds.append(
@@ -228,7 +213,7 @@ class CommandRegister(object):
                     confirm=confirm,
                     visible=visible,
                     handler_func=None,
-                    client_cmd=client_cmd
+                    client_cmd=client_cmd,
                 )
             )
             return
@@ -242,7 +227,7 @@ class CommandRegister(object):
             authz_func=authz_func,
             visible=visible,
             confirm=confirm,
-            client_cmd=client_cmd
+            client_cmd=client_cmd,
         )
 
     def _add_cmd_entry(self, cmd_name, entry):

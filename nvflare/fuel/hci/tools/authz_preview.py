@@ -18,7 +18,7 @@ import json
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.sec.authz import Person, Policy, AuthzContext, parse_policy_config
+from nvflare.fuel.sec.authz import AuthzContext, Person, Policy, parse_policy_config
 from nvflare.security.security import COMMAND_CATEGORIES
 
 
@@ -76,16 +76,17 @@ class Commander(cmd.Cmd):
         self.write_table(table)
 
     def _parse_person(self, spec: str):
-        parts = spec.split(':')
+        parts = spec.split(":")
         if len(parts) != 3:
-            return 'must be like name:org:role'
+            return "must be like name:org:role"
         return Person(parts[0], parts[1], parts[2])
 
     def do_eval_right(self, arg):
         args = ["eval_right"] + self._split_to_args(arg)
         if len(args) < 4:
             self.write_string(
-                "Usage: {} site_org right_name user_name:org:role [submitter_name:org:role]".format(args[0]))
+                "Usage: {} site_org right_name user_name:org:role [submitter_name:org:role]".format(args[0])
+            )
             return
 
         site_org = args[1]
@@ -99,7 +100,7 @@ class Commander(cmd.Cmd):
         parsed = self._parse_person(user_spec)
         if isinstance(parsed, str):
             # error
-            return self.write_error('bad user spec: ' + parsed)
+            return self.write_error("bad user spec: " + parsed)
         user = parsed
 
         submitter = None
@@ -107,21 +108,16 @@ class Commander(cmd.Cmd):
             parsed = self._parse_person(submitter_spec)
             if isinstance(parsed, str):
                 # error
-                return self.write_error('bad submitter spec: ' + parsed)
+                return self.write_error("bad submitter spec: " + parsed)
             submitter = parsed
 
         result, err = self.policy.evaluate(
-            site_org=site_org,
-            ctx=AuthzContext(
-                right=right_name,
-                user=user,
-                submitter=submitter
-            )
+            site_org=site_org, ctx=AuthzContext(right=right_name, user=user, submitter=submitter)
         )
         if err:
             self.write_error(err)
         elif result is None:
-            self.write_string('undetermined')
+            self.write_string("undetermined")
         else:
             self.write_string(str(result))
 

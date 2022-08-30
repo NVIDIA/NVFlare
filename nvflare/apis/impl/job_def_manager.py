@@ -225,6 +225,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
         for jid_path in jid_paths:
             jid = pathlib.PurePath(jid_path).name
+
             meta = store.get_meta(self.job_uri(jid))
             if meta:
                 ok = job_filter.filter_job(meta)

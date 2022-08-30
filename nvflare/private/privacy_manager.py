@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union, List
+from typing import List, Union
 
-from nvflare.apis.filter import Filter, FilterContextKey, FilterSource, FilterChainType
+from nvflare.apis.filter import Filter, FilterChainType, FilterContextKey, FilterSource
 
 
 class Scope(object):
-
     def __init__(self):
         self.name = ""
         self.props = {}
@@ -51,12 +50,8 @@ class Scope(object):
 
 
 class PrivacyManager(object):
-
     def __init__(
-            self,
-            scopes: Union[None, List[Scope]],
-            default_scope_name: Union[None, str],
-            components: Union[None, dict]
+        self, scopes: Union[None, List[Scope]], default_scope_name: Union[None, str], components: Union[None, dict]
     ):
         self.name_to_scopes = {}
         self.default_scope = None

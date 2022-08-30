@@ -25,11 +25,11 @@ from nvflare.fuel.hci.base64_utils import (
     text_file_to_b64str,
 )
 from nvflare.fuel.hci.cmd_arg_utils import join_args
-from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec, CommandEntry
+from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 
-from .api_spec import ReplyProcessor, CommandContext
+from .api_spec import CommandContext, ReplyProcessor
 from .api_status import APIStatus
 
 
@@ -206,14 +206,14 @@ class FileTransferModule(CommandModule):
                     description="Submit application to the server",
                     usage="submit_job job_folder",
                     handler_func=self.upload_folder,
-                    visible=False
+                    visible=False,
                 ),
                 CommandSpec(
                     name="download_folder",
                     description="download job contents from the server",
                     usage="download_job job_id",
                     handler_func=self.download_folder,
-                    visible=False
+                    visible=False,
                 ),
                 CommandSpec(
                     name="info",
@@ -234,13 +234,13 @@ class FileTransferModule(CommandModule):
         Returns:
 
         """
-        #print('generating cmd module for {}'.format(server_cmd_spec.client_cmd))
+        # print('generating cmd module for {}'.format(server_cmd_spec.client_cmd))
         if not server_cmd_spec.client_cmd:
             return None
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            #print('no cmd handler found for {}'.format(server_cmd_spec.client_cmd))
+            # print('no cmd handler found for {}'.format(server_cmd_spec.client_cmd))
             return None
 
         return CommandModuleSpec(
@@ -253,7 +253,8 @@ class FileTransferModule(CommandModule):
                     handler_func=handler,
                     visible=True,
                 )
-            ])
+            ],
+        )
 
     def upload_file(self, args, ctx: CommandContext, cmd_name, file_to_str_func):
         full_cmd_name = _server_cmd_name(cmd_name)
@@ -306,8 +307,7 @@ class FileTransferModule(CommandModule):
         cmd_entry = ctx.get_command_entry()
         assert isinstance(cmd_entry, CommandEntry)
         if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX,
-                    "details": "usage: {}".format(cmd_entry.usage)}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
 
         folder_name = args[1]
         if folder_name.endswith("/"):
@@ -332,8 +332,7 @@ class FileTransferModule(CommandModule):
         assert isinstance(cmd_entry, CommandEntry)
 
         if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX,
-                    "details": "usage: {}".format(cmd_entry.usage)}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
         job_id = args[1]
         parts = [cmd_entry.full_command_name(), job_id]
         command = join_args(parts)
@@ -344,7 +343,4 @@ class FileTransferModule(CommandModule):
     def info(self, args, ctx: CommandContext):
         msg = f"Local Upload Source: {self.upload_dir}\n"
         msg += f"Local Download Destination: {self.download_dir}\n"
-        return {
-            "status": "ok",
-            "details": msg
-        }
+        return {"status": "ok", "details": msg}

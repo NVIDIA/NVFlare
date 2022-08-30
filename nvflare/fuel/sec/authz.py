@@ -14,16 +14,14 @@
 
 import time
 
-
-_KEY_PERMISSIONS = 'permissions'
-_KEY_FORMAT_VERSION = 'format_version'
-_TARGET_SITE = 'site'
-_TARGET_SUBMITTER = 'submitter'
-_ANY_RIGHT = '*'
+_KEY_PERMISSIONS = "permissions"
+_KEY_FORMAT_VERSION = "format_version"
+_TARGET_SITE = "site"
+_TARGET_SUBMITTER = "submitter"
+_ANY_RIGHT = "*"
 
 
 class Person(object):
-
     def __init__(self, name: str, org: str, role):
         self.name = _normalize_str(name)
         self.org = _normalize_str(org)
@@ -32,30 +30,28 @@ class Person(object):
             self.roles.append(_normalize_str(role))
         elif isinstance(role, list):
             if len(role) <= 0:
-                raise TypeError('roles not specified - it must be a list of strings')
+                raise TypeError("roles not specified - it must be a list of strings")
 
             for r in role:
                 if not isinstance(r, str):
-                    raise TypeError(f'role value must be a str but got {type(r)}')
+                    raise TypeError(f"role value must be a str but got {type(r)}")
                 self.roles.append(_normalize_str(r))
         else:
-            raise TypeError(f'role must be a str or list of str but got {type(role)}')
+            raise TypeError(f"role must be a str or list of str but got {type(role)}")
 
     def __str__(self):
         return f"{self.name}:{self.org}:{self.roles[0]}"
 
 
 class AuthzContext(object):
-
-    def __init__(self, right: str, user: Person, submitter: Person=None):
-        """Base class to contain context data for authorization.
-        """
+    def __init__(self, right: str, user: Person, submitter: Person = None):
+        """Base class to contain context data for authorization."""
         self.right = right
         self.user = user
         self.submitter = submitter
         self.attrs = {}
         if not submitter:
-            self.submitter = Person('', '', '')
+            self.submitter = Person("", "", "")
 
     def set_attr(self, key: str, value):
         self.attrs[key] = value
@@ -65,13 +61,11 @@ class AuthzContext(object):
 
 
 class ConditionEvaluator(object):
-
     def evaluate(self, site_org: str, ctx: AuthzContext) -> bool:
         pass
 
 
 class UserOrgEvaluator(ConditionEvaluator):
-
     def __init__(self, target):
         self.target = target
 
@@ -85,7 +79,6 @@ class UserOrgEvaluator(ConditionEvaluator):
 
 
 class UserNameEvaluator(ConditionEvaluator):
-
     def __init__(self, target: str):
         self.target = target
 
@@ -97,19 +90,16 @@ class UserNameEvaluator(ConditionEvaluator):
 
 
 class TrueEvaluator(ConditionEvaluator):
-
     def evaluate(self, site_org: str, ctx: AuthzContext) -> bool:
         return True
 
 
 class FalseEvaluator(ConditionEvaluator):
-
     def evaluate(self, site_org: str, ctx: AuthzContext) -> bool:
         return False
 
 
 class _RoleRightConditions(object):
-
     def __init__(self):
         self.allowed_conditions = []
         self.blocked_conditions = []
@@ -150,23 +140,23 @@ class _RoleRightConditions(object):
         v = _normalize_str(exp)
         blocked = False
         parts = v.split()
-        if len(parts) == 2 and parts[0] == 'not':
+        if len(parts) == 2 and parts[0] == "not":
             blocked = True
             v = parts[1]
 
-        if v in ['all', 'any']:
+        if v in ["all", "any"]:
             ev = TrueEvaluator()
-        elif v in ['none', 'no']:
+        elif v in ["none", "no"]:
             ev = FalseEvaluator()
         else:
-            parts = v.split(':')
+            parts = v.split(":")
             if len(parts) == 2:
                 target_type = _normalize_str(parts[0])
                 target_value = _normalize_str(parts[1])
 
-                if target_type in ['o', 'org']:
+                if target_type in ["o", "org"]:
                     ev = UserOrgEvaluator(target_value)
-                elif target_type in ['n', 'name']:
+                elif target_type in ["n", "name"]:
                     ev = UserNameEvaluator(target_value)
                 else:
                     return f'bad condition expression "{exp}": invalid type "{target_type}"'
@@ -212,13 +202,7 @@ class _RoleRightConditions(object):
 
 
 class Policy(object):
-
-    def __init__(self,
-                 config: dict,
-                 role_right_map: dict,
-                 roles: list,
-                 rights: list,
-                 role_rights: dict):
+    def __init__(self, config: dict, role_right_map: dict, roles: list, rights: list, role_rights: dict):
         self.config = config
         self.role_right_map = role_right_map
         self.roles = roles
@@ -233,11 +217,7 @@ class Policy(object):
     def get_roles(self):
         return self.roles
 
-    def _eval_for_role(
-            self,
-            role: str,
-            site_org: str,
-            ctx: AuthzContext):
+    def _eval_for_role(self, role: str, site_org: str, ctx: AuthzContext):
         conds = self.role_right_map.get(_role_right_key(role, _ANY_RIGHT))
         if not conds:
             conds = self.role_right_map.get(_role_right_key(role, ctx.right))
@@ -248,10 +228,7 @@ class Policy(object):
         assert isinstance(conds, _RoleRightConditions)
         return conds.evaluate(site_org, ctx)
 
-    def evaluate(
-            self,
-            site_org: str,
-            ctx: AuthzContext):
+    def evaluate(self, site_org: str, ctx: AuthzContext):
         """
 
         Args:
@@ -264,11 +241,7 @@ class Policy(object):
         """
         site_org = _normalize_str(site_org)
         for role in ctx.user.roles:
-            permitted = self._eval_for_role(
-                role=role,
-                site_org=site_org,
-                ctx=ctx
-            )
+            permitted = self._eval_for_role(role=role, site_org=site_org, ctx=ctx)
             if permitted:
                 # permitted if any role is okay
                 return True, ""
@@ -276,7 +249,7 @@ class Policy(object):
 
 
 def _normalize_str(s: str) -> str:
-    return ' '.join(s.lower().split())
+    return " ".join(s.lower().split())
 
 
 def _role_right_key(role_name: str, right_name: str):
@@ -337,7 +310,7 @@ def parse_policy_config(config: dict, right_categories: dict):
     # permissions is a dict of role => rights;
     for role_name, right_conf in permissions.items():
         if not isinstance(role_name, str):
-            return None, f'bad role name: expect a str but got {type(role_name)}'
+            return None, f"bad role name: expect a str but got {type(role_name)}"
 
         role_name = _normalize_str(role_name)
         roles.append(role_name)
@@ -353,12 +326,12 @@ def parse_policy_config(config: dict, right_categories: dict):
             continue
 
         if not isinstance(right_conf, dict):
-            return None, f'bad right config: expect a dict but got {type(right_conf)}'
+            return None, f"bad right config: expect a dict but got {type(right_conf)}"
 
         # process right categories
         for right, exp in right_conf.items():
             if not isinstance(right, str):
-                return None, f'bad right name: expect a str but got {type(right)}'
+                return None, f"bad right name: expect a str but got {type(right)}"
 
             right = _normalize_str(right)
 
@@ -396,16 +369,11 @@ def parse_policy_config(config: dict, right_categories: dict):
             # this may cause the same right to be overwritten in the map
             _add_role_right_conds(role_name, right, conds, role_right_map, rights, right_conds)
 
-    return Policy(
-        config=config,
-        role_right_map=role_right_map,
-        role_rights=role_rights,
-        roles=roles,
-        rights=rights), ""
+    return Policy(config=config, role_right_map=role_right_map, role_rights=role_rights, roles=roles, rights=rights), ""
 
 
 class Authorizer(object):
-    def __init__(self, site_org: str, right_categories: dict=None):
+    def __init__(self, site_org: str, right_categories: dict = None):
         """Base class containing the authorization policy."""
         self.site_org = _normalize_str(site_org)
         self.right_categories = right_categories
@@ -421,7 +389,7 @@ class Authorizer(object):
 
         assert isinstance(ctx, AuthzContext), f"ctx must be AuthzContext but got {type(ctx)}"
         assert isinstance(ctx.user, Person), "program error: no user in ctx!"
-        if 'super' in ctx.user.roles:
+        if "super" in ctx.user.roles:
             # use this for testing purpose
             return True, ""
 
@@ -457,8 +425,7 @@ class AuthorizationService(object):
 
     @staticmethod
     def initialize(authorizer: Authorizer) -> (Authorizer, str):
-        assert isinstance(authorizer, Authorizer), \
-            "authorizer must be Authorizer but got {}".format(type(authorizer))
+        assert isinstance(authorizer, Authorizer), "authorizer must be Authorizer but got {}".format(type(authorizer))
 
         if not AuthorizationService.the_authorizer:
             # authorizer is not loaded
@@ -476,4 +443,3 @@ class AuthorizationService(object):
             # no authorizer - assume that authorization is not required
             return True, ""
         return AuthorizationService.the_authorizer.authorize(ctx)
-

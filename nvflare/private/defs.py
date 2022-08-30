@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.fuel.hci.server.constants import ConnProps
 
 
 class SpecialTaskName(object):

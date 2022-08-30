@@ -12,42 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import shutil
-import traceback
-
 import datetime
 import io
 import json
 import logging
+import os
+import shutil
+import traceback
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.fuel.hci.base64_utils import (
-    b64str_to_bytes,
-    bytes_to_b64str,
-)
-
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.apis.utils.common_utils import get_size
-from nvflare.apis.job_def import Job, JobMetaKey, JobDataKey
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
+from nvflare.apis.utils.common_utils import get_size
+from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.proto import ConfirmMethod
+from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
+from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
-from nvflare.private.fed.server.server_engine import ServerEngine
-
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
-from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
-
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
-from nvflare.fuel.hci.proto import ConfirmMethod
-
+from nvflare.private.fed.server.server_engine import ServerEngine
+from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 
 from .cmd_utils import CommandUtil
 
@@ -55,7 +47,7 @@ META_FILE = "meta.json"
 MAX_DOWNLOAD_JOB_SIZE = 50 * 1024 * 1024 * 1204
 
 
-class JobCommandModule(CommandUtil):
+class JobCommandModule(CommandModule, CommandUtil):
     """Command module with commands for job management."""
 
     def __init__(self):
@@ -87,7 +79,7 @@ class JobCommandModule(CommandUtil):
                     description="list submitted jobs",
                     usage="list_jobs [-n name_prefix] [-d] [job_id_prefix]",
                     handler_func=self.list_jobs,
-                    authz_func=self.command_authz_required
+                    authz_func=self.command_authz_required,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.DELETE_JOB,
@@ -95,7 +87,7 @@ class JobCommandModule(CommandUtil):
                     usage="delete_job job_id",
                     handler_func=self.delete_job,
                     authz_func=self.authorize_job,
-                    confirm=ConfirmMethod.AUTH
+                    confirm=ConfirmMethod.AUTH,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.ABORT_JOB,
@@ -103,14 +95,14 @@ class JobCommandModule(CommandUtil):
                     usage="abort_job job_id",
                     handler_func=self.abort_job,  # see if running, if running, send abort command
                     authz_func=self.authorize_job,
-                    confirm=ConfirmMethod.YESNO
+                    confirm=ConfirmMethod.YESNO,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.ABORT_TASK,
                     description="abort the client current task execution",
                     usage="abort_task job_id <client-name>",
                     handler_func=self.abort_task,
-                    authz_func=self.authorize_job,
+                    authz_func=self.authorize_abort_client_operation,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CLONE_JOB,
@@ -125,7 +117,7 @@ class JobCommandModule(CommandUtil):
                     usage="submit_job job_folder",
                     handler_func=self.submit_job,
                     authz_func=self.command_authz_required,
-                    client_cmd=ftd.UPLOAD_FOLDER_FQN
+                    client_cmd=ftd.UPLOAD_FOLDER_FQN,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB,
@@ -133,9 +125,9 @@ class JobCommandModule(CommandUtil):
                     usage="download_job job_id",
                     handler_func=self.download_job,
                     authz_func=self.authorize_job,
-                    client_cmd=ftd.DOWNLOAD_FOLDER_FQN
+                    client_cmd=ftd.DOWNLOAD_FOLDER_FQN,
                 ),
-            ]
+            ],
         )
 
     def authorize_job(self, conn: Connection, args: List[str]):
@@ -175,10 +167,7 @@ class JobCommandModule(CommandUtil):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         job_id = conn.get_prop(self.JOB_ID)
-        message = new_message(conn,
-                              topic=TrainingTopic.ABORT_TASK,
-                              body="",
-                              require_authz=False)
+        message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="", require_authz=False)
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         replies = self.send_request_to_clients(conn, message)
         return self.process_replies_to_table(conn, replies)
@@ -201,10 +190,7 @@ class JobCommandModule(CommandUtil):
             conn.append_error(err)
             return False
 
-        message = new_message(conn,
-                              topic=TrainingTopic.START,
-                              body="",
-                              require_authz=False)
+        message = new_message(conn, topic=TrainingTopic.START, body="", require_authz=False)
         message.set_header(RequestHeader.JOB_ID, job_id)
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
@@ -250,10 +236,7 @@ class JobCommandModule(CommandUtil):
             return
 
         # ask clients to delete this RUN
-        message = new_message(conn,
-                              topic=TrainingTopic.DELETE_RUN,
-                              body="",
-                              require_authz=False)
+        message = new_message(conn, topic=TrainingTopic.DELETE_RUN, body="", require_authz=False)
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         clients = engine.get_clients()
         if clients:
@@ -428,9 +411,9 @@ class JobCommandModule(CommandUtil):
                     )
 
                 # set submitter info
-                meta[JobMetaKey.SUBMITTER_NAME] = conn.get_prop(ConnProps.USER_NAME, '')
-                meta[JobMetaKey.SUBMITTER_ORG] = conn.get_prop(ConnProps.USER_ORG, '')
-                meta[JobMetaKey.SUBMITTER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, '')
+                meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME, "")
+                meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG, "")
+                meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
 
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
                 conn.append_string("Submitted job: {}".format(meta.get(JobMetaKey.JOB_ID)))
@@ -476,7 +459,7 @@ class JobCommandModule(CommandUtil):
                     conn.append_string(ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id)
                     return
 
-                self._unzip_data(job_data, download_dir, job_id)
+                self._unzip_data(download_dir, job_data, job_id)
         except Exception as e:
             conn.append_error("Exception occurred trying to get job from store: " + str(e))
             return

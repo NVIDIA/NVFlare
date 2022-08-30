@@ -21,6 +21,7 @@ import os
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
@@ -28,12 +29,10 @@ from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_priv
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.server.server_runner import ServerRunnerConfig
-from nvflare.private.privacy_manager import PrivacyService
-
+from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
-from nvflare.fuel.sec.audit import AuditService
+from nvflare.private.privacy_manager import PrivacyService
 
 
 def main():
@@ -65,11 +64,7 @@ def main():
     args.log_config = None
     args.snapshot = kv_list.get("restore_snapshot")
 
-    workspace = Workspace(root_dir=args.workspace, site_name='server')
-    log_file = workspace.get_app_log_file_path(args.job_id)
-    add_logfile_handler(log_file)
-    logger = logging.getLogger("runner_process")
-    logger.info("Runner_process started.")
+    workspace = Workspace(root_dir=args.workspace, site_name="server")
 
     command_agent = None
     try:
@@ -84,6 +79,11 @@ def main():
             workspace=workspace,
             kv_list=args.set,
         )
+        log_file = workspace.get_app_log_file_path(args.job_id)
+        add_logfile_handler(log_file)
+        logger = logging.getLogger("runner_process")
+        logger.info("Runner_process started.")
+
         log_level = os.environ.get("FL_LOG_LEVEL", "")
         numeric_level = getattr(logging, log_level.upper(), None)
         if isinstance(numeric_level, int):
@@ -93,6 +93,7 @@ def main():
             logger.warning("loglevel warn enabled")
             logger.error("loglevel error enabled")
             logger.critical("loglevel critical enabled")
+
         conf.configure()
 
         deployer = conf.deployer

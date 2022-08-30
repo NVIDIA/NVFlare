@@ -26,16 +26,16 @@ from multiprocessing.connection import Client, Listener
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.workspace import Workspace
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
+from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging
 from nvflare.private.privacy_manager import PrivacyService
-from nvflare.fuel.sec.audit import AuditService
-from nvflare.private.fed.app.fl_conf import create_privacy_manager
 
 
 class EventRelayer(FLComponent):

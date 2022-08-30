@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.private.defs import ClientStatusKey, TrainingTopic, ScopeInfoKey
+from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info
@@ -32,7 +32,6 @@ from .server_engine import ServerEngine
 
 
 class TrainingCommandModule(CommandModule, CommandUtil):
-
     def __init__(self):
         """A class for training commands."""
         super().__init__()
@@ -42,7 +41,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         return CommandModuleSpec(
             name="training",
             cmd_specs=[
-
                 CommandSpec(
                     name=AdminCommandNames.CHECK_STATUS,
                     description="check status of the FL server/client",
@@ -56,7 +54,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     description="remove a FL client",
                     usage="remove_client <client-name>",
                     handler_func=self.remove_client,
-                    authz_func=self.command_authz_required,
+                    authz_func=self.authorize_client_operation,
                     visible=True,
                     confirm=ConfirmMethod.AUTH,
                 ),
@@ -111,10 +109,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def _shutdown_app_on_clients(self, conn: Connection) -> bool:
         engine = conn.app_ctx
-        message = new_message(conn,
-                              topic=TrainingTopic.SHUTDOWN,
-                              body="",
-                              require_authz=True)
+        message = new_message(conn, topic=TrainingTopic.SHUTDOWN, body="", require_authz=True)
         clients = conn.get_prop(self.TARGET_CLIENT_TOKENS, None)
         if not clients:
             conn.append_error("no clients to shutdown")
@@ -178,9 +173,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        engine.remove_clients(clients)
         message = new_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
+        engine.remove_clients(clients)
         return self._process_replies_to_string(conn, replies)
 
     def restart(self, conn: Connection, args: List[str]):

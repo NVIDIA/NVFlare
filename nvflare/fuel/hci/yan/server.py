@@ -1,41 +1,38 @@
-import nvflare.fuel.hci.file_transfer_defs as ftd
+import argparse
+import json
+import os
+import shutil
+import time
+import traceback
 
-from nvflare.fuel.hci.base64_utils import (
-    bytes_to_b64str,
-    b64str_to_bytes,
-)
+import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.fuel.hci.server.hci import AdminServer
-from nvflare.fuel.hci.server.authz import AuthzFilter, PreAuthzReturnCode
-from nvflare.fuel.sec.authz import Authorizer, AuthorizationService
-from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
-from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.security import hash_password
-
-
-import os, shutil, traceback, time, json
-import argparse
-
+from nvflare.fuel.hci.server.authz import AuthzFilter, PreAuthzReturnCode
+from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
+from nvflare.fuel.hci.server.hci import AdminServer
+from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
+from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.sec.authz import AuthorizationService, Authorizer
 
 CMD_CATS = {
-    'add': 'math',
-    'sub': 'math',
-    'upload_job': 'job',
-    'download_job': 'job',
-    'ls': 'shell',
-    'cat': 'shell',
-    'tail': 'shell',
-    'head': 'shell',
-    'grep': 'shell',
-    'stop': 'op'
+    "add": "math",
+    "sub": "math",
+    "upload_job": "job",
+    "download_job": "job",
+    "ls": "shell",
+    "cat": "shell",
+    "tail": "shell",
+    "head": "shell",
+    "grep": "shell",
+    "stop": "op",
 }
 
 
 class MyAuthorizer(Authorizer):
-
     def __init__(self, site_org, policy_file_path: str):
         policy_config = json.load(open(policy_file_path, "rt"))
         Authorizer.__init__(self, site_org=site_org, right_categories=CMD_CATS)
@@ -43,62 +40,61 @@ class MyAuthorizer(Authorizer):
 
 
 class CmdModule(CommandModule):
-
     def get_spec(self):
         return CommandModuleSpec(
-            name='cmds',
+            name="cmds",
             cmd_specs=[
                 CommandSpec(
-                    name='add',
-                    description='add two numbers',
-                    usage='add x y',
+                    name="add",
+                    description="add two numbers",
+                    usage="add x y",
                     handler_func=self.handle_add,
-                    authz_func=self.authorize_cmd
+                    authz_func=self.authorize_cmd,
                 ),
                 CommandSpec(
-                    name='sub',
-                    description='sub two numbers',
-                    usage='add x y',
+                    name="sub",
+                    description="sub two numbers",
+                    usage="add x y",
                     handler_func=self.handle_sub,
-                    authz_func=self.authorize_cmd
+                    authz_func=self.authorize_cmd,
                 ),
                 CommandSpec(
-                    name='upload_job',
-                    description='upload a job folder',
-                    usage='upload_job folder',
+                    name="upload_job",
+                    description="upload a job folder",
+                    usage="upload_job folder",
                     handler_func=self.handle_upload,
                     authz_func=self.authorize_cmd,
                     client_cmd=ftd.UPLOAD_FOLDER_FQN,
-                    visible=True
+                    visible=True,
                 ),
                 CommandSpec(
-                    name='download_job',
-                    description='download a job',
-                    usage='download_job job_id',
+                    name="download_job",
+                    description="download a job",
+                    usage="download_job job_id",
                     handler_func=self.handle_download,
                     authz_func=self.authorize_cmd,
                     visible=True,
-                    client_cmd=ftd.DOWNLOAD_FOLDER_FQN
+                    client_cmd=ftd.DOWNLOAD_FOLDER_FQN,
                 ),
                 CommandSpec(
-                    name='stop',
-                    description='stop system',
-                    usage='stop',
+                    name="stop",
+                    description="stop system",
+                    usage="stop",
                     handler_func=self.handle_stop,
                     authz_func=self.authorize_cmd,
-                    confirm=ConfirmMethod.AUTH
-                )
-            ]
+                    confirm=ConfirmMethod.AUTH,
+                ),
+            ],
         )
 
     def authorize_cmd(self, conn: Connection, args: [str]):
-        print('called to authorize cmd {}'.format(args[0]))
+        print("called to authorize cmd {}".format(args[0]))
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
     def handle_stop(self, conn: Connection, args: [str]):
         ctx = conn.app_ctx
-        ctx['stop'] = True
-        conn.append_shutdown('Have a nice day!')
+        ctx["stop"] = True
+        conn.append_shutdown("Have a nice day!")
 
     def handle_add(self, conn: Connection, args: [str]):
         if len(args) != 3:
@@ -129,7 +125,7 @@ class CmdModule(CommandModule):
     def handle_upload(self, conn: Connection, args: [str]):
         folder_name = args[1]
         zip_b64str = args[2]
-        upload_dir = conn.get_prop('upload_dir')
+        upload_dir = conn.get_prop("upload_dir")
         folder_path = os.path.join(upload_dir, folder_name)
         if os.path.exists(folder_path):
             shutil.rmtree(folder_path)
@@ -139,7 +135,7 @@ class CmdModule(CommandModule):
 
     def handle_download(self, conn: Connection, args: [str]):
         job_id = args[1]
-        download_dir = conn.get_prop('download_dir')
+        download_dir = conn.get_prop("download_dir")
         try:
             data = zip_directory_to_bytes(download_dir, job_id)
             b64str = bytes_to_b64str(data)
@@ -154,17 +150,13 @@ class CmdModule(CommandModule):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", "-p", type=int, help="port number", required=True)
-    parser.add_argument("--ssl", "-s", action='store_true', help="ssl or not")
+    parser.add_argument("--ssl", "-s", action="store_true", help="ssl or not")
 
     args = parser.parse_args()
 
-    ctx = {'stop': False}
+    ctx = {"stop": False}
     cmd_reg = new_command_register_with_builtin_module(app_ctx=ctx)
-    authenticator = SimpleAuthenticator(
-        users={
-            "admin": hash_password('admin')
-        }
-    )
+    authenticator = SimpleAuthenticator(users={"admin": hash_password("admin")})
     session_mgr = SessionManager(idle_timeout=1000)
     login_module = LoginModule(authenticator, session_mgr)
     cmd_reg.register_module(login_module)
@@ -176,24 +168,25 @@ def main():
 
     AuthorizationService.initialize(
         MyAuthorizer(
-            site_org='nv',
-            policy_file_path='/Users/yanc/flarehub/NVFlare/nvflare/fuel/hci/yan/authz_policy.json'
-        ))
+            site_org="nv", policy_file_path="/Users/yanc/flarehub/NVFlare/nvflare/fuel/hci/yan/authz_policy.json"
+        )
+    )
 
     p = args.port
     ca_cert = "/Users/yanc/certs/rootCA.pem"
     if not args.ssl:
         ca_cert = None
 
-    server = AdminServer(cmd_reg, 'localhost', p,
-                         ca_cert=ca_cert,
-                         server_cert="/Users/yanc/certs/server.crt",
-                         server_key="/Users/yanc/certs/server.key",
-                         accepted_client_cns=['admin'],
-                         extra_conn_props={
-                             'upload_dir': '/Users/yanc/dlmed/server_up',
-                             'download_dir': '/Users/yanc/dlmed/server_down'
-                         })
+    server = AdminServer(
+        cmd_reg,
+        "localhost",
+        p,
+        ca_cert=ca_cert,
+        server_cert="/Users/yanc/certs/server.crt",
+        server_key="/Users/yanc/certs/server.key",
+        accepted_client_cns=["admin"],
+        extra_conn_props={"upload_dir": "/Users/yanc/dlmed/server_up", "download_dir": "/Users/yanc/dlmed/server_down"},
+    )
 
     server.start()
     if args.ssl:
@@ -201,7 +194,7 @@ def main():
     else:
         print(f"Started Admin Server on Port {p} without SSL")
 
-    while not ctx['stop']:
+    while not ctx["stop"]:
         time.sleep(0.5)
 
     server.stop()
@@ -209,5 +202,5 @@ def main():
     print("Server Stopped")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.sec.authz import Authorizer, AuthzContext
 from nvflare.apis.fl_constant import AdminCommandNames as AC
+from nvflare.fuel.sec.authz import Authorizer, AuthzContext
 
 
 class CommandCategory(object):
@@ -31,21 +31,18 @@ COMMAND_CATEGORIES = {
     AC.START_APP: CommandCategory.MANAGE_JOB,
     AC.DELETE_JOB: CommandCategory.MANAGE_JOB,
     AC.DELETE_WORKSPACE: CommandCategory.MANAGE_JOB,
-
     AC.CHECK_STATUS: CommandCategory.VIEW,
     AC.SHOW_SCOPES: CommandCategory.VIEW,
     AC.SHOW_STATS: CommandCategory.VIEW,
     AC.RESET_ERRORS: CommandCategory.VIEW,
     AC.SHOW_ERRORS: CommandCategory.VIEW,
     AC.LIST_JOBS: CommandCategory.VIEW,
-
     AC.SYS_INFO: CommandCategory.OPERATE,
     AC.RESTART: CommandCategory.OPERATE,
     AC.SHUTDOWN: CommandCategory.OPERATE,
     AC.REMOVE_CLIENT: CommandCategory.OPERATE,
     AC.SET_TIMEOUT: CommandCategory.OPERATE,
     AC.CALL: CommandCategory.OPERATE,
-
     AC.SHELL_CAT: CommandCategory.SHELL_COMMANDS,
     AC.SHELL_GREP: CommandCategory.SHELL_COMMANDS,
     AC.SHELL_HEAD: CommandCategory.SHELL_COMMANDS,
@@ -56,7 +53,6 @@ COMMAND_CATEGORIES = {
 
 
 class FLAuthorizer(Authorizer):
-
     def __init__(self, for_org: str, policy_config: dict):
         """System-wide authorization class.
 
@@ -64,16 +60,14 @@ class FLAuthorizer(Authorizer):
         based on authorization.json file.
 
         """
-        assert isinstance(policy_config, dict), \
-            "policy_config must be a dict but got {}".format(type(policy_config))
+        assert isinstance(policy_config, dict), "policy_config must be a dict but got {}".format(type(policy_config))
         Authorizer.__init__(self, for_org, COMMAND_CATEGORIES)
         err = self.load_policy(policy_config)
         if err:
-            raise SyntaxError('invalid policy config: {}'.format(err))
+            raise SyntaxError("invalid policy config: {}".format(err))
 
 
 class EmptyAuthorizer(Authorizer):
-
     def __init__(self):
         Authorizer.__init__(self, "dummy")
 

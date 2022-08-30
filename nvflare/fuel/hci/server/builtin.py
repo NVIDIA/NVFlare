@@ -14,7 +14,7 @@
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec, CommandEntry
+from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 
 from .reg import ServerCommandRegister
 
@@ -69,8 +69,7 @@ class BuiltInCmdModule(CommandModule):
 
     def handle_list_commands(self, conn: Connection, args: List[str]):
         if len(args) <= 1:
-            table = conn.append_table(
-                ["Scope", "Command", "Description", "Usage", "Confirm", "ClientCmd"])
+            table = conn.append_table(["Scope", "Command", "Description", "Usage", "Confirm", "ClientCmd"])
 
             for scope_name in sorted(self.reg.scopes):
                 scope = self.reg.scopes[scope_name]

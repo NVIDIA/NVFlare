@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .api_spec import ServiceFinder
-import time
 import threading
+import time
+
+from .api_spec import ServiceFinder
 
 
 class RRServiceFinder(ServiceFinder):
-
     def __init__(self, change_interval, host1: str, port1: int, host2: str, port2: int):
         self.host1 = host1
         self.port1 = port1
@@ -30,8 +30,7 @@ class RRServiceFinder(ServiceFinder):
         self.stop_asked = False
 
     def start(self, service_address_changed_cb):
-        self.thread = threading.Thread(target=self._gen_address, args=(service_address_changed_cb,),
-                                       daemon=True)
+        self.thread = threading.Thread(target=self._gen_address, args=(service_address_changed_cb,), daemon=True)
         self.thread.start()
 
     def _gen_address(self, service_address_changed_cb):
@@ -59,4 +58,3 @@ class RRServiceFinder(ServiceFinder):
         if self.thread and self.thread.is_alive():
             self.thread.join()
         print("Service finder stopped")
-

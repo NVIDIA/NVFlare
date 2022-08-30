@@ -19,7 +19,7 @@ import logging
 import os
 import sys
 
-from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
+from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
@@ -28,7 +28,7 @@ from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init, security_close
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_close, security_init
 from nvflare.private.privacy_manager import PrivacyService
 
 
@@ -60,7 +60,7 @@ def main():
     logger = logging.getLogger()
     args.log_config = None
 
-    workspace = Workspace(root_dir=args.workspace, site_name='server')
+    workspace = Workspace(root_dir=args.workspace, site_name="server")
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
             f = workspace.get_file_path_in_root(name)
@@ -94,11 +94,13 @@ def main():
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
 
-        security_init(secure_train=secure_train,
-                      site_org=conf.site_org,
-                      workspace=workspace,
-                      app_validator=conf.app_validator,
-                      site_type=SiteType.SERVER)
+        security_init(
+            secure_train=secure_train,
+            site_org=conf.site_org,
+            workspace=workspace,
+            app_validator=conf.app_validator,
+            site_type=SiteType.SERVER,
+        )
 
         # initialize Privacy Service
         privacy_manager = create_privacy_manager(workspace, names_only=True)
@@ -131,8 +133,7 @@ def main():
         security_close()
 
 
-def create_admin_server(
-    fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
+def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
     """To create the admin server.
 
     Args:

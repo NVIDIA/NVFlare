@@ -14,8 +14,8 @@
 
 import json
 from datetime import datetime
-from typing import List
 from enum import Enum
+from typing import List
 
 from .table import Table
 
@@ -38,10 +38,10 @@ class InternalCommands(object):
 
 class ConfirmMethod(object):
 
-    AUTH = 'auth'
-    PASSWORD = 'pwd'
-    YESNO = 'yesno'
-    USER_NAME = 'username'
+    AUTH = "auth"
+    PASSWORD = "pwd"
+    YESNO = "yesno"
+    USER_NAME = "username"
 
 
 class Buffer(object):

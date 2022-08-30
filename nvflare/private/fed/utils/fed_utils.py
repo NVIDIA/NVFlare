@@ -12,30 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import logging.config
-import pickle
-import json
 import os
+import pickle
 import sys
 from logging.handlers import RotatingFileHandler
 from multiprocessing.connection import Listener
 from typing import List
 
-from nvflare.apis.workspace import Workspace
-from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.fl_constant import WorkspaceConstants, SiteType, FLContextKey
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.app_validation import AppValidator
-from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
-from nvflare.fuel.sec.authz import AuthorizationService
+from nvflare.apis.fl_constant import FLContextKey, SiteType, WorkspaceConstants
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.sec.authz import AuthorizationService
+from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
+from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
-from nvflare.private.privacy_manager import PrivacyService, PrivacyManager
-
 
 from .app_authz import AppAuthzService
 
@@ -126,11 +125,7 @@ def _check_secure_content(site_type: str) -> List[str]:
     return insecure_list
 
 
-def security_init(secure_train: bool,
-                  site_org: str,
-                  workspace: Workspace,
-                  app_validator: AppValidator,
-                  site_type: str):
+def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_validator: AppValidator, site_type: str):
     """To check the security content if running in security mode.
 
     Args:
@@ -192,9 +187,7 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
         return json.load(file)
 
 
-def create_job_processing_context_properties(
-        workspace: Workspace,
-        job_id: str) -> dict:
+def create_job_processing_context_properties(workspace: Workspace, job_id: str) -> dict:
     job_meta = get_job_meta_from_workspace(workspace, job_id)
     assert isinstance(job_meta, dict), f"job_meta must be dict but got {type(job_meta)}"
     scope_name = job_meta.get(JobMetaKey.SCOPE, "")
@@ -207,18 +200,17 @@ def create_job_processing_context_properties(
         effective_scope_name = ""
 
     return {
-            FLContextKey.JOB_META: job_meta,
-            FLContextKey.JOB_SCOPE_NAME: scope_name,
-            FLContextKey.EFFECTIVE_JOB_SCOPE_NAME: effective_scope_name,
-            FLContextKey.SCOPE_PROPERTIES: scope_props,
-            FLContextKey.SCOPE_OBJECT: scope_object
-        }
+        FLContextKey.JOB_META: job_meta,
+        FLContextKey.JOB_SCOPE_NAME: scope_name,
+        FLContextKey.EFFECTIVE_JOB_SCOPE_NAME: effective_scope_name,
+        FLContextKey.SCOPE_PROPERTIES: scope_props,
+        FLContextKey.SCOPE_OBJECT: scope_object,
+    }
 
 
 def configure_logging(workspace: Workspace):
     log_config_file_path = workspace.get_log_config_file_path()
-    assert os.path.isfile(log_config_file_path), \
-        f"missing log config file {log_config_file_path}"
+    assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
