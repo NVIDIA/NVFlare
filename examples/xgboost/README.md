@@ -147,9 +147,13 @@ For comparison, we train baseline models in a centralized manner with same round
 ```
 bash run_experiment_centralized.sh
 ```
-This will train several models w/ and w/o random forest settings.
+This will train several models w/ and w/o random forest settings. The results are shown below.
 
-Let's summarize the result of the experiments run above. We compare the AUC scores of 
+![Centralized validation curve](./figs/Centralized.png)
+
+As shown, random forest may not yield significant performance gain, and can even make the accuracy worse if subsample rate is too low (e.g. 0.05).
+
+Let's then summarize the result of the federated learning experiments run above. We compare the AUC scores of 
 the model on a standalone validation set consisted of the first 1 million instances of HIGGS dataset.
 
 We provide a script for plotting the tensorboard records, running
@@ -157,6 +161,7 @@ We provide a script for plotting the tensorboard records, running
 python3 ./utils/plot_tensorboard_events.py
 ```
 The resulting validation AUC curves (no smoothing) are shown below:
+
 ![5 clients validation curve](./figs/5_client.png)
 ![20 clients validation curve](./figs/20_client.png)
 
