@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shutil
-import json
 
-from nvflare.apis.workspace import Workspace
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.privacy_manager import PrivacyService
 
@@ -25,14 +25,7 @@ from .app_authz import AppAuthzService
 
 
 class AppDeployer(object):
-
-    def __init__(
-            self,
-            workspace: Workspace,
-            job_id: str,
-            job_meta: dict,
-            app_name: str,
-            app_data):
+    def __init__(self, workspace: Workspace, job_id: str, job_meta: dict, app_name: str, app_data):
         self.app_name = app_name
         self.workspace = workspace
         self.app_data = app_data
@@ -81,7 +74,7 @@ class AppDeployer(object):
                 app_path=app_path,
                 submitter_name=submitter_name,
                 submitter_org=submitter_org,
-                submitter_role=submitter_role
+                submitter_role=submitter_role,
             )
             if err:
                 return err

@@ -16,15 +16,13 @@ import re
 from typing import List, Union
 
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.dxo_filter import DXOFilter, DXO
+from nvflare.apis.dxo_filter import DXO, DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
 class ExcludeVars(DXOFilter):
-    def __init__(self,
-                 exclude_vars: Union[List[str], str, None] = None,
-                 data_kinds: List[str]=None):
+    def __init__(self, exclude_vars: Union[List[str], str, None] = None, data_kinds: List[str] = None):
         """Exclude/Remove variables from Shareable.
 
         Args:
@@ -40,10 +38,7 @@ class ExcludeVars(DXOFilter):
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF]
 
-        super().__init__(
-            supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF],
-            data_kinds_to_filter=data_kinds
-        )
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
         self.exclude_vars = exclude_vars
         self.skip = False
         if self.exclude_vars is not None:

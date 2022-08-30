@@ -25,10 +25,10 @@ import psutil
 
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
-from nvflare.private.privacy_manager import PrivacyService
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -36,7 +36,7 @@ from nvflare.private.fed.client.client_runner import ClientRunner, ClientRunnerC
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
-from nvflare.fuel.sec.audit import AuditService
+from nvflare.private.privacy_manager import PrivacyService
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
@@ -113,11 +113,6 @@ def main():
 
     app_root = workspace.get_app_dir(str(args.job_id))
 
-    log_file = workspace.get_app_log_file_path(args.job_id)
-    add_logfile_handler(log_file)
-    logger = logging.getLogger("worker_process")
-    logger.info("Worker_process started.")
-
     try:
         # start parent process checking thread
         thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
@@ -128,6 +123,11 @@ def main():
             kv_list=args.set,
         )
         conf.configure()
+
+        log_file = workspace.get_app_log_file_path(args.job_id)
+        add_logfile_handler(log_file)
+        logger = logging.getLogger("worker_process")
+        logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
         federated_client = deployer.create_fed_client(args, args.sp_target)

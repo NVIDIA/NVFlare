@@ -1,4 +1,3 @@
-
 # Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.app_validation import AppValidator, AppValidationKey
-from nvflare.fuel.sec.authz import AuthzContext, AuthorizationService, Person
-
+from nvflare.apis.app_validation import AppValidationKey, AppValidator
+from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 
 _RIGHT_BYOC = "byoc"
 
@@ -32,10 +30,10 @@ class AppAuthzService(object):
 
     @staticmethod
     def authorize(
-            app_path: str,
-            submitter_name: str,
-            submitter_org: str,
-            submitter_role: str,
+        app_path: str,
+        submitter_name: str,
+        submitter_org: str,
+        submitter_role: str,
     ) -> (bool, str):
         if not AppAuthzService.app_validator:
             return True, ""
@@ -51,9 +49,11 @@ class AppAuthzService(object):
         ctx = AuthzContext(
             user=Person(submitter_name, submitter_org, submitter_role),
             submitter=Person(submitter_name, submitter_org, submitter_role),
-            right=_RIGHT_BYOC
+            right=_RIGHT_BYOC,
         )
 
         authorized, err = AuthorizationService.authorize(ctx)
         if not authorized:
-            return False, 'BYOC not authorized'
+            return False, "BYOC not authorized"
+
+        return True, ""

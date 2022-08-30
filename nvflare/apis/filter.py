@@ -23,13 +23,14 @@ class ContentBlockedException(BaseException):
     """
     A filter should raise this exception when the content is to be blocked
     """
+
     pass
 
 
 class FilterChainType(object):
 
-    TASK_DATA_CHAIN = 'task_data'
-    TASK_RESULT_CHAIN = 'task_result'
+    TASK_DATA_CHAIN = "task_data"
+    TASK_RESULT_CHAIN = "task_result"
 
 
 class FilterSource(object):
@@ -45,7 +46,6 @@ class FilterContextKey(object):
 
 
 class Filter(FLComponent, ABC):
-
     @abstractmethod
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         """Filter process applied to the Shareable object.

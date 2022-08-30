@@ -107,11 +107,7 @@ class ClientRunner(FLComponent):
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
     def _reply_and_audit(self, reply: Shareable, ref, msg, fl_ctx: FLContext) -> Shareable:
-        audit_event_id = add_job_audit_event(
-            fl_ctx=fl_ctx,
-            ref=ref,
-            msg=msg
-        )
+        audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, ref=ref, msg=msg)
         reply.set_header(ReservedKey.AUDIT_EVENT_ID, audit_event_id)
         return reply
 
@@ -131,11 +127,7 @@ class ClientRunner(FLComponent):
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
-        add_job_audit_event(
-            fl_ctx=fl_ctx,
-            ref=server_audit_event_id,
-            msg="received task from server"
-        )
+        add_job_audit_event(fl_ctx=fl_ctx, ref=server_audit_event_id, msg="received task from server")
 
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
@@ -144,7 +136,8 @@ class ClientRunner(FLComponent):
                 reply=make_reply(ReturnCode.MISSING_PEER_CONTEXT),
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
-                msg=f'submit result: {ReturnCode.MISSING_PEER_CONTEXT}')
+                msg=f"submit result: {ReturnCode.MISSING_PEER_CONTEXT}",
+            )
 
         if not isinstance(peer_ctx, FLContext):
             self.log_error(
@@ -155,7 +148,8 @@ class ClientRunner(FLComponent):
                 reply=make_reply(ReturnCode.BAD_PEER_CONTEXT),
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
-                msg=f'submit result: {ReturnCode.BAD_PEER_CONTEXT}')
+                msg=f"submit result: {ReturnCode.BAD_PEER_CONTEXT}",
+            )
 
         task.data.set_peer_props(peer_ctx.get_all_public_props())
         peer_job_id = peer_ctx.get_job_id()
@@ -165,7 +159,8 @@ class ClientRunner(FLComponent):
                 reply=make_reply(ReturnCode.RUN_MISMATCH),
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
-                msg=f'submit result: {ReturnCode.RUN_MISMATCH}')
+                msg=f"submit result: {ReturnCode.RUN_MISMATCH}",
+            )
 
         executor = self.task_table.get(task.name)
         if not executor:
@@ -174,7 +169,8 @@ class ClientRunner(FLComponent):
                 reply=make_reply(ReturnCode.TASK_UNKNOWN),
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
-                msg=f'submit result: {ReturnCode.TASK_UNKNOWN}')
+                msg=f"submit result: {ReturnCode.TASK_UNKNOWN}",
+            )
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
@@ -202,7 +198,8 @@ class ClientRunner(FLComponent):
                         reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
                         ref=server_audit_event_id,
                         fl_ctx=fl_ctx,
-                        msg=f'submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}')
+                        msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
+                    )
 
             if not isinstance(task_data, Shareable):
                 self.log_error(
@@ -212,7 +209,8 @@ class ClientRunner(FLComponent):
                     reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
-                    msg=f'submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}')
+                    msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
+                )
 
             task.data = task_data
 
@@ -225,10 +223,7 @@ class ClientRunner(FLComponent):
         self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
         try:
             self.log_info(fl_ctx, "invoking task executor {}".format(type(executor)))
-            add_job_audit_event(
-                fl_ctx=fl_ctx,
-                msg=f"invoked executor {type(executor)}"
-            )
+            add_job_audit_event(fl_ctx=fl_ctx, msg=f"invoked executor {type(executor)}")
 
             with self.task_lock:
                 self.task_abort_signal = Signal()
@@ -252,7 +247,8 @@ class ClientRunner(FLComponent):
                             reply=make_reply(ReturnCode.TASK_ABORTED),
                             ref=server_audit_event_id,
                             fl_ctx=fl_ctx,
-                            msg=f'submit result: {ReturnCode.TASK_ABORTED}')
+                            msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                        )
 
             if not isinstance(reply, Shareable):
                 self.log_error(
@@ -265,7 +261,8 @@ class ClientRunner(FLComponent):
                     reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
-                    msg=f'submit result: {ReturnCode.EXECUTION_RESULT_ERROR}')
+                    msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
+                )
 
         except RuntimeError as e:
             self.log_exception(fl_ctx, f"Critical RuntimeError happened with Exception {e}: Aborting the RUN!")
@@ -274,14 +271,16 @@ class ClientRunner(FLComponent):
                 reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
-                msg=f'submit result: {ReturnCode.EXECUTION_RESULT_ERROR}')
+                msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
+            )
         except BaseException:
             self.log_exception(fl_ctx, "processing error in task executor {}".format(type(executor)))
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_EXCEPTION),
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
-                msg=f'submit result: {ReturnCode.EXECUTION_EXCEPTION}')
+                msg=f"submit result: {ReturnCode.EXECUTION_EXCEPTION}",
+            )
 
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
@@ -309,7 +308,8 @@ class ClientRunner(FLComponent):
                         reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
                         ref=server_audit_event_id,
                         fl_ctx=fl_ctx,
-                        msg=f'submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}')
+                        msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
+                    )
 
             if not isinstance(reply, Shareable):
                 self.log_error(
@@ -319,7 +319,8 @@ class ClientRunner(FLComponent):
                     reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
-                    msg=f'submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}')
+                    msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
+                )
 
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
@@ -335,13 +336,10 @@ class ClientRunner(FLComponent):
                 reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
                 ref=server_audit_event_id,
                 fl_ctx=fl_ctx,
-                msg=f'submit result: {ReturnCode.EXECUTION_RESULT_ERROR}')
+                msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
+            )
 
-        return self._reply_and_audit(
-            reply=reply,
-            ref=server_audit_event_id,
-            fl_ctx=fl_ctx,
-            msg=f'submit result OK')
+        return self._reply_and_audit(reply=reply, ref=server_audit_event_id, fl_ctx=fl_ctx, msg=f"submit result OK")
 
     def _try_run(self):
         task_fetch_interval = self.task_fetch_interval

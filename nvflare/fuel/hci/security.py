@@ -107,8 +107,8 @@ def get_certificate_identity(cert: dict) -> dict:
         for key, value in sub:
             if key == "commonName":
                 result[IdentityKey.NAME] = value
-            elif key == 'org':
+            elif key == "org":
                 result[IdentityKey.ORG] = value
-            elif key == 'role':
+            elif key == "role":
                 result[IdentityKey.ROLE] = value
     return result

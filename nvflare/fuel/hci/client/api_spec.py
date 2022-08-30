@@ -14,28 +14,26 @@
 
 from __future__ import annotations
 
+import enum
 from abc import ABC, abstractmethod
 
-from nvflare.fuel.hci.table import Table
 from nvflare.fuel.common.ctx import SimpleContext
 from nvflare.fuel.hci.reg import CommandModule
-
-import enum
+from nvflare.fuel.hci.table import Table
 
 
 class CommandCtxKey(object):
 
-    API = 'api'
-    CMD = 'cmd'
-    CMD_ENTRY = 'cmd_entry'
-    CMD_ARGS = 'cmd_args'
-    REPLY_PROCESSOR = 'reply_processor'
-    RESULT = 'result'
-    JSON_PROCESSOR = 'json_processor'
+    API = "api"
+    CMD = "cmd"
+    CMD_ENTRY = "cmd_entry"
+    CMD_ARGS = "cmd_args"
+    REPLY_PROCESSOR = "reply_processor"
+    RESULT = "result"
+    JSON_PROCESSOR = "json_processor"
 
 
 class CommandContext(SimpleContext):
-
     def set_command_result(self, result):
         self.set_prop(CommandCtxKey.RESULT, result)
 
@@ -125,11 +123,9 @@ class ReplyProcessor:
 
 
 class AdminAPISpec(ABC):
-
     @abstractmethod
     def is_ready(self) -> bool:
-        """Whether the API is ready for executing commands.
-        """
+        """Whether the API is ready for executing commands."""
         pass
 
     @abstractmethod
@@ -171,18 +167,13 @@ def service_address_changed_cb_signature(host: str, port: int, ssid: str):
 
 
 class ServiceFinder(object):
-
     def start(self, service_address_changed_cb):
         pass
 
     def stop(self):
         pass
 
-    def set_secure_context(
-            self,
-            ca_cert_path: str,
-            cert_path: str,
-            private_key_path: str):
+    def set_secure_context(self, ca_cert_path: str, cert_path: str, private_key_path: str):
         pass
 
     def get_command_module(self) -> CommandModule:

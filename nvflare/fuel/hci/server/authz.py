@@ -16,7 +16,7 @@ from typing import List
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandEntry
-from nvflare.fuel.sec.authz import Person, AuthzContext, AuthorizationService
+from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 
 from .constants import ConnProps
 from .reg import CommandFilter
@@ -24,9 +24,9 @@ from .reg import CommandFilter
 
 class PreAuthzReturnCode(enum.Enum):
 
-    OK = 0               # command preprocessed successfully, and no authz needed
-    ERROR = 1            # error occurred in command processing
-    REQUIRE_AUTHZ = 2    # command preprocessed successfully, further authz required
+    OK = 0  # command preprocessed successfully, and no authz needed
+    ERROR = 1  # error occurred in command processing
+    REQUIRE_AUTHZ = 2  # command preprocessed successfully, further authz required
 
 
 def command_handler_func_signature(conn: Connection, args: List[str]):
@@ -39,8 +39,7 @@ def command_authz_func_signature(conn: Connection, args: List[str]) -> PreAuthzR
 
 class AuthzFilter(CommandFilter):
     def __init__(self):
-        """Filter for authorization of admin commands.
-        """
+        """Filter for authorization of admin commands."""
         CommandFilter.__init__(self)
 
     def pre_command(self, conn: Connection, args: List[str]):
@@ -65,23 +64,18 @@ class AuthzFilter(CommandFilter):
         user = Person(
             name=conn.get_prop(ConnProps.USER_NAME, ""),
             org=conn.get_prop(ConnProps.USER_ORG, ""),
-            role=conn.get_prop(ConnProps.USER_ROLE, "")
+            role=conn.get_prop(ConnProps.USER_ROLE, ""),
         )
 
         submitter = Person(
             name=conn.get_prop(ConnProps.SUBMITTER_NAME, ""),
             org=conn.get_prop(ConnProps.SUBMITTER_ORG, ""),
-            role=conn.get_prop(ConnProps.SUBMITTER_ORG, "")
+            role=conn.get_prop(ConnProps.SUBMITTER_ORG, ""),
         )
 
-        ctx = AuthzContext(
-            user=user,
-            submitter=submitter,
-            right=cmd_entry.name
-        )
+        ctx = AuthzContext(user=user, submitter=submitter, right=cmd_entry.name)
 
-        print('User: {} Submitter: {}  Right: {}'.format(
-            user, submitter, cmd_entry.name))
+        print("User: {} Submitter: {}  Right: {}".format(user, submitter, cmd_entry.name))
         authorized, err = AuthorizationService.authorize(ctx)
         if err:
             conn.append_error("Authorization Error: {}".format(err))

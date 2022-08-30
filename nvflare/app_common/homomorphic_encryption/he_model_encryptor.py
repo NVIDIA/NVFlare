@@ -22,8 +22,8 @@ from tenseal.tensors.ckksvector import CKKSVector
 
 import nvflare.app_common.homomorphic_encryption.he_constant as he
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
-from nvflare.apis.event_type import EventType
 from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
@@ -39,7 +39,7 @@ class HEModelEncryptor(DXOFilter):
         encrypt_layers=None,
         aggregation_weights=None,
         weigh_by_local_iter=True,
-        data_kinds=None
+        data_kinds=None,
     ):
         """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
 
@@ -57,9 +57,7 @@ class HEModelEncryptor(DXOFilter):
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF]
 
-        super().__init__(
-            supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF],
-            data_kinds_to_filter=data_kinds)
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
 
         self.logger.info("Using HE model encryptor.")
         self.tenseal_context = None

@@ -25,8 +25,8 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
-from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 from nvflare.private.privacy_manager import Scope
+from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
 class ServerRunnerConfig(object):
@@ -309,10 +309,7 @@ class ServerRunner(FLComponent):
             self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
             self.log_info(fl_ctx, "sent task assignment to client")
 
-            audit_event_id = add_job_audit_event(
-                fl_ctx=fl_ctx,
-                msg=f'sent task to client "{client.name}"'
-            )
+            audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, msg=f'sent task to client "{client.name}"')
             task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
 
             return task_name, task_id, task_data
@@ -335,8 +332,7 @@ class ServerRunner(FLComponent):
             result: task result
             fl_ctx: FLContext
         """
-        self.log_info(fl_ctx,
-                      f"got result from client {client.name} for task: name={task_name}, id={task_id}")
+        self.log_info(fl_ctx, f"got result from client {client.name} for task: name={task_name}, id={task_id}")
 
         if not isinstance(result, Shareable):
             self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
@@ -350,9 +346,7 @@ class ServerRunner(FLComponent):
 
         client_audit_event_id = result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "")
         add_job_audit_event(
-            fl_ctx=fl_ctx,
-            ref=client_audit_event_id,
-            msg=f"received result from client '{client.name}'"
+            fl_ctx=fl_ctx, ref=client_audit_event_id, msg=f"received result from client '{client.name}'"
         )
 
         if self.status != "started":
@@ -408,8 +402,9 @@ class ServerRunner(FLComponent):
                         try:
                             result = f.process(result, fl_ctx)
                         except BaseException as e:
-                            self.log_exception(fl_ctx,
-                                               "Error processing in task result filter {}: {}".format(type(f), e))
+                            self.log_exception(
+                                fl_ctx, "Error processing in task result filter {}: {}".format(type(f), e)
+                            )
 
                             result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
                             break

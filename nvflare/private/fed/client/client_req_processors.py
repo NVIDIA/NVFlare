@@ -21,10 +21,10 @@ from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor
     AbortAppProcessor,
     AbortTaskProcessor,
     ClientStatusProcessor,
-    ScopeInfoProcessor,
     DeleteRunNumberProcessor,
     DeployProcessor,
     RestartClientProcessor,
+    ScopeInfoProcessor,
     ShutdownClientProcessor,
     StartAppProcessor,
 )

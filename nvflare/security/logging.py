@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-import os
-import traceback
 import logging
-
+import os
+import sys
+import traceback
 
 SECURE_LOGGING_VAR_NAME = "NVFLARE_SECURE_LOGGING"
 
@@ -31,13 +30,12 @@ def is_secure() -> bool:
     secure_logging = os.environ.get(SECURE_LOGGING_VAR_NAME, False)
     if isinstance(secure_logging, str):
         secure_logging = secure_logging.lower()
-        return secure_logging == '1' or secure_logging == 'true'
+        return secure_logging == "1" or secure_logging == "true"
     else:
         return False
 
 
 class _Frame(object):
-
     def __init__(self, line_text):
         self.line_text = line_text
         self.count = 1
@@ -87,7 +85,7 @@ def _format_exc():
         return traceback.format_exc()
 
 
-def log_exception(logger: logging.Logger=None):
+def log_exception(logger: logging.Logger = None):
     exc_detail = _format_exc()
 
     if not logger:

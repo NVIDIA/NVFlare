@@ -23,14 +23,14 @@ from datetime import datetime
 from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
+from nvflare.fuel.hci.proto import CredentialType
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
-from nvflare.fuel.hci.proto import CredentialType
 from nvflare.fuel.hci.table import Table
 
 from .api import AdminAPI, CommandInfo, SessionEventType
-from .api_status import APIStatus
 from .api_spec import ServiceFinder
+from .api_status import APIStatus
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -66,7 +66,7 @@ class AdminClient(cmd.Cmd):
     def __init__(
         self,
         prompt: str = "> ",
-        credential_type: CredentialType=CredentialType.PASSWORD,
+        credential_type: CredentialType = CredentialType.PASSWORD,
         ca_cert=None,
         client_cert=None,
         client_key=None,
@@ -91,8 +91,7 @@ class AdminClient(cmd.Cmd):
         self.stopped = False  # use this flag to prevent unnecessary signal exception
 
         if not isinstance(service_finder, ServiceFinder):
-            raise TypeError("service_finder must be ServiceProvider but got {}.".format(
-                type(service_finder)))
+            raise TypeError("service_finder must be ServiceProvider but got {}.".format(type(service_finder)))
 
         if not isinstance(credential_type, CredentialType):
             raise TypeError("invalid credential_type {}".format(credential_type))
@@ -123,9 +122,9 @@ class AdminClient(cmd.Cmd):
             poc=poc,
             session_event_cb=self.handle_session_event,
             session_timeout_interval=session_timeout_interval,
-            session_status_check_interval=10   # check server for session status every 10 seconds
+            session_status_check_interval=10,  # check server for session status every 10 seconds
         )
-        #signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
+        # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
     def handle_session_event(self, event_type: str, message: str):
@@ -353,6 +352,7 @@ class AdminClient(cmd.Cmd):
         if self.use_rawinput and self.completekey:
             try:
                 import readline
+
                 self.old_completer = readline.get_completer()
                 readline.set_completer(self.complete)
                 readline.parse_and_bind(self.completekey + ": complete")

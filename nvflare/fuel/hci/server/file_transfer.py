@@ -18,7 +18,6 @@ import traceback
 from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
     b64str_to_bytes,
@@ -34,9 +33,7 @@ from nvflare.private.fed.server.cmd_utils import CommandUtil
 
 
 class FileTransferModule(CommandModule, CommandUtil):
-    def __init__(self,
-                 upload_dir: str,
-                 download_dir: str):
+    def __init__(self, upload_dir: str, download_dir: str):
         """Command module for file transfers.
 
         Args:
@@ -99,10 +96,7 @@ class FileTransferModule(CommandModule, CommandUtil):
                     visible=False,
                 ),
             ],
-            conn_props={
-                ConnProps.DOWNLOAD_DIR: self.download_dir,
-                ConnProps.UPLOAD_DIR: self.upload_dir
-            }
+            conn_props={ConnProps.DOWNLOAD_DIR: self.download_dir, ConnProps.UPLOAD_DIR: self.upload_dir},
         )
 
     def upload_file(self, conn: Connection, args: List[str], str_to_file_func):

@@ -14,7 +14,7 @@
 
 import re
 
-from nvflare.apis.filter import Filter, FilterSource, FilterContextKey, FilterChainType
+from nvflare.apis.filter import Filter, FilterChainType, FilterContextKey, FilterSource
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.json_configer import ConfigContext, ConfigError, JsonConfigurator
 

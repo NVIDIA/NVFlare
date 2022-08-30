@@ -90,12 +90,12 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     return "[" + ", ".join(ctx_items) + "]: " + msg
 
 
-def add_job_audit_event(fl_ctx: FLContext, ref: str="", msg: str="") -> str:
+def add_job_audit_event(fl_ctx: FLContext, ref: str = "", msg: str = "") -> str:
     return AuditService.add_job_event(
         job_id=fl_ctx.get_job_id(),
         scope_name=fl_ctx.get_prop(FLContextKey.EFFECTIVE_JOB_SCOPE_NAME, "?"),
         task_name=fl_ctx.get_prop(FLContextKey.TASK_NAME, "?"),
         task_id=fl_ctx.get_prop(FLContextKey.TASK_ID, "?"),
         ref=ref,
-        msg=msg
+        msg=msg,
     )

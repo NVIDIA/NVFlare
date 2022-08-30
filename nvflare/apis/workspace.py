@@ -18,10 +18,7 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 
 
 class Workspace:
-    def __init__(self,
-                 root_dir: str,
-                 site_name: str= "",
-                 config_folder: str="config"):
+    def __init__(self, root_dir: str, site_name: str = "", config_folder: str = "config"):
         """Define a workspace.
 
         NOTE::
@@ -63,12 +60,14 @@ class Workspace:
         startup_dir = self.get_startup_kit_dir()
         if not os.path.isdir(startup_dir):
             raise RuntimeError(
-                f"invalid workspace {root_dir}: missing startup folder '{startup_dir}' or not a valid dir")
+                f"invalid workspace {root_dir}: missing startup folder '{startup_dir}' or not a valid dir"
+            )
 
         site_dir = self.get_site_config_dir()
         if not os.path.isdir(site_dir):
             raise RuntimeError(
-                f"invalid workspace {root_dir}: missing site config folder '{site_dir}' or not a valid dir")
+                f"invalid workspace {root_dir}: missing site config folder '{site_dir}' or not a valid dir"
+            )
 
     def _fallback_path(self, file_names: [str]):
         for n in file_names:
@@ -79,15 +78,14 @@ class Workspace:
 
     def get_authorization_file_path(self):
         return self._fallback_path(
-            [WorkspaceConstants.AUTHORIZATION_CONFIG, WorkspaceConstants.DEFAULT_AUTHORIZATION_CONFIG])
+            [WorkspaceConstants.AUTHORIZATION_CONFIG, WorkspaceConstants.DEFAULT_AUTHORIZATION_CONFIG]
+        )
 
     def get_resources_file_path(self):
-        return self._fallback_path(
-            [WorkspaceConstants.RESOURCES_CONFIG, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG])
+        return self._fallback_path([WorkspaceConstants.RESOURCES_CONFIG, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG])
 
     def get_log_config_file_path(self):
-        return self._fallback_path(
-            [WorkspaceConstants.LOGGING_CONFIG, WorkspaceConstants.DEFAULT_LOGGING_CONFIG])
+        return self._fallback_path([WorkspaceConstants.LOGGING_CONFIG, WorkspaceConstants.DEFAULT_LOGGING_CONFIG])
 
     def get_file_path_in_site_config(self, file_basename: str):
         return os.path.join(self.get_site_config_dir(), file_basename)

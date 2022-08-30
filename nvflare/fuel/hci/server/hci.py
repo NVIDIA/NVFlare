@@ -20,7 +20,7 @@ import traceback
 
 from nvflare.fuel.hci.conn import Connection, receive_til_end
 from nvflare.fuel.hci.proto import validate_proto
-from nvflare.fuel.hci.security import get_certificate_identity, IdentityKey
+from nvflare.fuel.hci.security import IdentityKey, get_certificate_identity
 
 from .constants import ConnProps
 from .reg import ServerCommandRegister
@@ -103,7 +103,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
         server_cert=None,
         server_key=None,
         accepted_client_cns=None,
-        extra_conn_props=None
+        extra_conn_props=None,
     ):
         """Base class of FedAdminServer to create a server that can receive commands.
 
@@ -118,8 +118,9 @@ class AdminServer(socketserver.ThreadingTCPServer):
             extra_conn_props: a dict of extra conn props, if specified
         """
         if extra_conn_props is not None:
-            assert isinstance(extra_conn_props, dict), \
-                "extra_conn_props must be dict but got {}".format(extra_conn_props)
+            assert isinstance(extra_conn_props, dict), "extra_conn_props must be dict but got {}".format(
+                extra_conn_props
+            )
 
         socketserver.TCPServer.__init__(self, (host, port), _MsgHandler, False)
 

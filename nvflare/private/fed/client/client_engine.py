@@ -22,12 +22,12 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.workspace import Workspace
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.apis.workspace import Workspace
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
@@ -235,21 +235,11 @@ class ClientEngine(ClientEngineInternalSpec):
         self.executor.shutdown()
         return "Restart the client..."
 
-    def deploy_app(
-            self,
-            app_name: str,
-            job_id: str,
-            job_meta: dict,
-            client_name: str,
-            app_data) -> str:
+    def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:
 
         workspace = Workspace(root_dir=self.args.workspace, site_name=client_name)
         app_deployer = AppDeployer(
-            workspace=workspace,
-            job_id=job_id,
-            job_meta=job_meta,
-            app_name=app_name,
-            app_data=app_data
+            workspace=workspace, job_id=job_id, job_meta=job_meta, app_name=app_name, app_data=app_data
         )
         err = app_deployer.deploy()
         if err:

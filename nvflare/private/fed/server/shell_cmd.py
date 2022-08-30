@@ -102,10 +102,7 @@ class _CommandExecutor(object):
         for c in clients:
             valid_tokens.append(c.token)
 
-        req = new_message(conn=conn,
-                          topic=SysCommandTopic.SHELL,
-                          body=shell_cmd,
-                          require_authz=True)
+        req = new_message(conn=conn, topic=SysCommandTopic.SHELL, body=shell_cmd, require_authz=True)
         server = conn.server
         reply = server.send_request_to_client(req, valid_tokens[0], timeout_secs=server.timeout)
         if reply is None:
