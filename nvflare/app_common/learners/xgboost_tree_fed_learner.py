@@ -144,7 +144,7 @@ class XGBoostTreeFedLearner(Learner):
         param["num_parallel_tree"] = self.num_tree_bagging
         return param
 
-    def local_boost_bagging(self, param):
+    def local_boost_bagging(self, param, fl_ctx: FLContext):
         # global model with num_parallel_tree
         param_global = self.get_training_parameters_bagging()
         # validate global model for bagging mode
@@ -176,7 +176,7 @@ class XGBoostTreeFedLearner(Learner):
         self.dmat_valid.set_base_margin([])
         return bst
 
-    def local_boost_cyclic(self, param):
+    def local_boost_cyclic(self, param, fl_ctx: FLContext):
         # Cyclic mode
         # starting from global model
         # return the whole boosting tree series
@@ -237,9 +237,9 @@ class XGBoostTreeFedLearner(Learner):
 
             # train local model starting with global model
             if self.training_mode == "bagging":
-                bst = self.local_boost_bagging(param)
+                bst = self.local_boost_bagging(param, fl_ctx)
             elif self.training_mode == "cyclic":
-                bst = self.local_boost_cyclic(param)
+                bst = self.local_boost_cyclic(param, fl_ctx)
         bst.save_model(self.local_model_path)
 
         # report updated model in shareable
