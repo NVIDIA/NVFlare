@@ -24,7 +24,6 @@ from multiprocessing.connection import Client
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
 from .client_status import ClientStatus, get_status_message
 
@@ -37,11 +36,6 @@ class ClientExecutor(object):
             uid: client name
             startup: startup folder
         """
-        pipe_path = startup + "/comm"
-        if not os.path.exists(pipe_path):
-            os.makedirs(pipe_path)
-
-        self.pipe = FilePipe(root_path=pipe_path, name="training")
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start_train(
@@ -141,7 +135,7 @@ class ClientExecutor(object):
 
     def cleanup(self):
         """Cleanup."""
-        self.pipe.clear()
+        pass
 
 
 class ProcessExecutor(ClientExecutor):
