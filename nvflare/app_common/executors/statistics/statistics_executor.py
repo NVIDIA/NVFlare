@@ -42,6 +42,8 @@ class StatisticsExecutor(Executor):
         min_count: int,
         min_random: float,
         max_random: float,
+        max_bins_percent: float,
+        precision=4,
     ):
         """
 
@@ -49,7 +51,7 @@ class StatisticsExecutor(Executor):
             generator_id:  Id of the statistics component
             min_count:     minimum of data records (or tabular data rows) that required in order to perform statistics calculation
                            this is part the data privacy policy.
-                           todo: This configuration will be moved to site/data_privacy.json files
+                           todo: This configuration will be moved to local/privacy.json files
             min_random:    minimum random noise -- used to protect min/max values before sending to server
             max_random:    maximum random noise -- used to protect min/max values before sending to server
                            min/max random is used to generate random noise between (min_random and max_random).
@@ -64,9 +66,15 @@ class StatisticsExecutor(Executor):
                                                           client's max value <
                                                                   true global max <
                                                                            est. global max value
+                       todo: the min/max noise level range (min_random, max_random) will be moved to
+                       todo: local/privacy.json
+            max_bins_percent:   max number of bins allowed in terms of percent of local data size. Set this number to
+                                avoid number of bins equal or close equal to the data size, which can lead to data leak.
+                                number of bins < max_bins_percent * local count
+                                todo: this argument will be move to local/privacy.json
 
-                           todo: the min/max noise level range (min_random, max_random) will be moved to
-                           todo: site/data_privacy.json
+            precision: number of percision digts
+
         """
 
         super().__init__()
@@ -75,7 +83,34 @@ class StatisticsExecutor(Executor):
         self.stats_generator: Optional[Statistics] = None
         self.max_random = max_random
         self.min_random = min_random
+        self.max_bins_percent = max_bins_percent
+        self.precision = precision
         fobs_registration()
+
+    def validate_inputs(self, fl_ctx: FLContext):
+        try:
+            if self.min_random < 0 or self.min_random > 1.0:
+                raise ValueError(
+                    f"minimum noise level provided by min_random {self.min_random} should be within (0, 1)"
+                )
+            if self.max_random < 0 or self.max_random > 1.0:
+                raise ValueError(
+                    f"maximum noise level provided by max_random {self.max_random} should be within (0, 1)"
+                )
+
+            if self.min_random > self.max_random:
+                raise ValueError(
+                    "minimum noise level {} should be less than maximum noise level {}".format(
+                        self.min_random, self.max_random
+                    )
+                )
+
+            if self.max_bins_percent < 0 or self.max_bins_percent > 1.0:
+                raise ValueError(f"max_bins_percent should be within (0, 1), but {self.max_bins_percent} is provided")
+
+        except ValueError as e:
+            self.system_panic(f"input error {e}", fl_ctx)
+            raise e
 
     def metric_functions(self) -> dict:
         return {
@@ -97,12 +132,15 @@ class StatisticsExecutor(Executor):
 
     def initialize(self, fl_ctx: FLContext):
         try:
+            self.validate_inputs(fl_ctx)
             engine = fl_ctx.get_engine()
             self.stats_generator = engine.get_component(self.generator_id)
             if not isinstance(self.stats_generator, Statistics):
                 raise TypeError(
-                    f"statistics generator must implement Statistics type. Got: {type(self.stats_generator)}"
+                    f"{type(self.stats_generator).__name} must implement `Statistics` type."
+                    f" Got: {type(self.stats_generator)}"
                 )
+
             self.stats_generator.initialize(engine.get_all_components(), fl_ctx)
         except Exception as e:
             self.log_exception(fl_ctx, f"statistics generator initialize exception: {e}")
@@ -134,8 +172,6 @@ class StatisticsExecutor(Executor):
             self.validate(client_name, ds_features, shareable, fl_ctx)
             metric_task = shareable.get(StC.METRIC_TASK_KEY)
             target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
-            print("target_metrics=", target_metrics)
-
             for tm in target_metrics:
                 fn = self.metric_functions()[tm.name]
                 metrics_result[tm.name] = {}
@@ -150,7 +186,6 @@ class StatisticsExecutor(Executor):
             result[StC.METRIC_TASK_KEY] = metric_task
             if metric_task == StC.STATS_1st_METRICS:
                 result[StC.STATS_FEATURES] = fobs.dumps(ds_features)
-
             result[metric_task] = fobs.dumps(metrics_result)
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)
@@ -187,7 +222,7 @@ class StatisticsExecutor(Executor):
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
     ) -> float:
 
-        result = self.stats_generator.sum(dataset_name, feature_name)
+        result = round(self.stats_generator.sum(dataset_name, feature_name), self.precision)
         return result
 
     def get_mean(
@@ -196,10 +231,10 @@ class StatisticsExecutor(Executor):
         count = self.stats_generator.count(dataset_name, feature_name)
         sum_value = self.stats_generator.sum(dataset_name, feature_name)
         if count is not None and sum_value is not None:
-            return sum_value / count
+            return round(sum_value / count, self.precision)
         else:
             # user did not implement count and/or sum, call means directly.
-            mean = self.stats_generator.mean(dataset_name, feature_name)
+            mean = round(self.stats_generator.mean(dataset_name, feature_name), self.precision)
             # self._check_result(mean, metric_config.name)
             return mean
 
@@ -207,7 +242,7 @@ class StatisticsExecutor(Executor):
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
     ) -> float:
 
-        result = self.stats_generator.stddev(dataset_name, feature_name)
+        result = round(self.stats_generator.stddev(dataset_name, feature_name), self.precision)
         return result
 
     def get_variance_with_mean(
@@ -216,6 +251,7 @@ class StatisticsExecutor(Executor):
         global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
         global_count = inputs[StC.STATS_GLOBAL_COUNT][dataset_name][feature_name]
         result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
+        result = round(result, self.precision)
         return result
 
     def get_histogram(
@@ -227,10 +263,10 @@ class StatisticsExecutor(Executor):
         num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
         bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
         item_count = self.stats_generator.count(dataset_name, feature_name)
-        if num_of_bins >= item_count:
+        if num_of_bins >= item_count * self.max_bins_percent:
             raise ValueError(
-                f"number of bins: {num_of_bins} needs to smaller than item count: {item_count} for feature "
-                f"'{feature_name}' in dataset '{dataset_name}'"
+                f"number of bins: {num_of_bins} needs to smaller than item count: {round(item_count * self.max_bins_percent)} "
+                f"for feature '{feature_name}' in dataset '{dataset_name}'"
             )
 
         result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
@@ -280,11 +316,9 @@ class StatisticsExecutor(Executor):
             if num_of_bins:
                 return num_of_bins
             else:
-                print(err_msg)
-            raise Exception(err_msg)
+                raise Exception(err_msg)
 
         except KeyError as e:
-            print(err_msg)
             raise Exception(err_msg)
 
     def get_bin_range(

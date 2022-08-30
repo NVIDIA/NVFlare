@@ -51,7 +51,7 @@ class TestSimulatorDeploy(unittest.TestCase):
         with patch("nvflare.private.fed.app.server.server_train.FedAdminServer") as mock_admin:
             workspace = tempfile.mkdtemp()
             parser = self._create_parser()
-            args = parser.parse_args(['job_folder', '-o' + workspace, '-n 2', '-t 1'])
+            args = parser.parse_args(["job_folder", "-o" + workspace, "-n 2", "-t 1"])
             _, server = self.deployer.create_fl_server(args)
             assert isinstance(server, SimulatorServer)
 
@@ -61,6 +61,6 @@ class TestSimulatorDeploy(unittest.TestCase):
     def test_create_client(self, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
-        args = parser.parse_args(['job_folder', '-o' + workspace, '-n 2', '-t 1'])
+        args = parser.parse_args(["job_folder", "-o" + workspace, "-n 2", "-t 1"])
         client, _, _ = self.deployer.create_fl_client("client0", args)
         assert isinstance(client, FederatedClient)
