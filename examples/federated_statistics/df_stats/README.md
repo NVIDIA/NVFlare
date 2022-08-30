@@ -184,7 +184,7 @@ Your output should be similar to the following.
 -----------------------------------------------------------------------------------------------------------------------------------
 ```
  
-### 5.3 get the result
+### 5.3 Get the result
 
 If successful, the computed statis can be downloaded using this admin command:
 ```
