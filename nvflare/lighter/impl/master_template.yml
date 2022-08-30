@@ -120,73 +120,61 @@ fed_client: |
 
 sample_privacy: |
   {
-  "scopes": [
-    {
-      "name": [
-        "public",
-        "experimental"
-      ],
-      "properties": {
-        "train_ds": "/data/public/train",
-        "val_ds": "/data/public/val"
-      }
-    },
-    {
-      "name": "private",
-      "properties": {
-        "train_ds": "/data/private/train",
-        "val_ds": "/data/private/val"
-      }
-    }
-  ],
-  "default_scope": "private",
-  "policies": [
-    {
-      "scopes": ["private"],
-      "task_result_filters": [
-        {
-          "name": "AddNoiseToMinMax",
-          "args": {
-            "min_noise_level": 0.2,
-            "max_noise_level": 0.2
-          }
+    "scopes": [
+      {
+        "name": "public",
+        "properties": {
+          "train_dataset": "/data/public/train",
+          "val_dataset": "/data/public/val"
         },
-        {
-          "name": "PercentilePrivacy",
-          "args": {
-            "percentile": 10,
-            "gamma": 0.02
+        "task_result_filters": [
+          {
+            "name": "AddNoiseToMinMax",
+            "args": {
+              "min_noise_level": 0.2,
+              "max_noise_level": 0.2
+            }
+          },
+          {
+            "name": "PercentilePrivacy",
+            "args": {
+              "percentile": 10,
+              "gamma": 0.02
+            }
           }
-        }
-      ],
-      "task_data_filters": [
-        {
-          "name": "EvilModelDetector"
-        }
-      ]
-    },
-    {
-      "scopes": "public",
-      "task_result_filters": [
-        {
-          "name": "AddNoiseToMinMax",
-          "args": {
-            "min_noise_level": 0.1,
-            "max_noise_level": 0.1
+        ],
+        "task_data_filters": [
+          {
+            "name": "BadModelDetector"
           }
+        ]
+      },
+      {
+        "name": "private",
+        "properties": {
+          "train_dataset": "/data/private/train",
+          "val_dataset": "/data/private/val"
         },
-        {
-          "name": "SVTPrivacy",
-          "args": {
-            "fraction": 0.1,
-            "epsilon": 0.2
+        "task_result_filters": [
+          {
+            "name": "AddNoiseToMinMax",
+            "args": {
+              "min_noise_level": 0.1,
+              "max_noise_level": 0.1
+            }
+          },
+          {
+            "name": "SVTPrivacy",
+            "args": {
+              "fraction": 0.1,
+              "epsilon": 0.2
+            }
           }
-        }
-      ]
-    }
-  ]
+        ]
+      }
+    ],
+    "default_scope": "public"
   }
-
 
 local_server_resources: |
   {
