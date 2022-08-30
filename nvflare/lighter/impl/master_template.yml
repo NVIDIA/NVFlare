@@ -72,10 +72,34 @@ gunicorn_conf_py: |
   workers=1
   wsgi_app="nvflare.ha.overseer.overseer:app"
 
+local_client_resources: |
+  {
+      "format_version": 2,
+      "client": {
+        "retry_timeout": 30,
+        "compression": "Gzip"
+      },
+      "components": [
+          {
+            "id": "resource_manager",
+            "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+            "args": {
+              "num_of_gpus": 4,
+              "mem_per_gpu_in_GiB": 16
+            }
+          },
+          {
+            "id": "resource_consumer",
+            "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+            "args": {
+            }
+          }
+      ]
+  }
+
 fed_client: |
   {
     "format_version": 2,
-    "enable_byoc": false,
     "servers": [
         {
             "name": "spleen_segmentation",
@@ -88,18 +112,122 @@ fed_client: |
         }
     ],
     "client": {
-        "retry_timeout": 30,
         "ssl_private_key": "client.key",
         "ssl_cert": "client.crt",
-        "ssl_root_cert": "rootCA.pem",
-        "compression": "Gzip"
+        "ssl_root_cert": "rootCA.pem"
     }
+  }
+
+sample_privacy: |
+  {
+    "scopes": [
+      {
+        "name": "public",
+        "properties": {
+          "train_dataset": "/data/public/train",
+          "val_dataset": "/data/public/val"
+        },
+        "task_result_filters": [
+          {
+            "name": "AddNoiseToMinMax",
+            "args": {
+              "min_noise_level": 0.2,
+              "max_noise_level": 0.2
+            }
+          },
+          {
+            "name": "PercentilePrivacy",
+            "args": {
+              "percentile": 10,
+              "gamma": 0.02
+            }
+          }
+        ],
+        "task_data_filters": [
+          {
+            "name": "BadModelDetector"
+          }
+        ]
+      },
+      {
+        "name": "private",
+        "properties": {
+          "train_dataset": "/data/private/train",
+          "val_dataset": "/data/private/val"
+        },
+        "task_result_filters": [
+          {
+            "name": "AddNoiseToMinMax",
+            "args": {
+              "min_noise_level": 0.1,
+              "max_noise_level": 0.1
+            }
+          },
+          {
+            "name": "SVTPrivacy",
+            "args": {
+              "fraction": 0.1,
+              "epsilon": 0.2
+            }
+          }
+        ]
+      }
+    ],
+    "default_scope": "public"
+  }
+
+local_server_resources: |
+  {
+      "format_version": 2,
+      "servers": [
+          {
+              "admin_storage": "transfer",
+              "max_num_clients": 100,
+              "heart_beat_timeout": 600,
+              "num_server_workers": 4,
+              "download_job_url": "http://download.server.com/",
+              "compression": "Gzip"
+          }
+      ],
+      "snapshot_persistor": {
+          "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
+          "args": {
+              "uri_root": "/",
+              "storage": {
+                  "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+                  "args": {
+                      "root_dir": "/tmp/nvflare/snapshot-storage",
+                      "uri_root": "/"
+                  }
+              }
+          }
+      },
+      "components": [
+          {
+              "id": "job_scheduler",
+              "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
+              "args": {
+                  "max_jobs": 1
+              }
+          },
+          {
+              "id": "job_manager",
+              "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+              "args": {
+                  "uri_root": "/tmp/nvflare/jobs-storage",
+                  "job_store_id": "job_store"
+              }
+          },
+          {
+              "id": "job_store",
+              "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
+          }
+      ]
   }
 
 fed_server: |
   {
     "format_version": 2,
-    "enable_byoc": false,
     "servers": [
         {
             "name": "spleen_segmentation",
@@ -112,15 +240,9 @@ fed_server: |
             },
             "admin_host": "localhost",
             "admin_port": 5005,
-            "admin_storage": "transfer",
             "ssl_private_key": "server.key",
             "ssl_cert": "server.crt",
-            "ssl_root_cert": "rootCA.pem",
-            "max_num_clients": 100,
-            "heart_beat_timeout": 600,
-            "num_server_workers": 4,
-            "download_job_url": "http://download.server.com/",
-            "compression": "Gzip"
+            "ssl_root_cert": "rootCA.pem"
         }
     ] 
   }
@@ -139,6 +261,37 @@ fed_admin: |
       "client_cert": "client.crt",
       "ca_cert": "rootCA.pem",
       "prompt": "> "
+    }
+  }
+
+default_authz: |
+  {
+    "format_version": "1.0",
+    "permissions": {
+      "project_admin": "any",
+      "org_admin": {
+        "submit_job": "none",
+        "clone_job": "none",
+        "manage_job": "o:submitter",
+        "download_job": "o:submitter",
+        "view": "any",
+        "operate": "o:site",
+        "shell_commands": "o:site",
+        "byoc": "none"
+      },
+      "lead": {
+        "submit_job": "any",
+        "clone_job": "n:submitter",
+        "manage_job": "n:submitter",
+        "download_job": "n:submitter",
+        "view": "any",
+        "operate": "o:site",
+        "shell_commands": "o:site",
+        "byoc": "any"
+      },
+      "member": {
+        "view": "any"
+      }
     }
   }
 

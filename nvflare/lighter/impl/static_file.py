@@ -131,11 +131,11 @@ class StaticFileBuilder(Builder):
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
-        if self.download_job_url:
-            server_0["download_job_url"] = self.download_job_url
-        config["enable_byoc"] = server.enable_byoc
-        if self.app_validator:
-            config["app_validator"] = {"path": self.app_validator}
+        # if self.download_job_url:
+        #     server_0["download_job_url"] = self.download_job_url
+        # config["enable_byoc"] = server.enable_byoc
+        # if self.app_validator:
+        #     config["app_validator"] = {"path": self.app_validator}
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
             if overseer_agent.get("overseer_exists", True):
@@ -149,18 +149,18 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
-        if self.snapshot_persistor:
-            config["snapshot_persistor"] = self.snapshot_persistor
-        components = server.props.get("components", [])
-        config["components"] = list()
-        for comp in components:
-            temp_dict = {"id": comp}
-            temp_dict.update(components[comp])
-            config["components"].append(temp_dict)
-        provisioned_client_list = list()
-        for client in self.project.get_participants_by_type("client", first_only=False):
-            provisioned_client_list.append(client.name)
-        config["provisioned_client_list"] = provisioned_client_list
+        # if self.snapshot_persistor:
+        #     config["snapshot_persistor"] = self.snapshot_persistor
+        # components = server.props.get("components", [])
+        # config["components"] = list()
+        # for comp in components:
+        #     temp_dict = {"id": comp}
+        #     temp_dict.update(components[comp])
+        #     config["components"].append(temp_dict)
+        # provisioned_client_list = list()
+        # for client in self.project.get_participants_by_type("client", first_only=False):
+        #     provisioned_client_list.append(client.name)
+        # config["provisioned_client_list"] = provisioned_client_list
         self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
@@ -189,20 +189,39 @@ class StaticFileBuilder(Builder):
             exe=True,
         )
         self._write(
-            os.path.join(dest_dir, "log.config"),
-            self.template["log_config"],
-            "t",
-        )
-        self._write(
-            os.path.join(dest_dir, "readme.txt"),
-            self.template["readme_fs"],
-            "t",
-        )
-        self._write(
             os.path.join(dest_dir, "stop_fl.sh"),
             self.template["stop_fl_sh"],
             "t",
             exe=True,
+        )
+        # local folder creation
+        dest_dir = self.get_local_dir(server, ctx)
+        self._write(
+            os.path.join(dest_dir, "log.config.default"),
+            self.template["log_config"],
+            "t",
+        )
+        self._write(
+            os.path.join(dest_dir, "resources.json.default"),
+            self.template["local_server_resources"],
+            "t",
+        )
+        self._write(
+            os.path.join(dest_dir, "privacy.json.sample"),
+            self.template["sample_privacy"],
+            "t",
+        )
+        self._write(
+            os.path.join(dest_dir, "authorization.json.default"),
+            self.template["default_authz"],
+            "t",
+        )
+
+        # workspace folder file
+        self._write(
+            os.path.join(self.get_ws_dir(server, ctx), "readme.txt"),
+            self.template["readme_fs"],
+            "t",
         )
 
     def _build_client(self, client, ctx):
@@ -212,7 +231,7 @@ class StaticFileBuilder(Builder):
         server_name = ctx.get("server_name")
         # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
         config["servers"][0]["name"] = self.project_name
-        config["enable_byoc"] = client.enable_byoc
+        # config["enable_byoc"] = client.enable_byoc
         replacement_dict = {
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
@@ -230,12 +249,12 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
-        components = client.props.get("components", [])
-        config["components"] = list()
-        for comp in components:
-            temp_dict = {"id": comp}
-            temp_dict.update(components[comp])
-            config["components"].append(temp_dict)
+        # components = client.props.get("components", [])
+        # config["components"] = list()
+        # for comp in components:
+        #     temp_dict = {"id": comp}
+        #     temp_dict.update(components[comp])
+        #     config["components"].append(temp_dict)
 
         self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
@@ -258,20 +277,39 @@ class StaticFileBuilder(Builder):
             exe=True,
         )
         self._write(
-            os.path.join(dest_dir, "log.config"),
-            self.template["log_config"],
-            "t",
-        )
-        self._write(
-            os.path.join(dest_dir, "readme.txt"),
-            self.template["readme_fc"],
-            "t",
-        )
-        self._write(
             os.path.join(dest_dir, "stop_fl.sh"),
             self.template["stop_fl_sh"],
             "t",
             exe=True,
+        )
+        # local folder creation
+        dest_dir = self.get_local_dir(client, ctx)
+        self._write(
+            os.path.join(dest_dir, "log.config.default"),
+            self.template["log_config"],
+            "t",
+        )
+        self._write(
+            os.path.join(dest_dir, "resources.json.default"),
+            self.template["local_client_resources"],
+            "t",
+        )
+        self._write(
+            os.path.join(dest_dir, "privacy.json.sample"),
+            self.template["sample_privacy"],
+            "t",
+        )
+        self._write(
+            os.path.join(dest_dir, "authorization.json.default"),
+            self.template["default_authz"],
+            "t",
+        )
+
+        # workspace folder file
+        self._write(
+            os.path.join(self.get_ws_dir(client, ctx), "readme.txt"),
+            self.template["readme_fc"],
+            "t",
         )
 
     def _build_admin(self, admin, ctx):
