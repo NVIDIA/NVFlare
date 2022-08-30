@@ -20,6 +20,7 @@ import numpy as np
 
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="generate data split for HIGGS dataset")
+    parser.add_argument("--data_path", type=str, help="Path to data file")
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
     parser.add_argument("--site_name", type=str, default="site-", help="Site name prefix")
     parser.add_argument(
@@ -54,20 +55,23 @@ def split_num_proportion(n, site_num, option: str):
     return split
 
 
-def train_config_gen(site_num, site_name, size_total, size_valid, split_method, out_path):
+def main():
+    parser = data_split_args_parser()
+    args = parser.parse_args()
+
     json_data = {}
-    json_data["data_path"] = "./dataset/HIGGS_UCI.csv"
+    json_data["data_path"] = args.data_path
     json_data["data_index"] = {}
     json_data["data_index"]["valid"] = {}
     json_data["data_index"]["valid"]["start"] = 0
-    json_data["data_index"]["valid"]["end"] = size_valid
+    json_data["data_index"]["valid"]["end"] = args.size_valid
 
-    site_size = split_num_proportion((size_total - size_valid), site_num, split_method)
+    site_size = split_num_proportion((args.size_total - args.size_valid), args.site_num, args.split_method)
 
-    for site in range(site_num):
-        site_id = site_name + str(site + 1)
-        idx_start = size_valid + sum(site_size[:site])
-        idx_end = size_valid + sum(site_size[: site + 1])
+    for site in range(args.site_num):
+        site_id = args.site_name + str(site + 1)
+        idx_start = args.size_valid + sum(site_size[:site])
+        idx_end = args.size_valid + sum(site_size[: site + 1])
         json_data["data_index"][site_id] = {}
         json_data["data_index"][site_id]["start"] = idx_start
         json_data["data_index"][site_id]["end"] = idx_end
@@ -75,19 +79,6 @@ def train_config_gen(site_num, site_name, size_total, size_valid, split_method, 
 
     with open(out_path, "w") as f:
         json.dump(json_data, f, indent=4)
-
-
-def main():
-    parser = data_split_args_parser()
-    args = parser.parse_args()
-    train_config_gen(
-        site_num=args.site_num,
-        site_name=args.site_name,
-        size_total=args.size_total,
-        size_valid=args.size_valid,
-        split_method=args.split_method,
-        out_path=args.out_path,
-    )
 
 
 if __name__ == "__main__":
