@@ -77,7 +77,7 @@ def main():
         json_data["data_index"][site_id]["end"] = idx_end
         json_data["data_index"][site_id]["lr_scale"] = site_size[site] / sum(site_size)
 
-    with open(out_path, "w") as f:
+    with open(args.out_path, "w") as f:
         json.dump(json_data, f, indent=4)
 
 
